@@ -59,7 +59,7 @@ fn start_interactive_mode() -> io::Result<()> {
     let project = Project::load_project(project_path);
 
     if let Some(proj) = project {
-        println!("Loaded project: {}", proj.name.green());
+        println!("Loaded project: {}", proj.get_path().display().green());
     } else {
         println!("No previous project found. Starting a new session.");
     }
@@ -67,7 +67,8 @@ fn start_interactive_mode() -> io::Result<()> {
     loop {
         let mut input = String::new();
         print!("You: ");
-        io::stdout().flush()?;
+        use std::io::Write;
+io::stdout().flush()?;
         io::stdin().read_line(&mut input)?;
         let input = input.trim();
 
@@ -75,7 +76,7 @@ fn start_interactive_mode() -> io::Result<()> {
             break;
         }
 
-        let response = gpt.send_chat_request(input)?;
+        let response = tokio::runtime::Runtime::new().unwrap().block_on(gpt.send_request("gpt-3.5-turbo", input))?.content;
         println!("GPT: {}", response.green());
     }
 

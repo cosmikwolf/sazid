@@ -26,7 +26,8 @@ impl GPTConnector {
         let api_key = env::var("OPENAI_API_KEY").expect("OPENAI_API_KEY not set");
         let config = OpenAIConfig::new().with_api_key(api_key);
         let client = Client::with_config(config);
-        let logger = Logger::new();
+        use std::path::PathBuf;
+let logger = Logger::new(PathBuf::from("."));
         GPTConnector { client, logger }
     }
 
@@ -41,22 +42,25 @@ impl GPTConnector {
                     .build()?
             ])
             .build()?;
-
+    
         let response_data = self.client.chat().create(request_args).await?;
         
         // Log the entire response
-        self.logger.log(&format!("{:?}", response_data));
-
+        self.logger.log(&format!("{:?}", response_data), "response");
+    
         // Extract the main content from the GPT response for human readability
-        Ok(self.parse_response(response_data))
-    }
+        let message = response_data.choices.get(0).map_or("", |choice| &choice.message.content);
+        let role = response_data.choices.get(0).map_or(Role::System, |choice| choice.message.role.clone());
+    
+        Ok(GPTResponse { role, content: message.to_string() })
+    }    
 
     fn parse_response(&self, response_data: GPTRequest) -> GPTResponse {
         GPTResponse { role: response_data.role, content: response_data.content }
     }
 
     pub async fn available_models(&self) -> Result<Vec<Model>, Box<dyn Error>> {
-        self.client.models().list().await
+        self.client.models().list().await.map(|response| response.data)
     }
 }
 

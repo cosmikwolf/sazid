@@ -1,5 +1,5 @@
 use std::fs;
-use std::io::{self, Read};
+use std::io::Read;
 use pdf::file::File as PdfFile;
 
 pub enum FileType {
@@ -44,7 +44,7 @@ fn chunk_pdf_file(file_path: &str, index: usize) -> (String, usize) {
     let mut buffer = Vec::new();
     file.read_to_end(&mut buffer).expect("Unable to read the PDF file.");
 
-    let pdf_file = PdfFile::from_data(buffer).expect("Unable to parse the PDF file.");
+    let pdf_file = PdfFile::from_data(let pdf_file = PdfFile::from_bytes(let pdf_file = PdfFile::from_data(buffer).expect("Unable to parse the PDF file.");buffer).expect("Unable to parse the PDF file.");buffer).expect("Unable to parse the PDF file.");
     let total_indexes = pdf_file.num_pages() as usize;
 
     if index >= total_indexes {

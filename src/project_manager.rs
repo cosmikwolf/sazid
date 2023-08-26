@@ -1,7 +1,7 @@
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use serde::{Serialize, Deserialize};
-use std::io::{self, Write};
+use std::io;
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct Project {
