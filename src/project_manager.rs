@@ -1,141 +1,94 @@
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
+use serde::{Serialize, Deserialize};
 use std::io::{self, Write};
 
+#[derive(Serialize, Deserialize, Debug)]
 pub struct Project {
     name: String,
-    description: String,
+    project_type: String,
     goals: String,
-    role: String,
-    path: String,
+    path: PathBuf,
 }
 
 impl Project {
-    pub fn new(name: &str, description: &str, goals: &str, role: &str) -> Self {
-        let path = format!("./{}", name);
-        Self {
+    pub fn new(name: &str, project_type: &str, goals: &str, path: PathBuf) -> Self {
+        Project {
             name: name.to_string(),
-            description: description.to_string(),
+            project_type: project_type.to_string(),
             goals: goals.to_string(),
-            role: role.to_string(),
             path,
         }
     }
 
-    pub fn create(&self) -> io::Result<()> {
-        fs::create_dir_all(&self.path)?;
-        fs::create_dir_all(format!("{}/ingest", &self.path))?;
-        fs::create_dir_all(format!("{}/workspace_data", &self.path))?;
-        fs::create_dir_all(format!("{}/logs", &self.path))?;
+    pub fn get_path(&self) -> &PathBuf {
+        &self.path
+    }
 
-        let mut config = fs::File::create(format!("{}/config.toml", &self.path))?;
-        write!(config, "description = \"{}\"\ngoals = \"{}\"\nrole = \"{}\"", self.description, self.goals, self.role)?;
-
+    pub fn ingest_file(&self, file_path: &PathBuf) -> io::Result<()> {
+        let dest_path = self.path.join("workspace_data").join(file_path.file_name().unwrap());
+        fs::copy(file_path, dest_path)?;
         Ok(())
     }
 
-
-    pub fn list_projects() -> io::Result<Vec<String>> {
-        let entries = fs::read_dir(".")?
-            .filter_map(|entry| {
-                let entry = entry.ok()?;
-                if entry.path().is_dir() {
-                    Some(entry.file_name().into_string().ok()?)
-                } else {
-                    None
-                }
-            })
-            .collect();
-        Ok(entries)
+    pub fn create_project(name: &str, project_type: &str, goals: &str, path: PathBuf) -> Self {
+        let project = Project::new(name, project_type, goals, path);
+        fs::create_dir_all(project.path.join("workspace_data")).unwrap();
+        fs::create_dir_all(project.path.join("logs")).unwrap();
+        project
     }
 
-    pub fn delete(name: &str) -> io::Result<()> {
-        if Path::new(name).exists() {
-            fs::remove_dir_all(name)?;
+    pub fn load_project(path: PathBuf) -> Option<Self> {
+        if path.exists() {
+            let project_data = fs::read_to_string(path.join("config.json")).ok()?;
+            serde_json::from_str(&project_data).ok()
+        } else {
+            None
         }
-        Ok(())
     }
 
-    pub fn load_project(name: &str) -> io::Result<Self> {
-        let path = format!("./{}", name);
-        if !Path::new(&path).exists() {
-            return Err(io::Error::new(io::ErrorKind::NotFound, "Project not found"));
-        }
-        let config_content = fs::read_to_string(format!("{}/config.toml", path))?;
-        // For simplicity, we'll just split the content. In a real-world scenario, you'd use a TOML parser.
-        let lines: Vec<&str> = config_content.lines().collect();
-        let description = lines[0].split('=').last().unwrap().trim_matches('"').to_string();
-        let goals = lines[1].split('=').last().unwrap().trim_matches('"').to_string();
-        let role = lines[2].split('=').last().unwrap().trim_matches('"').to_string();
-
-        Ok(Self {
-            name: name.to_string(),
-            description,
-            goals,
-            role,
-            path,
-        })
+    pub fn delete_project(&self) -> io::Result<()> {
+        fs::remove_dir_all(&self.path)
     }
-
-    pub fn save_chat_log(session_log: Vec<String>) {
-        // Determine the project's log folder
-        let log_path = "path_to_project_folder/logs"; // Update this with the actual path
-    
-        // Generate a unique filename for the chat session
-        let filename = format!("{}/chat_{}.log", log_path, chrono::Utc::now().format("%Y%m%d%H%M%S"));
-    
-        // Save the chat log
-        std::fs::write(&filename, session_log.join("\n")).expect("Unable to write chat log");
-    }
-    
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::fs::File;
 
     #[test]
     fn test_project_creation() {
-        let project = Project::new("TestProject", "Test Description", "Test Goals", "Test Role");
-        project.create().unwrap();
-        assert!(Path::new("./TestProject").exists());
-        assert!(Path::new("./TestProject/ingest").exists());
-        assert!(Path::new("./TestProject/workspace_data").exists());
-        assert!(Path::new("./TestProject/logs").exists());
-        assert!(Path::new("./TestProject/config.toml").exists());
-        // Cleanup after test
-        fs::remove_dir_all("./TestProject").unwrap();
+        let project = Project::create_project("TestProject", "Type", "Goals", PathBuf::from("TestProject"));
+        assert!(Path::new("TestProject").exists());
+        assert!(Path::new("TestProject/workspace_data").exists());
+        assert!(Path::new("TestProject/logs").exists());
+        project.delete_project().unwrap();
     }
 
     #[test]
-    fn test_project_list() {
-        let project = Project::new("TestProject", "Test Description", "Test Goals", "Test Role");
-        project.create().unwrap();
-        let projects = Project::list_projects().unwrap();
-        assert!(projects.contains(&"TestProject".to_string()));
-        // Cleanup after test
-        fs::remove_dir_all("./TestProject").unwrap();
+    fn test_project_loading() {
+        let project = Project::create_project("TestProject", "Type", "Goals", PathBuf::from("TestProject"));
+        let loaded_project = Project::load_project(PathBuf::from("TestProject"));
+        assert!(loaded_project.is_some());
+        assert_eq!(loaded_project.unwrap().name, "TestProject");
+        project.delete_project().unwrap();
     }
 
     #[test]
-    fn test_project_delete() {
-        let project = Project::new("TestProject", "Test Description", "Test Goals", "Test Role");
-        project.create().unwrap();
-        Project::delete("TestProject").unwrap();
-        assert!(!Path::new("./TestProject").exists());
+    fn test_file_ingestion() {
+        let project = Project::create_project("TestProject", "Type", "Goals", PathBuf::from("TestProject"));
+        File::create("TestProject/workspace_data/test.txt").unwrap();
+        project.ingest_file(&PathBuf::from("test.txt")).unwrap();
+        assert!(!Path::new("TestProject/workspace_data/test.txt").exists());
+        assert!(Path::new("TestProject/workspace_data/test.txt").exists());
+        project.delete_project().unwrap();
     }
 
     #[test]
-    fn test_project_load() {
-        let project = Project::new("TestProject", "Test Description", "Test Goals", "Test Role");
-        project.create().unwrap();
-        let loaded_project = Project::load_project("TestProject").unwrap();
-        assert_eq!(loaded_project.name, "TestProject");
-        assert_eq!(loaded_project.description, "Test Description");
-        assert_eq!(loaded_project.goals, "Test Goals");
-        assert_eq!(loaded_project.role, "Test Role");
-        // Cleanup after test
-        fs::remove_dir_all("./TestProject").unwrap();
+    fn test_project_deletion() {
+        let project = Project::create_project("TestProject", "Type", "Goals", PathBuf::from("TestProject"));
+        project.delete_project().unwrap();
+        assert!(!Path::new("TestProject").exists());
     }
-    // Additional tests for other project management functions...
 }

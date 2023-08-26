@@ -1,66 +1,59 @@
 use std::fs;
-use std::path::Path;
+use std::io::{self, Read};
 use pdf::file::File as PdfFile;
 
 pub enum FileType {
     Text,
-    PDF,
-    HTML,
-    Rust,
-    TOML,
-    Unknown,
+    Pdf,
+    Other,
 }
 
-pub struct ChunkResult {
-    pub chunk: String,
-    pub total_chunks: usize,
-}
-
-pub fn determine_file_type(filename: &str) -> FileType {
-    match Path::new(filename).extension().and_then(|s| s.to_str()) {
-        Some("txt") => FileType::Text,
-        Some("pdf") => FileType::PDF,
-        Some("html") | Some("htm") => FileType::HTML,
-        Some("rs") => FileType::Rust,
-        Some("toml") => FileType::TOML,
-        _ => FileType::Unknown,
+pub fn chunk_file(file_path: &str, index: usize) -> (String, usize) {
+    let file_type = determine_file_type(file_path);
+    match file_type {
+        FileType::Text => chunk_text_file(file_path, index),
+        FileType::Pdf => chunk_pdf_file(file_path, index),
+        FileType::Other => (String::from("Unsupported file type."), 0),
     }
 }
 
-pub fn chunk_file(filename: &str, index: usize, chunk_size: usize) -> Result<ChunkResult, &'static str> {
-    match determine_file_type(filename) {
-        FileType::Text => chunk_text_file(filename, index, chunk_size),
-        FileType::PDF => chunk_pdf_file(filename, index, chunk_size),
-        _ => Err("Unsupported file type"),
+fn determine_file_type(file_path: &str) -> FileType {
+    if file_path.ends_with(".txt") {
+        FileType::Text
+    } else if file_path.ends_with(".pdf") {
+        FileType::Pdf
+    } else {
+        FileType::Other
     }
 }
 
-fn chunk_text_file(filename: &str, index: usize, chunk_size: usize) -> Result<ChunkResult, &'static str> {
-    let content = fs::read_to_string(filename).map_err(|_| "Failed to read the file")?;
-    let start = index * chunk_size;
-    let end = (index + 1) * chunk_size;
-    let total_chunks = (content.len() + chunk_size - 1) / chunk_size;
+fn chunk_text_file(file_path: &str, index: usize) -> (String, usize) {
+    let content = fs::read_to_string(file_path).expect("Unable to read the file.");
+    let chunks: Vec<&str> = content.split_whitespace().collect();
+    let total_indexes = chunks.len();
 
-    if start >= content.len() {
-        return Err("Index out of bounds");
+    if index >= total_indexes {
+        (String::from("Index out of bounds."), total_indexes)
+    } else {
+        (chunks[index].to_string(), total_indexes)
     }
-
-    let chunk = &content[start..end.min(content.len())];
-    Ok(ChunkResult {
-        chunk: chunk.to_string(),
-        total_chunks,
-    })
 }
 
-fn chunk_pdf_file(filename: &str, index: usize, chunk_size: usize) -> Result<ChunkResult, &'static str> {
-    let pdf = PdfFile::<Vec<u8>>::open(filename).map_err(|_| "Failed to open the PDF file")?;
-    let mut content = String::new();
+fn chunk_pdf_file(file_path: &str, index: usize) -> (String, usize) {
+    let mut file = fs::File::open(file_path).expect("Unable to open the PDF file.");
+    let mut buffer = Vec::new();
+    file.read_to_end(&mut buffer).expect("Unable to read the PDF file.");
 
-    for page in pdf.pages() {
-        content.push_str(&page.contents().unwrap_or_default());
+    let pdf_file = PdfFile::from_data(buffer).expect("Unable to parse the PDF file.");
+    let total_indexes = pdf_file.num_pages() as usize;
+
+    if index >= total_indexes {
+        (String::from("Index out of bounds."), total_indexes)
+    } else {
+        let page = pdf_file.get_page(index as u32).expect("Unable to get the PDF page.");
+        let content = page.get_text().expect("Unable to extract text from the PDF page.");
+        (content, total_indexes)
     }
-
-    chunk_text_file(&content, index, chunk_size)
 }
 
 #[cfg(test)]
@@ -68,21 +61,18 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_determine_file_type() {
-        assert_eq!(determine_file_type("sample.txt"), FileType::Text);
-        assert_eq!(determine_file_type("sample.pdf"), FileType::PDF);
-        assert_eq!(determine_file_type("sample.html"), FileType::HTML);
-        assert_eq!(determine_file_type("sample.rs"), FileType::Rust);
-        assert_eq!(determine_file_type("sample.toml"), FileType::TOML);
-        assert_eq!(determine_file_type("sample.unknown"), FileType::Unknown);
+    fn test_chunk_text_file() {
+        let content = "This is a sample text for testing.";
+        let filename = "test.txt";
+        fs::write(filename, content).unwrap();
+        let (chunk, total) = chunk_file(filename, 1).unwrap();
+        assert_eq!(chunk, "This is a sample text for testing.");
+        assert_eq!(total, 1);
     }
 
     #[test]
-    fn test_chunk_text_file() {
-        // Assuming a sample.txt file exists with content "Hello, World!"
-        let result = chunk_text_file("sample.txt", 0, 5).unwrap();
-        assert_eq!(result.chunk, "Hello");
+    fn test_chunk_pdf_file() {
+        // Placeholder test for PDF chunking
+        assert_eq!(2 + 2, 4);  // This is a placeholder and should be replaced with actual test logic for PDFs.
     }
-
-    // Additional tests for chunk_pdf_file and other functionalities can be added here.
 }

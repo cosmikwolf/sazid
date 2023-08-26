@@ -1,62 +1,83 @@
-extern crate clap;
-use clap::{App, Arg, SubCommand};
-use std::io::{self, Write};
+use std::path::PathBuf;
+use std::io;
+use owo_colors::OwoColorize;
 
 mod project_manager;
-mod file_chunker;
 mod gpt_connector;
+mod file_chunker;
+mod logger;
+mod utils;
 
-fn main() {
-    let matches = App::new("Voracious")
-        .version("1.0")
-        .author("Your Name <your.email@example.com>")
-        .about("Interacts with GPT and manages projects.")
-        .subcommand(SubCommand::with_name("new")
-            .about("Creates a new project")
-            .arg(Arg::with_name("name")
-                .help("Name of the new project")
-                .required(true)
-                .index(1)))
-        .subcommand(SubCommand::with_name("load")
-            .about("Loads an existing project")
-            .arg(Arg::with_name("name")
-                .help("Name of the project to load")
-                .required(true)
-                .index(1)))
-        .subcommand(SubCommand::with_name("list")
-            .about("Lists all existing projects"))
-        .get_matches();
+use project_manager::Project;
+use gpt_connector::GPTConnector;
 
-    if let Some(matches) = matches.subcommand_matches("new") {
-        let project_name = matches.value_of("name").unwrap();
-        project_manager::create_new_project(project_name);
-    } else if let Some(matches) = matches.subcommand_matches("load") {
-        let project_name = matches.value_of("name").unwrap();
-        project_manager::load_project(project_name);
-    } else if matches.subcommand_matches("list").is_some() {
-        project_manager::list_projects();
+fn main() -> io::Result<()> {
+    let args: Vec<String> = std::env::args().collect();
+
+    if args.len() == 1 {
+        // No arguments provided, start interactive mode
+        start_interactive_mode()?;
     } else {
-        // Start a chat session if no arguments are provided
-        start_chat_session();
+        // Handle CLI arguments
+        match args[1].as_str() {
+            "--list-projects" => {
+                // List all projects
+                // TODO: Implement listing of all projects
+            }
+            "--project-details" => {
+                if args.len() < 3 {
+                    println!("{}", "Please provide a project name.".red());
+                    return Ok(());
+                }
+                // Print details of a specific project
+                let project_name = &args[2];
+                // TODO: Implement printing of project details
+            }
+            "--delete-project" => {
+                if args.len() < 3 {
+                    println!("{}", "Please provide a project name.".red());
+                    return Ok(());
+                }
+                // Delete a specific project
+                let project_name = &args[2];
+                // TODO: Implement deletion of a project
+            }
+            _ => {
+                println!("{}", "Invalid command. Use --help for available commands.".red());
+            }
+        }
     }
+
+    Ok(())
 }
 
-fn start_chat_session() {
-    let mut session_log = Vec::new();
-    loop {
-        print!("You: ");
-        io::stdout().flush().unwrap();
-        let mut input = String::new();
-        io::stdin().read_line(&mut input).unwrap();
-        session_log.push(format!("You: {}", input.trim()));
+fn start_interactive_mode() -> io::Result<()> {
+    let mut gpt = GPTConnector::new();
 
-        if input.trim() == "exit" {
+    // Check if there's a previous project
+    let project_path = PathBuf::from("path_to_last_project"); // This should be loaded from some config or state
+    let project = Project::load_project(project_path);
+
+    if let Some(proj) = project {
+        println!("Loaded project: {}", proj.name.green());
+    } else {
+        println!("No previous project found. Starting a new session.");
+    }
+
+    loop {
+        let mut input = String::new();
+        print!("You: ");
+        io::stdout().flush()?;
+        io::stdin().read_line(&mut input)?;
+        let input = input.trim();
+
+        if input == "exit" {
             break;
         }
 
-        let response = gpt_connector::chat_with_gpt(&input);
-        println!("GPT: {}", response);
-        session_log.push(format!("GPT: {}", response));
+        let response = gpt.send_chat_request(input)?;
+        println!("GPT: {}", response.green());
     }
-    project_manager::save_chat_log(session_log);
+
+    Ok(())
 }
