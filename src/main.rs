@@ -76,7 +76,7 @@ io::stdout().flush()?;
             break;
         }
 
-        let response = tokio::runtime::Runtime::new().unwrap().block_on(gpt.send_request("gpt-3.5-turbo", input))?.content;
+        let response = tokio::runtime::Builder::new_current_thread().build().unwrap().block_on(gpt.send_request("gpt-3.5-turbo", input))?.content;
         println!("GPT: {}", response.green());
     }
 

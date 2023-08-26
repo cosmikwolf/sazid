@@ -49,7 +49,7 @@ let logger = Logger::new(PathBuf::from("."));
         self.logger.log(&format!("{:?}", response_data), "response");
     
         // Extract the main content from the GPT response for human readability
-        let message = response_data.choices.get(0).map_or("", |choice| &choice.message.content);
+        let message = response_data.choices.get(0).map_or("", |choice| &choice.message.content.as_deref().unwrap_or_default());
         let role = response_data.choices.get(0).map_or(Role::System, |choice| choice.message.role.clone());
     
         Ok(GPTResponse { role, content: message.to_string() })
@@ -60,7 +60,7 @@ let logger = Logger::new(PathBuf::from("."));
     }
 
     pub async fn available_models(&self) -> Result<Vec<Model>, Box<dyn Error>> {
-        self.client.models().list().await.map(|response| response.data)
+        Ok(self.client.models().list().await?.data)
     }
 }
 
