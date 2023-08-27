@@ -56,7 +56,8 @@ impl Project {
 mod tests {
     use super::*;
     use std::fs::File;
-
+    use std::path::Path;
+    
     #[test]
     fn test_project_creation() {
         let project = Project::create_project("TestProject", "Type", "Goals", PathBuf::from("TestProject"));

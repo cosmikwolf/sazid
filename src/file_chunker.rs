@@ -45,8 +45,9 @@ fn chunk_pdf_file(file_path: &str, index: usize) -> (String, usize) {
     if index >= total_indexes {
         (String::from("Index out of bounds."), total_indexes)
     } else {
-        // TODO: Retrieve the page using the object ID
-        let page_obj = doc.get_object(doc.get_pages()[index].0).unwrap();
+        // Retrieve the page using the object ID
+        let page_id = doc.get_pages()[&(index as u32)];
+        let page_obj = doc.get_object(page_id).unwrap();
         let content = extract_text_from_page(&doc, page_obj.as_dict().unwrap());
         (content, total_indexes)
     }
