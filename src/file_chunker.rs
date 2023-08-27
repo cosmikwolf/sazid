@@ -1,6 +1,5 @@
 use std::fs;
-use std::io::Read;
-use pdf::file::File as PdfFile;
+use lopdf::{Document, Object};
 
 pub enum FileType {
     Text,
@@ -40,39 +39,38 @@ fn chunk_text_file(file_path: &str, index: usize) -> (String, usize) {
 }
 
 fn chunk_pdf_file(file_path: &str, index: usize) -> (String, usize) {
-    let mut file = fs::File::open(file_path).expect("Unable to open the PDF file.");
-    let mut buffer = Vec::new();
-    file.read_to_end(&mut buffer).expect("Unable to read the PDF file.");
-
-    let pdf_file = PdfFile::open(file_path).expect("Unable to parse the PDF file.");
-    let total_indexes = pdf_file.num_pages() as usize;
+    let doc = Document::load(file_path).expect("Unable to load the PDF file.");
+    let total_indexes = doc.page_count() as usize;
 
     if index >= total_indexes {
         (String::from("Index out of bounds."), total_indexes)
     } else {
-        let page = pdf_file.get_page(index as u32).expect("Unable to get the PDF page.");
-        let content = page.get_text().expect("Unable to extract text from the PDF page.");
+        let page = doc.get_page(index as u32).expect("Unable to get the PDF page.");
+        let content = extract_text_from_page(&doc, &page);
         (content, total_indexes)
     }
+}
+
+fn extract_text_from_page(doc: &Document, page: &lopdf::Page) -> String {
+    let resources = page.resources.as_ref().unwrap();
+    let content = doc.get_page_content(&page).unwrap();
+    String::from_utf8_lossy(&content).to_string()
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::fs;
 
     #[test]
     fn test_chunk_text_file() {
         let content = "This is a sample text for testing.";
         let filename = "test.txt";
         fs::write(filename, content).unwrap();
-        let (chunk, total) = chunk_file(filename, 1).unwrap();
+        let (chunk, total) = chunk_file(filename, 1);
         assert_eq!(chunk, "This is a sample text for testing.");
         assert_eq!(total, 1);
     }
 
-    #[test]
-    fn test_chunk_pdf_file() {
-        // Placeholder test for PDF chunking
-        assert_eq!(2 + 2, 4);  // This is a placeholder and should be replaced with actual test logic for PDFs.
-    }
+    // TODO: Add tests for PDF chunking
 }
