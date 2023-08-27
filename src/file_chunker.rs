@@ -1,5 +1,5 @@
+use lopdf::Document;
 use std::fs;
-use lopdf::{Document};
 
 pub enum FileType {
     Text,
@@ -46,14 +46,20 @@ fn chunk_pdf_file(file_path: &str, index: usize) -> (String, usize) {
         (String::from("Index out of bounds."), total_indexes)
     } else {
         // TODO: Retrieve the page using the object ID
-        let content = extract_text_from_page(&doc, &doc.get_pages()[index]);
+        let page_obj = doc.get_object(doc.get_pages()[index].0).unwrap();
+        let content = extract_text_from_page(&doc, page_obj.as_dict().unwrap());
         (content, total_indexes)
     }
 }
 
 fn extract_text_from_page(doc: &Document, page: &lopdf::Dictionary) -> String {
-    let resources = page.get(b"Resources").and_then(|obj| obj.as_dict()).unwrap();
-    let content = doc.get_page_content(&doc.get_pages()[index]).unwrap();
+    let resources = page
+        .get(b"Resources")
+        .and_then(|obj| obj.as_dict())
+        .unwrap();
+    let content = doc
+        .get_page_content(page.get(b"Contents").unwrap().as_reference().unwrap())
+        .unwrap();
     String::from_utf8_lossy(&content).to_string()
 }
 
