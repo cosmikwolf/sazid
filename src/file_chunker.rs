@@ -52,7 +52,7 @@ fn chunk_pdf_file(file_path: &str, index: usize) -> (String, usize) {
 }
 
 fn extract_text_from_page(doc: &Document, page: &lopdf::Dictionary) -> String {
-    let resources = page.resources.as_ref().unwrap();
+    let resources = page.get(b"Resources").and_then(|obj| obj.as_dict()).unwrap();
     let content = doc.get_page_content(&pagedoc.get_pages()[index]).unwrap();
     String::from_utf8_lossy(&content).to_string()
 }
