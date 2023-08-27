@@ -30,7 +30,7 @@ fn main() -> io::Result<()> {
                     return Ok(());
                 }
                 // Print details of a specific project
-                let project_name = &args[2];
+                let _project_name = &args[2];
                 // TODO: Implement printing of project details
             }
             "--delete-project" => {
@@ -39,7 +39,7 @@ fn main() -> io::Result<()> {
                     return Ok(());
                 }
                 // Delete a specific project
-                let project_name = &args[2];
+                let _project_name = &args[2];
                 // TODO: Implement deletion of a project
             }
             _ => {
@@ -52,7 +52,7 @@ fn main() -> io::Result<()> {
 }
 
 fn start_interactive_mode() -> io::Result<()> {
-    let mut gpt = GPTConnector::new();
+    let gpt = GPTConnector::new();
 
     // Check if there's a previous project
     let project_path = PathBuf::from("path_to_last_project"); // This should be loaded from some config or state

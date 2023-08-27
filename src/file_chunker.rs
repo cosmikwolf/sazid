@@ -54,7 +54,7 @@ fn chunk_pdf_file(file_path: &str, index: usize) -> (String, usize) {
 }
 
 fn extract_text_from_page(doc: &Document, page: &lopdf::Dictionary) -> String {
-    let resources = page
+    let _resources = page
         .get(b"Resources")
         .and_then(|obj| obj.as_dict())
         .unwrap();
