@@ -1,15 +1,15 @@
-use std::path::PathBuf;
-use std::io;
 use owo_colors::OwoColorize;
+use std::io;
+use std::path::PathBuf;
 
-mod project_manager;
-mod gpt_connector;
 mod file_chunker;
+mod gpt_connector;
 mod logger;
+mod project_manager;
 mod utils;
 
-use project_manager::Project;
 use gpt_connector::GPTConnector;
+use project_manager::Project;
 
 fn main() -> io::Result<()> {
     let args: Vec<String> = std::env::args().collect();
@@ -43,7 +43,10 @@ fn main() -> io::Result<()> {
                 // TODO: Implement deletion of a project
             }
             _ => {
-                println!("{}", "Invalid command. Use --help for available commands.".red());
+                println!(
+                    "{}",
+                    "Invalid command. Use --help for available commands.".red()
+                );
             }
         }
     }
@@ -68,7 +71,7 @@ fn start_interactive_mode() -> io::Result<()> {
         let mut input = String::new();
         print!("You: ");
         use std::io::Write;
-io::stdout().flush()?;
+        io::stdout().flush()?;
         io::stdin().read_line(&mut input)?;
         let input = input.trim();
 
@@ -76,7 +79,12 @@ io::stdout().flush()?;
             break;
         }
 
-        let response = tokio::runtime::Builder::new_current_thread().build().unwrap().block_on(gpt.send_request("gpt-3.5-turbo", input)).map_err(|e| io::Error::new(io::ErrorKind::Other, e.to_string()))?.content;
+        let response = tokio::runtime::Builder::new_current_thread()
+            .build()
+            .unwrap()
+            .block_on(gpt.send_request("gpt-3.5-turbo", input))
+            .map_err(|e| io::Error::new(io::ErrorKind::Other, e.to_string()))?
+            .content;
         println!("GPT: {}", response.green());
     }
 
