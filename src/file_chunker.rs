@@ -46,14 +46,14 @@ fn chunk_pdf_file(file_path: &str, index: usize) -> (String, usize) {
         (String::from("Index out of bounds."), total_indexes)
     } else {
         // TODO: Retrieve the page using the object ID
-        let content = extract_text_from_page(&doc, &pagedoc.get_pages()[index]);
+        let content = extract_text_from_page(&doc, &doc.get_pages()[index]);
         (content, total_indexes)
     }
 }
 
 fn extract_text_from_page(doc: &Document, page: &lopdf::Dictionary) -> String {
     let resources = page.get(b"Resources").and_then(|obj| obj.as_dict()).unwrap();
-    let content = doc.get_page_content(&pagedoc.get_pages()[index]).unwrap();
+    let content = doc.get_page_content(&doc.get_pages()[index]).unwrap();
     String::from_utf8_lossy(&content).to_string()
 }
 
