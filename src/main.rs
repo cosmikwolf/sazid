@@ -4,7 +4,6 @@ mod logger;
 use owo_colors::OwoColorize;
 use gpt_connector::GPTConnector;
 use logger::Logger;
-use rustyline::Editor;
 use rustyline::error::ReadlineError;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -26,8 +25,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let input = line.trim();
 
                 if input == "exit" {
-                    rl.add_history_entry(input);
-                    rl.save_history("history.txt").unwrap();
                     break;
                 }
 
@@ -40,10 +37,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     .content;
                 
                 logger.log_interaction(input, &response);
-
+                
+                let _ = rl.add_history_entry(input);
                 println!("GPT: {}", response.green());
-
-                rl.add_history_entry(input);
             },
             Err(ReadlineError::Interrupted) => {
                 println!("Interrupted");
