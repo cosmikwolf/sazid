@@ -19,8 +19,6 @@ The log will be named by date and time of the API call.
 Each time a request / response pair is executed, a new log will be created.
 
 
-
-
 I have some changes to make in the application. 
 
 I would like to change the concept of projects to sessions instead. 
@@ -31,8 +29,6 @@ I would like to make the CLI have these commands:
         when starting interactive mode, it should load the last used session, I will describe how later.
     --session <session ID>
         this will load a previously executed session and continue from where it left off, starting a new session 
-    --models
-        This will connect to the openAI API and report back what GPT models the user has access to
     --list-sessions
         this will go through each session in the sessions folder, and go through the logs
             it will print out each session by ID, the date started, and total tokens used 
@@ -51,4 +47,9 @@ Each session folder will have the directories workspace_data and logs
     workspace_data will copies of the original file that has been uploaded to the API
     logs will contain full logs of the interactions with the openai api. 
     logs will be named with date and time log was created, so when sortable alphabetically so that they are listed in order created
-    A new log is created for each 
+    A new log is created for each
+
+
+
+
+ 
