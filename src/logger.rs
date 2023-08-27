@@ -4,43 +4,31 @@ use std::path::PathBuf;
 use chrono::prelude::*;
 
 pub struct Logger {
-    project_path: PathBuf,
+    log_dir: PathBuf,
 }
 
 impl Logger {
-    pub fn new(project_path: PathBuf) -> Logger {
-        Logger {
-            project_path,
-        }
-    }
-
-    pub fn log(&self, message: &str, log_type: &str) {
-        let log_dir = self.project_path.join("logs");
+    pub fn new() -> Logger {
+        let log_dir = PathBuf::from("logs");
         if !log_dir.exists() {
             std::fs::create_dir_all(&log_dir).unwrap();
         }
+        Logger { log_dir }
+    }
 
-        let log_file = log_dir.join(format!("{}.log", log_type));
+    pub fn log_interaction(&self, request: &str, response: &str) {
+        let datetime = Utc::now();
+        let log_file_name = datetime.format("%Y-%m-%d_%H-%M-%S.log").to_string();
+        let log_file_path = self.log_dir.join(log_file_name);
+
         let mut file = OpenOptions::new()
             .write(true)
-            .append(true)
-            .open(log_file)
+            .create(true)
+            .open(log_file_path)
             .unwrap();
 
-        let datetime = Utc::now();
-        let log_message = format!("[{}]: {}\n", datetime, message);
-        file.write_all(log_message.as_bytes()).unwrap();
-    }
-
-    pub fn log_token_usage(&self, tokens_used: usize) {
-        let date = Utc::now().format("%Y-%m-%d").to_string();
-        let log_message = format!("{}: {} tokens\n", date, tokens_used);
-        self.log(&log_message, "usage");
-    }
-
-    pub fn clear_logs(&self, log_type: &str) {
-        let log_file = self.project_path.join("logs").join(format!("{}.log", log_type));
-        File::create(log_file).unwrap();
+        let log_content = format!("Request: {}\nResponse: {}", request, response);
+        file.write_all(log_content.as_bytes()).unwrap();
     }
 }
 
@@ -50,42 +38,15 @@ mod tests {
     use std::fs;
 
     #[test]
-    fn test_log() {
-        let project_path = PathBuf::from("test_project");
-        let logger = Logger::new(project_path.clone());
-        logger.log("Test message", "chat");
-        let log_file = project_path.join("logs").join("chat.log");
-        let contents = fs::read_to_string(&log_file).unwrap();
-        assert!(contents.contains("Test message"));
-        fs::remove_file(log_file).unwrap();
-        fs::remove_dir_all(project_path.join("logs")).unwrap();
-        fs::remove_dir(project_path).unwrap();
-    }
+    fn test_log_interaction() {
+        let logger = Logger::new();
+        logger.log_interaction("Hello, GPT!", "Hi, User!");
+        assert!(fs::read_dir("logs").unwrap().count() > 0); // Ensure there's at least one log
 
-    #[test]
-    fn test_log_token_usage() {
-        let project_path = PathBuf::from("test_project");
-        let logger = Logger::new(project_path.clone());
-        logger.log_token_usage(500);
-        let log_file = project_path.join("logs").join("usage.log");
-        let contents = fs::read_to_string(&log_file).unwrap();
-        assert!(contents.contains("500 tokens"));
-        fs::remove_file(log_file).unwrap();
-        fs::remove_dir_all(project_path.join("logs")).unwrap();
-        fs::remove_dir(project_path).unwrap();
-    }
-
-    #[test]
-    fn test_clear_logs() {
-        let project_path = PathBuf::from("test_project");
-        let logger = Logger::new(project_path.clone());
-        logger.log("Test message", "chat");
-        logger.clear_logs("chat");
-        let log_file = project_path.join("logs").join("chat.log");
-        let contents = fs::read_to_string(&log_file).unwrap();
-        assert_eq!(contents, "");
-        fs::remove_file(log_file).unwrap();
-        fs::remove_dir_all(project_path.join("logs")).unwrap();
-        fs::remove_dir(project_path).unwrap();
+        // Clean up the logs for next tests
+        for entry in fs::read_dir("logs").unwrap() {
+            let dir = entry.unwrap();
+            fs::remove_file(dir.path()).unwrap();
+        }
     }
 }
