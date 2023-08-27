@@ -40,18 +40,18 @@ fn chunk_text_file(file_path: &str, index: usize) -> (String, usize) {
 
 fn chunk_pdf_file(file_path: &str, index: usize) -> (String, usize) {
     let doc = Document::load(file_path).expect("Unable to load the PDF file.");
-    let total_indexes = doc.page_count() as usize;
+    let total_indexes = doc.get_pages().len() as usize;
 
     if index >= total_indexes {
         (String::from("Index out of bounds."), total_indexes)
     } else {
-        let page = doc.get_page(index as u32).expect("Unable to get the PDF page.");
+        // TODO: Retrieve the page using the object ID
         let content = extract_text_from_page(&doc, &page);
         (content, total_indexes)
     }
 }
 
-fn extract_text_from_page(doc: &Document, page: &lopdf::Page) -> String {
+fn extract_text_from_page(doc: &Document, page: &lopdf::Dictionary) -> String {
     let resources = page.resources.as_ref().unwrap();
     let content = doc.get_page_content(&page).unwrap();
     String::from_utf8_lossy(&content).to_string()
