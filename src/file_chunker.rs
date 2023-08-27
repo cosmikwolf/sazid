@@ -44,7 +44,7 @@ fn chunk_pdf_file(file_path: &str, index: usize) -> (String, usize) {
     let mut buffer = Vec::new();
     file.read_to_end(&mut buffer).expect("Unable to read the PDF file.");
 
-    let pdf_file = PdfFile::from_reader(PdfFile::open(file_path)mut file).expect("Unable to parse the PDF file.");
+    let pdf_file = PdfFile::open(file_path).expect("Unable to parse the PDF file.");
     let total_indexes = pdf_file.num_pages() as usize;
 
     if index >= total_indexes {
