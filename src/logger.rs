@@ -1,4 +1,4 @@
-use std::fs::{OpenOptions, File};
+use std::fs::OpenOptions;
 use std::io::prelude::*;
 use std::path::PathBuf;
 use chrono::prelude::*;

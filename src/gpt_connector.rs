@@ -9,11 +9,6 @@ pub struct GPTConnector {
     client: Client<OpenAIConfig>,
 }
 
-pub struct GPTRequest {
-    pub role: Role,
-    pub content: String,
-}
-
 pub struct GPTResponse {
     pub role: Role,
     pub content: String,
