@@ -38,7 +38,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         println!("No previous history found.");
     }
 
-    let mut session_filename = if opts.new {
+    let session_filename = if opts.new {
         format!("logs/session_{}.json", Utc::now().format("%Y-%m-%d_%H-%M"))
     } else {
         match opts.session {
