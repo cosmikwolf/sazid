@@ -1,6 +1,6 @@
 use async_openai::{
     config::OpenAIConfig,
-    types::{CreateChatCompletionRequestArgs},
+    types::CreateChatCompletionRequestArgs,
     Client,
 };
 pub use async_openai::types::Role;

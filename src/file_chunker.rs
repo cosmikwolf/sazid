@@ -101,7 +101,7 @@ mod tests {
 
             match response {
                 Ok(mut data) => {
-                    let content_disp = data
+                    let _content_disp = data
                         .headers()
                         .get(reqwest::header::CONTENT_DISPOSITION)
                         .and_then(|cd| cd.to_str().ok());

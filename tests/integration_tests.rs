@@ -3,8 +3,6 @@ extern crate tempfile;
 
 #[cfg(test)]
 mod integration_tests {
-    use std::path::Path;
-
     use super::*;
     use async_openai::types::Role;
     use sazid::gpt_connector::ChatCompletionRequestMessage;
@@ -58,7 +56,8 @@ mod integration_tests {
     // Requirement: The application should be able to generate a unique session filename based on the current date, time, and a random hash.
     #[test]
     fn test_session_creation() {
-        let filename = SessionManager::new_session_filename();
+        let session_manager = SessionManager::new(tempdir().unwrap().path().to_path_buf());
+        let filename = session_manager.new_session_filename();
         assert!(filename.contains("_")); // Check if filename contains the expected delimiter
     }
 
@@ -66,8 +65,9 @@ mod integration_tests {
     // Requirement: Multiple sessions should have unique identifiers.
     #[test]
     fn test_multiple_sessions() {
-        let filename1 = SessionManager::new_session_filename();
-        let filename2 = SessionManager::new_session_filename();
+        let session_manager = SessionManager::new(tempdir().unwrap().path().to_path_buf());
+        let filename1 = session_manager.new_session_filename();
+        let filename2 = session_manager.new_session_filename();
         assert_ne!(filename1, filename2);
     }
 
@@ -89,15 +89,16 @@ mod integration_tests {
     #[test]
     fn test_session_save_and_load() {
         let temp_dir = tempdir().unwrap();
+        let session_manager = SessionManager::new(temp_dir.path().to_path_buf());
         let messages = vec![ChatCompletionRequestMessage {
             role: Role::User,
             content: "Hello, GPT!".to_string(),
         }];
-        let filename = SessionManager::new_session_filename();
+        let filename = session_manager.new_session_filename();
 
         // Save session and last session
-        SessionManager::save_session(&filename, &messages).unwrap();
-        SessionManager::save_last_session_filename(&filename).unwrap();
+        session_manager.save_session(&filename, &messages).unwrap();
+        session_manager.save_last_session_filename(&filename).unwrap();
 
         // Check if file exists
         assert!(temp_dir
@@ -107,16 +108,14 @@ mod integration_tests {
             .exists());
 
         // Load specific session
-        let loaded_messages = SessionManager::load_session(&filename).unwrap();
+        let loaded_messages = session_manager.load_session(&filename).unwrap();
         assert_eq!(loaded_messages[0].content, "Hello, GPT!");
 
         // Load last session
-        let last_session_filename = SessionManager::load_last_session_filename().unwrap();
-        let last_session = SessionManager::load_session(&last_session_filename).unwrap();
+        let last_session_filename = session_manager.load_last_session_filename().unwrap();
+        let last_session = session_manager.load_session(&last_session_filename).unwrap();
         assert_eq!(last_session[0].content, "Hello, GPT!");
     }
-
-    // ...
 
     // 5. Test UI's ability to display messages
     // Requirement: The UI should be able to display messages from both the user and the assistant.
@@ -154,7 +153,8 @@ mod integration_tests {
     // Requirement: The application should allow users to continue their chat conversation from where they left off.
     #[test]
     fn test_continued_conversation() {
-        let _temp_dir = tempdir().unwrap();
+        let temp_dir = tempdir().unwrap();
+        let session_manager = SessionManager::new(temp_dir.path().to_path_buf());
         let mut messages = vec![
             ChatCompletionRequestMessage {
                 role: Role::User,
@@ -166,11 +166,11 @@ mod integration_tests {
             },
         ];
 
-        let filename = SessionManager::new_session_filename();
-        SessionManager::save_session(&filename, &messages).unwrap();
-        SessionManager::save_last_session_filename(&filename).unwrap();
+        let filename = session_manager.new_session_filename();
+        session_manager.save_session(&filename, &messages).unwrap();
+        session_manager.save_last_session_filename(&filename).unwrap();
 
-        let loaded_messages = SessionManager::load_session(&filename).unwrap();
+        let loaded_messages = session_manager.load_session(&filename).unwrap();
         assert_eq!(loaded_messages.len(), 2); // Two messages in the session
 
         let new_message = ChatCompletionRequestMessage {
@@ -185,17 +185,19 @@ mod integration_tests {
     // Requirement: The application should provide functionality to delete a chat session.
     #[test]
     fn test_session_deletion() {
+        let temp_dir = tempdir().unwrap();
+        let session_manager = SessionManager::new(temp_dir.path().to_path_buf());
         let messages = vec![ChatCompletionRequestMessage {
             role: Role::User,
             content: "Hello, GPT!".to_string(),
         }];
 
-        let filename = SessionManager::new_session_filename();
-        SessionManager::save_session(&filename, &messages).unwrap();
-        let path = format!("session_data/{}", filename);
-        assert!(Path::new(&path).exists()); // File should exist
+        let filename = session_manager.new_session_filename();
+        session_manager.save_session(&filename, &messages).unwrap();
+        let path = temp_dir.path().join("session_data").join(&filename);
+        assert!(path.exists()); // File should exist
 
-        SessionManager::delete_session(&filename).unwrap();
-        assert!(!Path::new(&path).exists()); // File should be deleted now
+        session_manager.delete_session(&filename).unwrap();
+        assert!(!path.exists()); // File should be deleted now
     }
 }

@@ -4,6 +4,7 @@ use sazid::ui::UI;
 use clap::Parser;
 use rustyline::error::ReadlineError;
 use async_openai::types::Role;
+use std::path::PathBuf;
 
 #[derive(Parser)]
 #[clap(
@@ -23,17 +24,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let opts: Opts = Opts::parse();
 
     let gpt = GPTConnector::new();
+    let session_manager = SessionManager::new(PathBuf::from("./"));
 
     UI::display_startup_message();
 
     let mut messages: Vec<ChatCompletionRequestMessage> = if !opts.new {
         match opts.continue_session {
             Some(session_file) => {
-                SessionManager::load_session(&session_file)?
+                session_manager.load_session(&session_file)?
             },
             None => {
-                if let Some(last_session) = SessionManager::load_last_session_filename() {
-                    SessionManager::load_session(&last_session)?
+                if let Some(last_session) = session_manager.load_last_session_filename() {
+                    session_manager.load_session(&last_session)?
                 } else {
                     vec![]
                 }
@@ -53,9 +55,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let input = input.trim();
 
                 if input == "exit" || input == "quit" {
-                    let session_filename = SessionManager::new_session_filename();
-                    SessionManager::save_session(&session_filename, &messages)?;
-                    SessionManager::save_last_session_filename(&session_filename)?;
+                    let session_filename = session_manager.new_session_filename();
+                    session_manager.save_session(&session_filename, &messages)?;
+                    session_manager.save_last_session_filename(&session_filename)?;
                     UI::display_exit_message();
                     break;
                 }
@@ -81,16 +83,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 UI::display_message(response.role, &response.content);
             },
             Err(ReadlineError::Interrupted) => {
-                let session_filename = SessionManager::new_session_filename();
-                SessionManager::save_session(&session_filename, &messages)?;
-                SessionManager::save_last_session_filename(&session_filename)?;
+                let session_filename = session_manager.new_session_filename();
+                session_manager.save_session(&session_filename, &messages)?;
+                session_manager.save_last_session_filename(&session_filename)?;
                 UI::display_exit_message();
                 break;
             },
             Err(ReadlineError::Eof) => {
-                let session_filename = SessionManager::new_session_filename();
-                SessionManager::save_session(&session_filename, &messages)?;
-                SessionManager::save_last_session_filename(&session_filename)?;
+                let session_filename = session_manager.new_session_filename();
+                session_manager.save_session(&session_filename, &messages)?;
+                session_manager.save_last_session_filename(&session_filename)?;
                 UI::display_exit_message();
                 break;
             },
