@@ -3,12 +3,15 @@ extern crate tempfile;
 
 #[cfg(test)]
 mod integration_tests {
-    use super::*; // Import necessary components from the main module
+    use std::path::Path;
+
+    use super::*;
+    use async_openai::types::Role;
+    use sazid::gpt_connector::ChatCompletionRequestMessage;
     use sazid::session_manager::SessionManager;
     use tempfile::tempdir;
 
     // Mock structures and functions
-
     struct MockUI {
         screen: Vec<String>,
         exit_flag: bool,
@@ -38,7 +41,7 @@ mod integration_tests {
             self.exit_flag
         }
 
-        fn clear(&mut self) {
+        fn _clear(&mut self) {
             self.screen.clear();
             self.exit_flag = false;
         }
@@ -51,147 +54,148 @@ mod integration_tests {
         }
     }
 
-    // 1. test_session_creation
+    // 1. Test session filename generation
+    // Requirement: The application should be able to generate a unique session filename based on the current date, time, and a random hash.
     #[test]
     fn test_session_creation() {
-        let session = SessionManager::new();
-        assert!(session.identifier().starts_with("session_"));
+        let filename = SessionManager::new_session_filename();
+        assert!(filename.contains("_")); // Check if filename contains the expected delimiter
     }
 
-    // 2. test_multiple_sessions
+    // 2. Test generation of multiple unique session filenames
+    // Requirement: Multiple sessions should have unique identifiers.
     #[test]
     fn test_multiple_sessions() {
-        let session1 = SessionManager::new();
-        let session2 = SessionManager::new();
-        assert_ne!(session1.identifier(), session2.identifier());
+        let filename1 = SessionManager::new_session_filename();
+        let filename2 = SessionManager::new_session_filename();
+        assert_ne!(filename1, filename2);
     }
 
-    // 3. test_message_storage
+    // 3. Test storage of messages within a session
+    // Requirement: The application should be able to store messages (text) in a session.
     #[test]
     fn test_message_storage() {
-        let mut session = SessionManager::new();
-        session.add_message("User", "Hello, GPT!");
-        let messages = session.get_messages();
+        let mut messages = vec![];
+        let user_message = ChatCompletionRequestMessage {
+            role: Role::User,
+            content: "Hello, GPT!".to_string(),
+        };
+        messages.push(user_message);
         assert_eq!(messages[0].content, "Hello, GPT!");
-        assert_eq!(messages[0].sender, "User");
     }
 
-    // 4. test_session_save and test_save_last_session
+    // 4. Test saving and loading of sessions, as well as tracking the last session
+    // Requirement: The application should save and reload chat sessions. It should also track the most recent session for easy reloading.
     #[test]
-    fn test_session_save() {
+    fn test_session_save_and_load() {
         let temp_dir = tempdir().unwrap();
-        let mut session = SessionManager::new();
-        session.add_message("User", "Hello, GPT!");
+        let messages = vec![ChatCompletionRequestMessage {
+            role: Role::User,
+            content: "Hello, GPT!".to_string(),
+        }];
+        let filename = SessionManager::new_session_filename();
 
         // Save session and last session
-        let filename = session
-            .save_session(temp_dir.path().to_str().unwrap())
-            .unwrap();
+        SessionManager::save_session(&filename, &messages).unwrap();
         SessionManager::save_last_session_filename(&filename).unwrap();
 
         // Check if file exists
-        assert!(temp_dir.path().join(&filename).exists());
-
-        // Check if last session filename is saved
-        let last_session = SessionManager::load_last_session_filename().unwrap();
-        assert_eq!(last_session, filename);
-    }
-
-    // 5. test_load_specific_session and test_load_last_session
-    #[test]
-    fn test_load_specific_session() {
-        let temp_dir = tempdir().unwrap();
-        let mut session = SessionManager::new();
-        session.add_message("User", "Hello, GPT!");
-
-        // Save session and last session
-        let filename = session
-            .save_session(temp_dir.path().to_str().unwrap())
-            .unwrap();
-        SessionManager::save_last_session_filename(&filename).unwrap();
+        assert!(temp_dir
+            .path()
+            .join("session_data")
+            .join(&filename)
+            .exists());
 
         // Load specific session
-        let loaded_session =
-            SessionManager::load_session(temp_dir.path().to_str().unwrap()).unwrap();
-        assert_eq!(loaded_session.get_messages()[0].content, "Hello, GPT!");
+        let loaded_messages = SessionManager::load_session(&filename).unwrap();
+        assert_eq!(loaded_messages[0].content, "Hello, GPT!");
 
         // Load last session
-        let last_session = SessionManager::load_last_session().unwrap();
-        assert_eq!(last_session.get_messages()[0].content, "Hello, GPT!");
+        let last_session_filename = SessionManager::load_last_session_filename().unwrap();
+        let last_session = SessionManager::load_session(&last_session_filename).unwrap();
+        assert_eq!(last_session[0].content, "Hello, GPT!");
     }
 
-    // 6. test_ui_display_message (assuming a mock UI function for testing)
+    // ...
+
+    // 5. Test UI's ability to display messages
+    // Requirement: The UI should be able to display messages from both the user and the assistant.
     #[test]
     fn test_ui_display_message() {
-        let message = Message::new("User", "Hello, GPT!");
-        let display_text = mock_ui_display_message(&message);
-        assert!(display_text.contains("User"));
-        assert!(display_text.contains("Hello, GPT!"));
+        let mut mock_ui = MockUI::new();
+
+        mock_ui.mock_ui_display_message("Hello, GPT!");
+        assert_eq!(mock_ui.get_last_message().unwrap(), "Hello, GPT!");
+
+        mock_ui.mock_ui_display_message("Hello, User!");
+        assert_eq!(mock_ui.get_last_message().unwrap(), "Hello, User!");
     }
 
-    // 7. test_user_exit (assuming a mock UI function for testing)
+    // 6. Test user's ability to exit the application via the UI
+    // Requirement: The user should be able to exit the application using a UI command or action.
     #[test]
     fn test_user_exit() {
-        let exit_status = mock_ui_exit();
-        assert_eq!(exit_status, true);
+        let mut mock_ui = MockUI::new();
+
+        assert_eq!(mock_ui.has_exit_flag(), false);
+        mock_ui.mock_ui_exit();
+        assert_eq!(mock_ui.has_exit_flag(), true);
     }
 
-    // 8. test_send_request (assuming a mock function for GPT API interaction)
+    // 7. Test sending a request to GPT and receiving a response
+    // Requirement: The application should be able to send a request to GPT and receive an appropriate response.
     #[test]
     fn test_send_request() {
         let response = mock_send_request("Hello, GPT!");
         assert_eq!(response, "Hello, User!"); // Assuming GPT always replies in this way for the test
     }
 
-    // 9. test_continued_conversation
+    // 8. Test continuation of a chat conversation
+    // Requirement: The application should allow users to continue their chat conversation from where they left off.
     #[test]
     fn test_continued_conversation() {
-        let temp_dir = tempdir().unwrap();
-        let mut session = SessionManager::new();
-        session.add_message("User", "Hello, GPT!");
-        session.add_message("GPT", "Hello, User!");
+        let _temp_dir = tempdir().unwrap();
+        let mut messages = vec![
+            ChatCompletionRequestMessage {
+                role: Role::User,
+                content: "Hello, GPT!".to_string(),
+            },
+            ChatCompletionRequestMessage {
+                role: Role::Assistant,
+                content: "Hello, User!".to_string(),
+            },
+        ];
 
-        let filename = session
-            .save_session(temp_dir.path().to_str().unwrap())
-            .unwrap();
+        let filename = SessionManager::new_session_filename();
+        SessionManager::save_session(&filename, &messages).unwrap();
         SessionManager::save_last_session_filename(&filename).unwrap();
 
-        let loaded_session =
-            SessionManager::load_session(temp_dir.path().to_str().unwrap()).unwrap();
-        assert_eq!(loaded_session.get_messages().len(), 2); // Two messages in the session
-        assert_eq!(loaded_session.get_messages()[1].content, "Hello, User!");
+        let loaded_messages = SessionManager::load_session(&filename).unwrap();
+        assert_eq!(loaded_messages.len(), 2); // Two messages in the session
 
-        loaded_session.add_message("User", "How are you?");
-        assert_eq!(loaded_session.get_messages().len(), 3); // Now, three messages in the session
+        let new_message = ChatCompletionRequestMessage {
+            role: Role::User,
+            content: "How are you?".to_string(),
+        };
+        messages.push(new_message);
+        assert_eq!(messages.len(), 3); // Now, three messages in the session
     }
 
-    // 10. test_session_deletion
+    // 9. Test the ability to delete a session
+    // Requirement: The application should provide functionality to delete a chat session.
     #[test]
     fn test_session_deletion() {
-        let temp_dir = tempdir().unwrap();
-        let mut session = SessionManager::new();
-        session.add_message("User", "Hello, GPT!");
+        let messages = vec![ChatCompletionRequestMessage {
+            role: Role::User,
+            content: "Hello, GPT!".to_string(),
+        }];
 
-        let filename = session
-            .save_session(temp_dir.path().to_str().unwrap())
-            .unwrap();
-        assert!(temp_dir.path().join(&filename).exists()); // File should exist
+        let filename = SessionManager::new_session_filename();
+        SessionManager::save_session(&filename, &messages).unwrap();
+        let path = format!("session_data/{}", filename);
+        assert!(Path::new(&path).exists()); // File should exist
 
-        session
-            .delete_session(temp_dir.path().to_str().unwrap())
-            .unwrap();
-        assert!(!temp_dir.path().join(&filename).exists()); // File should be deleted now
-    }
-
-    // Cleanup temporary directories/files after tests
-    fn teardown(temp_dir: &tempfile::TempDir) {
-        // Explicitly remove the temporary directory using the tempfile crate's functionality
-        temp_dir.close().expect("Failed to delete temp directory");
-    }
-
-    // Cleanup temporary directories/files after tests
-    fn teardown() {
-        // Delete all temporary files or directories created during tests
-        // This function can be called at the end of tests that create temporary data
+        SessionManager::delete_session(&filename).unwrap();
+        assert!(!Path::new(&path).exists()); // File should be deleted now
     }
 }

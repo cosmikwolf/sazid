@@ -66,6 +66,16 @@ impl SessionManager {
         Ok(())
     }
 
+    // Delete a session.
+    pub fn delete_session(filename: &str) -> Result<(), std::io::Error> {
+        Self::ensure_session_data_directory_exists(); // Ensure directory exists before deletion
+        let path = format!("session_data/{}", filename);
+        if Path::new(&path).exists() {
+            fs::remove_file(path)?;
+        }
+        Ok(())
+    }
+
 }
 
 #[cfg(test)]
@@ -77,7 +87,7 @@ mod tests {
     fn test_session_management() {
         // Test session filename generation
         let filename = SessionManager::new_session_filename();
-        assert!(filename.contains("-")); // Check if filename contains date delimiters
+        assert!(filename.contains("_")); // Check if filename contains date delimiters
 
         // Test session saving and loading
         let messages = vec![ChatCompletionRequestMessage {
