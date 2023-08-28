@@ -1,23 +1,26 @@
 mod gpt_connector;
 mod logger;
 
-use owo_colors::OwoColorize;
-use gpt_connector::{GPTConnector, ChatCompletionRequestMessage};
+use clap::Parser;
+use gpt_connector::{ChatCompletionRequestMessage, GPTConnector};
 use logger::Logger;
 use rustyline::error::ReadlineError;
 use async_openai::types::Role;
 use std::fs;
-use clap::Parser;
+use serde_json;
+use owo_colors::OwoColorize;
 
 #[derive(Parser)]
-#[clap(version = "0.1.0", author = "Author")]
+#[clap(
+    version = "1.0",
+    author = "Your Name",
+    about = "Interactive chat with GPT"
+)]
 struct Opts {
-    /// Start a new chat session
-    #[clap(long)]
+    #[clap(long, help = "Start a new chat session")]
     new_session: bool,
-
-    /// Continue an arbitrary session by providing its name
-    #[clap(long)]
+    
+    #[clap(long, help = "Continue from a specified session file")]
     session: Option<String>,
 }
 
@@ -34,10 +37,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         println!("No previous history found.");
     }
 
-    // Load the previous session if it exists and no flags are provided
-    let mut messages: Vec<ChatCompletionRequestMessage> = if !opts.new_session && opts.session.is_none() && fs::read("logs/session.bincode").is_ok() {
-        let data = fs::read("logs/session.bincode")?;
-        bincode::deserialize(&data).unwrap_or_default()
+    let mut messages: Vec<ChatCompletionRequestMessage> = if !opts.new_session {
+        match opts.session {
+            Some(ref session_file) => {
+                let data = fs::read(session_file)?;
+                serde_json::from_slice(&data).unwrap_or_default()
+            },
+            None => {
+                let data = fs::read("logs/session.json").unwrap_or_default();
+                serde_json::from_slice(&data).unwrap_or_default()
+            }
+        }
     } else {
         vec![]
     };
@@ -57,9 +67,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let input = line.trim();
 
                 if input == "exit" {
-                    // Save the current session
-                    let data = bincode::serialize(&messages)?;
-                    fs::write("logs/session.bincode", data)?;
+                    let data = serde_json::to_vec(&messages)?;
+                    fs::write("logs/session.json", data)?;
                     break;
                 }
 
@@ -73,7 +82,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     .enable_io()
                     .enable_time()
                     .build()?
-                    .block_on(gpt.send_request(messages.clone()))?; // pass a clone to retain the original
+                    .block_on(gpt.send_request(messages.clone()))?;
 
                 let assistant_message = ChatCompletionRequestMessage {
                     role: response.role,
