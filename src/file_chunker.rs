@@ -166,4 +166,5 @@ mod tests {
         let result = chunk_file(&file_path, 1);
         assert_eq!(result.0, "The provided file appears to be binary and cannot be processed.");
     }
+
 }

@@ -1,4 +1,7 @@
 use crate::gpt_connector::ChatCompletionRequestMessage;
+use crate::gpt_connector::GPTConnector;
+use crate::gpt_connector::Role;
+use crate::file_chunker;
 use chrono::Local;
 use rand::distributions::Alphanumeric;
 use rand::{thread_rng, Rng};
@@ -79,6 +82,42 @@ impl SessionManager {
     }
 }
 
+pub fn handle_import(path: &PathBuf) -> Result<(), Box<dyn std::error::Error>> {
+    let gpt = GPTConnector::new();
+    let paths = if path.is_dir() {
+        fs::read_dir(path)?
+            .map(|res| res.map(|e| e.path()))
+            .collect::<Result<Vec<_>, _>>()?
+    } else {
+        vec![path.clone()]
+    };
+
+    for path in paths {
+        let mut index = 1;
+        loop {
+            let (chunk, _total_chunks) = file_chunker::chunk_file(&path, index);
+            if chunk == "Index out of bounds." {
+                break;
+            }
+
+            let user_message = ChatCompletionRequestMessage {
+                role: Role::User,
+                content: chunk,
+            };
+
+            tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()?
+                .block_on(gpt.send_request(vec![user_message]))?;
+
+            index += 1;
+        }
+    }
+
+    Ok(())
+
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -106,5 +145,11 @@ mod tests {
         manager.save_last_session_filename(&filename).unwrap();
         let last_session_filename = manager.load_last_session_filename().unwrap();
         assert_eq!(filename, last_session_filename);
+    }
+
+    #[test]
+    fn test_handle_import() {
+        let test_file = std::path::PathBuf::from("path_to_test_file.txt");
+        assert!(handle_import(&test_file).is_ok());
     }
 }
