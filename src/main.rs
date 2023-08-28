@@ -17,7 +17,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         println!("No previous history found.");
     }
     
-
     loop {
         let readline = rl.readline("You: ");
         match readline {
@@ -56,5 +55,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
+    rl.save_history("logs/history.txt")?;
+
     Ok(())
+
 }
