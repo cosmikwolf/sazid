@@ -1,4 +1,5 @@
 /target
 .cargo
 logs
+session_data
 history.txt
