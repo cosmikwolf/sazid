@@ -1,8 +1,9 @@
 use crate::gpt_connector::ChatCompletionRequestMessage;
-
+use chrono::Local;
+use rand::distributions::Alphanumeric;
+use rand::{thread_rng, Rng};
 use serde_json;
 use std::fs;
-use chrono::Local;
 use std::path::Path;
 
 pub struct SessionManager;
@@ -16,22 +17,34 @@ impl SessionManager {
         }
     }
 
-    // Generate a new session filename based on the current date and time.
+    // Generate a new session filename based on the current date, time, and a random 16-bit hash.
     pub fn new_session_filename() -> String {
-        Local::now().format("%Y-%m-%d_%H-%M-%S.json").to_string()  // Adjusted to include seconds
+        let current_time = Local::now().format("%Y%m%d%H%M").to_string();
+        let random_hash: String = thread_rng()
+            .sample_iter(&Alphanumeric)
+            .map(|b| b as char)
+            .take(4)
+            .collect();
+        let filename = format!("{}_{}.json", current_time, random_hash);
+        filename  // Return the filename
     }
 
     // Load a session from a given filename.
-    pub fn load_session(filename: &str) -> Result<Vec<ChatCompletionRequestMessage>, std::io::Error> {
-        Self::ensure_session_data_directory_exists();  // Ensure directory exists before reading
+    pub fn load_session(
+        filename: &str,
+    ) -> Result<Vec<ChatCompletionRequestMessage>, std::io::Error> {
+        Self::ensure_session_data_directory_exists(); // Ensure directory exists before reading
         let data = fs::read(format!("session_data/{}", filename))?;
         let messages = serde_json::from_slice(&data).unwrap_or_default();
         Ok(messages)
     }
 
     // Save a session to a given filename.
-    pub fn save_session(filename: &str, messages: &Vec<ChatCompletionRequestMessage>) -> Result<(), std::io::Error> {
-        Self::ensure_session_data_directory_exists();  // Ensure directory exists before writing
+    pub fn save_session(
+        filename: &str,
+        messages: &Vec<ChatCompletionRequestMessage>,
+    ) -> Result<(), std::io::Error> {
+        Self::ensure_session_data_directory_exists(); // Ensure directory exists before writing
         let data = serde_json::to_vec(messages)?;
         fs::write(format!("session_data/{}", filename), data)?;
         Ok(())
@@ -39,7 +52,7 @@ impl SessionManager {
 
     // Load the last used session filename.
     pub fn load_last_session_filename() -> Option<String> {
-        Self::ensure_session_data_directory_exists();  // Ensure directory exists before reading
+        Self::ensure_session_data_directory_exists(); // Ensure directory exists before reading
         if let Ok(filename) = fs::read_to_string("session_data/last_session.txt") {
             return Some(filename);
         }
@@ -48,10 +61,11 @@ impl SessionManager {
 
     // Save the last used session filename.
     pub fn save_last_session_filename(filename: &str) -> Result<(), std::io::Error> {
-        Self::ensure_session_data_directory_exists();  // Ensure directory exists before writing
+        Self::ensure_session_data_directory_exists(); // Ensure directory exists before writing
         fs::write("session_data/last_session.txt", filename)?;
         Ok(())
     }
+
 }
 
 #[cfg(test)]
@@ -63,7 +77,7 @@ mod tests {
     fn test_session_management() {
         // Test session filename generation
         let filename = SessionManager::new_session_filename();
-        assert!(filename.contains("-"));  // Check if filename contains date delimiters
+        assert!(filename.contains("-")); // Check if filename contains date delimiters
 
         // Test session saving and loading
         let messages = vec![ChatCompletionRequestMessage {

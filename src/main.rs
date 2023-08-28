@@ -1,14 +1,8 @@
-mod gpt_connector;
-mod logger;
-mod session_manager;
-mod ui;
-
-use rustyline::error::ReadlineError;
+use sazid::gpt_connector::{ChatCompletionRequestMessage, GPTConnector};
+use sazid::session_manager::SessionManager;
+use sazid::ui::UI;
 use clap::Parser;
-use gpt_connector::{ChatCompletionRequestMessage, GPTConnector};
-use logger::Logger;
-use session_manager::SessionManager;
-use ui::UI;
+use rustyline::error::ReadlineError;
 use async_openai::types::Role;
 
 #[derive(Parser)]
@@ -29,14 +23,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let opts: Opts = Opts::parse();
 
     let gpt = GPTConnector::new();
-    let logger = Logger::new();
 
     UI::display_startup_message();
 
     let mut messages: Vec<ChatCompletionRequestMessage> = if !opts.new {
         match opts.continue_session {
-            Some(ref session_file) => {
-                SessionManager::load_session(session_file)?
+            Some(session_file) => {
+                SessionManager::load_session(&session_file)?
             },
             None => {
                 if let Some(last_session) = SessionManager::load_last_session_filename() {
@@ -85,7 +78,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 };
                 messages.push(assistant_message.clone());
 
-                logger.log_interaction(&user_message.content, &response.content);
                 UI::display_message(response.role, &response.content);
             },
             Err(ReadlineError::Interrupted) => {

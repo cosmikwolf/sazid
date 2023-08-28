@@ -1,8 +1,9 @@
 use async_openai::{
     config::OpenAIConfig,
-    types::{CreateChatCompletionRequestArgs, Role},
+    types::{CreateChatCompletionRequestArgs},
     Client,
 };
+pub use async_openai::types::Role;
 use serde::{Deserialize, Serialize};
 use std::env;
 use std::error::Error;
