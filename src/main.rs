@@ -1,15 +1,15 @@
 mod gpt_connector;
 mod logger;
 
+use async_openai::types::Role;
+use chrono::prelude::*;
 use clap::Parser;
 use gpt_connector::{ChatCompletionRequestMessage, GPTConnector};
 use logger::Logger;
-use rustyline::error::ReadlineError;
-use async_openai::types::Role;
-use std::fs;
-use serde_json;
 use owo_colors::OwoColorize;
-use chrono::prelude::*;
+use rustyline::error::ReadlineError;
+use serde_json;
+use std::fs;
 
 #[derive(Parser)]
 #[clap(
@@ -20,7 +20,7 @@ use chrono::prelude::*;
 struct Opts {
     #[clap(long, help = "Start a new chat session")]
     new: bool,
-    
+
     #[clap(long, help = "Continue from a specified session file")]
     session: Option<String>,
 }
@@ -31,21 +31,25 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let gpt = GPTConnector::new();
     let logger = Logger::new();
 
-    println!("Starting interactive GPT chat session. Type 'exit' or 'quit' or press Ctrl-C to end.");
-    
+    println!(
+        "Starting interactive GPT chat session. Type 'exit' or 'quit' or press Ctrl-C to end."
+    );
+
     let mut rl = rustyline::DefaultEditor::new()?;
     if rl.load_history("logs/history.txt").is_err() {
         println!("No previous history found.");
     }
 
     let session_filename = if opts.new {
-        format!("logs/session_{}.json", Utc::now().format("%Y-%m-%d_%H-%M"))
+        format!(
+            "logs/session_{}.json",
+            Local::now().format("%Y-%m-%d_%H-%M")
+        )
     } else {
         match opts.session {
             Some(ref session_file) => session_file.clone(),
-            None => {
-                fs::read_to_string("logs/last_session.txt").unwrap_or_else(|_| "logs/session.json".to_string())
-            }
+            None => fs::read_to_string("logs/last_session.txt")
+                .unwrap_or_else(|_| "logs/session.json".to_string()),
         }
     };
 
@@ -97,18 +101,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
                 let _ = rl.add_history_entry(&user_message.content);
                 println!("GPT: {}", response.content.green());
-            },
+            }
             Err(ReadlineError::Interrupted) => {
                 println!("Interrupted");
                 let data = serde_json::to_vec(&messages)?;
                 fs::write(&session_filename, data)?;
                 fs::write("logs/last_session.txt", session_filename)?;
                 break;
-            },
+            }
             Err(ReadlineError::Eof) => {
                 println!("EOF reached");
                 break;
-            },
+            }
             Err(err) => {
                 println!("Error: {:?}", err);
                 break;
