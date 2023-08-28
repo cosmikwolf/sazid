@@ -1,3 +1,5 @@
+can you add a flag that can sent to the CLI which would allow one to pass in a file, or pipe the output of a command into the application, after which the command would enter interactive mode, unless another flag is also added, which will print the reply and exit
+
 I would like to simplify this application significantly.
 
 I would like you to understand what I am saying and then summarize the application in full detail.

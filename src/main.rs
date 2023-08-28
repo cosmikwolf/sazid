@@ -7,8 +7,23 @@ use logger::Logger;
 use rustyline::error::ReadlineError;
 use async_openai::types::Role;
 use std::fs;
+use clap::Parser;
+
+#[derive(Parser)]
+#[clap(version = "0.1.0", author = "Author")]
+struct Opts {
+    /// Start a new chat session
+    #[clap(long)]
+    new_session: bool,
+
+    /// Continue an arbitrary session by providing its name
+    #[clap(long)]
+    session: Option<String>,
+}
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let opts: Opts = Opts::parse();
+
     let gpt = GPTConnector::new();
     let logger = Logger::new();
 
@@ -19,8 +34,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         println!("No previous history found.");
     }
 
-    // Load the previous session if it exists
-    let mut messages: Vec<ChatCompletionRequestMessage> = if let Ok(data) = fs::read("logs/session.bincode") {
+    // Load the previous session if it exists and no flags are provided
+    let mut messages: Vec<ChatCompletionRequestMessage> = if !opts.new_session && opts.session.is_none() && fs::read("logs/session.bincode").is_ok() {
+        let data = fs::read("logs/session.bincode")?;
         bincode::deserialize(&data).unwrap_or_default()
     } else {
         vec![]
