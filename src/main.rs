@@ -9,6 +9,7 @@ use async_openai::types::Role;
 use std::fs;
 use serde_json;
 use owo_colors::OwoColorize;
+use chrono::prelude::*;
 
 #[derive(Parser)]
 #[clap(
@@ -37,19 +38,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         println!("No previous history found.");
     }
 
-    let mut messages: Vec<ChatCompletionRequestMessage> = if !opts.new_session {
-        match opts.session {
-            Some(ref session_file) => {
-                let data = fs::read(session_file)?;
-                serde_json::from_slice(&data).unwrap_or_default()
-            },
-            None => {
-                let data = fs::read("logs/session.json").unwrap_or_default();
-                serde_json::from_slice(&data).unwrap_or_default()
-            }
-        }
-    } else {
-        vec![]
+    let mut session_filename = format!("logs/session_{}.json", Utc::now().format("%Y%m%d%H%M%S%f"));
+
+    if !opts.new_session {
+        session_filename = match opts.session {
+            Some(ref session_file) => session_file.clone(),
+            None => "logs/session.json".to_string()
+        };
+    }
+
+    let messages: Vec<ChatCompletionRequestMessage> = {
+        let data = fs::read(&session_filename).unwrap_or_default();
+        serde_json::from_slice(&data).unwrap_or_default()
     };
 
     for message in &messages {
@@ -60,6 +60,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
+    let mut messages = messages;  // Re-bind as mutable
+
     loop {
         let readline = rl.readline("You: ");
         match readline {
@@ -67,8 +69,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let input = line.trim();
 
                 if input == "exit" {
-                    let data = serde_json::to_vec(&messages)?;
-                    fs::write("logs/session.json", data)?;
+                    let data = serde_json::to_string_pretty(&messages)?;
+                    fs::write(session_filename, data)?;
                     break;
                 }
 
