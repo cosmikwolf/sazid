@@ -18,6 +18,9 @@ struct Opts {
     
     #[clap(short = 'c', long, help = "Continue from a specified session file")]
     continue_session: Option<String>,
+
+    #[clap(short = 'i', long, help = "Import a file or directory for processing")]
+    import: Option<PathBuf>,
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
