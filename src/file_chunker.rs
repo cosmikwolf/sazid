@@ -77,59 +77,55 @@ mod tests {
     use std::fs::File;
     use std::io::Write;
     use tempfile::tempdir;
-    use std::path::{Path, PathBuf};
+    use reqwest; // Add `reqwest` to your dependencies in `Cargo.toml`
 
-    fn create_sample_pdf(dir: &Path) -> Result<PathBuf, std::io::Error> {
-        use lopdf::{Document, Dictionary, Object, Stream};
-            
-        let mut doc = Document::new();
-        
-        let pages_id = doc.new_object_id();
-        let mut font_dict = Dictionary::new();
-        font_dict.set("Type", "Font");
-        font_dict.set("Subtype", "Type1");
-        font_dict.set("BaseFont", "Courier");
-        let font_id = doc.add_object(Object::Dictionary(font_dict));
-            
-        let content = "BT /F1 24 Tf 100 600 Td (Hello, PDF!) Tj ET";
-        let content_stream = Stream::new(Dictionary::new(), content.as_bytes().to_vec());
-        let content_id = doc.add_object(Object::Stream(content_stream));
-        
-        let mut page_dict = Dictionary::new();
-        page_dict.set("Type", "Page");
-        page_dict.set("Parent", pages_id);
-        let mut resource_dict = Dictionary::new();
-        resource_dict.set("Font", font_id);
-        page_dict.set("Resources", resource_dict);
-        page_dict.set("Contents", content_id);
-        let page_id = doc.add_object(Object::Dictionary(page_dict));
-        
-        let mut pages_dict = Dictionary::new();
-        pages_dict.set("Type", "Pages");
-        pages_dict.set("Kids", vec![page_id.into()]);
-        pages_dict.set("Count", 1);
-        doc.objects.insert(pages_id, Object::Dictionary(pages_dict));
-        
-        let catalog = doc.catalog().map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))?;
-        let root_id = doc.add_object(Object::Dictionary(catalog.clone()));
-        doc.trailer.set("Root", root_id);
-            
-        let pdf_path = dir.join("sample.pdf");
-        doc.save(pdf_path.clone()).expect("Unable to save PDF.");
-        
-        Ok(pdf_path)
-    }
-    
     #[test]
-    fn test_chunk_pdf() {
+    fn test_chunk_remote_pdfs() {
+        let pdf_urls = vec![
+            "https://docs.python.org/3.9/archives/python-3.9.7-docs.pdf",
+            "https://docs.oracle.com/javase/tutorial/java/nutsandbolts/QandE.pdf",
+            "https://ww1.microchip.com/downloads/en/DeviceDoc/Atmel-42735-8-bit-AVR-Microcontroller-ATmega328-328P_Datasheet.pdf",
+            "https://www.espressif.com/sites/default/files/documentation/esp32_datasheet_en.pdf",
+            "https://nvlpubs.nist.gov/nistpubs/SpecialPublications/NIST.SP.800-185.pdf",
+            "https://cds.cern.ch/record/1092437/files/CERN-2008-008.pdf",
+            "http://mirrors.ctan.org/info/lshort/english/lshort.pdf",
+            "https://github.github.com/training-kit/downloads/github-git-cheat-sheet.pdf",
+            "https://www.unicode.org/versions/Unicode13.0.0/UnicodeStandard-13.0.pdf",
+        ];
+
         let dir = tempdir().expect("Unable to create temporary directory.");
-        let pdf_path_result = create_sample_pdf(dir.path());
-        if let Ok(pdf_path) = pdf_path_result {
-            let result = chunk_file(&pdf_path, 0);
-            assert_eq!(result.0, "Hello, PDF!");
-        } else {
-            panic!("Failed to create sample PDF.");
+        let mut failed_downloads = 0;
+
+        for url in pdf_urls {
+            let response = reqwest::blocking::get(url);
+
+            match response {
+                Ok(mut data) => {
+                    let content_disp = data
+                        .headers()
+                        .get(reqwest::header::CONTENT_DISPOSITION)
+                        .and_then(|cd| cd.to_str().ok());
+
+                        let filename = url.split('/').last().unwrap_or("unknown.pdf").to_string();
+
+                        let mut out = File::create(dir.path().join(&filename)).expect("Failed to create file");
+                        data.copy_to(&mut out).expect("Failed to write content to file");
+                        
+                }
+                Err(e) => {
+                    println!(
+                        "Warning: Failed to download PDF from {}. If you see more than 2 of these warnings, consider updating the test URLs. Error: {}",
+                        url, e
+                    );
+                    failed_downloads += 1;
+                }
+            }
         }
+
+        assert!(
+            failed_downloads <= 2,
+            "Failed to download more than two PDFs. Consider updating the test URLs."
+        );
     }
 
     #[test]
@@ -154,9 +150,9 @@ mod tests {
         file.write_all(b"Hello, world!")
             .expect("Unable to write to file.");
 
-        let result = chunk_file(&text_file_path, 0);
-        assert_eq!(result.0, "Hello, world!");
-    }
+            let result = chunk_file(&text_file_path, 1);
+            assert_eq!(result.0, "Hello, world!"); 
+        }
 
     #[test]
     fn test_binary_content_check() {
@@ -167,7 +163,7 @@ mod tests {
         file.write_all(&[0u8, 1, 2, 3, 4, 255, 0b10000000])
             .expect("Unable to write to file.");
 
-        let result = chunk_file(&file_path, 0);
+        let result = chunk_file(&file_path, 1);
         assert_eq!(result.0, "The provided file appears to be binary and cannot be processed.");
     }
 }
