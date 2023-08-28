@@ -47,9 +47,17 @@ fn chunk_pdf_file<P: AsRef<Path>>(file_path: P, index: usize) -> (String, usize)
     let pdf_text = PdfText::from_pdf(file_path).expect("Failed to extract text from PDF.");
     let total_pages = pdf_text.total_pages();
 
+    // Print errors for debugging
+    if !pdf_text.errors.is_empty() {
+        for error in &pdf_text.errors {
+            println!("PDF Extraction Error: {}", error);
+        }
+    } else {
+        println!("No errors encountered while extracting PDF.");
+    }
+
     println!("Total pages: {}", total_pages);
     println!("Requested page: {}", index);
-
     if index == 0 || index > total_pages {
         (String::from("Index out of bounds."), total_pages)
     } else {
@@ -60,7 +68,6 @@ fn chunk_pdf_file<P: AsRef<Path>>(file_path: P, index: usize) -> (String, usize)
         (content, total_pages)
     }
 }
-
 
 /// Chunk a given text file line by line.
 fn chunk_text_file<P: AsRef<Path>>(file_path: P, index: usize) -> (String, usize) {
@@ -86,14 +93,14 @@ mod tests {
     #[test]
     fn test_chunk_local_pdfs() {
         use std::fs;
-    
+
         // List all files in the tests/data directory
         let paths = fs::read_dir("tests/data").expect("Failed to read directory");
         let mut pdf_count = 0;
-    
+
         for path in paths {
             let path = path.expect("Failed to read path").path();
-            
+
             // Ensure the file is a PDF
             if path.extension().and_then(|s| s.to_str()) == Some("pdf") {
                 println!("Processing: {:?}", path);
@@ -103,10 +110,13 @@ mod tests {
                 pdf_count += 1;
             }
         }
-    
-        assert!(pdf_count >= 2, "There should be at least 2 PDFs in the tests/data directory");
+
+        assert!(
+            pdf_count >= 2,
+            "There should be at least 2 PDFs in the tests/data directory"
+        );
     }
-    
+
     #[test]
     fn test_chunk_remote_pdfs() {
         let pdf_urls = vec![
