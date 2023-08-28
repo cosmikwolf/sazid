@@ -19,7 +19,7 @@ use chrono::prelude::*;
 )]
 struct Opts {
     #[clap(long, help = "Start a new chat session")]
-    new_session: bool,
+    new: bool,
     
     #[clap(long, help = "Continue from a specified session file")]
     session: Option<String>,
@@ -31,23 +31,25 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let gpt = GPTConnector::new();
     let logger = Logger::new();
 
-    println!("Starting interactive GPT chat session. Type 'exit' to end.");
+    println!("Starting interactive GPT chat session. Type 'exit' or 'quit' or press Ctrl-C to end.");
     
     let mut rl = rustyline::DefaultEditor::new()?;
     if rl.load_history("logs/history.txt").is_err() {
         println!("No previous history found.");
     }
 
-    let mut session_filename = format!("logs/session_{}.json", Utc::now().format("%Y%m%d%H%M%S%f"));
-
-    if !opts.new_session {
-        session_filename = match opts.session {
+    let mut session_filename = if opts.new {
+        format!("logs/session_{}.json", Utc::now().format("%Y-%m-%d_%H-%M"))
+    } else {
+        match opts.session {
             Some(ref session_file) => session_file.clone(),
-            None => "logs/session.json".to_string()
-        };
-    }
+            None => {
+                fs::read_to_string("logs/last_session.txt").unwrap_or_else(|_| "logs/session.json".to_string())
+            }
+        }
+    };
 
-    let messages: Vec<ChatCompletionRequestMessage> = {
+    let mut messages: Vec<ChatCompletionRequestMessage> = {
         let data = fs::read(&session_filename).unwrap_or_default();
         serde_json::from_slice(&data).unwrap_or_default()
     };
@@ -60,17 +62,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
-    let mut messages = messages;  // Re-bind as mutable
-
     loop {
         let readline = rl.readline("You: ");
         match readline {
             Ok(line) => {
                 let input = line.trim();
 
-                if input == "exit" {
-                    let data = serde_json::to_string_pretty(&messages)?;
-                    fs::write(session_filename, data)?;
+                if input == "exit" || input == "quit" {
+                    let data = serde_json::to_vec(&messages)?;
+                    fs::write(&session_filename, data)?;
+                    fs::write("logs/last_session.txt", session_filename)?;
                     break;
                 }
 
@@ -99,6 +100,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             },
             Err(ReadlineError::Interrupted) => {
                 println!("Interrupted");
+                let data = serde_json::to_vec(&messages)?;
+                fs::write(&session_filename, data)?;
+                fs::write("logs/last_session.txt", session_filename)?;
                 break;
             },
             Err(ReadlineError::Eof) => {
