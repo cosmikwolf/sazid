@@ -74,10 +74,32 @@ fn chunk_text_file<P: AsRef<Path>>(file_path: P, index: usize) -> (String, usize
 #[cfg(test)]
 mod tests {
     use super::*;
+    use reqwest;
     use std::fs::File;
     use std::io::Write;
-    use tempfile::tempdir;
-    use reqwest; // Add `reqwest` to your dependencies in `Cargo.toml`
+    use tempfile::tempdir; // Add `reqwest` to your dependencies in `Cargo.toml`
+
+    #[test]
+    fn test_chunk_local_pdfs() {
+        let pdf_files = vec![
+            "python-3.9.7-docs.pdf",
+            "QandE.pdf",
+            "Atmel-42735-8-bit-AVR-Microcontroller-ATmega328-328P_Datasheet.pdf",
+            "esp32_datasheet_en.pdf",
+            "NIST.SP.800-185.pdf",
+            "CERN-2008-008.pdf",
+            "lshort.pdf",
+            "github-git-cheat-sheet.pdf",
+            "UnicodeStandard-13.0.pdf",
+        ];
+
+        for filename in pdf_files {
+            let path = std::path::Path::new("tests/data").join(filename);
+            let (chunk, total_pages) = chunk_pdf_file(&path, 1);
+            assert_ne!(chunk, String::from("Index out of bounds."));
+            assert!(total_pages > 0);
+        }
+    }
 
     #[test]
     fn test_chunk_remote_pdfs() {
@@ -85,12 +107,7 @@ mod tests {
             "https://docs.python.org/3.9/archives/python-3.9.7-docs.pdf",
             "https://docs.oracle.com/javase/tutorial/java/nutsandbolts/QandE.pdf",
             "https://ww1.microchip.com/downloads/en/DeviceDoc/Atmel-42735-8-bit-AVR-Microcontroller-ATmega328-328P_Datasheet.pdf",
-            "https://www.espressif.com/sites/default/files/documentation/esp32_datasheet_en.pdf",
-            "https://nvlpubs.nist.gov/nistpubs/SpecialPublications/NIST.SP.800-185.pdf",
             "https://cds.cern.ch/record/1092437/files/CERN-2008-008.pdf",
-            "http://mirrors.ctan.org/info/lshort/english/lshort.pdf",
-            "https://github.github.com/training-kit/downloads/github-git-cheat-sheet.pdf",
-            "https://www.unicode.org/versions/Unicode13.0.0/UnicodeStandard-13.0.pdf",
         ];
 
         let dir = tempdir().expect("Unable to create temporary directory.");
@@ -106,11 +123,12 @@ mod tests {
                         .get(reqwest::header::CONTENT_DISPOSITION)
                         .and_then(|cd| cd.to_str().ok());
 
-                        let filename = url.split('/').last().unwrap_or("unknown.pdf").to_string();
+                    let filename = url.split('/').last().unwrap_or("unknown.pdf").to_string();
 
-                        let mut out = File::create(dir.path().join(&filename)).expect("Failed to create file");
-                        data.copy_to(&mut out).expect("Failed to write content to file");
-                        
+                    let mut out =
+                        File::create(dir.path().join(&filename)).expect("Failed to create file");
+                    data.copy_to(&mut out)
+                        .expect("Failed to write content to file");
                 }
                 Err(e) => {
                     println!(
@@ -138,7 +156,10 @@ mod tests {
             .expect("Unable to write to file.");
 
         let result = chunk_file(&binary_file_path, 0);
-        assert_eq!(result.0, "The provided file appears to be binary and cannot be processed.");
+        assert_eq!(
+            result.0,
+            "The provided file appears to be binary and cannot be processed."
+        );
     }
 
     #[test]
@@ -150,9 +171,9 @@ mod tests {
         file.write_all(b"Hello, world!")
             .expect("Unable to write to file.");
 
-            let result = chunk_file(&text_file_path, 1);
-            assert_eq!(result.0, "Hello, world!"); 
-        }
+        let result = chunk_file(&text_file_path, 1);
+        assert_eq!(result.0, "Hello, world!");
+    }
 
     #[test]
     fn test_binary_content_check() {
@@ -164,7 +185,9 @@ mod tests {
             .expect("Unable to write to file.");
 
         let result = chunk_file(&file_path, 1);
-        assert_eq!(result.0, "The provided file appears to be binary and cannot be processed.");
+        assert_eq!(
+            result.0,
+            "The provided file appears to be binary and cannot be processed."
+        );
     }
-
 }
