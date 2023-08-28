@@ -44,6 +44,7 @@ impl SessionManager {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use async_openai::types::Role;
 
     #[test]
     fn test_session_management() {

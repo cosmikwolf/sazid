@@ -16,11 +16,12 @@ pub struct GPTResponse {
     pub content: String,
 }
 
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize, PartialEq, Debug)]
 pub struct ChatCompletionRequestMessage {
     pub role: Role,
     pub content: String,
 }
+
 
 impl GPTConnector {
     pub fn new() -> Self {
