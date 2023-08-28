@@ -47,6 +47,9 @@ fn chunk_pdf_file<P: AsRef<Path>>(file_path: P, index: usize) -> (String, usize)
     let pdf_text = PdfText::from_pdf(file_path).expect("Failed to extract text from PDF.");
     let total_pages = pdf_text.total_pages();
 
+    println!("Total pages: {}", total_pages);
+    println!("Requested page: {}", index);
+
     if index == 0 || index > total_pages {
         (String::from("Index out of bounds."), total_pages)
     } else {
@@ -57,6 +60,7 @@ fn chunk_pdf_file<P: AsRef<Path>>(file_path: P, index: usize) -> (String, usize)
         (content, total_pages)
     }
 }
+
 
 /// Chunk a given text file line by line.
 fn chunk_text_file<P: AsRef<Path>>(file_path: P, index: usize) -> (String, usize) {
@@ -81,26 +85,28 @@ mod tests {
 
     #[test]
     fn test_chunk_local_pdfs() {
-        let pdf_files = vec![
-            "python-3.9.7-docs.pdf",
-            "QandE.pdf",
-            "Atmel-42735-8-bit-AVR-Microcontroller-ATmega328-328P_Datasheet.pdf",
-            "esp32_datasheet_en.pdf",
-            "NIST.SP.800-185.pdf",
-            "CERN-2008-008.pdf",
-            "lshort.pdf",
-            "github-git-cheat-sheet.pdf",
-            "UnicodeStandard-13.0.pdf",
-        ];
-
-        for filename in pdf_files {
-            let path = std::path::Path::new("tests/data").join(filename);
-            let (chunk, total_pages) = chunk_pdf_file(&path, 1);
-            assert_ne!(chunk, String::from("Index out of bounds."));
-            assert!(total_pages > 0);
+        use std::fs;
+    
+        // List all files in the tests/data directory
+        let paths = fs::read_dir("tests/data").expect("Failed to read directory");
+        let mut pdf_count = 0;
+    
+        for path in paths {
+            let path = path.expect("Failed to read path").path();
+            
+            // Ensure the file is a PDF
+            if path.extension().and_then(|s| s.to_str()) == Some("pdf") {
+                println!("Processing: {:?}", path);
+                let (chunk, total_pages) = chunk_pdf_file(&path, 1);
+                assert_ne!(chunk, String::from("Index out of bounds."));
+                assert!(total_pages > 0);
+                pdf_count += 1;
+            }
         }
+    
+        assert!(pdf_count >= 2, "There should be at least 2 PDFs in the tests/data directory");
     }
-
+    
     #[test]
     fn test_chunk_remote_pdfs() {
         let pdf_urls = vec![

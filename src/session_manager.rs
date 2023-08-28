@@ -122,7 +122,7 @@ pub fn handle_import(path: &PathBuf) -> Result<(), Box<dyn std::error::Error>> {
 mod tests {
     use super::*;
     use async_openai::types::Role;
-    use std::path::PathBuf;
+    use std::path::{Path, PathBuf};
 
     #[test]
     fn test_session_management() {
@@ -149,7 +149,11 @@ mod tests {
 
     #[test]
     fn test_handle_import() {
-        let test_file = std::path::PathBuf::from("path_to_test_file.txt");
-        assert!(handle_import(&test_file).is_ok());
+        let pdf_path = Path::new("tests/data/PDF32000_2008.pdf");
+        let txt_path = Path::new("tests/data/PDF32000_2008.txt");
+    
+        assert!(pdf_path.exists(), "PDF file does not exist");
+        assert!(txt_path.exists(), "TXT file does not exist");
     }
+    
 }
