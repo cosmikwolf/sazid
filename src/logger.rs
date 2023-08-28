@@ -1,7 +1,7 @@
+use chrono::prelude::*;
 use std::fs::OpenOptions;
 use std::io::prelude::*;
 use std::path::PathBuf;
-use chrono::prelude::*;
 
 pub struct Logger {
     log_dir: PathBuf,
@@ -18,11 +18,11 @@ impl Logger {
 
     pub fn log_interaction(&self, request: &str, response: &str) {
         let datetime = Utc::now();
-        let log_file_name = datetime.format("%Y-%m-%d_%H-%M-%S.log").to_string();
+        let log_file_name = datetime.format("%Y-%m-%d.log").to_string();
         let log_file_path = self.log_dir.join(log_file_name);
 
         let mut file = OpenOptions::new()
-            .write(true)
+            .append(true)
             .create(true)
             .open(log_file_path)
             .unwrap();
