@@ -1,15 +1,15 @@
 mod gpt_connector;
 mod logger;
+mod session_manager;
+mod ui;
 
+use rustyline::error::ReadlineError;
 use clap::Parser;
 use gpt_connector::{ChatCompletionRequestMessage, GPTConnector};
 use logger::Logger;
-use rustyline::error::ReadlineError;
+use session_manager::SessionManager;
+use ui::UI;
 use async_openai::types::Role;
-use std::fs;
-use serde_json;
-use owo_colors::OwoColorize;
-use chrono::Local;
 
 #[derive(Parser)]
 #[clap(
@@ -31,44 +31,39 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let gpt = GPTConnector::new();
     let logger = Logger::new();
 
-    println!("Starting interactive GPT chat session. Type 'exit' or 'quit' to end, or use Ctrl-C.");
-    
-    let mut rl = rustyline::DefaultEditor::new()?;
-    if rl.load_history("logs/history.txt").is_err() {
-        println!("No previous history found.");
-    }
-
-    let session_filename = match opts.continue_session {
-        Some(filename) => filename,
-        None => fs::read_to_string("logs/last_session.txt").unwrap_or_else(|_| format!("logs/session_{}.json", Local::now().format("%Y-%m-%d_%H-%M")))
-    };
+    UI::display_startup_message();
 
     let mut messages: Vec<ChatCompletionRequestMessage> = if !opts.new {
-        let data = fs::read(&session_filename).unwrap_or_default();
-        serde_json::from_slice(&data).unwrap_or_default()
+        match opts.continue_session {
+            Some(ref session_file) => {
+                SessionManager::load_session(session_file)?
+            },
+            None => {
+                if let Some(last_session) = SessionManager::load_last_session_filename() {
+                    SessionManager::load_session(&last_session)?
+                } else {
+                    vec![]
+                }
+            }
+        }
     } else {
         vec![]
     };
 
     for message in &messages {
-        match message.role {
-            Role::User => println!("You (from previous session): {}", message.content),
-            Role::Assistant => println!("GPT (from previous session): {}", message.content.green()),
-            _ => {}
-        }
+        UI::display_message(message.role.clone(), &message.content);
     }
 
     loop {
-        let readline = rl.readline("You: ");
-        match readline {
-            Ok(line) => {
-                let input = line.trim();
+        match UI::read_input("You: ") {
+            Ok(input) => {
+                let input = input.trim();
 
                 if input == "exit" || input == "quit" {
-                    println!("Exiting gracefully. Saving session...");
-                    let data = serde_json::to_vec(&messages)?;
-                    fs::write(&session_filename, data)?;
-                    fs::write("logs/last_session.txt", session_filename)?;
+                    let session_filename = SessionManager::new_session_filename();
+                    SessionManager::save_session(&session_filename, &messages)?;
+                    SessionManager::save_last_session_filename(&session_filename)?;
+                    UI::display_exit_message();
                     break;
                 }
 
@@ -85,21 +80,26 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     .block_on(gpt.send_request(messages.clone()))?;
 
                 let assistant_message = ChatCompletionRequestMessage {
-                    role: response.role,
+                    role: response.role.clone(),
                     content: response.content.clone(),
                 };
-                messages.push(assistant_message);
+                messages.push(assistant_message.clone());
 
                 logger.log_interaction(&user_message.content, &response.content);
-
-                let _ = rl.add_history_entry(&user_message.content);
-                println!("GPT: {}", response.content.green());
+                UI::display_message(response.role, &response.content);
             },
-            Err(ReadlineError::Interrupted) | Err(ReadlineError::Eof) => {
-                println!("Exiting gracefully. Saving session...");
-                let data = serde_json::to_vec(&messages)?;
-                fs::write(&session_filename, data)?;
-                fs::write("logs/last_session.txt", session_filename)?;
+            Err(ReadlineError::Interrupted) => {
+                let session_filename = SessionManager::new_session_filename();
+                SessionManager::save_session(&session_filename, &messages)?;
+                SessionManager::save_last_session_filename(&session_filename)?;
+                UI::display_exit_message();
+                break;
+            },
+            Err(ReadlineError::Eof) => {
+                let session_filename = SessionManager::new_session_filename();
+                SessionManager::save_session(&session_filename, &messages)?;
+                SessionManager::save_last_session_filename(&session_filename)?;
+                UI::display_exit_message();
                 break;
             },
             Err(err) => {
@@ -108,8 +108,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
         }
     }
-
-    rl.save_history("logs/history.txt")?;
 
     Ok(())
 }
