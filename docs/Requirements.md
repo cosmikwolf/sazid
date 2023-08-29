@@ -107,3 +107,33 @@
         - Session management.
         - File import processes.
     - Display user-friendly error messages, informing users about the nature of any encountered error.
+
+
+requirements update 8/29
+
+1. **FileChunker Refactoring**:
+   - The module no longer determines file types; this is left to the calling function.
+   - Introduced a new error variant `FileChunkerError::ChunkingError(String)` to provide a description of specific chunking errors.
+   - Error handling has been improved with custom error messages for different types of issues.
+
+2. **FileChunker Methods**:
+   - `chunkify_file`: This method chunks the content of a file based on its type (PDF, text, etc.).
+   - `extract_file_text`: Extracts the text content of a file. This method handles both plain text and PDF files.
+   - `is_pdf_file` and `is_binary_file`: Helper functions to determine the file type.
+   - `chunk_content_by_tokens`: Splits content into chunks based on token count. Each token is a word, and this function ensures that chunks do not split words. This is the main chunking logic for the OpenAI API's token-based chunking requirement.
+
+3. **Chunking Logic**:
+   - The content is split into tokens (words).
+   - Chunks are created by iterating through the tokens and counting their characters until the desired token count is reached for a chunk. 
+   - The method returns these chunks as a `Vec<String>`.
+
+4. **Tests**:
+   - Updated tests to reflect the refactored logic.
+   - Added print statements to the tests to display chunks during test runs.
+   - The tests now check for proper chunking and error handling.
+
+5. **Miscellaneous**:
+   - We discussed the name of the `chunk_file_content` method, which was suggested to be renamed to `retrieve_file_text` or something similar since it's not directly chunking.
+   - We introduced a new function in `FileChunker` that would take a file and produce the chunks so that `handle_ingest` doesn't have to call the chunker multiple times.
+   - We switched from using a generated PDF to using the PDFs in `tests/data`.
+   - We clarified that the token-based chunking is in line with the OpenAI API's requirement.

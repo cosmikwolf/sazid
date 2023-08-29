@@ -2,7 +2,7 @@ use lopdf::Document;
 use lopdf::Object;
 use std::collections::BTreeMap;
 use std::path::Path;
-use std::io::{Error, ErrorKind};
+use std::error::Error;
 
 pub struct PdfText {
     pub text: BTreeMap<u32, Vec<String>>, // Key is page number
@@ -58,14 +58,29 @@ fn filter_func(object_id: (u32, u16), object: &mut Object) -> Option<((u32, u16)
 }
 
 impl PdfText {
+    /// Concatenates all text from all pages into a single string
+    pub fn get_text(&self) -> Result<String, Box<dyn Error>> {
+        if !self.errors.is_empty() {
+            return Err(Box::new(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                format!("PDF extraction errors: {:?}", self.errors),
+            )));
+        }
+
+        Ok(self.text.values()
+            .flat_map(|lines| lines.iter())
+            .cloned()
+            .collect::<Vec<String>>()
+            .join("\n"))
+    } 
     /// Extracts text from a given PDF file
-    pub fn from_pdf<P: AsRef<Path>>(pdf_path: P) -> Result<Self, Error> {
-        let mut pdf_text = Self {
+    pub fn from_pdf<P: AsRef<Path>>(pdf_path: P) -> Result<Self, Box<dyn Error>> {
+    let mut pdf_text = Self {
             text: BTreeMap::new(),
             errors: Vec::new(),
         };
         let doc = Document::load_filtered(pdf_path, filter_func).map_err(|e| {
-            Error::new(ErrorKind::Other, format!("Failed to load PDF: {}", e))
+            Box::<dyn Error>::from(format!("Failed to load PDF: {}", e))
         })?;       
 
         let pages = doc.get_pages();

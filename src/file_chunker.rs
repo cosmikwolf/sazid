@@ -1,14 +1,18 @@
+use tiktoken_rs::p50k_base;
+
 use crate::pdf_extractor::PdfText;
 use std::fmt;
 use std::fs::{self, File};
 use std::io::Read;
 use std::path::PathBuf;
+use std::str::FromStr;
 
 pub struct FileChunker;
 
 #[derive(Debug)]
 pub enum FileChunkerError {
     ChunkingError(String),
+    IoError(std::io::Error),
     FileReadError,
     UnsupportedFileType, // Any other specific errors can be added here in the future
 }
@@ -18,47 +22,79 @@ impl fmt::Display for FileChunkerError {
             FileChunkerError::UnsupportedFileType => write!(f, "Unsupported file type"),
             FileChunkerError::FileReadError => write!(f, "Error reading the file"),
             FileChunkerError::ChunkingError(description) => write!(f, "{}", description),
+            FileChunkerError::IoError(_) => todo!(),
             // ... handle other variants similarly ...
         }
+    }
+}
+impl FileChunkerError {
+    pub fn new(msg: &str) -> Self {
+        FileChunkerError::ChunkingError(msg.to_string())
+    }
+}
+impl From<std::io::Error> for FileChunkerError {
+    fn from(error: std::io::Error) -> Self {
+        FileChunkerError::IoError(error)
     }
 }
 impl std::error::Error for FileChunkerError {}
 
 impl FileChunker {
+    /// This function determines if the input is a file path or just a block of text.
+    /// If the input is a valid file path, it will chunkify the contents of the file.
+    /// Otherwise, it will treat the input as plain text and chunkify it directly.
+    pub fn chunkify_input(input: &str, tokens_per_chunk: usize) -> Result<Vec<String>, FileChunkerError> {
+        let path = PathBuf::from_str(input);
+        
+        // Check if the input can be treated as a file path
+        if let Ok(p) = path {
+            if p.is_file() {
+                // If it's a file, chunkify its contents
+                return Self::chunkify_file(&p, tokens_per_chunk);
+            }
+        }
+
+        // If not a file path, chunkify the input text directly
+        Ok(Self::chunkify_text(input, tokens_per_chunk))
+    }
+    
     /// Chunk the content of a file based on its type (PDF, text, etc.).
-    pub fn chunkify_file(
+    fn chunkify_file(
         file_path: &PathBuf,
         tokens_per_chunk: usize,
     ) -> Result<Vec<String>, FileChunkerError> {
         let content = Self::extract_file_text(file_path)?;
-        let chunks = Self::chunk_content(&content, tokens_per_chunk);
+        let chunks = Self::chunkify_text(&content, tokens_per_chunk);
         Ok(chunks)
     }
-    pub fn extract_file_text(file_path: &PathBuf) -> Result<String, FileChunkerError> {
-        let content = if Self::is_binary_file(&file_path) {
-            if Self::is_pdf_file(&file_path) {
-                let pdf_text = PdfText::from_pdf(&file_path).map_err(|_| {
-                    FileChunkerError::ChunkingError("Failed to extract text from PDF".to_string())
-                })?;
-                (1usize..=pdf_text.total_pages())
-                    .filter_map(|page| pdf_text.get_page_text(page as u32))
-                    .flatten()
-                    .map(|s| s.to_string())
-                    .collect::<Vec<String>>()
-                    .join("\n")
-            } else {
-                return Err(FileChunkerError::ChunkingError(
-                    "The provided file appears to be binary and cannot be processed.".to_string(),
-                ));
-            }
-        } else {
-            fs::read_to_string(file_path).map_err(|_| {
-                FileChunkerError::ChunkingError("Failed to read text file".to_string())
-            })?
-        };
+    
+    fn chunkify_text(text: &str, tokens_per_chunk: usize) -> Vec<String> {
+        let tokens: Vec<&str> = text.split_whitespace().collect();
+        let bpe = p50k_base().unwrap();
+        let mut chunks = Vec::new();
+        let mut current_chunk = Vec::new();
+        let mut current_token_count = 0;
 
-        Ok(content)
+        for token in tokens {
+            let new_token_count = bpe.encode_with_special_tokens(token).len();
+
+            if current_token_count + new_token_count > tokens_per_chunk {
+                chunks.push(current_chunk.join(" "));
+                current_chunk.clear();
+                current_token_count = 0;
+            }
+
+            current_token_count += new_token_count;
+            current_chunk.push(token);
+        }
+
+        if !current_chunk.is_empty() {
+            chunks.push(current_chunk.join(" "));
+        }
+
+        chunks
     }
+
     /// Check if the given file is a PDF.
     fn is_pdf_file(file_path: &PathBuf) -> bool {
         file_path.extension().and_then(|s| s.to_str()) == Some("pdf")
@@ -78,14 +114,24 @@ impl FileChunker {
             > n / 8
     }
 
-    pub fn chunk_content(content: &str, chunk_size: usize) -> Vec<String> {
-        content
-            .chars()
-            .collect::<Vec<_>>()
-            .chunks(chunk_size)
-            .map(|chunk| chunk.iter().collect())
-            .collect()
+    fn extract_file_text(file_path: &PathBuf) -> Result<String, FileChunkerError> {
+        if Self::is_pdf_file(file_path) {
+            PdfText::from_pdf(file_path)
+                .and_then(|pdf_text| pdf_text.get_text())
+                .map_err(|_| {
+                    FileChunkerError::ChunkingError("Failed to extract text from PDF".to_string())
+                })
+        } else if Self::is_binary_file(file_path) {
+            Err(FileChunkerError::ChunkingError(
+                "Binary file detected".to_string(),
+            ))
+        } else {
+            fs::read_to_string(file_path).map_err(|_| {
+                FileChunkerError::ChunkingError("Failed to read text file".to_string())
+            })
+        }
     }
+
 }
 #[cfg(test)]
 mod tests {
@@ -123,7 +169,7 @@ mod tests {
         #[test]
         fn test_chunkify_text_file() {
             let dir = tempdir().unwrap();
-            let text_file_path = dir.path().join("text_test_file.txt");
+            let text_file_path = dir.path().join("test.txt");
 
             File::create(&text_file_path)
                 .unwrap()
@@ -132,10 +178,15 @@ mod tests {
 
             let chunks = FileChunker::chunkify_file(&text_file_path, 4).unwrap();
 
-            assert_eq!(chunks.len(), 3);
+            // Print out the chunks for verification:
+            for (i, chunk) in chunks.iter().enumerate() {
+                println!("Chunk {}: {}", i + 1, chunk);
+            }
+            assert_eq!(chunks.len(), 4);
             assert_eq!(chunks[0], "Hello, world!");
             assert_eq!(chunks[1], "How are you?");
-            assert_eq!(chunks[2], "This is a test!");
+            assert_eq!(chunks[2], "This is a");
+            assert_eq!(chunks[3], "test!");
         }
 
         #[test]
