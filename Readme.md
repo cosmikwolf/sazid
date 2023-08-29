@@ -1,6 +1,6 @@
-# **Sazid: An Interactive GPT Chat Application**
 
 ![Project Banner or Logo](docs/sazid_banner_image.png) 
+# **Sazid: Ascended Rust Development**
 
 Sazid is an interactive chat application that connects users with OpenAI's GPT model. With the power of GPT and a user-friendly command-line interface, it allows seamless conversations and can process and import various file types.
 
