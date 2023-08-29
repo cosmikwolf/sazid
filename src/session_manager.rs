@@ -1,6 +1,5 @@
 use crate::file_chunker::FileChunker;
 use crate::gpt_connector::ChatCompletionRequestMessage;
-use crate::pdf_extractor::PdfText;
 use chrono::Local;
 use rand::distributions::Alphanumeric;
 use rand::{thread_rng, Rng};
@@ -30,7 +29,7 @@ impl SessionManager {
         SessionManager {
             base_dir,
             session_id: Uuid::new_v4().to_string(),
-            chunk_size: 1024, // or whatever default chunk size you prefer
+            chunk_size: 4, // or whatever default chunk size you prefer
         }
     }
 
@@ -151,23 +150,7 @@ impl SessionManager {
     }
 
     pub fn handle_ingest(&self, path: &PathBuf) -> Result<Vec<String>, Box<dyn Error>> {
-        // If the file is a PDF, extract all the text
-        // Otherwise, read the file as plain text
-        let content = if path.extension().unwrap_or_default() == "pdf" {
-            let pdf_text = PdfText::from_pdf(&path)?;
-            (1usize..=pdf_text.total_pages())
-                .filter_map(|page| pdf_text.get_page_text(page as u32))
-                .flatten()
-                .map(|s| s.to_string())
-                .collect::<Vec<String>>()
-        } else {
-            let file_content = fs::read_to_string(path)?;
-            file_content.lines().map(|s| s.to_string()).collect()
-        };
-
-        let combined_content = content.join("\n");
-
-        let chunks = FileChunker::chunk_content(&combined_content, self.chunk_size);
+        let chunks = FileChunker::chunkify_file(path, self.chunk_size)?;
 
         // Create necessary directories
         let ingested_dir = self.base_dir.join("ingested");
@@ -197,8 +180,7 @@ impl SessionManager {
         }
 
         Ok(chunks)
-    }
-}
+    }}
 
 #[cfg(test)]
 mod tests {
@@ -206,7 +188,6 @@ mod tests {
     use crate::pdf_extractor::PdfText;
     use std::fs::{self, File};
     use std::io::Write;
-    use std::path::Path;
     use crate::gpt_connector::Role;
     use tempfile::tempdir;
 
@@ -253,105 +234,100 @@ mod tests {
         assert_eq!(content, "Hello, World!");
     }
     #[test]
-    fn test_handle_ingest() {
-        let manager = SessionManager::new(PathBuf::from("tests/data"));
-        let test_files = vec!["testText1.txt", "NIST.SP.800-185.pdf"];
+fn test_handle_ingest_plain_text() {
+    let manager = SessionManager::new(PathBuf::from("tests/data"));
+    let test_file = "testText1.txt";
+    let path = manager.base_dir.join(test_file);
+    manager.handle_ingest(&path).unwrap();
 
-        for file_name in test_files.iter() {
-            let path = manager.base_dir.join(file_name);
-            manager.handle_ingest(&path).unwrap();
+    // Validate each of the first four chunks
+    for i in 1..=4 {
+        // Validate log entry
+        let log_path = manager
+            .base_dir
+            .join("ingested")
+            .join(format!("{}_ingest.json", i));
+        assert!(
+            log_path.exists(),
+            "Log file for chunk {} does not exist for {}",
+            i,
+            test_file
+        );
 
-            // Validate each of the first four chunks
-            for i in 1..=4 {
-                // Validate log entry
-                let log_path = manager
-                    .base_dir
-                    .join("ingested")
-                    .join(format!("{}_ingest.json", i));
-                assert!(
-                    log_path.exists(),
-                    "Log file for chunk {} does not exist for {}",
-                    i,
-                    file_name
-                );
+        // Extract chunked content
+        let log_content = fs::read_to_string(&log_path).unwrap();
+        let log_data: serde_json::Value =
+            serde_json::from_str(&log_content).expect("Invalid JSON in log file");
+        let chunk_file_path = log_data["file_path"]
+            .as_str()
+            .expect("Invalid file_path in log");
+        let chunk_content =
+            fs::read_to_string(chunk_file_path).expect("Failed to read chunked content");
 
-                // Extract chunked content
-                let log_content = fs::read_to_string(&log_path).unwrap();
-                let log_data: serde_json::Value =
-                    serde_json::from_str(&log_content).expect("Invalid JSON in log file");
-                let chunk_file_path = log_data["file_path"]
-                    .as_str()
-                    .expect("Invalid file_path in log");
-                let chunk_content =
-                    fs::read_to_string(chunk_file_path).expect("Failed to read chunked content");
+        // Validate chunk content based on the original file
+        let original_content = fs::read_to_string(&path).unwrap();
+        let expected_lines: Vec<&str> = original_content.lines().collect();
+        let expected_content = expected_lines[i - 1]; // zero-indexed
+        assert_eq!(
+            chunk_content,
+            expected_content,
+            "Chunk content mismatch for chunk {} of {}",
+            i,
+            test_file
+        );
 
-                // Validate chunk content based on the original file
-                if path.extension().unwrap_or_default() == "txt" {
-                    let original_content = fs::read_to_string(&path).unwrap();
-                    let expected_lines: Vec<&str> = original_content.lines().collect();
-                    let expected_content = expected_lines[i - 1]; // zero-indexed
-                    assert_eq!(
-                        chunk_content.trim(),
-                        expected_content,
-                        "Chunk content mismatch for chunk {} of {}",
-                        i,
-                        file_name
-                    );
-                } else {
-                    // For PDF, we expect the content of a single page
-                    let pdf_text = PdfText::from_pdf(&path).unwrap();
-                    let expected_content = pdf_text
-                        .get_page_text(i as u32)
-                        .expect("Failed to get page text");
-                    assert_eq!(
-                        chunk_content.trim(),
-                        expected_content.join("\n"),
-                        "Chunk content mismatch for chunk {} of {}",
-                        i,
-                        file_name
-                    );
-                }
-
-                println!("Validated: Chunk content for chunk {} of {}", i, file_name);
-            }
-        }
+        println!("Validated: Chunk content for chunk {} of {}", i, test_file);
     }
+}
 
-    #[test]
-    fn integration_test_ingestion() {
-        let dir = tempdir().unwrap();
-        let manager = SessionManager::new(dir.path().to_path_buf());
+#[test]
+fn test_handle_ingest_pdf() {
+    let manager = SessionManager::new(PathBuf::from("tests/data"));
+    let test_file = "NIST.SP.800-185.pdf";
+    let path = manager.base_dir.join(test_file);
+    manager.handle_ingest(&path).unwrap();
 
-        let txt_path = dir.path().join("test.txt");
-        File::create(&txt_path)
-            .unwrap()
-            .write_all(b"Chunk 1\nChunk 2\nChunk 3")
-            .unwrap();
+    // Validate each of the first four chunks
+    for i in 1..=4 {
+        // Validate log entry
+        let log_path = manager
+            .base_dir
+            .join("ingested")
+            .join(format!("{}_ingest.json", i));
+        assert!(
+            log_path.exists(),
+            "Log file for chunk {} does not exist for {}",
+            i,
+            test_file
+        );
 
-        let chunks = manager.handle_ingest(&txt_path).unwrap();
+        // Extract chunked content
+        let log_content = fs::read_to_string(&log_path).unwrap();
+        let log_data: serde_json::Value =
+            serde_json::from_str(&log_content).expect("Invalid JSON in log file");
+        let chunk_file_path = log_data["file_path"]
+            .as_str()
+            .expect("Invalid file_path in log");
+        let chunk_content =
+            fs::read_to_string(chunk_file_path).expect("Failed to read chunked content");
 
-        // Verify ingestion
-        assert_eq!(chunks.len(), 3);
-        assert_eq!(chunks[0], "Chunk 1");
-        assert_eq!(chunks[1], "Chunk 2");
-        assert_eq!(chunks[2], "Chunk 3");
+        // For PDF, we expect the content of a single page
+        let pdf_text = PdfText::from_pdf(&path).unwrap();
+        let expected_content = pdf_text
+            .get_page_text(i as u32)
+            .expect("Failed to get page text");
+        assert_eq!(
+            chunk_content.trim(),
+            expected_content.join("\n"),
+            "Chunk content mismatch for chunk {} of {}",
+            i,
+            test_file
+        );
 
-        // Verify ingested data log
-        let log_path = dir
-            .path()
-            .join("session_data/ingested/test_session_ingest.json");
-        assert!(log_path.exists());
-        let content = fs::read_to_string(log_path).unwrap();
-        assert!(content.contains("\"chunk_num\":3"));
-
-        // Verify copied file
-        let dest_path = dir
-            .path()
-            .join("session_data/ingested/test_session_files/test.txt");
-        assert!(dest_path.exists());
-        let file_content = fs::read_to_string(dest_path).unwrap();
-        assert_eq!(file_content, "Chunk 1\nChunk 2\nChunk 3");
+        println!("Validated: Chunk content for chunk {} of {}", i, test_file);
     }
+}
+
 
     #[test]
     fn test_session_management() {

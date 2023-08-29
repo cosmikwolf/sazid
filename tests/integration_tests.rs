@@ -3,7 +3,10 @@ extern crate tempfile;
 
 #[cfg(test)]
 mod integration_tests {
+    
     use super::*;
+    use std::io::Write;
+    use std::fs::{self, File};
     use async_openai::types::Role;
     use sazid::gpt_connector::ChatCompletionRequestMessage;
     use sazid::session_manager::SessionManager;
@@ -199,5 +202,41 @@ mod integration_tests {
 
         session_manager.delete_session(&filename).unwrap();
         assert!(!path.exists()); // File should be deleted now
+    }
+
+    #[test]
+    fn test_ingestion() {
+        let dir = tempdir().unwrap();
+        let manager = SessionManager::new(dir.path().to_path_buf());
+
+        let txt_path = dir.path().join("test.txt");
+        File::create(&txt_path)
+            .unwrap()
+            .write_all(b"Chunk 1\nChunk 2\nChunk 3")
+            .unwrap();
+
+        let chunks = manager.handle_ingest(&txt_path).unwrap();
+
+        // Verify ingestion
+        assert_eq!(chunks.len(), 3);
+        assert_eq!(chunks[0], "Chunk 1");
+        assert_eq!(chunks[1], "Chunk 2");
+        assert_eq!(chunks[2], "Chunk 3");
+
+        // Verify ingested data log
+        let log_path = dir
+            .path()
+            .join("session_data/ingested/test_session_ingest.json");
+        assert!(log_path.exists());
+        let content = fs::read_to_string(log_path).unwrap();
+        assert!(content.contains("\"chunk_num\":3"));
+
+        // Verify copied file
+        let dest_path = dir
+            .path()
+            .join("session_data/ingested/test_session_files/test.txt");
+        assert!(dest_path.exists());
+        let file_content = fs::read_to_string(dest_path).unwrap();
+        assert_eq!(file_content, "Chunk 1\nChunk 2\nChunk 3");
     }
 }
