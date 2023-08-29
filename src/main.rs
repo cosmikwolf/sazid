@@ -3,7 +3,6 @@ use clap::Parser;
 use rustyline::error::ReadlineError;
 use sazid::gpt_connector::{ChatCompletionRequestMessage, GPTConnector};
 use sazid::session_manager::SessionManager;
-use sazid::session_manager::handle_import;
 use sazid::ui::UI;
 use std::ffi::OsString;
 use std::path::PathBuf;
@@ -22,18 +21,18 @@ struct Opts {
     continue_session: Option<String>,
 
     #[clap(short = 'i', long, value_name = "PATH", help = "Import a file or directory for GPT to process")]
-    import: Option<OsString>,
+    ingest: Option<OsString>,
 }
 
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let opts: Opts = Opts::parse();
-    if let Some(path) = &opts.import {
-        handle_import(&PathBuf::from(&path))?;
-        }
-
+    
     let gpt = GPTConnector::new();
     let session_manager = SessionManager::new(PathBuf::from("./"));
+    if let Some(path) = &opts.ingest {
+        session_manager.handle_ingest(&PathBuf::from(&path))?;
+        }
 
     UI::display_startup_message();
 
@@ -61,9 +60,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             Ok(input) => {
                 let input = input.trim();
 
-                if input.starts_with("import ") {
+                if input.starts_with("ingest ") {
                     let filepath = input.split_whitespace().nth(1).unwrap_or_default();
-                    handle_import(&PathBuf::from(filepath))?;
+                    session_manager.handle_ingest(&PathBuf::from(filepath))?;
                 } else {
                     if input == "exit" || input == "quit" {
                         let session_filename = session_manager.new_session_filename();

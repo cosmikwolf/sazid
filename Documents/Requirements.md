@@ -1,64 +1,103 @@
-### **Voracious: An Interactive GPT Chat Application**
+### **Sazid: An Interactive GPT Chat Application**
 
 #### **Functional Requirements**:
 
 1. **GPT Integration**:
     - Utilize the `async_openai` library to integrate with OpenAI's GPT model.
-    - Establish a connection to the GPT API using provided API keys.
+    - Establish a connection to the GPT API using provided API keys from the environment.
     - Send user messages to the GPT model and retrieve generated responses.
+    - Handle different message roles, specifically User and Assistant.
 
 2. **Chat Session Management**:
     - Provide command-line options to:
-        - Start a new chat session.
-        - Continue a previously stored session.
-    - Save chat sessions in individual files named with the format: `session-YYYY-MM-DD_HH-MM.json`.
+        - Start a new chat session (`-n` or `--new` flag).
+        - Continue a previously stored session (`-c` or `--continue` flag with the session file as an argument).
+    - Save chat sessions within the `session_data` directory, named using a combination of the current date, time, and a random hash.
     - Automatically pick the latest session if no specific session is mentioned by the user.
     - Store the last-used session's filename in a text file named `last_session.txt`.
+    - Delete a specific session if needed.
 
 3. **User Interaction**:
-    - Implement a command-line interface for the user to interact with the application.
+    - Implement a command-line interface for users to interact with the application.
     - Accept user input for messages to be sent to GPT.
-    - Allow session exit through any of the following commands: "exit", "quit", or using the keyboard shortcut `Ctrl+C`.
-    - Display a message indicating graceful exit upon termination.
+    - Allow session exit using the command "exit", "quit", or `Ctrl+C`.
+    - Implement an import feature to process specified files or directories (using the `-i` or `--import` flag followed by the file or directory path).
 
 4. **Message Display**:
-    - Display messages on the command-line interface with clear distinction between user and GPT messages.
-    - Color-code GPT messages for easy differentiation.
-    - Label messages from previous sessions with the prefix "(from previous session)".
+    - Display messages in the command-line interface with clear distinction between user and GPT messages.
+    - Color-code GPT messages in green for easy differentiation.
+    - Display a startup message when the application begins.
+    - Provide exit messages when the application terminates.
+    - Display import-related messages to inform the user of the import process status, including success, failure, or skipped statuses.
 
-5. **Logging**:
-    - Record all chat interactions, including user input and GPT responses.
-    - Organize logs by date and store them in a designated directory named `logs`.
-    - Save chat messages in a history file named `history.txt` for maintaining chat history across sessions.
+5. **File Chunking and Processing**:
+    - Process various file types, including PDFs and text files.
+    - Extract content from PDFs, keeping track of pages and any extraction errors.
+    - For text files, chunk the content line by line.
+    - For binary files, detect their type and provide appropriate messages.
+    - For PDF files, detect their type and extract text content as needed.
+    - Inform the user if a provided file appears to be binary and cannot be processed.
 
-6. **Error Handling**:
-    - Implement error handling mechanisms to manage potential issues related to:
-        - GPT API connection failures.
-        - File read/write operations.
-        - Session management.
-    - Display user-friendly error messages to inform the user about the nature of the encountered error.
+6. **Command-line Interface**:
+    - Implement a robust command-line argument system using the `clap` library.
+    - Provide flags to allow users to:
+        - Start a new chat session (`-n` or `--new`).
+        - Continue a specific session (`-c` or `--continue`).
+        - Import a file or directory for processing (`-i` or `--import`).
+    - Display version, author, and other metadata information when queried.
 
-7. **Command-line Interface**:
-    - Implement command-line arguments for enhanced session management:
-        - `-n` or `--new`: Start a new chat session.
-        - `-c` or `--continue`: Continue from a specified session file.
-    - Display version, author, and other metadata information for the application when queried with appropriate command-line arguments.
-
-8. **Data Serialization and Storage**:
-    - Serialize chat messages in JSON format for storing in session files.
+7. **Data Serialization and Storage**:
+    - Serialize chat messages in JSON format for storage in session files.
     - Ensure that each message stored consists of:
         - Role (User or Assistant).
         - Content of the message.
     - Deserialize JSON data when loading from session files.
 
-9. **Timestamp Management**:
-    - Generate timestamps based on the system's local time zone settings.
-    - Use timestamps for naming session files and recording chat interactions.
+8. **Timestamp and Random Hash Management**:
+    - Generate timestamps based on the system's local time.
+    - Use the `rand` library to create random hashes for session filenames.
+    - Utilize timestamps and random hashes for naming session files.
 
-10. **Modularity and Code Structure**:
-    - Separate the main functionalities into distinct modules:
-        - GPT Integration: Handle all interactions with the GPT model.
-        - Session Management: Manage saving, loading, and continuation of chat sessions.
-        - User Interface: Manage user input, message display, and command-line interactions.
-    - Ensure that each module has its dedicated functionality and minimizes dependencies on other modules.
+9. **Modularity and Code Structure**:
+    - Modularize functionalities into distinct modules:
+        - GPT Integration.
+        - Session Management.
+        - User Interface.
+        - File Chunking.
+        - PDF Text Extraction.
+    - Ensure that each module has dedicated functionality and minimizes dependencies on other modules.
 
+#### **Non-functional Requirements**:
+
+1. **Scalability**:
+    - Design the application to efficiently handle multiple users without degrading performance.
+
+2. **Responsiveness**:
+    - Ensure prompt feedback to user input and provide timely GPT responses.
+
+3. **Maintainability**:
+    - Maintain a well-organized and documented codebase, enabling straightforward future modifications.
+
+4. **Security**:
+    - Do not hardcode API keys; instead, securely manage them using environment variables.
+    - Implement safety measures to prevent unauthorized access to stored chat sessions.
+
+5. **Reliability**:
+    - Incorporate mechanisms to recover from potential crashes, ensuring continued operations with minimal data loss.
+
+6. **Portability**:
+    - Design the application to be platform-independent, ensuring it runs on various operating systems without major alterations.
+
+7. **Usability**:
+    - Make the command-line interface intuitive and user-friendly, ensuring users can easily understand and follow instructions.
+
+8. **Dependency Management**:
+    - Rely on third-party libraries such as `rustyline`, `clap`, `async_openai`, `lopdf`, and `owo_colors`. Ensure these libraries are maintained and updated as needed.
+
+9. **Error Handling**:
+    - Implement comprehensive error-handling mechanisms to address potential issues related to:
+        - GPT API connections.
+        - File read/write operations.
+        - Session management.
+        - File import processes.
+    - Display user-friendly error messages, informing users about the nature of any encountered error.
