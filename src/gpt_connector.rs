@@ -1,12 +1,9 @@
-use async_openai::{
-    config::OpenAIConfig,
-    types::CreateChatCompletionRequestArgs,
-    Client,
-};
+use async_openai::types::ChatCompletionRequestMessageArgs;
 pub use async_openai::types::Role;
+use async_openai::{config::OpenAIConfig, types::CreateChatCompletionRequestArgs, Client};
 use serde::{Deserialize, Serialize};
 use std::env;
-use std::error::Error;
+use crate::errors::GPTConnectorError;
 
 pub struct GPTConnector {
     client: Client<OpenAIConfig>,
@@ -23,7 +20,6 @@ pub struct ChatCompletionRequestMessage {
     pub content: String,
 }
 
-
 impl GPTConnector {
     pub fn new() -> Self {
         let api_key = env::var("OPENAI_API_KEY").expect("OPENAI_API_KEY not set");
@@ -32,32 +28,37 @@ impl GPTConnector {
         GPTConnector { client }
     }
 
-    pub async fn send_request(&self, messages: Vec<ChatCompletionRequestMessage>) -> Result<GPTResponse, Box<dyn Error>> {
-        let api_messages: Vec<async_openai::types::ChatCompletionRequestMessage> = messages
-            .into_iter()
-            .map(|msg| async_openai::types::ChatCompletionRequestMessage {
-                role: msg.role,
-                content: Some(msg.content),
-                function_call: None,
-                name: None
-            })
-            .collect();
-        
-        let request_args = CreateChatCompletionRequestArgs::default()
-            .max_tokens(512u16)
-            .model("gpt-3.5-turbo")
-            .messages(api_messages)
-            .build()?;
-        
-        let response_data = self.client.chat().create(request_args).await?;
-        
-        let message = response_data.choices.get(0).map_or("", |choice| &choice.message.content.as_deref().unwrap_or_default());
-        let role = response_data.choices.get(0).map_or(Role::System, |choice| choice.message.role.clone());
-        
-        Ok(GPTResponse { role, content: message.to_string() })
-    }
-    }
+    pub async fn send_request(&self, text: &str) -> Result<(), GPTConnectorError> {
 
+        // Building the request
+        let request = CreateChatCompletionRequestArgs::default()
+            .max_tokens(512u16) // This can be adjusted based on your requirements
+            .model("gpt-3.5-turbo")
+            .messages([
+                ChatCompletionRequestMessageArgs::default()
+                    .role(Role::System)
+                    .content("You are a helpful assistant.")
+                    .build()?,
+                ChatCompletionRequestMessageArgs::default()
+                    .role(Role::User)
+                    .content(text)
+                    .build()?,
+            ])
+            .build()?;
+
+        // Sending the request
+        let response = self.client.chat().create(request).await?;
+
+        // For now, just printing the response. This can be adjusted to process the response as needed.
+        for choice in response.choices {
+            println!(
+                "{}: Role: {}  Content: {:?}",
+                choice.index, choice.message.role, choice.message.content
+            );
+        }
+
+        Ok(())
+    }}
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -1,43 +1,11 @@
 use tiktoken_rs::p50k_base;
-
 use crate::pdf_extractor::PdfText;
-use std::fmt;
 use std::fs::{self, File};
 use std::io::Read;
 use std::path::PathBuf;
 use std::str::FromStr;
-
+use crate::errors::FileChunkerError;
 pub struct FileChunker;
-
-#[derive(Debug)]
-pub enum FileChunkerError {
-    ChunkingError(String),
-    IoError(std::io::Error),
-    FileReadError,
-    UnsupportedFileType, // Any other specific errors can be added here in the future
-}
-impl fmt::Display for FileChunkerError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            FileChunkerError::UnsupportedFileType => write!(f, "Unsupported file type"),
-            FileChunkerError::FileReadError => write!(f, "Error reading the file"),
-            FileChunkerError::ChunkingError(description) => write!(f, "{}", description),
-            FileChunkerError::IoError(_) => todo!(),
-            // ... handle other variants similarly ...
-        }
-    }
-}
-impl FileChunkerError {
-    pub fn new(msg: &str) -> Self {
-        FileChunkerError::ChunkingError(msg.to_string())
-    }
-}
-impl From<std::io::Error> for FileChunkerError {
-    fn from(error: std::io::Error) -> Self {
-        FileChunkerError::IoError(error)
-    }
-}
-impl std::error::Error for FileChunkerError {}
 
 impl FileChunker {
     /// This function determines if the input is a file path or just a block of text.
@@ -57,7 +25,7 @@ impl FileChunker {
         // If not a file path, chunkify the input text directly
         Ok(Self::chunkify_text(input, tokens_per_chunk))
     }
-    
+
     /// Chunk the content of a file based on its type (PDF, text, etc.).
     fn chunkify_file(
         file_path: &PathBuf,
@@ -119,15 +87,15 @@ impl FileChunker {
             PdfText::from_pdf(file_path)
                 .and_then(|pdf_text| pdf_text.get_text())
                 .map_err(|_| {
-                    FileChunkerError::ChunkingError("Failed to extract text from PDF".to_string())
+                    FileChunkerError::Other("Failed to extract text from PDF".to_string())
                 })
         } else if Self::is_binary_file(file_path) {
-            Err(FileChunkerError::ChunkingError(
+            Err(FileChunkerError::Other(
                 "Binary file detected".to_string(),
             ))
         } else {
             fs::read_to_string(file_path).map_err(|_| {
-                FileChunkerError::ChunkingError("Failed to read text file".to_string())
+                FileChunkerError::Other("Failed to read text file".to_string())
             })
         }
     }

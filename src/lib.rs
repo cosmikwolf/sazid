@@ -5,3 +5,4 @@ pub mod session_manager;
 pub mod ui;
 pub mod file_chunker;
 pub mod pdf_extractor;
+pub mod errors;

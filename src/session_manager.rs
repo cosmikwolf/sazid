@@ -1,5 +1,5 @@
+use crate::errors::{FileChunkerError, GPTConnectorError, PdfExtractorError, SessionManagerError};
 use crate::file_chunker::FileChunker;
-use crate::file_chunker::FileChunkerError;  
 use crate::gpt_connector::{ChatCompletionRequestMessage, GPTConnector};
 use chrono::Local;
 use rand::distributions::Alphanumeric;
@@ -8,9 +8,10 @@ use reqwest::Url;
 use serde::Deserialize;
 use serde::Serialize;
 use serde_json;
+use std::fmt;
 use std::fs;
-use std::path::Path;
-use std::path::PathBuf;
+use std::io;
+use std::path::{PathBuf, Path};
 use std::str::FromStr;
 use uuid::Uuid;
 
@@ -153,17 +154,17 @@ impl SessionManager {
     }
 
     /// This function takes in an input which could be a path to a directory, a path to a file,
-    /// a block of text, or a URL. Depending on the type of input, it processes (or ingests) the 
+    /// a block of text, or a URL. Depending on the type of input, it processes (or ingests) the
     /// content by converting it into chunks of text and then sends each chunk to the GPT API.
-    pub fn handle_ingest(&self, input: &str) -> Result<(), FileChunkerError> {
+    pub async fn handle_ingest(&self, input: &String) -> Result<(), SessionManagerError> {
         let mut gpt_connector = GPTConnector::new();
-        
+
         // This vector will store paths that need to be processed.
         let mut paths_to_process = Vec::new();
 
         // Try to interpret the input as a path.
-        let input_path = PathBuf::from_str(input);
-        
+        let input_path: Result<PathBuf, std::convert::Infallible> = PathBuf::from_str(input);
+
         // If it's a valid path, check if it points to a directory or a file.
         if let Ok(p) = input_path {
             if p.is_dir() {
@@ -196,13 +197,16 @@ impl SessionManager {
             };
 
             // Send each chunk to the GPT API using the GPTConnector.
-            for chunk in chunks {
-                gpt_connector.send(&chunk)?;
+            for chunk in &chunks {
+                gpt_connector.send_request(&chunk).await?;
             }
 
             // After successful ingestion, copy the file to the 'ingested' directory.
             if path.is_file() {
-                let dest_path = self.base_dir.join("ingested").join(path.file_name().unwrap());
+                let dest_path = self
+                    .base_dir
+                    .join("ingested")
+                    .join(path.file_name().unwrap());
                 fs::copy(&path, &dest_path)?;
             }
         }
@@ -272,9 +276,7 @@ mod tests {
         let file_path = PathBuf::from("tests/data/testText1.txt"); // Adjust the path
 
         // Call the function
-        let chunks = session_manager
-            .handle_ingest(&file_path)
-            .unwrap();
+        let chunks = session_manager.handle_ingest(&file_path).unwrap();
 
         // Verify chunking
         assert!(!chunks.is_empty(), "No chunks created for plain text file");
@@ -304,9 +306,7 @@ mod tests {
         let file_path = PathBuf::from("tests/data/NIST.SP.800-185.pdf"); // Adjust the path
 
         // Call the function
-        let chunks = session_manager
-            .handle_ingest(&file_path)
-            .unwrap();
+        let chunks = session_manager.handle_ingest(&file_path).unwrap();
 
         // Verify chunking
         assert!(!chunks.is_empty(), "No chunks created for PDF file");

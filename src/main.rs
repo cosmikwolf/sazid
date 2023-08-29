@@ -24,15 +24,15 @@ struct Opts {
     ingest: Option<OsString>,
 }
 
-
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let opts: Opts = Opts::parse();
     
     let gpt = GPTConnector::new();
     let session_manager = SessionManager::new(PathBuf::from("./"));
+    
     if let Some(path) = &opts.ingest {
-        session_manager.handle_ingest(&PathBuf::from(&path))?;
-        }
+        session_manager.handle_ingest(&path.to_string_lossy().to_string())?;
+    }
 
     UI::display_startup_message();
 
@@ -62,7 +62,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
                 if input.starts_with("ingest ") {
                     let filepath = input.split_whitespace().nth(1).unwrap_or_default();
-                    session_manager.handle_ingest(&PathBuf::from(filepath))?;
+                    session_manager.handle_ingest(&filepath.to_string())?;
                 } else {
                     if input == "exit" || input == "quit" {
                         let session_filename = session_manager.new_session_filename();
@@ -82,7 +82,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         .enable_io()
                         .enable_time()
                         .build()?
-                        .block_on(gpt.send_request(messages.clone()))?;
+                        .block_on(gpt.send_request(&input))?;
 
                     let assistant_message = ChatCompletionRequestMessage {
                         role: response.role.clone(),
