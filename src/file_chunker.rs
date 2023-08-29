@@ -84,6 +84,10 @@ impl FileChunker {
             (lines[index - 1].clone(), lines.len())
         }
     }
+
+    pub fn chunk_content(content: &str, chunk_size: usize) -> Vec<String> {
+        content.chars().collect::<Vec<_>>().chunks(chunk_size).map(|chunk| chunk.iter().collect()).collect()
+    }
 }
 #[cfg(test)]
 mod tests {

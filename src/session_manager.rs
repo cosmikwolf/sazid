@@ -1,7 +1,5 @@
 use crate::file_chunker::FileChunker;
 use crate::gpt_connector::ChatCompletionRequestMessage;
-use crate::gpt_connector::GPTConnector;
-use crate::gpt_connector::Role;
 use crate::pdf_extractor::PdfText;
 use chrono::Local;
 use rand::distributions::Alphanumeric;
@@ -12,6 +10,7 @@ use serde_json;
 use std::error::Error;
 use std::fs;
 use std::path::PathBuf;
+use uuid::Uuid;
 
 pub struct SessionManager {
     session_id: String,
@@ -28,7 +27,11 @@ pub struct IngestedData {
 impl SessionManager {
     // Create a new SessionManager with a specified base directory.
     pub fn new(base_dir: PathBuf) -> Self {
-        SessionManager { base_dir }
+        SessionManager {
+            base_dir,
+            session_id: Uuid::new_v4().to_string(),
+            chunk_size: 1024, // or whatever default chunk size you prefer
+        }
     }
 
     // Ensure the session_data directory exists.
@@ -148,32 +151,23 @@ impl SessionManager {
     }
 
     pub fn handle_ingest(&self, path: &PathBuf) -> Result<Vec<String>, Box<dyn Error>> {
-        let ext = path.extension().unwrap_or_default();
-        let content: Vec<String>;
-
-        // Check the file type and extract content accordingly
-        if ext == "txt" {
-            content = fs::read_to_string(path)?
-                .lines()
+        // If the file is a PDF, extract all the text
+        // Otherwise, read the file as plain text
+        let content = if path.extension().unwrap_or_default() == "pdf" {
+            let pdf_text = PdfText::from_pdf(&path)?;
+            (1usize..=pdf_text.total_pages())
+                .filter_map(|page| pdf_text.get_page_text(page as u32))
+                .flatten()
                 .map(|s| s.to_string())
-                .collect();
-        } else if ext == "pdf" {
-            let pdf_text = PdfText::from_pdf(path)?;
-            let content = (1..=pdf_text.total_pages())
-    .filter_map(|page| pdf_text.get_page_text(page).ok())
-    .flatten()
-    .collect::<Vec<String>>()
-    .join("\n");
-
+                .collect::<Vec<String>>()
         } else {
-            return Err(Box::new(std::io::Error::new(
-                std::io::ErrorKind::InvalidInput,
-                "Unsupported file type",
-            )));
-        }
+            let file_content = fs::read_to_string(path)?;
+            file_content.lines().map(|s| s.to_string()).collect()
+        };
 
-        // Chunk content
-        let chunks = FileChunker::chunk_content(&content, self.chunk_size);
+        let combined_content = content.join("\n");
+
+        let chunks = FileChunker::chunk_content(&combined_content, self.chunk_size);
 
         // Create necessary directories
         let ingested_dir = self.base_dir.join("ingested");
@@ -213,6 +207,7 @@ mod tests {
     use std::fs::{self, File};
     use std::io::Write;
     use std::path::Path;
+    use crate::gpt_connector::Role;
     use tempfile::tempdir;
 
     #[test]
