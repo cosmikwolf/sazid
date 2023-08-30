@@ -20,6 +20,8 @@ pub enum SessionManagerError {
     FileChunker(FileChunkerError),
     GPTConnector(GPTConnectorError),
     PdfExtractor(PdfExtractorError),
+    FileNotFound(String),
+    ReadError,
     IO(std::io::Error),
     Other(String),
 }
@@ -58,6 +60,9 @@ impl fmt::Display for SessionManagerError {
             SessionManagerError::PdfExtractor(err) => write!(f, "PdfExtractor error: {}", err),
             SessionManagerError::IO(err) => write!(f, "IO error: {}", err),
             SessionManagerError::Other(err) => write!(f, "Other error: {}", err),
+            SessionManagerError::FileNotFound(file) => { write!(f, "Session file not found: {}", file) },
+            SessionManagerError::ReadError => { write!(f, "Error reading the session file") },
+            SessionManagerError::Other(err) => write!(f, "Other error: {}", err),
         }
     }
 }
@@ -70,6 +75,9 @@ impl fmt::Display for PdfExtractorError {
         }
     }
 }
+
+impl std::error::Error for GPTConnectorError {}
+impl std::error::Error for SessionManagerError {}
 
 impl From<std::io::Error> for SessionManagerError {
     fn from(err: std::io::Error) -> SessionManagerError {
@@ -88,7 +96,6 @@ impl From<GPTConnectorError> for SessionManagerError {
         SessionManagerError::GPTConnector(err)
     }
 }
-
 
 impl From<OpenAIError> for GPTConnectorError {
     fn from(err: OpenAIError) -> GPTConnectorError {

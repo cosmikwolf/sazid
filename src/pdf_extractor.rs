@@ -3,9 +3,9 @@ use lopdf::Object;
 use std::collections::BTreeMap;
 use std::path::Path;
 use std::error::Error;
-use std::fmt;
-use std::io;
-use crate::errors::PdfExtractorError;
+
+
+
 
 pub struct PdfText {
     pub text: BTreeMap<u32, Vec<String>>, // Key is page number

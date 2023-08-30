@@ -1,16 +1,18 @@
-use crate::errors::{FileChunkerError, GPTConnectorError, PdfExtractorError, SessionManagerError};
+use crate::errors::SessionManagerError;
 use crate::file_chunker::FileChunker;
-use crate::gpt_connector::{ChatCompletionRequestMessage, GPTConnector};
+use crate::gpt_connector::GPTConnector;
+use async_openai::types::{CreateChatCompletionResponse, Role};
 use chrono::Local;
 use rand::distributions::Alphanumeric;
 use rand::{thread_rng, Rng};
-use reqwest::Url;
+
 use serde::Deserialize;
 use serde::Serialize;
 use serde_json;
-use std::fmt;
+use async_openai::types::ChatCompletionRequestMessage;
+
 use std::fs;
-use std::io;
+
 use std::path::{PathBuf, Path};
 use std::str::FromStr;
 use uuid::Uuid;
@@ -58,21 +60,49 @@ impl SessionManager {
     }
 
     // Load a session from a given filename.
-    pub fn load_session(
-        &self,
-        filename: &str,
-    ) -> Result<Vec<ChatCompletionRequestMessage>, std::io::Error> {
-        self.ensure_session_data_directory_exists();
-        let data = fs::read(self.base_dir.join("session_data").join(filename))?;
-        let messages = serde_json::from_slice(&data).unwrap_or_default();
-        Ok(messages)
+    pub fn load_session(&self, session_file: &str) -> Result<Vec<ChatCompletionRequestMessage>, SessionManagerError> {
+        // Check if the file exists
+        if !Path::new(session_file).exists() {
+            return Err(SessionManagerError::FileNotFound(session_file.to_string()));
+        }
+    
+        // Read the file content
+        let content = fs::read_to_string(session_file).map_err(|_| SessionManagerError::ReadError)?;
+    
+        // Parse the content to extract messages
+        let parsed: Vec<ChatCompletionRequestMessage> = content
+            .lines()
+            .filter_map(|line| {
+                // Parse the line to extract role and message
+                // For now, assuming a simple format: "role: message"
+                // TODO: Modify this parsing logic as per the actual file format
+                let parts: Vec<&str> = line.splitn(2, ':').collect();
+                if parts.len() != 2 {
+                    return None;
+                }
+                let role = match parts[0] {
+                    "system" => Role::System,
+                    "user" => Role::User,
+                    "assistant" => Role::Assistant,
+                    _ => return None, // Skip lines with unknown roles
+                };
+                Some(ChatCompletionRequestMessage {
+                    role,
+                    content: Some(parts[1].trim().to_string()),
+                    function_call: None,
+                    name: None,
+                })
+            })
+            .collect();
+    
+        Ok(parsed)
     }
-
+    
     // Save a session to a given filename.
     pub fn save_session(
         &self,
         filename: &str,
-        messages: &Vec<ChatCompletionRequestMessage>,
+        messages: &Vec<CreateChatCompletionResponse>,
     ) -> Result<(), std::io::Error> {
         self.ensure_session_data_directory_exists();
         let data = serde_json::to_vec(messages)?;
@@ -157,7 +187,7 @@ impl SessionManager {
     /// a block of text, or a URL. Depending on the type of input, it processes (or ingests) the
     /// content by converting it into chunks of text and then sends each chunk to the GPT API.
     pub async fn handle_ingest(&self, input: &String) -> Result<(), SessionManagerError> {
-        let mut gpt_connector = GPTConnector::new();
+        let gpt_connector = GPTConnector::new();
 
         // This vector will store paths that need to be processed.
         let mut paths_to_process = Vec::new();
@@ -197,9 +227,7 @@ impl SessionManager {
             };
 
             // Send each chunk to the GPT API using the GPTConnector.
-            for chunk in &chunks {
-                gpt_connector.send_request(&chunk).await?;
-            }
+            let response  = gpt_connector.send_request(chunks).await?;
 
             // After successful ingestion, copy the file to the 'ingested' directory.
             if path.is_file() {
@@ -208,6 +236,10 @@ impl SessionManager {
                     .join("ingested")
                     .join(path.file_name().unwrap());
                 fs::copy(&path, &dest_path)?;
+            }
+
+            for choice in &response.choices {
+                println!("{:?}", choice.message.content);
             }
         }
 
@@ -334,7 +366,7 @@ mod tests {
         assert!(filename.contains("_"));
 
         // Test session saving and loading
-        let messages = vec![ChatCompletionRequestMessage {
+        let messages = vec![GPTResponse {
             role: Role::User,
             content: "Test message".to_string(),
         }];
