@@ -1,12 +1,12 @@
+use async_openai::types::ChatCompletionRequestMessage;
 use async_openai::types::Role;
 use clap::Parser;
-use rustyline::error::ReadlineError;
 use sazid::gpt_connector::GPTConnector;
-use async_openai::types::ChatCompletionRequestMessage;
 use sazid::session_manager::SessionManager;
 use sazid::ui::UI;
 use std::ffi::OsString;
 use std::path::PathBuf;
+use rustyline::error::ReadlineError;
 
 #[derive(Parser)]
 #[clap(
@@ -79,21 +79,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         .block_on(session_manager.handle_ingest(&filepath.to_string()))?;
                 } else {
                     if input == "exit" || input == "quit" {
-                        let session_filename = session_manager.new_session_filename();
-                        session_manager.save_session(&session_filename, &messages)?;
-                        session_manager.save_last_session_filename(&session_filename)?;
+                        session_manager.save_last_session_filename(session_manager.session_filename)?;
                         UI::display_exit_message();
                         break;
                     }
                     let user_message = ChatCompletionRequestMessage {
                         role: Role::User,
                         content: Some(input.to_string()),
-                        function_call: None,  // If you have appropriate data, replace None
-                        name: None,           // If you have appropriate data, replace None
+                        function_call: None, // If you have appropriate data, replace None
+                        name: None,          // If you have appropriate data, replace None
                     };
                     messages.push(user_message.clone());
 
-                    
                     match tokio::runtime::Builder::new_current_thread()
                         .enable_io()
                         .enable_time()
@@ -102,36 +99,42 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     {
                         Ok(response) => {
                             for choice in &response.choices {
-                                UI::display_message(choice.message.role, &choice.message.content.unwrap_or_default());
+                                UI::display_message(
+                                    choice.message.role,
+                                    &choice.message.content.unwrap_or_default(),
+                                );
                             }
-                        },
+                            session_manager.save_chat_to_session(
+                                &session_filename,
+                                &messages,
+                                &response,
+                            )?;
+    
+                        }
                         Err(error) => {
                             // Displaying the error to the user
                             UI::display_message(Role::System, &format!("Error: {}", error));
-                            
+
                             // Logging the request and the error
                             // NOTE: We'll need an instance or reference to the session manager here to call save_chat_to_session
                             // session_manager.save_chat_to_session("error_log.json", &vec![input.to_string()], &None).expect("Failed to save error log");
                         }
                     }
-                          }
-                        }
-                        Err(e) => {
-                            println!("Error sending request to GPT: {:?}", e);
-                        }
-                    }
                 }
+            }
+            Err(e) => {
+                println!("Error sending request to GPT: {:?}", e);
             }
             Err(ReadlineError::Interrupted) => {
                 let session_filename = session_manager.new_session_filename();
-                session_manager.save_session(&session_filename, &messages)?;
+                session_manager.save_chat_to_session(&session_filename, &messages)?;
                 session_manager.save_last_session_filename(&session_filename)?;
                 UI::display_exit_message();
-                break;
+                // break;
             }
             Err(ReadlineError::Eof) => {
                 let session_filename = session_manager.new_session_filename();
-                session_manager.save_session(&session_filename, &messages)?;
+                session_manager.save_chat_to_session(&session_filename, &messages)?;
                 session_manager.save_last_session_filename(&session_filename)?;
                 UI::display_exit_message();
                 break;
@@ -142,6 +145,5 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
         }
     }
-
     Ok(())
 }

@@ -1,7 +1,9 @@
 use crate::errors::GPTConnectorError;
 pub use async_openai::types::Role;
-use async_openai::types::{ChatCompletionRequestMessageArgs, CreateChatCompletionResponse};
-use async_openai::{config::OpenAIConfig, types::CreateChatCompletionRequestArgs, Client};
+use async_openai::types::{
+    ChatCompletionRequestMessage, CreateChatCompletionRequest, CreateChatCompletionResponse,
+};
+use async_openai::{config::OpenAIConfig, Client};
 use std::env;
 
 pub struct GPTConnector {
@@ -29,17 +31,21 @@ impl GPTConnector {
 
         let mut constructed_messages = Vec::new();
         for message in messages {
-            constructed_messages.push(ChatCompletionRequestMessageArgs {
+            constructed_messages.push(ChatCompletionRequestMessage {
                 role: Role::User,
-                content: message,
+                content: Some(message),
+                function_call: None,
+                name: None,
             });
         }
-
-        let request = CreateChatCompletionRequestArgs {
-            messages: constructed_messages,
-            ..Default::default() // Using default values for other fields
+        // Construct the request using CreateChatCompletionRequest
+        let request = CreateChatCompletionRequest {
+            model: "gpt-3.5-turbo".to_string(), // Assuming this as the model you want to use
+            messages: constructed_messages,     // Removed the Some() wrapping
+            ..Default::default()                // Use default values for other fields
         };
 
+        // Make the API call
         let response_result = client.chat().create(request).await;
 
         match response_result {

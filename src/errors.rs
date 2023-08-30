@@ -12,6 +12,7 @@ pub enum FileChunkerError {
 pub enum GPTConnectorError {
     Reqwest(reqwest::Error),
     OpenAI(OpenAIError),
+    APIError(String),
     Other(String),
 }
 
@@ -47,6 +48,7 @@ impl fmt::Display for GPTConnectorError {
         match self {
             GPTConnectorError::Reqwest(err) => write!(f, "Reqwest error: {}", err),
             GPTConnectorError::OpenAI(err) => write!(f, "OpenAI error: {}", err),
+            GPTConnectorError::APIError(err) => write!(f, "API error: {}", err),
             GPTConnectorError::Other(err) => write!(f, "Other error: {}", err),
         }
     }
@@ -62,7 +64,6 @@ impl fmt::Display for SessionManagerError {
             SessionManagerError::Other(err) => write!(f, "Other error: {}", err),
             SessionManagerError::FileNotFound(file) => { write!(f, "Session file not found: {}", file) },
             SessionManagerError::ReadError => { write!(f, "Error reading the session file") },
-            SessionManagerError::Other(err) => write!(f, "Other error: {}", err),
         }
     }
 }
