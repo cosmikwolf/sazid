@@ -5,6 +5,7 @@ use async_openai::types::{
 };
 use async_openai::{config::OpenAIConfig, Client};
 use std::env;
+use backoff::ExponentialBackoffBuilder;
 
 pub struct GPTConnector {
     client: Client<OpenAIConfig>,
@@ -21,7 +22,7 @@ impl GPTConnector {
         let config = OpenAIConfig::new().with_api_key(api_key);
         
 
-let backoff = ExponentialBackoffBuilder::new()
+let backoff = ExponentialBackoffBuilder::new() // Ensure backoff crate is added to Cargo.toml
     .with_max_elapsed_time(Some(std::time::Duration::from_secs(60)))
     .build();
 let client = Client::with_config(config).with_backoff(backoff);

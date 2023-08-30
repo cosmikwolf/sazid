@@ -1,9 +1,6 @@
 
-use tiktoken_rs::async_openai::{Tokenizer, get_chat_completion_max_tokens};
-
 pub async fn count_tokens(text: &str) -> Result<usize, io::Error> {
-    let tokenizer = Tokenizer::from_str(&String::new());
-    let token_count = tokenizer.count_tokens(text).await?;
+    let token_count = tiktoken_rs::cl100k_base(text);
     Ok(token_count)
 }
 
@@ -12,8 +9,6 @@ use std::io;
 use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 use async_openai::types::{CreateChatCompletionResponse, ChatCompletionRequestMessage};
-use tiktoken_rs::p50k_base;
-
 
 const SESSIONS_DIR: &str = "./data/sessions";
 const INGESTED_DIR: &str = "./data/ingested";
@@ -27,7 +22,6 @@ pub struct Model {
 
 impl Model {
     pub const GPT3_TURBO: Model = Model {
-    priority: 3,
     priority: 3,
         endpoint: "https://api.openai.com/v1/models/text-davinci-003/completions",
         name: "gpt-3.5-turbo",
@@ -43,7 +37,6 @@ impl Model {
     
     pub const GPT4_TURBO: Model = Model {
     priority: 2,
-    priority: 2,
         endpoint: "https://api.openai.com/v1/models/text-davinci-004/completions",
         name: "gpt-4-turbo",
         tokens_limit: 8192,
@@ -58,7 +51,6 @@ impl Model {
 
     
     pub const GPT3_TURBO_16K: Model = Model {
-    priority: 3,
         endpoint: "https://api.openai.com/v1/models/gpt-3.5-turbo-16k/completions",
         name: "gpt-3.5-turbo-16k",
         tokens_limit: 16385,
@@ -66,7 +58,6 @@ impl Model {
     };
     
     pub const GPT4: Model = Model {
-    priority: 2,
         endpoint: "https://api.openai.com/v1/models/gpt-4/completions",
         name: "gpt-4",
         tokens_limit: 8192,
@@ -74,7 +65,6 @@ impl Model {
     };
     
     pub const GPT4_32K: Model = Model {
-    priority: 1,
         endpoint: "https://api.openai.com/v1/models/gpt-4-32k/completions",
         name: "gpt-4-32k",
         tokens_limit: 32768,
@@ -104,11 +94,11 @@ pub struct SessionManager {
 }
 
 impl SessionManager {
-    async fn check_model_access(&self, client: &Client) -> Option<&Model> {
+    async fn check_model_access(&self, client: &async_openai::Client<OpenAIConfig>) -> Option<&Model> {
         // Mocked logic: In a real-world scenario, you would call the OpenAI API to check model access.
         // Here, we'll assume the user has access to all models and select based on priority.
         
-        let models = vec![&GPTConnector::GPT4_32K, &GPTConnector::GPT4, &GPTConnector::GPT3_TURBO_16K];
+        let models = vec![&Self::GPT4_32K, &Self::GPT4, &Self::GPT3_TURBO_16K];
         models.into_iter().min_by_key(|model| model.priority)
     }
 
@@ -133,15 +123,6 @@ impl SessionManager {
     pub fn save_last_session_filename(&self, session_filename: &Path) {
         let last_session_path = Path::new(SESSIONS_DIR).join("last_session.txt");
         fs::write(last_session_path, session_filename.display().to_string()).unwrap();
-    }
-
-    pub fn validate_token_count(&self, input_text: &str) -> Result<(), String> {
-        let bpe = p50k_base().unwrap();
-        let tokens = bpe.encode_with_special_tokens(input_text);
-        if tokens.len() > self.model.tokens_limit {
-            return Err(format!("Input text exceeds the model's maximum token limit of {}", self.model.tokens_limit));
-        }
-        Ok(())
     }
 
     pub fn get_session_filename(&self) -> PathBuf {
