@@ -1,5 +1,5 @@
 
-use tiktoken::Tokenizer;
+use tiktoken_rs::tokenizer::Tokenizer;
 
 pub async fn count_tokens(text: &str) -> Result<usize, io::Error> {
     let tokenizer = Tokenizer::new();
@@ -192,7 +192,7 @@ impl SessionManager {
         Ok(())
     }
 
-    pub fn load_session(&self) -> io::Result<Session> {
+    pub fn load_last_session(&self) -> io::Result<Session> {
         let session_file_path = self.get_session_filepath();
         let data = fs::read_to_string(session_file_path)?;
         let session: Session = serde_json::from_str(&data)?;
@@ -225,7 +225,7 @@ mod tests {
         };
 
         // Modify the SESSIONS_DIR to use a temporary directory for testing
-        let test_sessions_dir = "./data/sessions_test";
+        const SESSIONS_DIR: &str = "./data/sessions_test";
         manager.save_session(&session).unwrap();
 
         let loaded_session = manager.load_session().unwrap();
@@ -233,7 +233,7 @@ mod tests {
         assert_eq!(session.bot_messages, loaded_session.bot_messages);
 
         // Clean up the temporary test directory
-        let dir = Path::new(&test_sessions_dir);
+        let dir = Path::new(SESSIONS_DIR);
         if dir.exists() {
             fs::remove_dir_all(dir).unwrap();
         }

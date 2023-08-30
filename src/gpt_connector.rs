@@ -30,7 +30,7 @@ let client = Client::with_config(config).with_backoff(backoff);
         GPTConnector { client }
     }
 
-    pub async fn send_request(model: &str, 
+    pub async fn send_request(
         &self,
         messages: Vec<String>,
     ) -> Result<CreateChatCompletionResponse, GPTConnectorError> {
@@ -47,13 +47,13 @@ let client = Client::with_config(config).with_backoff(backoff);
         }
         // Construct the request using CreateChatCompletionRequest
         let request = CreateChatCompletionRequest {
-            model: model.to_string(), // Assuming this as the model you want to use
+            model: "gpt-3.5-turbo".to_string(), // Assuming this as the model you want to use
             messages: constructed_messages,     // Removed the Some() wrapping
             ..Default::default()                // Use default values for other fields
         };
 
         // Make the API call
-        let response_result = client.chat().create(request).await;
+        let response_result = self.client.chat().create(request).await;
 
         match response_result {
             Ok(response) => Ok(response),
@@ -71,7 +71,7 @@ mod tests {
     async fn test_send_request() {
         let connector = GPTConnector::new();
         let response = connector
-            .send_request(vec![ChatCompletionRequestMessage {
+            .send_request(vec![ConnectorChatCompletionRequestMessage {
                 role: Role::User,
                 content: "Hello, GPT!".to_string(),
             }])
