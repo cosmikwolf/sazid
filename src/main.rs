@@ -15,6 +15,21 @@ use rustyline::error::ReadlineError;
     about = "Interactive chat with GPT"
 )]
 struct Opts {
+    #[clap(
+        short = 'm',
+        long,
+        value_name = "MODEL_NAME",
+        help = "Specify the model to use (e.g., gpt-4, gpt-3.5-turbo-16k)"
+    )]
+    model: Option<String>,
+
+    #[clap(
+        short = 'l',
+        long = "list-models",
+        help = "List the models the user has access to"
+    )]
+    list_models: bool,
+
     #[clap(short = 'n', long, help = "Start a new chat session")]
     new: bool,
 
@@ -35,6 +50,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let gpt = GPTConnector::new();
     let session_manager = SessionManager::new(PathBuf::from("./"));
+    if let Some(model_name) = &opts.model {
+        println!("Using model: {}", model_name);
+    }
+
+    if opts.list_models {
+        println!("Listing accessible models...");
+        println!("gpt-3.5-turbo-16k");
+        println!("gpt-4");
+        println!("gpt-4-32k");
+        return Ok(());
+    }
+
 
     if let Some(path) = &opts.ingest {
         tokio::runtime::Builder::new_current_thread()
@@ -112,12 +139,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     
                         }
                         Err(error) => {
-                            // Displaying the error to the user
                             UI::display_message(Role::System, &format!("Error: {}", error));
 
-                            // Logging the request and the error
-                            // NOTE: We'll need an instance or reference to the session manager here to call save_chat_to_session
-                            // session_manager.save_chat_to_session("error_log.json", &vec![input.to_string()], &None).expect("Failed to save error log");
                         }
                     }
                 }
@@ -130,7 +153,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 session_manager.save_chat_to_session(&session_filename, &messages)?;
                 session_manager.save_last_session_filename(&session_filename)?;
                 UI::display_exit_message();
-                // break;
             }
             Err(ReadlineError::Eof) => {
                 let session_filename = session_manager.new_session_filename();

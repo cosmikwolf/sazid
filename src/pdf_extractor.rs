@@ -12,6 +12,8 @@ pub struct PdfText {
     pub errors: Vec<String>,
 }
 
+// These are the PDF object types that are ignored during text extraction
+// as they typically don't contain meaningful text content.
 static IGNORE: &[&str] = &[
     "Length",
     "BBox",
@@ -83,7 +85,7 @@ impl PdfText {
             errors: Vec::new(),
         };
         let doc = Document::load_filtered(pdf_path, filter_func).map_err(|e| {
-            Box::<dyn Error>::from(format!("Failed to load PDF: {}", e))
+            Box::<dyn Error>::from(format!("Failed to load and process the PDF at the specified path: {}", e))
         })?;       
 
         let pages = doc.get_pages();

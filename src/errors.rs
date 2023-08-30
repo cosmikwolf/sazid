@@ -3,33 +3,52 @@ use std::fmt;
 
 #[derive(Debug)]
 pub enum FileChunkerError {
+    /// Errors related to Input/Output operations, e.g., file reading/writing.
     IO(std::io::Error),
+    /// A generic error type to capture any other miscellaneous errors.
+    /// Errors that arise when trying to convert bytes into a UTF-8 string.
     Utf8(std::string::FromUtf8Error),
+    /// A generic error type to capture any other miscellaneous errors.
     Other(String),
 }
 
 #[derive(Debug)]
 pub enum GPTConnectorError {
+    /// Errors originating from the `reqwest` crate, used for HTTP requests.
     Reqwest(reqwest::Error),
+    /// Errors specific to the `OpenAI` API.
     OpenAI(OpenAIError),
+    /// Errors related to the GPT API responses.
     APIError(String),
+    /// A generic error type to capture any other miscellaneous errors.
     Other(String),
 }
 
 #[derive(Debug)]
 pub enum SessionManagerError {
+    /// Errors propagated from the `FileChunker` module.
     FileChunker(FileChunkerError),
+    /// Errors propagated from the `GPTConnector` module.
     GPTConnector(GPTConnectorError),
+    /// Errors propagated from the `PdfExtractor` module.
     PdfExtractor(PdfExtractorError),
+    /// Errors that arise when a session file is not found.
     FileNotFound(String),
+    /// Errors related to reading a session file.
     ReadError,
+    /// Errors related to Input/Output operations.
     IO(std::io::Error),
+    /// A generic error type to capture any other miscellaneous errors.
+    /// Errors that arise when trying to convert bytes into a UTF-8 string.
     Other(String),
 }
 
 #[derive(Debug)]
 pub enum PdfExtractorError {
+    /// Errors related to Input/Output operations during PDF extraction.
     IO(std::io::Error),
+    /// A generic error type to capture any other miscellaneous errors.
+    /// Errors that arise when trying to convert bytes into a UTF-8 string.
     Other(String),
 }
 

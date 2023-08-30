@@ -1,8 +1,19 @@
+
+use tiktoken::Tokenizer;
+
+pub async fn count_tokens(text: &str) -> Result<usize, io::Error> {
+    let tokenizer = Tokenizer::new();
+    let token_count = tokenizer.count_tokens(text).await?;
+    Ok(token_count)
+}
+
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 use async_openai::types::{CreateChatCompletionResponse, ChatCompletionRequestMessage};
+use tiktoken_rs::p50k_base;
+
 
 const SESSIONS_DIR: &str = "./data/sessions";
 const INGESTED_DIR: &str = "./data/ingested";
@@ -11,14 +22,56 @@ pub struct Model {
     pub endpoint: &'static str,
     pub name: &'static str,
     pub tokens_limit: usize,
+    pub priority: u8,
 }
 
 impl Model {
-    pub const GPT3: Model = Model {
+    pub const GPT3_TURBO: Model = Model {
         endpoint: "https://api.openai.com/v1/models/text-davinci-003/completions",
         name: "gpt-3.5-turbo",
         tokens_limit: 4096,
     };
+    
+    pub const GPT3_STANDARD: Model = Model {
+        endpoint: "https://api.openai.com/v1/models/text-davinci-003/completions-standard",
+        name: "gpt-3.5-standard",
+        tokens_limit: 4096,
+    };
+    
+    pub const GPT4_TURBO: Model = Model {
+        endpoint: "https://api.openai.com/v1/models/text-davinci-004/completions",
+        name: "gpt-4-turbo",
+        tokens_limit: 8192,
+    };
+    
+    pub const GPT4_STANDARD: Model = Model {
+        endpoint: "https://api.openai.com/v1/models/text-davinci-004/completions-standard",
+        name: "gpt-4-standard",
+        tokens_limit: 8192,
+    };
+
+    
+    pub const GPT3_TURBO_16K: Model = Model {
+        endpoint: "https://api.openai.com/v1/models/gpt-3.5-turbo-16k/completions",
+        name: "gpt-3.5-turbo-16k",
+        tokens_limit: 16385,
+        priority: 3,
+    };
+    
+    pub const GPT4: Model = Model {
+        endpoint: "https://api.openai.com/v1/models/gpt-4/completions",
+        name: "gpt-4",
+        tokens_limit: 8192,
+        priority: 2,
+    };
+    
+    pub const GPT4_32K: Model = Model {
+        endpoint: "https://api.openai.com/v1/models/gpt-4-32k/completions",
+        name: "gpt-4-32k",
+        tokens_limit: 32768,
+        priority: 1,
+    };
+
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -42,6 +95,50 @@ pub struct SessionManager {
 }
 
 impl SessionManager {
+    async fn check_model_access(&self, client: &Client) -> Option<&Model> {
+        // Mocked logic: In a real-world scenario, you would call the OpenAI API to check model access.
+        // Here, we'll assume the user has access to all models and select based on priority.
+        
+        let models = vec![&Self::GPT4_32K, &Self::GPT4, &Self::GPT3_TURBO_16K];
+        models.into_iter().min_by_key(|model| model.priority)
+    }
+
+    pub fn load_session(&self, session_filename: &Path) -> Result<Session, io::Error> {
+        let session_content = fs::read_to_string(session_filename)?;
+        serde_json::from_str(&session_content).map_err(|e| io::Error::new(io::ErrorKind::Other, e.to_string()))
+    }
+
+    pub fn load_last_session_filename(&self) -> Option<PathBuf> {
+        let last_session_path = Path::new(SESSIONS_DIR).join("last_session.txt");
+        if last_session_path.exists() {
+            Some(fs::read_to_string(last_session_path).unwrap().into())
+        } else {
+            None
+        }
+    }
+
+    pub fn new_session_filename(&self) -> PathBuf {
+        self.get_session_filename()
+    }
+
+    pub fn save_last_session_filename(&self, session_filename: &Path) {
+        let last_session_path = Path::new(SESSIONS_DIR).join("last_session.txt");
+        fs::write(last_session_path, session_filename.display().to_string()).unwrap();
+    }
+
+    pub fn validate_token_count(&self, input_text: &str) -> Result<(), String> {
+        let bpe = p50k_base().unwrap();
+        let tokens = bpe.encode_with_special_tokens(input_text);
+        if tokens.len() > self.model.tokens_limit {
+            return Err(format!("Input text exceeds the model's maximum token limit of {}", self.model.tokens_limit));
+        }
+        Ok(())
+    }
+
+    pub fn get_session_filename(&self) -> PathBuf {
+        Path::new(SESSIONS_DIR).join(format!("{}.json", &self.session_id))
+    }
+
     pub fn new(session_id: String, model: Model) -> Self {
         Self { session_id, model }
     }
@@ -128,7 +225,7 @@ mod tests {
         };
 
         // Modify the SESSIONS_DIR to use a temporary directory for testing
-        const SESSIONS_DIR: &str = "./data/sessions_test";
+        let test_sessions_dir = "./data/sessions_test";
         manager.save_session(&session).unwrap();
 
         let loaded_session = manager.load_session().unwrap();
@@ -136,7 +233,7 @@ mod tests {
         assert_eq!(session.bot_messages, loaded_session.bot_messages);
 
         // Clean up the temporary test directory
-        let dir = Path::new(SESSIONS_DIR);
+        let dir = Path::new(&test_sessions_dir);
         if dir.exists() {
             fs::remove_dir_all(dir).unwrap();
         }

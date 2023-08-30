@@ -19,15 +19,22 @@ impl GPTConnector {
     pub fn new() -> Self {
         let api_key = env::var("OPENAI_API_KEY").expect("OPENAI_API_KEY not set");
         let config = OpenAIConfig::new().with_api_key(api_key);
-        let client = Client::with_config(config);
+        
+use backoff::ExponentialBackoffBuilder;
+
+let backoff = ExponentialBackoffBuilder::new()
+    .with_max_elapsed_time(Some(std::time::Duration::from_secs(60)))
+    .build();
+let client = Client::with_config(config).with_backoff(backoff);
+
         GPTConnector { client }
     }
 
-    pub async fn send_request(
+    pub async fn send_request(model: &str, 
         &self,
         messages: Vec<String>,
     ) -> Result<CreateChatCompletionResponse, GPTConnectorError> {
-        let client = Client::new();
+        // Using the client variable from the GPTConnector struct
 
         let mut constructed_messages = Vec::new();
         for message in messages {
@@ -40,7 +47,7 @@ impl GPTConnector {
         }
         // Construct the request using CreateChatCompletionRequest
         let request = CreateChatCompletionRequest {
-            model: "gpt-3.5-turbo".to_string(), // Assuming this as the model you want to use
+            model: model.to_string(), // Assuming this as the model you want to use
             messages: constructed_messages,     // Removed the Some() wrapping
             ..Default::default()                // Use default values for other fields
         };
@@ -64,7 +71,7 @@ mod tests {
     async fn test_send_request() {
         let connector = GPTConnector::new();
         let response = connector
-            .send_request(vec![ConnectorChatCompletionRequestMessage {
+            .send_request(vec![ChatCompletionRequestMessage {
                 role: Role::User,
                 content: "Hello, GPT!".to_string(),
             }])
