@@ -1,8 +1,8 @@
-use async_openai::types::{ChatCompletionRequestMessageArgs, CreateChatCompletionResponse};
+use crate::errors::GPTConnectorError;
 pub use async_openai::types::Role;
+use async_openai::types::{ChatCompletionRequestMessageArgs, CreateChatCompletionResponse};
 use async_openai::{config::OpenAIConfig, types::CreateChatCompletionRequestArgs, Client};
 use std::env;
-use crate::errors::GPTConnectorError;
 
 pub struct GPTConnector {
     client: Client<OpenAIConfig>,
@@ -20,41 +20,36 @@ impl GPTConnector {
         let client = Client::with_config(config);
         GPTConnector { client }
     }
-    
-    pub async fn send_request(&self, messages: Vec<String>) -> Result<CreateChatCompletionResponse, GPTConnectorError> {
+
+    pub async fn send_request(
+        &self,
+        messages: Vec<String>,
+    ) -> Result<CreateChatCompletionResponse, GPTConnectorError> {
         let client = Client::new();
 
         let mut constructed_messages = Vec::new();
-
-        // Construct the initial system message
-        constructed_messages.push(
-            ChatCompletionRequestMessageArgs::default()
-                .role(Role::System)
-                .content("You are a helpful assistant.")
-                .build()?
-        );
-
-        // Construct user messages
         for message in messages {
-            constructed_messages.push(
-                ChatCompletionRequestMessageArgs::default()
-                    .role(Role::User)
-                    .content(&message)
-                    .build()?
-            );
+            constructed_messages.push(ChatCompletionRequestMessageArgs {
+                role: Role::User,
+                content: message,
+            });
         }
 
-        let request = CreateChatCompletionRequestArgs::default()
-            .max_tokens(512u16)
-            .model("gpt-3.5-turbo")
-            .messages(constructed_messages.clone())
-            .build()?;
+        let request = CreateChatCompletionRequestArgs {
+            messages: constructed_messages,
+            ..Default::default() // Using default values for other fields
+        };
 
-        let response = client.chat().create(request).await?;
+        let response_result = client.chat().create(request).await;
 
-
-        Ok(response)
-    }}
+        match response_result {
+            Ok(response) => Ok(response),
+            Err(e) => {
+                Err(GPTConnectorError::APIError(e.to_string())) // Capturing the API error and converting it to GPTConnectorError::APIError
+            }
+        }
+    }
+}
 #[cfg(test)]
 mod tests {
     use super::*;

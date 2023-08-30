@@ -6,14 +6,14 @@ use chrono::Local;
 use rand::distributions::Alphanumeric;
 use rand::{thread_rng, Rng};
 
+use async_openai::types::ChatCompletionRequestMessage;
 use serde::Deserialize;
 use serde::Serialize;
 use serde_json;
-use async_openai::types::ChatCompletionRequestMessage;
 
 use std::fs;
 
-use std::path::{PathBuf, Path};
+use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use uuid::Uuid;
 
@@ -29,6 +29,22 @@ pub struct IngestedData {
     chunk_num: u32,
     content: String,
 }
+
+// Define structs for the log entry
+#[derive(Serialize, Deserialize)]
+struct LogError {
+    api_error: Option<String>, // Placeholder for actual API error handling
+    no_response: bool,
+}
+
+#[derive(Serialize, Deserialize)]
+struct LogEntry {
+    timestamp: i64,
+    request: ChatCompletionRequestMessage,
+    response: Option<CreateChatCompletionResponse>,
+    errors: LogError,
+}
+
 impl SessionManager {
     // Create a new SessionManager with a specified base directory.
     pub fn new(base_dir: PathBuf) -> Self {
@@ -60,15 +76,19 @@ impl SessionManager {
     }
 
     // Load a session from a given filename.
-    pub fn load_session(&self, session_file: &str) -> Result<Vec<ChatCompletionRequestMessage>, SessionManagerError> {
+    pub fn load_session(
+        &self,
+        session_file: &str,
+    ) -> Result<Vec<ChatCompletionRequestMessage>, SessionManagerError> {
         // Check if the file exists
         if !Path::new(session_file).exists() {
             return Err(SessionManagerError::FileNotFound(session_file.to_string()));
         }
-    
+
         // Read the file content
-        let content = fs::read_to_string(session_file).map_err(|_| SessionManagerError::ReadError)?;
-    
+        let content =
+            fs::read_to_string(session_file).map_err(|_| SessionManagerError::ReadError)?;
+
         // Parse the content to extract messages
         let parsed: Vec<ChatCompletionRequestMessage> = content
             .lines()
@@ -94,18 +114,31 @@ impl SessionManager {
                 })
             })
             .collect();
-    
+
         Ok(parsed)
     }
-    
-    // Save a session to a given filename.
-    pub fn save_session(
+
+    // Save a chat to a given filename.
+    pub fn save_chat_to_session(
         &self,
         filename: &str,
-        messages: &Vec<CreateChatCompletionResponse>,
+        request: &ChatCompletionRequestMessage,
+        response: &Option<CreateChatCompletionResponse>,
     ) -> Result<(), std::io::Error> {
         self.ensure_session_data_directory_exists();
-        let data = serde_json::to_vec(messages)?;
+
+        let current_timestamp = chrono::Local::now().timestamp();
+        let log_entry = LogEntry {
+            timestamp: current_timestamp,
+            request: request.clone(),
+            response: response.clone(),
+            errors: LogError {
+                api_error: None, // Placeholder for actual API error handling
+                no_response: response.is_none(),
+            },
+        };
+
+        let data = serde_json::to_vec(&log_entry)?;
         fs::write(self.base_dir.join("session_data").join(filename), data)?;
         Ok(())
     }
@@ -227,7 +260,7 @@ impl SessionManager {
             };
 
             // Send each chunk to the GPT API using the GPTConnector.
-            let response  = gpt_connector.send_request(chunks).await?;
+            let response = gpt_connector.send_request(chunks).await?;
 
             // After successful ingestion, copy the file to the 'ingested' directory.
             if path.is_file() {
@@ -370,7 +403,7 @@ mod tests {
             role: Role::User,
             content: "Test message".to_string(),
         }];
-        manager.save_session(&filename, &messages).unwrap();
+        manager.save_chat_to_session(&filename, &messages).unwrap();
         let loaded_messages = manager.load_session(&filename).unwrap();
         assert_eq!(messages, loaded_messages);
 

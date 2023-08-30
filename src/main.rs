@@ -93,16 +93,28 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     };
                     messages.push(user_message.clone());
 
+                    
                     match tokio::runtime::Builder::new_current_thread()
                         .enable_io()
                         .enable_time()
                         .build()?
                         .block_on(gpt.send_request(vec![input.to_string()]))
-                        {
+                    {
                         Ok(response) => {
                             for choice in &response.choices {
                                 UI::display_message(choice.message.role, &choice.message.content.unwrap_or_default());
                             }
+                        },
+                        Err(error) => {
+                            // Displaying the error to the user
+                            UI::display_message(Role::System, &format!("Error: {}", error));
+                            
+                            // Logging the request and the error
+                            // NOTE: We'll need an instance or reference to the session manager here to call save_chat_to_session
+                            // session_manager.save_chat_to_session("error_log.json", &vec![input.to_string()], &None).expect("Failed to save error log");
+                        }
+                    }
+                          }
                         }
                         Err(e) => {
                             println!("Error sending request to GPT: {:?}", e);
