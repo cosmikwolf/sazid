@@ -50,11 +50,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let gpt = GPTConnector::new();
     let session_manager = SessionManager::new(PathBuf::from("./"));
+    // Handle model selection based on CLI flag
     if let Some(model_name) = &opts.model {
+        // In a real-world scenario, you would set the selected model in the session manager or GPT connector
         println!("Using model: {}", model_name);
     }
 
+    // Handle listing models based on CLI flag
     if opts.list_models {
+        // In a real-world scenario, you would call the OpenAI API to list models the user has access to
         println!("Listing accessible models...");
         println!("gpt-3.5-turbo-16k");
         println!("gpt-4");
@@ -139,8 +143,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     
                         }
                         Err(error) => {
+                            // Displaying the error to the user
                             UI::display_message(Role::System, &format!("Error: {}", error));
 
+                            // Logging the request and the error
+                            // NOTE: We'll need an instance or reference to the session manager here to call save_chat_to_session
+                            // session_manager.save_chat_to_session("error_log.json", &vec![input.to_string()], &None).expect("Failed to save error log");
                         }
                     }
                 }
@@ -153,6 +161,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 session_manager.save_chat_to_session(&session_filename, &messages)?;
                 session_manager.save_last_session_filename(&session_filename)?;
                 UI::display_exit_message();
+                // break;
             }
             Err(ReadlineError::Eof) => {
                 let session_filename = session_manager.new_session_filename();

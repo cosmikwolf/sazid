@@ -1,8 +1,8 @@
 
-use tiktoken_rs::tokenizer::Tokenizer;
+use tiktoken_rs::async_openai::{Tokenizer, get_chat_completion_max_tokens};
 
 pub async fn count_tokens(text: &str) -> Result<usize, io::Error> {
-    let tokenizer = Tokenizer::new();
+    let tokenizer = Tokenizer::from_str(&String::new());
     let token_count = tokenizer.count_tokens(text).await?;
     Ok(token_count)
 }
@@ -22,29 +22,35 @@ pub struct Model {
     pub endpoint: &'static str,
     pub name: &'static str,
     pub tokens_limit: usize,
-    pub priority: u8,
+    pub priority: u8
 }
 
 impl Model {
     pub const GPT3_TURBO: Model = Model {
+    priority: 3,
+    priority: 3,
         endpoint: "https://api.openai.com/v1/models/text-davinci-003/completions",
         name: "gpt-3.5-turbo",
         tokens_limit: 4096,
     };
     
     pub const GPT3_STANDARD: Model = Model {
+    priority: 4,
         endpoint: "https://api.openai.com/v1/models/text-davinci-003/completions-standard",
         name: "gpt-3.5-standard",
         tokens_limit: 4096,
     };
     
     pub const GPT4_TURBO: Model = Model {
+    priority: 2,
+    priority: 2,
         endpoint: "https://api.openai.com/v1/models/text-davinci-004/completions",
         name: "gpt-4-turbo",
         tokens_limit: 8192,
     };
     
     pub const GPT4_STANDARD: Model = Model {
+    priority: 1,
         endpoint: "https://api.openai.com/v1/models/text-davinci-004/completions-standard",
         name: "gpt-4-standard",
         tokens_limit: 8192,
@@ -52,6 +58,7 @@ impl Model {
 
     
     pub const GPT3_TURBO_16K: Model = Model {
+    priority: 3,
         endpoint: "https://api.openai.com/v1/models/gpt-3.5-turbo-16k/completions",
         name: "gpt-3.5-turbo-16k",
         tokens_limit: 16385,
@@ -59,6 +66,7 @@ impl Model {
     };
     
     pub const GPT4: Model = Model {
+    priority: 2,
         endpoint: "https://api.openai.com/v1/models/gpt-4/completions",
         name: "gpt-4",
         tokens_limit: 8192,
@@ -66,6 +74,7 @@ impl Model {
     };
     
     pub const GPT4_32K: Model = Model {
+    priority: 1,
         endpoint: "https://api.openai.com/v1/models/gpt-4-32k/completions",
         name: "gpt-4-32k",
         tokens_limit: 32768,
@@ -99,7 +108,7 @@ impl SessionManager {
         // Mocked logic: In a real-world scenario, you would call the OpenAI API to check model access.
         // Here, we'll assume the user has access to all models and select based on priority.
         
-        let models = vec![&Self::GPT4_32K, &Self::GPT4, &Self::GPT3_TURBO_16K];
+        let models = vec![&GPTConnector::GPT4_32K, &GPTConnector::GPT4, &GPTConnector::GPT3_TURBO_16K];
         models.into_iter().min_by_key(|model| model.priority)
     }
 

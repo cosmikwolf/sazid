@@ -106,6 +106,28 @@ dependencies = [
 
 [[package]]
 name = "async-openai"
+version = "0.13.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0492edb15da150dc70353f69921ca5fd40e41761c5ee91c42509149d83a7d1d9"
+dependencies = [
+ "backoff",
+ "base64",
+ "derive_builder",
+ "futures",
+ "rand 0.8.5",
+ "reqwest",
+ "reqwest-eventsource",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "tokio",
+ "tokio-stream",
+ "tokio-util",
+ "tracing",
+]
+
+[[package]]
+name = "async-openai"
 version = "0.14.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7614373e1d24d44f7b57df2125c5253c7afbf927574f2695371e5589a0dd4937"
@@ -1726,7 +1748,8 @@ checksum = "1ad4cc8da4ef723ed60bced201181d83791ad433213d8c24efffda1eec85d741"
 name = "sazid"
 version = "0.1.0"
 dependencies = [
- "async-openai",
+ "async-openai 0.14.0",
+ "backoff",
  "bincode",
  "chrono",
  "clap",
@@ -1988,6 +2011,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2bf14cb08d8fda6e484c75ec2bfb6bcef48347d47abcd011fa9d56ee995a3da0"
 dependencies = [
  "anyhow",
+ "async-openai 0.13.1",
  "base64",
  "bstr",
  "fancy-regex",

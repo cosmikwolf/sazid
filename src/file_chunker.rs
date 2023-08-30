@@ -38,7 +38,7 @@ impl FileChunker {
     
     fn chunkify_text(text: &str, tokens_per_chunk: usize) -> Vec<String> {
         let tokens: Vec<&str> = text.split_whitespace().collect();
-        let bpe = p50k_base().expect("Expected successful operation");
+        let bpe = p50k_base().unwrap();
         let mut chunks = Vec::new();
         let mut current_chunk = Vec::new();
         let mut current_token_count = 0;
@@ -115,7 +115,7 @@ mod tests {
         #[test]
         fn test_chunkify_pdf_file() {
             let pdf_file_path = PathBuf::from("tests/data/NIST.SP.800-185.pdf");
-            let chunks = FileChunker::chunkify_file(&pdf_file_path, 4).expect("Expected successful operation");
+            let chunks = FileChunker::chunkify_file(&pdf_file_path, 4).unwrap();
 
             // This will depend on the content of the PDF and the chunk size.
             // For the purpose of the test, let's check if the first chunk contains some expected stub text.
@@ -136,15 +136,15 @@ mod tests {
 
         #[test]
         fn test_chunkify_text_file() {
-            let dir = tempdir().expect("Expected successful operation");
+            let dir = tempdir().unwrap();
             let text_file_path = dir.path().join("test.txt");
 
             File::create(&text_file_path)
-                .expect("Expected successful operation")
+                .unwrap()
                 .write_all(b"Hello, world!\nHow are you?\nThis is a test!")
-                .expect("Expected successful operation");
+                .unwrap();
 
-            let chunks = FileChunker::chunkify_file(&text_file_path, 4).expect("Expected successful operation");
+            let chunks = FileChunker::chunkify_file(&text_file_path, 4).unwrap();
 
             // Print out the chunks for verification:
             for (i, chunk) in chunks.iter().enumerate() {
@@ -159,13 +159,13 @@ mod tests {
 
         #[test]
         fn test_chunkify_binary_file() {
-            let dir = tempdir().expect("Expected successful operation");
+            let dir = tempdir().unwrap();
             let binary_file_path = dir.path().join("binary_test_file.bin");
 
             File::create(&binary_file_path)
-                .expect("Expected successful operation")
+                .unwrap()
                 .write_all(&[0u8, 1, 2, 3, 4, 255])
-                .expect("Expected successful operation");
+                .unwrap();
 
             let result = FileChunker::chunkify_file(&binary_file_path, 4);
 

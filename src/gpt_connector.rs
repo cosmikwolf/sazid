@@ -20,7 +20,6 @@ impl GPTConnector {
         let api_key = env::var("OPENAI_API_KEY").expect("OPENAI_API_KEY not set");
         let config = OpenAIConfig::new().with_api_key(api_key);
         
-use backoff::ExponentialBackoffBuilder;
 
 let backoff = ExponentialBackoffBuilder::new()
     .with_max_elapsed_time(Some(std::time::Duration::from_secs(60)))
@@ -71,7 +70,7 @@ mod tests {
     async fn test_send_request() {
         let connector = GPTConnector::new();
         let response = connector
-            .send_request(vec![ConnectorChatCompletionRequestMessage {
+            .send_request(vec![ChatCompletionRequestMessage {
                 role: Role::User,
                 content: "Hello, GPT!".to_string(),
             }])
