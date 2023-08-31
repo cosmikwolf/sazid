@@ -5,20 +5,20 @@ use async_openai::types::{
 };
 use async_openai::{config::OpenAIConfig, Client};
 use config::Config;
+use serde::{Deserialize, Serialize};
 
-use std::env;
 use backoff::ExponentialBackoffBuilder;
-
+use std::env;
 
 struct ModelsList {
     default: Model,
     fallback: Model,
 }
-
+#[derive(Debug, Serialize, Deserialize, Copy, Clone)]
 pub struct Model {
-    name: &'static str,
-    endpoint: &'static str,
-    token_limit: u32,
+    pub(crate) name: &'static str,
+    pub(crate) endpoint: &'static str,
+    pub(crate) token_limit: u32,
 }
 
 const GPT3_TURBO: Model = Model {
@@ -33,16 +33,20 @@ const GPT4_TURBO: Model = Model {
     token_limit: 8192,
 };
 
-async fn select_model(settings: &config::Config, client: &Client<OpenAIConfig>) -> Result<Model, GPTConnectorError> {
+async fn select_model(
+    settings: &config::Config,
+    client: &Client<OpenAIConfig>,
+) -> Result<Model, GPTConnectorError> {
     // Retrieve the list of available models
     let models_response = client.models().list().await;
     match models_response {
         Ok(response) => {
-            let model_names: Vec<String> = response.data.iter().map(|model| model.id.clone()).collect();
-            let available_models = ModelsList  {
+            let model_names: Vec<String> =
+                response.data.iter().map(|model| model.id.clone()).collect();
+            let available_models = ModelsList {
                 default: GPT3_TURBO,
                 fallback: GPT4_TURBO,
-            };  
+            };
             // Check if the default model is in the list
             if model_names.contains(&settings.get::<String>("default").unwrap()) {
                 Ok(available_models.default)
@@ -53,18 +57,21 @@ async fn select_model(settings: &config::Config, client: &Client<OpenAIConfig>) 
             }
             // If neither is available, return an error
             else {
-                Err(GPTConnectorError::Other("Neither the default nor the fallback model is accessible.".to_string()))
+                Err(GPTConnectorError::Other(
+                    "Neither the default nor the fallback model is accessible.".to_string(),
+                ))
             }
-        },
-        Err(_) => Err(GPTConnectorError::Other("Failed to fetch the list of available models.".to_string()))
+        }
+        Err(_) => Err(GPTConnectorError::Other(
+            "Failed to fetch the list of available models.".to_string(),
+        )),
     }
 }
-
-
+#[derive(Clone)]
 pub struct GPTConnector {
     client: Client<OpenAIConfig>,
-    settings: Config,
-    model: Model
+    pub(crate) settings: Config,
+    pub(crate) model: Model,
 }
 
 pub struct GPTResponse {
@@ -77,14 +84,17 @@ impl GPTConnector {
         let api_key: String = env::var("OPENAI_API_KEY").expect("OPENAI_API_KEY not set");
         let openai_config = OpenAIConfig::new().with_api_key(api_key);
         let backoff = ExponentialBackoffBuilder::new() // Ensure backoff crate is added to Cargo.toml
-        .with_max_elapsed_time(Some(std::time::Duration::from_secs(60)))
-        .build();
+            .with_max_elapsed_time(Some(std::time::Duration::from_secs(60)))
+            .build();
         let client = Client::with_config(openai_config).with_backoff(backoff);
         let model = select_model(&settings, &client).await.unwrap();
 
-        GPTConnector { client, settings, model }
+        GPTConnector {
+            client,
+            settings,
+            model,
+        }
     }
-
 
     pub async fn send_request(
         &self,

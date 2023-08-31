@@ -1,15 +1,15 @@
-
-use config::{Config, File};
-use serde::Deserialize;
 use async_openai::types::ChatCompletionRequestMessage;
 use async_openai::types::Role;
 use clap::Parser;
+use config::{Config, File};
+use rustyline::error::ReadlineError;
 use sazid::gpt_connector::GPTConnector;
 use sazid::session_manager::SessionManager;
 use sazid::ui::UI;
+use sazid::utils::generate_session_id;
+use serde::Deserialize;
 use std::ffi::OsString;
 use std::path::PathBuf;
-use rustyline::error::ReadlineError;
 
 #[derive(Parser)]
 #[clap(
@@ -47,11 +47,11 @@ struct Opts {
     )]
     ingest: Option<OsString>,
 }
-fn main() -> Result<(), Box<dyn std::error::Error>> {
+
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let opts: Opts = Opts::parse();
 
-    let gpt = GPTConnector::new();
-    
     let settings = Config::builder()
         // Add in `./Settings.toml`
         .add_source(config::File::with_name("Settings"))
@@ -59,7 +59,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         // Eg.. `APP_DEBUG=1 ./target/app` would set the `debug` key
         .build()
         .unwrap();
-    
+
+    let gpt = GPTConnector::new(settings).await;
+
     // Handle model selection based on CLI flag
     if let Some(model_name) = &opts.model {
         // In a real-world scenario, you would set the selected model in the session manager or GPT connector
@@ -76,6 +78,35 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         return Ok(());
     }
 
+    // Declare the SessionManager object.
+    let mut session_manager: SessionManager;
+
+    // Check if the `--new` flag is provided.
+    if opts.new {
+        // Instantiate a new SessionManager for a new session.
+        let session_id = generate_session_id();
+        let session_manager = SessionManager::new(session_id, gpt).await;
+    } else {
+        // Check if a specific session is provided via the `--continue` flag.
+        match opts.continue_session {
+            Some(session_file) => {
+                // Load the provided session.
+                session_manager = SessionManager::from_existing_session(&session_file).await?;
+            },
+            None => {
+                // Check if there's a last session.
+                if let Some(last_session) = SessionManager::load_last_session_filename().await {
+                    // Load the last session.
+                    session_manager = SessionManager::from_existing_session(&last_session).await?;
+                } else {
+                    // No last session available. Instantiate a new SessionManager for a new session.
+                    let session_id = generate_session_id();
+                    let session_manager = SessionManager::new(session_id, gpt).await;
+                }
+            }
+        }
+    }
+
     if let Some(path) = &opts.ingest {
         tokio::runtime::Builder::new_current_thread()
             .enable_io()
@@ -85,21 +116,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     UI::display_startup_message();
-
-    let mut messages: Vec<ChatCompletionRequestMessage> = if !opts.new {
-        match opts.continue_session {
-            Some(session_file) => session_manager.load_session(&session_file)?,
-            None => {
-                if let Some(last_session) = session_manager.load_last_session_filename() {
-                    session_manager.load_session(&last_session)?
-                } else {
-                    vec![]
-                }
-            }
-        }
-    } else {
-        vec![]
-    };
 
     for message in &messages {
         UI::display_message(message.role.clone(), &message.content.unwrap_or_default());
@@ -119,7 +135,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         .block_on(session_manager.handle_ingest(&filepath.to_string()))?;
                 } else {
                     if input == "exit" || input == "quit" {
-                        session_manager.save_last_session_filename(session_manager.session_filename)?;
+                        session_manager
+                            .save_last_session_filename(session_manager.session_filename)?;
                         UI::display_exit_message();
                         break;
                     }
@@ -129,7 +146,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         function_call: None, // If you have appropriate data, replace None
                         name: None,          // If you have appropriate data, replace None
                     };
-                    messages.push(user_message.clone());
+                    session_manager.requests.push(user_message);
 
                     match tokio::runtime::Builder::new_current_thread()
                         .enable_io()
@@ -144,12 +161,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     &choice.message.content.unwrap_or_default(),
                                 );
                             }
-                            session_manager.save_chat_to_session(
-                                &session_filename,
-                                &messages,
-                                &response,
-                            )?;
-    
+                            session_manager.responses.push(response);
+                            session_manager.save_session()?;
                         }
                         Err(error) => {
                             // Displaying the error to the user
@@ -166,16 +179,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 println!("Error sending request to GPT: {:?}", e);
             }
             Err(ReadlineError::Interrupted) => {
-                let session_filename = session_manager.new_session_filename();
-                session_manager.save_chat_to_session(&session_filename, &messages)?;
-                session_manager.save_last_session_filename(&session_filename)?;
+                let session_filename = session_manager.get_session_filepath();
+                // session_manager.save_chat_to_session(&session_filename, &messages)?;
+                session_manager.save_last_session_filename(&session_filename);
                 UI::display_exit_message();
                 // break;
             }
             Err(ReadlineError::Eof) => {
-                let session_filename = session_manager.new_session_filename();
-                session_manager.save_chat_to_session(&session_filename, &messages)?;
-                session_manager.save_last_session_filename(&session_filename)?;
+                let session_filename = session_manager.get_session_filepath();
+                // session_manager.save_chat_to_session(&session_filename, &messages)?;
+                session_manager.save_last_session_filename(&session_filename);
                 UI::display_exit_message();
                 break;
             }

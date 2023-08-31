@@ -97,6 +97,11 @@ impl From<GPTConnectorError> for SessionManagerError {
         SessionManagerError::GPTConnector(err)
     }
 }
+impl From<PdfExtractorError> for SessionManagerError {
+    fn from(err: PdfExtractorError) -> SessionManagerError {
+        SessionManagerError::PdfExtractor(err)
+    }
+}
 
 impl From<OpenAIError> for GPTConnectorError {
     fn from(err: OpenAIError) -> GPTConnectorError {

@@ -1,9 +1,13 @@
 use async_openai::types::{ChatCompletionRequestMessage, CreateChatCompletionResponse};
-use config::Config;
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
+use std::str::FromStr;
+
+use crate::errors::SessionManagerError;
+use crate::file_chunker::FileChunker;
+use crate::gpt_connector::GPTConnector;
 use crate::gpt_connector::Model;
 
 const SESSIONS_DIR: &str = "./data/sessions";
@@ -11,36 +15,60 @@ const INGESTED_DIR: &str = "./data/ingested";
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Session {
-    pub user_messages: Vec<String>,
-    pub bot_messages: Vec<String>,
+    pub session_id: String,
+    pub model: Model,
+    pub requests: Vec<ChatCompletionRequestMessage>,
+    pub responses: Vec<CreateChatCompletionResponse>,
 }
 
 impl Session {
-    pub fn new() -> Self {
+    pub fn new(session_id: String, model: Model) -> Self {
         Self {
-            user_messages: Vec::new(),
-            bot_messages: Vec::new(),
+            session_id,
+            model,
+            requests: Vec::new(),
+            responses: Vec::new(),
         }
     }
 }
-
-pub struct SessionManager {
+#[derive(Debug, Serialize, Deserialize)]
+pub struct IngestedData {
     session_id: String,
-    model: Model,
+    file_path: String,
+    chunk_num: u32,
+    content: String,
+}
+pub struct SessionManager {
+    gpt_connector: GPTConnector, 
+    session_data: Session,
 }
 
 impl SessionManager {
-    pub async fn new(session_id: String, model: Model, _config: Config) -> Self {
-        Self { session_id, model }
+    pub async fn new(session_id: String, gpt_connector: GPTConnector) -> Self {
+        Self { gpt_connector, session_data: Session::new(session_id, gpt_connector.model.copy()) }
     }
 
-    pub fn load_session(&self, session_filename: &Path) -> Result<Session, io::Error> {
-        let session_content = fs::read_to_string(session_filename)?;
-        serde_json::from_str(&session_content)
-            .map_err(|e| io::Error::new(io::ErrorKind::Other, e.to_string()))
+    pub async fn load_session(&self, gpt: GPTConnector) -> Self {
+        let session_file_path = self.get_session_filepath();
+        let data = fs::read_to_string(session_file_path).unwrap();
+        let session_data: Session = serde_json::from_str(&data).unwrap();
+        Self { gpt_connector: GPTConnector::new(gpt.settings).await, session_data }
     }
 
-    pub fn load_last_session_filename(&self) -> Option<PathBuf> {
+    pub fn save_session(&self ) -> io::Result<()> {
+        let session_file_path = self.get_session_filepath();
+        let data = serde_json::to_string(&self.session_data)?;
+        fs::write(session_file_path, data)?;
+        Ok(())
+    }
+
+    // pub fn load_session(&self, session_filename: &Path) -> Result<Session, io::Error> {
+    //     let session_content = fs::read_to_string(session_filename)?;
+    //     serde_json::from_str(&session_content)
+    //         .map_err(|e| io::Error::new(io::ErrorKind::Other, e.to_string()))
+    // }
+
+    pub fn load_last_session_filename() -> Option<PathBuf> {
         let last_session_path = Path::new(SESSIONS_DIR).join("last_session.txt");
         if last_session_path.exists() {
             Some(fs::read_to_string(last_session_path).unwrap().into())
@@ -49,17 +77,9 @@ impl SessionManager {
         }
     }
 
-    pub fn new_session_filename(&self) -> PathBuf {
-        self.get_session_filename()
-    }
-
     pub fn save_last_session_filename(&self, session_filename: &Path) {
         let last_session_path = Path::new(SESSIONS_DIR).join("last_session.txt");
         fs::write(last_session_path, session_filename.display().to_string()).unwrap();
-    }
-
-    pub fn get_session_filename(&self) -> PathBuf {
-        Path::new(SESSIONS_DIR).join(format!("{}.json", &self.session_id))
     }
 
     fn ensure_directory_exists(dir: &str) -> io::Result<()> {
@@ -71,33 +91,11 @@ impl SessionManager {
     }
 
     pub fn get_session_filepath(&self) -> PathBuf {
-        Path::new(SESSIONS_DIR).join(format!("{}.json", self.session_id))
+        Path::new(SESSIONS_DIR).join(format!("{}.json", self.session_data.session_id))
     }
 
     pub fn get_ingested_filepath(&self) -> PathBuf {
-        Path::new(INGESTED_DIR).join(format!("{}.json", self.session_id))
-    }
-
-    pub fn save_chat_to_session(
-        &self,
-        request: &ChatCompletionRequestMessage,
-        response: &Option<CreateChatCompletionResponse>,
-    ) -> io::Result<()> {
-        Self::ensure_directory_exists(SESSIONS_DIR)?;
-
-        let session_file_path = self.get_session_filepath();
-
-        #[derive(Serialize)]
-        struct SessionLogEntry<'a> {
-            request: &'a ChatCompletionRequestMessage,
-            response: &'a Option<CreateChatCompletionResponse>,
-        }
-
-        let log_entry = SessionLogEntry { request, response };
-
-        let data = serde_json::to_string(&log_entry)?;
-        fs::write(session_file_path, data)?;
-        Ok(())
+        Path::new(INGESTED_DIR).join(format!("{}.json", self.session_data.session_id))
     }
 
     pub fn save_ingested_file(&self, content: &str) -> io::Result<()> {
@@ -108,20 +106,69 @@ impl SessionManager {
         Ok(())
     }
 
-    pub fn load_last_session(&self) -> io::Result<Session> {
-        let session_file_path = self.get_session_filepath();
-        let data = fs::read_to_string(session_file_path)?;
-        let session: Session = serde_json::from_str(&data)?;
-        Ok(session)
-    }
+    /// This function takes in an input which could be a path to a directory, a path to a file,
+    /// a block of text, or a URL. Depending on the type of input, it processes (or ingests) the
+    /// content by converting it into chunks of text and then sends each chunk to the GPT API.
+    pub async fn handle_ingest(&self, input: &String) -> Result<(), SessionManagerError> {
 
-    pub fn save_session(&self, session: &Session) -> io::Result<()> {
-        let session_file_path = self.get_session_filepath();
-        let data = serde_json::to_string(session)?;
-        fs::write(session_file_path, data)?;
+        // This vector will store paths that need to be processed.
+        let mut paths_to_process = Vec::new();
+
+        // Try to interpret the input as a path.
+        let input_path: Result<PathBuf, std::convert::Infallible> = PathBuf::from_str(input);
+
+        // If it's a valid path, check if it points to a directory or a file.
+        if let Ok(p) = input_path {
+            if p.is_dir() {
+                // If it's a directory, iterate through its contents and add all the file paths to the processing list.
+                for entry in fs::read_dir(&p)? {
+                    let entry_path = entry?.path();
+                    if entry_path.is_file() {
+                        paths_to_process.push(entry_path);
+                    }
+                }
+            } else if p.is_file() {
+                // If it's a file, add it directly to the processing list.
+                paths_to_process.push(p);
+            }
+        }
+
+        // If the list is empty, assume the input is a block of text and treat it accordingly.
+        if paths_to_process.is_empty() {
+            paths_to_process.push(PathBuf::from(input));
+        }
+
+        // Iterate through all the paths to process them.
+        for path in paths_to_process {
+            let chunks = if path.is_file() {
+                // If it's a file, chunkify its contents.
+                FileChunker::chunkify_input(path.to_str().unwrap(), self.gpt_connector.model.token_limit as usize)?
+            } else {
+                // Otherwise, chunkify the input directly.
+                FileChunker::chunkify_input(input, self.gpt_connector.model.token_limit as usize)?
+            };
+
+            // Send each chunk to the GPT API using the GPTConnector.
+            let response = self.gpt_connector.send_request(chunks).await?;
+
+            // After successful ingestion, copy the file to the 'ingested' directory.
+            if path.is_file() {
+                let dest_path = 
+                Path::new(INGESTED_DIR)
+                    .join("ingested")
+                    .join(path.file_name().unwrap());
+                fs::copy(&path, &dest_path)?;
+            }
+
+            for choice in &response.choices {
+                println!("{:?}", choice.message.content);
+            }
+        }
+
         Ok(())
     }
 }
+
 
 // Tests
 #[cfg(test)]
