@@ -89,13 +89,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         match opts.continue_session {
             Some(session_file) => {
                 // Load the provided session.
-                session_manager = session_manager::load_session(&session_file, gpt)?;
+                session_manager = SessionManager::load_session(&session_file, &gpt);
             }
             None => {
                 // Check if there's a last session.
                 if let Some(last_session) = SessionManager::load_last_session_filename() {
                     // Load the last session.
-                    session_manager = load_session(&last_session.to_str().unwrap(), gpt)?;
+                    session_manager = SessionManager::load_session(&last_session.to_str().unwrap(), &gpt);
                 } else {
                     // No last session available. Instantiate a new SessionManager for a new session.
                     let session_id = generate_session_id();
@@ -116,7 +116,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     UI::display_startup_message();
 
     for message in &session_manager.session_data.requests {
-        UI::display_message(message.role.clone(), &message.content.unwrap_or_default());
+        UI::display_message(message.role.clone(), message.content.clone().unwrap_or_default());
     }
 
     loop {
@@ -154,8 +154,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         Ok(response) => {
                             for choice in &response.choices {
                                 UI::display_message(
-                                    choice.message.role,
-                                    &choice.message.content.unwrap_or_default(),
+                                    choice.message.role.clone(),
+                                    choice.message.content.clone().unwrap_or_default(),
                                 );
                             }
                             session_manager.session_data.responses.push(response);
@@ -163,7 +163,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         }
                         Err(error) => {
                             // Displaying the error to the user
-                            UI::display_message(Role::System, &format!("Error: {}", error));
+                            UI::display_message(Role::System, format!("Error: {}", error));
 
                             // Logging the request and the error
                             // NOTE: We'll need an instance or reference to the session manager here to call save_chat_to_session
@@ -174,14 +174,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
 
             Err(ReadlineError::Interrupted) => {
-                let session_filename = session_manager.get_session_filepath();
                 // session_manager.save_chat_to_session(&session_filename, &messages)?;
                 session_manager.save_last_session_filename();
                 UI::display_exit_message();
                 // break;
             }
             Err(ReadlineError::Eof) => {
-                let session_filename = session_manager.get_session_filepath();
                 // session_manager.save_chat_to_session(&session_filename, &messages)?;
                 session_manager.save_last_session_filename();
                 UI::display_exit_message();

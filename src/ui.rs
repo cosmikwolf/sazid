@@ -13,7 +13,7 @@ impl UI {
     }
 
     // Display a message to the user.
-    pub fn display_message(role: Role, message: &str) {
+    pub fn display_message(role: Role, message: String) {
         match role {
             Role::User => println!("You: {}", message),
             Role::Assistant => println!("GPT: {}", message.green()),

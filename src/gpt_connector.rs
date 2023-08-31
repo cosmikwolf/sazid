@@ -78,7 +78,7 @@ async fn select_model(
 #[derive(Clone)]
 pub struct GPTConnector {
     client: Client<OpenAIConfig>,
-    pub(crate) settings: Config,
+    pub(crate) _settings: Config,
     pub(crate) model: Model,
 }
 
@@ -88,18 +88,18 @@ pub struct GPTResponse {
 }
 
 impl GPTConnector {
-    pub async fn new(settings: Config) -> Self {
+    pub async fn new(_settings: Config) -> Self {
         let api_key: String = env::var("OPENAI_API_KEY").expect("OPENAI_API_KEY not set");
         let openai_config = OpenAIConfig::new().with_api_key(api_key);
         let backoff = ExponentialBackoffBuilder::new() // Ensure backoff crate is added to Cargo.toml
             .with_max_elapsed_time(Some(std::time::Duration::from_secs(60)))
             .build();
         let client = Client::with_config(openai_config).with_backoff(backoff);
-        let model = select_model(&settings, &client).await.unwrap();
+        let model = select_model(&_settings, &client).await.unwrap();
 
         GPTConnector {
             client,
-            settings,
+            _settings,
             model,
         }
     }

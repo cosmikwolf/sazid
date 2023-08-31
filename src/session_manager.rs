@@ -9,7 +9,6 @@ use crate::errors::SessionManagerError;
 use crate::file_chunker::FileChunker;
 use crate::gpt_connector::GPTConnector;
 use crate::gpt_connector::Model;
-use crate::gpt_connector::lookup_model_by_name;
 
 const SESSIONS_DIR: &str = "./data/sessions";
 const INGESTED_DIR: &str = "./data/ingested";
@@ -49,12 +48,16 @@ impl<'a> SessionManager<'a> {
         let model = gpt_connector.model.clone();
         Self { gpt_connector, session_data: Session::new(session_id, model ) }
     }
-    pub fn load_session(session_file: &str, gpt: &'a mut GPTConnector) -> Result<SessionManager<'a>, std::io::Error> {
+
+    // For creating from existing session data
+    pub fn load_session(session_file: &str, gpt_connector: &'a GPTConnector) -> Self {
         let session_file_path = Path::new(session_file);
         let data = fs::read_to_string(session_file_path).unwrap();
         let session_data: Session = serde_json::from_str(&data).unwrap();
-        gpt.set_gpt_model(lookup_model_by_name(gpt.model.name.as_str()).unwrap());
-        Ok(SessionManager { gpt_connector: gpt, session_data })
+        Self { 
+            gpt_connector, 
+            session_data 
+        }
     }
 
     pub fn save_session(&self ) -> io::Result<()> {
