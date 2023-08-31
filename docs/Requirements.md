@@ -137,3 +137,92 @@ requirements update 8/29
    - We introduced a new function in `FileChunker` that would take a file and produce the chunks so that `handle_ingest` doesn't have to call the chunker multiple times.
    - We switched from using a generated PDF to using the PDFs in `tests/data`.
    - We clarified that the token-based chunking is in line with the OpenAI API's requirement.
+
+updated requirements 8/30
+
+1. **Session Management and File Paths** (`session_manager.rs`)
+    - The system should use idiomatic Rust file and directory handling using the `Path` and `PathBuf` types from the `std::path` module.
+    - Session filenames should be derived from the `session_id` attribute present in the `SessionManager` struct, and each should have a `.json` extension.
+    - The system should store session files in a directory specified as `./data/sessions`.
+    - The system should maintain logs of ingested files in a directory specified as `./data/ingested`.
+
+2. **Token Counting and API Limit Management**
+    - Integrate the `tiktoken-rs` crate in conjunction with the `async_openai` feature.
+    - Before sending messages to the OpenAI API, the system should ensure the token count of messages does not surpass the model's token limitations.
+
+3. **Model Handling and API Communication** (`gpt_connector.rs`)
+    - The system should define constants that represent models available from the OpenAI API.
+    - All API calls made by `GPTConnector` should utilize the `client` variable from its struct to prevent initializing a new client with each call.
+    - Implement exponential backoff using `async_openai` to enhance error handling and provide resilience against rate limits.
+
+4. **Configuration Management Using `config` Crate**
+    - The application should utilize the `config` crate to manage its configuration.
+    - Configuration settings should be stored in a file named `Settings.toml`.
+    - The system should support a default model and a fallback model, both specified in the configuration.
+    - If the default model is inaccessible, the system should attempt to access the fallback model.
+    - The application should terminate if neither the default nor the fallback models are accessible.
+
+5. **Refactoring of Model Definitions**
+    - Remove the old `Models` struct and associated constants from `session_manager.rs`.
+    - Introduce a `Model` struct to represent individual models and their attributes.
+    - Define module-level constants, such as `GPT3_TURBO` and `GPT4_TURBO`, to represent predefined models.
+
+6. **Idiomatic Rust Code Structure**
+    - Both `main.rs` and `session_manager.rs` should be structured in an idiomatic Rust order:
+        - `use` statements (imports) should be placed at the top.
+        - Constants should be defined after imports.
+        - Structs, enums, and other type definitions should follow.
+        - `impl` blocks and function definitions should conclude the file.
+
+updated requirements #2 8/30
+
+Absolutely! Here's a detailed list of the updated functional requirements based on the tasks and discussions from this session:
+
+### **Configuration Management Using the `config` Crate**
+
+1. **Dependencies**:
+    - **Requirement**: The application must include specific crates to handle configuration management.
+    - **Detail**:
+        - The application's `Cargo.toml` file should include the `config` crate for configuration management.
+        - The `serde` and `serde_derive` crates should be added for serialization and deserialization of configuration data.
+
+2. **Configuration File**:
+    - **Requirement**: The application must have a centralized configuration file named `Settings.toml`.
+    - **Detail**:
+        - The `Settings.toml` file should be located in the root directory.
+        - Within this file, there should be two model configurations: `default` and `fallback`.
+        - Each configuration specifies the name of a model, e.g., "gpt-4" or "gpt-3.5-turbo".
+
+3. **Configuration Loading in `main.rs`**:
+    - **Requirement**: The main application must be able to load and utilize configurations from `Settings.toml`.
+    - **Detail**:
+        - There should be imports from the `config` and `serde` crates.
+        - Two structs, `ModelsConfig` and `ModelConfig`, should be defined to match the structure of the `Settings.toml` file.
+        - A function named `load_config` should be implemented to load the configuration. It should:
+            - Initialize a default config.
+            - Merge data from `Settings.toml`.
+            - Deserialize the merged data into the `ModelsConfig` struct.
+        - The `main` function of the application should:
+            - Load the configuration using `load_config()`.
+            - Check access to the model specified in the `default` configuration.
+            - If the default model is inaccessible, it should attempt to access the model in the `fallback` configuration.
+            - The application should exit if neither model is accessible.
+
+### **Refactoring Model Definitions**
+
+1. **Model Struct & Constants**:
+    - **Requirement**: The application should have a new `Model` struct definition and associated constants.
+    - **Detail**:
+        - Both `session_manager.rs` and `main.rs` should define the `Model` struct with fields `name`, `endpoint`, and `token_limit`.
+        - Module-level constants `GPT3_TURBO` and `GPT4_TURBO` should be defined with specific details about the models.
+        - The old `Models` struct and associated constants should be removed from `session_manager.rs`.
+
+### **General Requirement**
+
+1. **Clean and Idiomatic Rust Code**:
+    - **Requirement**: The application code, should be organized following idiomatic Rust practices.
+    - **Detail**:
+        - `use` statements (imports) should be at the top.
+        - Module-level constants should follow.
+        - Structs, enums, and other type definitions should come next.
+        - Finally, `impl` blocks and function definitions should be at the end.

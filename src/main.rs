@@ -52,8 +52,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let gpt = GPTConnector::new();
     
-    let config = load_config()?;
-
     let settings = Config::builder()
         // Add in `./Settings.toml`
         .add_source(config::File::with_name("Settings"))

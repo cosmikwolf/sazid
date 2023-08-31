@@ -5,7 +5,7 @@ use async_openai::types::{
 };
 use async_openai::{config::OpenAIConfig, Client};
 use config::Config;
-use serde::Deserialize;
+
 use std::env;
 use backoff::ExponentialBackoffBuilder;
 

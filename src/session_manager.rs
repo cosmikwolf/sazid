@@ -30,7 +30,7 @@ pub struct SessionManager {
 }
 
 impl SessionManager {
-    pub async fn new(session_id: String, model: Model, config: Config) -> Self {
+    pub async fn new(session_id: String, model: Model, _config: Config) -> Self {
         Self { session_id, model }
     }
 
