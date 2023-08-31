@@ -9,30 +9,29 @@ use serde::{Deserialize, Serialize};
 
 use backoff::ExponentialBackoffBuilder;
 use std::env;
-use std::borrow::Cow;
 struct ModelsList {
-    default: Model<'a>,
-    fallback: Model<'a>,
+    default: Model,
+    fallback: Model,
 }
-#[derive(Debug, Serialize, Deserialize, Copy, Clone)]
-pub struct Model<'a> {
-    pub(crate) name: Cow('a str),
-    pub(crate) endpoint: Cow('a str),
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct Model {
+    pub(crate) name: String,
+    pub(crate) endpoint: String,
     pub(crate) token_limit: u32,
 }
+lazy_static! {
+    pub static ref GPT3_TURBO: Model = Model {
+        name: "gpt-3.5-turbo".to_string(),
+        endpoint: "https://api.openai.com/v1/completions".to_string(),
+        token_limit: 4096,
+    };
 
-const GPT3_TURBO: Model = Model {
-    name: "gpt-3.5-turbo",
-    endpoint: "https://api.openai.com/v1/models/gpt-3.5-turbo",
-    token_limit: 4096,
-};
-
-const GPT4_TURBO: Model = Model {
-    name: "gpt-4",
-    endpoint: "https://api.openai.com/v1/models/gpt-4",
-    token_limit: 8192,
-};
-
+    pub static ref GPT4_TURBO: Model = Model {
+        name: "gpt-4.0-turbo".to_string(),
+        endpoint: "https://api.openai.com/v1/completions".to_string(),
+        token_limit: 5000,
+    };
+}
 async fn select_model(
     settings: &config::Config,
     client: &Client<OpenAIConfig>,
@@ -44,8 +43,8 @@ async fn select_model(
             let model_names: Vec<String> =
                 response.data.iter().map(|model| model.id.clone()).collect();
             let available_models = ModelsList {
-                default: GPT3_TURBO,
-                fallback: GPT4_TURBO,
+                default: GPT3_TURBO.clone(),
+                fallback: GPT4_TURBO.clone(),
             };
             // Check if the default model is in the list
             if model_names.contains(&settings.get::<String>("default").unwrap()) {

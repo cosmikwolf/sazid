@@ -1941,6 +1941,7 @@ dependencies = [
  "clap",
  "config",
  "fast_log",
+ "lazy_static",
  "lopdf",
  "os_str_bytes",
  "owo-colors",

@@ -13,6 +13,7 @@ chrono = "0.4.26"
 clap = { version = "4.4.0", features = ["derive"] }
 config = "0.13.3"
 fast_log = "1.6.1"
+lazy_static = "1.4.0"
 lopdf = "0.31.0"
 os_str_bytes = "6.5.1"
 owo-colors = "3.5.0"
