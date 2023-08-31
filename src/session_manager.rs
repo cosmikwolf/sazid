@@ -13,19 +13,23 @@ use async_openai::types::{CreateChatCompletionResponse, ChatCompletionRequestMes
 const SESSIONS_DIR: &str = "./data/sessions";
 const INGESTED_DIR: &str = "./data/ingested";
 
-pub struct Models {
-    pub endpoint: &'static str,
-    pub name: &'static str,
-    pub tokens_limit: usize,
+struct Model {
+    name: &'static str,
+    endpoint: &'static str,
+    token_limit: u32,
 }
 
-impl Models {
-    pub const GPT3_TURBO: Models = Models {
-    
-        endpoint: "https://api.openai.com/v1/models/text-davinci-003/completions",
-        name: "gpt-3.5-turbo",
-        tokens_limit: 4096,
-    };
+const GPT3_TURBO: Model = Model {
+    name: "gpt-3.5-turbo",
+    endpoint: "https://api.openai.com/v1/models/gpt-3.5-turbo",
+    token_limit: 4096,
+};
+
+const GPT4_TURBO: Model = Model {
+    name: "gpt-4",
+    endpoint: "https://api.openai.com/v1/models/gpt-4",
+    token_limit: 8192,
+};;
     
     pub const GPT3_STANDARD: Models = Models {
     

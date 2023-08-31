@@ -1,0 +1,5 @@
+[default]
+name = "gpt-4"
+
+[fallback]
+name = "gpt-3.5-turbo"

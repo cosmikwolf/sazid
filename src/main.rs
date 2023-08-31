@@ -5,14 +5,19 @@ use serde::Deserialize;
 
 #[derive(Debug, Deserialize)]
 struct ModelsConfig {
-    default: String,
-    fallback: String,
+    default: ModelConfig,
+    fallback: ModelConfig,
+}
+
+#[derive(Deserialize)]
+struct ModelConfig {
+    name: String,
 }
 
 fn load_config() -> Result<ModelsConfig, config::ConfigError> {
-    let mut config = Config::new();
-    config.merge(File::with_name("path_to_config.toml"))?;
-    config.try_into::<ModelsConfig>()
+    let mut cfg = Config::default();
+    cfg.merge(File::with_name("Settings"))?;
+    cfg.try_into()
 }
 
 use async_openai::types::ChatCompletionRequestMessage;
