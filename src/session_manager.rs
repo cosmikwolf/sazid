@@ -38,19 +38,19 @@ pub struct IngestedData {
     chunk_num: u32,
     content: String,
 }
-pub struct SessionManager<'a> {
-    gpt_connector: &'a GPTConnector, 
+pub struct SessionManager {
+    gpt_connector: &GPTConnector, 
     pub session_data: Session,
 }
 
-impl<'a> SessionManager<'a> {
-    pub fn new(session_id: String, gpt_connector: &'a GPTConnector) -> Self {
+impl SessionManager {
+    pub fn new(session_id: String, gpt_connector: &GPTConnector) -> Self {
         let model = gpt_connector.model.clone();
         Self { gpt_connector, session_data: Session::new(session_id, model ) }
     }
 
     // For creating from existing session data
-    pub fn load_session(session_file: &str, gpt_connector: &'a GPTConnector) -> Self {
+    pub fn load_session(session_file: &str, gpt_connector: &GPTConnector) -> Self {
         let session_file_path = Path::new(session_file);
         let data = fs::read_to_string(session_file_path).unwrap();
         let session_data: Session = serde_json::from_str(&data).unwrap();

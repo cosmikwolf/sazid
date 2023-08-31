@@ -4,7 +4,6 @@ use async_openai::types::{
     ChatCompletionRequestMessage, CreateChatCompletionRequest, CreateChatCompletionResponse,
 };
 use async_openai::{config::OpenAIConfig, Client};
-use config::Config;
 use serde::{Deserialize, Serialize};
 
 use backoff::ExponentialBackoffBuilder;
@@ -42,7 +41,7 @@ pub fn lookup_model_by_name(model_name: &str) -> Result<Model,GPTConnectorError>
     Err(GPTConnectorError::Other("Invalid model".to_string()))
 }
 async fn select_model(
-    settings: &config::Config,
+    settings: &GPTSettings,
     client: &Client<OpenAIConfig>,
 ) -> Result<Model, GPTConnectorError> {
     // Retrieve the list of available models
@@ -56,11 +55,11 @@ async fn select_model(
                 fallback: GPT4_TURBO.clone(),
             };
             // Check if the default model is in the list
-            if model_names.contains(&settings.get::<String>("default").unwrap()) {
+            if model_names.contains(&settings.default.name)  {
                 Ok(available_models.default)
             }
             // If not, check if the fallback model is in the list
-            else if model_names.contains(&settings.get::<String>("fallback").unwrap()) {
+            else if model_names.contains(&settings.fallback.name) {
                 Ok(available_models.fallback)
             }
             // If neither is available, return an error
@@ -75,10 +74,19 @@ async fn select_model(
         )),
     }
 }
+
+#[derive(Debug, Deserialize, Clone)]
+pub struct GPTSettings {
+    pub default: ModelConfig,
+    pub fallback: ModelConfig,
+}
+#[derive(Debug, Deserialize, Clone)]
+pub struct ModelConfig {
+    pub name: String,
+}
 #[derive(Clone)]
 pub struct GPTConnector {
     client: Client<OpenAIConfig>,
-    pub(crate) _settings: Config,
     pub(crate) model: Model,
 }
 
@@ -88,18 +96,17 @@ pub struct GPTResponse {
 }
 
 impl GPTConnector {
-    pub async fn new(_settings: Config) -> Self {
+    pub async fn new(settings: &GPTSettings) -> GPTConnector {
         let api_key: String = env::var("OPENAI_API_KEY").expect("OPENAI_API_KEY not set");
         let openai_config = OpenAIConfig::new().with_api_key(api_key);
         let backoff = ExponentialBackoffBuilder::new() // Ensure backoff crate is added to Cargo.toml
             .with_max_elapsed_time(Some(std::time::Duration::from_secs(60)))
             .build();
         let client = Client::with_config(openai_config).with_backoff(backoff);
-        let model = select_model(&_settings, &client).await.unwrap();
+        let model = select_model(settings, &client).await.unwrap();
 
         GPTConnector {
             client,
-            _settings,
             model,
         }
     }

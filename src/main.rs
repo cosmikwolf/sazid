@@ -4,11 +4,13 @@ use clap::Parser;
 use config::Config;
 use rustyline::error::ReadlineError;
 use sazid::gpt_connector::GPTConnector;
+use sazid::gpt_connector::GPTSettings;
 use sazid::session_manager::SessionManager;
 use sazid::ui::UI;
 use sazid::utils::generate_session_id;
+use serde::Deserialize;
 use std::ffi::OsString;
-
+use toml;
 #[derive(Parser)]
 #[clap(
     version = "1.0",
@@ -49,16 +51,16 @@ struct Opts {
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let opts: Opts = Opts::parse();
+    let settings: GPTSettings = toml::from_str(std::fs::read_to_string("Settings.toml").unwrap().as_str()).unwrap();
+    // let settings = Config::builder()
+    //     // Add in `./Settings.toml`
+    //     .add_source(config::File::with_name("Settings"))
+    //     // Add in settings from the environment (with a prefix of APP)
+    //     // Eg.. `APP_DEBUG=1 ./target/app` would set the `debug` key
+    //     .build()
+    //     .unwrap();
 
-    let settings = Config::builder()
-        // Add in `./Settings.toml`
-        .add_source(config::File::with_name("Settings"))
-        // Add in settings from the environment (with a prefix of APP)
-        // Eg.. `APP_DEBUG=1 ./target/app` would set the `debug` key
-        .build()
-        .unwrap();
-
-    let gpt = GPTConnector::new(settings).await;
+    let gpt = GPTConnector::new(&settings).await;
 
     // Handle model selection based on CLI flag
     if let Some(model_name) = &opts.model {
