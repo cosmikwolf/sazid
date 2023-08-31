@@ -13,62 +13,64 @@ use async_openai::types::{CreateChatCompletionResponse, ChatCompletionRequestMes
 const SESSIONS_DIR: &str = "./data/sessions";
 const INGESTED_DIR: &str = "./data/ingested";
 
-pub struct Model {
+pub struct Models {
     pub endpoint: &'static str,
     pub name: &'static str,
     pub tokens_limit: usize,
-    pub priority: u8
 }
 
-impl Model {
-    pub const GPT3_TURBO: Model = Model {
-    priority: 3,
+impl Models {
+    pub const GPT3_TURBO: Models = Models {
+    
         endpoint: "https://api.openai.com/v1/models/text-davinci-003/completions",
         name: "gpt-3.5-turbo",
         tokens_limit: 4096,
     };
     
-    pub const GPT3_STANDARD: Model = Model {
-    priority: 4,
+    pub const GPT3_STANDARD: Models = Models {
+    
         endpoint: "https://api.openai.com/v1/models/text-davinci-003/completions-standard",
         name: "gpt-3.5-standard",
         tokens_limit: 4096,
     };
     
-    pub const GPT4_TURBO: Model = Model {
-    priority: 2,
+    pub const GPT4_TURBO: Models = Models {
+    
         endpoint: "https://api.openai.com/v1/models/text-davinci-004/completions",
         name: "gpt-4-turbo",
         tokens_limit: 8192,
     };
     
-    pub const GPT4_STANDARD: Model = Model {
-    priority: 1,
+    pub const GPT4_STANDARD: Models = Models {
+    
         endpoint: "https://api.openai.com/v1/models/text-davinci-004/completions-standard",
         name: "gpt-4-standard",
         tokens_limit: 8192,
     };
 
     
-    pub const GPT3_TURBO_16K: Model = Model {
+    pub const GPT3_TURBO_16K: Models = Models {
+    
         endpoint: "https://api.openai.com/v1/models/gpt-3.5-turbo-16k/completions",
         name: "gpt-3.5-turbo-16k",
         tokens_limit: 16385,
-        priority: 3,
+        
     };
     
-    pub const GPT4: Model = Model {
+    pub const GPT4: Models = Models {
+    
         endpoint: "https://api.openai.com/v1/models/gpt-4/completions",
         name: "gpt-4",
         tokens_limit: 8192,
-        priority: 2,
+        
     };
     
-    pub const GPT4_32K: Model = Model {
+    pub const GPT4_32K: Models = Models {
+    
         endpoint: "https://api.openai.com/v1/models/gpt-4-32k/completions",
         name: "gpt-4-32k",
         tokens_limit: 32768,
-        priority: 1,
+        
     };
 
 }
@@ -90,16 +92,18 @@ impl Session {
 
 pub struct SessionManager {
     session_id: String,
-    model: Model,
+    model: Models,
 }
 
 impl SessionManager {
-    async fn check_model_access(&self, client: &async_openai::Client<OpenAIConfig>) -> Option<&Model> {
+    async fn check_model_access(&self, client: &async_openai::Client) -> Option<&Models> {
         // Mocked logic: In a real-world scenario, you would call the OpenAI API to check model access.
         // Here, we'll assume the user has access to all models and select based on priority.
         
-        let models = vec![&Self::GPT4_32K, &Self::GPT4, &Self::GPT3_TURBO_16K];
-        models.into_iter().min_by_key(|model| model.priority)
+        
+
+let models = vec![&Self::GPT3_TURBO, &Self::GPT4_TURBO, &Self::GPT3_TURBO_16K, &Self::GPT4, &Self::GPT4_32K];
+models.into_iter().min_by_key(|model| model.priority)
     }
 
     pub fn load_session(&self, session_filename: &Path) -> Result<Session, io::Error> {
@@ -129,7 +133,7 @@ impl SessionManager {
         Path::new(SESSIONS_DIR).join(format!("{}.json", &self.session_id))
     }
 
-    pub fn new(session_id: String, model: Model) -> Self {
+    pub fn new(session_id: String, model: Models) -> Self {
         Self { session_id, model }
     }
 

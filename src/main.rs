@@ -1,3 +1,20 @@
+
+use config::{Config, File};
+use serde::Deserialize;
+
+
+#[derive(Debug, Deserialize)]
+struct ModelsConfig {
+    default: String,
+    fallback: String,
+}
+
+fn load_config() -> Result<ModelsConfig, config::ConfigError> {
+    let mut config = Config::new();
+    config.merge(File::with_name("path_to_config.toml"))?;
+    config.try_into::<ModelsConfig>()
+}
+
 use async_openai::types::ChatCompletionRequestMessage;
 use async_openai::types::Role;
 use clap::Parser;
@@ -49,7 +66,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let opts: Opts = Opts::parse();
 
     let gpt = GPTConnector::new();
-    let session_manager = SessionManager::new(PathBuf::from("./"));
+    
+    let config = load_config()?;
+        
+    if !SessionManager::check_model_access(&config.default)? {
+        // Print to the UI that we're falling back to the fallback model
+        println!("Default model is not accessible. Trying fallback model...");
+        if !SessionManager::check_model_access(&config.fallback)? {
+            // Exit the application if neither model is accessible
+            eprintln!("Error: Neither the default nor the fallback model is accessible.");
+            std::process::exit(1);
+        }
+    }
+
     // Handle model selection based on CLI flag
     if let Some(model_name) = &opts.model {
         // In a real-world scenario, you would set the selected model in the session manager or GPT connector
