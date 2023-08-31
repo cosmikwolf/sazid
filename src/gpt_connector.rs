@@ -21,16 +21,16 @@ pub struct Model {
 }
 lazy_static! {
     pub static ref GPT3_TURBO: Model = Model {
-        name: "gpt-3.5-turbo".to_string(),
-        endpoint: "https://api.openai.com/v1/completions".to_string(),
-        token_limit: 4096,
-    };
+    name: "gpt-3.5-turbo".to_string(),
+    endpoint: "https://api.openai.com/v1/completions".to_string(),
+    token_limit: 4096,
+};
 
-    pub static ref GPT4_TURBO: Model = Model {
-        name: "gpt-4.0-turbo".to_string(),
-        endpoint: "https://api.openai.com/v1/completions".to_string(),
-        token_limit: 5000,
-    };
+pub static ref GPT4_TURBO: Model = Model {
+    name: "gpt-4.0-turbo".to_string(),
+    endpoint: "https://api.openai.com/v1/completions".to_string(),
+    token_limit: 5000,
+};
 }
 async fn select_model(
     settings: &config::Config,

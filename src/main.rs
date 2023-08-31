@@ -1,15 +1,13 @@
 use async_openai::types::ChatCompletionRequestMessage;
 use async_openai::types::Role;
 use clap::Parser;
-use config::{Config, File};
+use config::Config;
 use rustyline::error::ReadlineError;
 use sazid::gpt_connector::GPTConnector;
 use sazid::session_manager::SessionManager;
 use sazid::ui::UI;
 use sazid::utils::generate_session_id;
-use serde::Deserialize;
 use std::ffi::OsString;
-use std::path::PathBuf;
 
 #[derive(Parser)]
 #[clap(
@@ -91,13 +89,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         match opts.continue_session {
             Some(session_file) => {
                 // Load the provided session.
-                session_manager = SessionManager::from_existing_session(&session_file).await?;
+                session_manager = SessionManager::load_session(&session_file).await?;
             },
             None => {
                 // Check if there's a last session.
-                if let Some(last_session) = SessionManager::load_last_session_filename().await {
+                if let Some(last_session) = SessionManager::load_last_session_filename() {
                     // Load the last session.
-                    session_manager = SessionManager::from_existing_session(&last_session).await?;
+                    session_manager = SessionManager::load_session(&last_session).await?;
                 } else {
                     // No last session available. Instantiate a new SessionManager for a new session.
                     let session_id = generate_session_id();
@@ -117,7 +115,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     UI::display_startup_message();
 
-    for message in &messages {
+    for message in &session_manager.session_data.requests {
         UI::display_message(message.role.clone(), &message.content.unwrap_or_default());
     }
 
@@ -136,7 +134,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 } else {
                     if input == "exit" || input == "quit" {
                         session_manager
-                            .save_last_session_filename(session_manager.session_filename)?;
+                            .save_last_session_filename(&session_manager.session_file);
                         UI::display_exit_message();
                         break;
                     }
@@ -146,7 +144,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         function_call: None, // If you have appropriate data, replace None
                         name: None,          // If you have appropriate data, replace None
                     };
-                    session_manager.requests.push(user_message);
+                    session_manager.session_data.requests.push(user_message);
 
                     match tokio::runtime::Builder::new_current_thread()
                         .enable_io()
@@ -161,7 +159,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     &choice.message.content.unwrap_or_default(),
                                 );
                             }
-                            session_manager.responses.push(response);
+                            session_manager.session_data.responses.push(response);
                             session_manager.save_session()?;
                         }
                         Err(error) => {
