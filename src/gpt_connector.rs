@@ -9,15 +9,15 @@ use serde::{Deserialize, Serialize};
 
 use backoff::ExponentialBackoffBuilder;
 use std::env;
-
+use std::borrow::Cow;
 struct ModelsList {
-    default: Model,
-    fallback: Model,
+    default: Model<'a>,
+    fallback: Model<'a>,
 }
 #[derive(Debug, Serialize, Deserialize, Copy, Clone)]
-pub struct Model {
-    pub(crate) name: &'static str,
-    pub(crate) endpoint: &'static str,
+pub struct Model<'a> {
+    pub(crate) name: Cow('a str),
+    pub(crate) endpoint: Cow('a str),
     pub(crate) token_limit: u32,
 }
 

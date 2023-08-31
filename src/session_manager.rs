@@ -45,7 +45,8 @@ pub struct SessionManager {
 
 impl SessionManager {
     pub async fn new(session_id: String, gpt_connector: GPTConnector) -> Self {
-        Self { gpt_connector, session_data: Session::new(session_id, gpt_connector.model.copy()) }
+        let model = gpt_connector.model.clone();
+        Self { gpt_connector, session_data: Session::new(session_id, model ) }
     }
 
     pub async fn load_session(&self, gpt: GPTConnector) -> Self {
