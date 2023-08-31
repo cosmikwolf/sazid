@@ -1,14 +1,12 @@
 use async_openai::types::ChatCompletionRequestMessage;
 use async_openai::types::Role;
 use clap::Parser;
-use config::Config;
 use rustyline::error::ReadlineError;
 use sazid::gpt_connector::GPTConnector;
 use sazid::gpt_connector::GPTSettings;
 use sazid::session_manager::SessionManager;
 use sazid::ui::UI;
 use sazid::utils::generate_session_id;
-use serde::Deserialize;
 use std::ffi::OsString;
 use toml;
 #[derive(Parser)]
