@@ -136,6 +136,9 @@ impl GPTConnector {
             }
         }
     }
+    pub fn set_gpt_model(&mut self, model: Model) {
+        self.model = model;
+    }
 }
 #[cfg(test)]
 mod tests {

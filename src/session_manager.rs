@@ -39,22 +39,22 @@ pub struct IngestedData {
     chunk_num: u32,
     content: String,
 }
-pub struct SessionManager {
-    gpt_connector: &GPTConnector, 
+pub struct SessionManager<'a> {
+    gpt_connector: &'a GPTConnector, 
     pub session_data: Session,
 }
 
-impl SessionManager {
-    pub fn new(session_id: String, gpt_connector: &GPTConnector) -> Self {
+impl<'a> SessionManager<'a> {
+    pub fn new(session_id: String, gpt_connector: &'a GPTConnector) -> Self {
         let model = gpt_connector.model.clone();
         Self { gpt_connector, session_data: Session::new(session_id, model ) }
     }
-    pub fn load_session(session_file: &str, mut gpt: GPTConnector) -> Result<SessionManager, std::io::Error> {
+    pub fn load_session(session_file: &str, gpt: &'a mut GPTConnector) -> Result<SessionManager<'a>, std::io::Error> {
         let session_file_path = Path::new(session_file);
         let data = fs::read_to_string(session_file_path).unwrap();
         let session_data: Session = serde_json::from_str(&data).unwrap();
-        gpt.model =  lookup_model_by_name(gpt.model.name.as_str()).unwrap();
-        Ok(SessionManager { gpt_connector: &gpt, session_data })
+        gpt.set_gpt_model(lookup_model_by_name(gpt.model.name.as_str()).unwrap());
+        Ok(SessionManager { gpt_connector: gpt, session_data })
     }
 
     pub fn save_session(&self ) -> io::Result<()> {

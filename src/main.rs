@@ -83,23 +83,23 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     if opts.new {
         // Instantiate a new SessionManager for a new session.
         let session_id = generate_session_id();
-        session_manager = SessionManager::new(session_id, &gpt).await;
+        session_manager = SessionManager::new(session_id, &gpt);
     } else {
         // Check if a specific session is provided via the `--continue` flag.
         match opts.continue_session {
             Some(session_file) => {
                 // Load the provided session.
-                session_manager = load_session(&session_file, gpt).await?;
+                session_manager = session_manager::load_session(&session_file, gpt)?;
             }
             None => {
                 // Check if there's a last session.
                 if let Some(last_session) = SessionManager::load_last_session_filename() {
                     // Load the last session.
-                    session_manager = load_session(&last_session.to_str().unwrap(), gpt).await?;
+                    session_manager = load_session(&last_session.to_str().unwrap(), gpt)?;
                 } else {
                     // No last session available. Instantiate a new SessionManager for a new session.
                     let session_id = generate_session_id();
-                    session_manager = SessionManager::new(session_id, &gpt).await;
+                    session_manager = SessionManager::new(session_id, &gpt);
                 }
             }
         }
