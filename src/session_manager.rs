@@ -1,83 +1,13 @@
-
-pub async fn count_tokens(text: &str) -> Result<usize, io::Error> {
-    let token_count = tiktoken_rs::cl100k_base(text);
-    Ok(token_count)
-}
-
+use async_openai::types::{ChatCompletionRequestMessage, CreateChatCompletionResponse};
+use config::Config;
+use serde::{Deserialize, Serialize};
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
-use serde::{Deserialize, Serialize};
-use async_openai::types::{CreateChatCompletionResponse, ChatCompletionRequestMessage};
+use crate::gpt_connector::Model;
 
 const SESSIONS_DIR: &str = "./data/sessions";
 const INGESTED_DIR: &str = "./data/ingested";
-
-struct Model {
-    name: &'static str,
-    endpoint: &'static str,
-    token_limit: u32,
-}
-
-const GPT3_TURBO: Model = Model {
-    name: "gpt-3.5-turbo",
-    endpoint: "https://api.openai.com/v1/models/gpt-3.5-turbo",
-    token_limit: 4096,
-};
-
-const GPT4_TURBO: Model = Model {
-    name: "gpt-4",
-    endpoint: "https://api.openai.com/v1/models/gpt-4",
-    token_limit: 8192,
-};;
-    
-    pub const GPT3_STANDARD: Models = Models {
-    
-        endpoint: "https://api.openai.com/v1/models/text-davinci-003/completions-standard",
-        name: "gpt-3.5-standard",
-        tokens_limit: 4096,
-    };
-    
-    pub const GPT4_TURBO: Models = Models {
-    
-        endpoint: "https://api.openai.com/v1/models/text-davinci-004/completions",
-        name: "gpt-4-turbo",
-        tokens_limit: 8192,
-    };
-    
-    pub const GPT4_STANDARD: Models = Models {
-    
-        endpoint: "https://api.openai.com/v1/models/text-davinci-004/completions-standard",
-        name: "gpt-4-standard",
-        tokens_limit: 8192,
-    };
-
-    
-    pub const GPT3_TURBO_16K: Models = Models {
-    
-        endpoint: "https://api.openai.com/v1/models/gpt-3.5-turbo-16k/completions",
-        name: "gpt-3.5-turbo-16k",
-        tokens_limit: 16385,
-        
-    };
-    
-    pub const GPT4: Models = Models {
-    
-        endpoint: "https://api.openai.com/v1/models/gpt-4/completions",
-        name: "gpt-4",
-        tokens_limit: 8192,
-        
-    };
-    
-    pub const GPT4_32K: Models = Models {
-    
-        endpoint: "https://api.openai.com/v1/models/gpt-4-32k/completions",
-        name: "gpt-4-32k",
-        tokens_limit: 32768,
-        
-    };
-
-}
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Session {
@@ -96,23 +26,18 @@ impl Session {
 
 pub struct SessionManager {
     session_id: String,
-    model: Models,
+    model: Model,
 }
 
 impl SessionManager {
-    async fn check_model_access(&self, client: &async_openai::Client) -> Option<&Models> {
-        // Mocked logic: In a real-world scenario, you would call the OpenAI API to check model access.
-        // Here, we'll assume the user has access to all models and select based on priority.
-        
-        
-
-let models = vec![&Self::GPT3_TURBO, &Self::GPT4_TURBO, &Self::GPT3_TURBO_16K, &Self::GPT4, &Self::GPT4_32K];
-models.into_iter().min_by_key(|model| model.priority)
+    pub async fn new(session_id: String, model: Model, config: Config) -> Self {
+        Self { session_id, model }
     }
 
     pub fn load_session(&self, session_filename: &Path) -> Result<Session, io::Error> {
         let session_content = fs::read_to_string(session_filename)?;
-        serde_json::from_str(&session_content).map_err(|e| io::Error::new(io::ErrorKind::Other, e.to_string()))
+        serde_json::from_str(&session_content)
+            .map_err(|e| io::Error::new(io::ErrorKind::Other, e.to_string()))
     }
 
     pub fn load_last_session_filename(&self) -> Option<PathBuf> {
@@ -135,10 +60,6 @@ models.into_iter().min_by_key(|model| model.priority)
 
     pub fn get_session_filename(&self) -> PathBuf {
         Path::new(SESSIONS_DIR).join(format!("{}.json", &self.session_id))
-    }
-
-    pub fn new(session_id: String, model: Models) -> Self {
-        Self { session_id, model }
     }
 
     fn ensure_directory_exists(dir: &str) -> io::Result<()> {
@@ -165,18 +86,15 @@ models.into_iter().min_by_key(|model| model.priority)
         Self::ensure_directory_exists(SESSIONS_DIR)?;
 
         let session_file_path = self.get_session_filepath();
-        
+
         #[derive(Serialize)]
         struct SessionLogEntry<'a> {
             request: &'a ChatCompletionRequestMessage,
             response: &'a Option<CreateChatCompletionResponse>,
         }
-        
-        let log_entry = SessionLogEntry {
-            request,
-            response,
-        };
-        
+
+        let log_entry = SessionLogEntry { request, response };
+
         let data = serde_json::to_string(&log_entry)?;
         fs::write(session_file_path, data)?;
         Ok(())
@@ -184,7 +102,7 @@ models.into_iter().min_by_key(|model| model.priority)
 
     pub fn save_ingested_file(&self, content: &str) -> io::Result<()> {
         Self::ensure_directory_exists(INGESTED_DIR)?;
-        
+
         let ingested_file_path = self.get_ingested_filepath();
         fs::write(ingested_file_path, content)?;
         Ok(())
@@ -214,7 +132,7 @@ mod tests {
     #[test]
     fn test_session_save_and_load() {
         let session_id = String::from("test_session");
-        let model = Model::GPT3;
+        // let model = ;
         let mut manager = SessionManager::new(session_id, model);
 
         let session = Session {

@@ -1,25 +1,6 @@
 
 use config::{Config, File};
 use serde::Deserialize;
-
-
-#[derive(Debug, Deserialize)]
-struct ModelsConfig {
-    default: ModelConfig,
-    fallback: ModelConfig,
-}
-
-#[derive(Deserialize)]
-struct ModelConfig {
-    name: String,
-}
-
-fn load_config() -> Result<ModelsConfig, config::ConfigError> {
-    let mut cfg = Config::default();
-    cfg.merge(File::with_name("Settings"))?;
-    cfg.try_into()
-}
-
 use async_openai::types::ChatCompletionRequestMessage;
 use async_openai::types::Role;
 use clap::Parser;
@@ -66,24 +47,21 @@ struct Opts {
     )]
     ingest: Option<OsString>,
 }
-
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let opts: Opts = Opts::parse();
 
     let gpt = GPTConnector::new();
     
     let config = load_config()?;
-        
-    if !SessionManager::check_model_access(&config.default)? {
-        // Print to the UI that we're falling back to the fallback model
-        println!("Default model is not accessible. Trying fallback model...");
-        if !SessionManager::check_model_access(&config.fallback)? {
-            // Exit the application if neither model is accessible
-            eprintln!("Error: Neither the default nor the fallback model is accessible.");
-            std::process::exit(1);
-        }
-    }
 
+    let settings = Config::builder()
+        // Add in `./Settings.toml`
+        .add_source(config::File::with_name("Settings"))
+        // Add in settings from the environment (with a prefix of APP)
+        // Eg.. `APP_DEBUG=1 ./target/app` would set the `debug` key
+        .build()
+        .unwrap();
+    
     // Handle model selection based on CLI flag
     if let Some(model_name) = &opts.model {
         // In a real-world scenario, you would set the selected model in the session manager or GPT connector
@@ -99,7 +77,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         println!("gpt-4-32k");
         return Ok(());
     }
-
 
     if let Some(path) = &opts.ingest {
         tokio::runtime::Builder::new_current_thread()
