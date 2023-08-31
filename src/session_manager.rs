@@ -98,6 +98,7 @@ impl<'a> SessionManager<'a> {
     }
 
     pub fn save_last_session_filename(&self) {
+        Self::ensure_directory_exists(SESSIONS_DIR).unwrap();
         let last_session_path = Path::new(SESSIONS_DIR).join("last_session.txt");
         fs::write(last_session_path, self.get_session_filepath().display().to_string()).unwrap();
     }

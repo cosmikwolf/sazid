@@ -126,11 +126,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
                 if input.starts_with("ingest ") {
                     let filepath = input.split_whitespace().nth(1).unwrap_or_default();
-                    tokio::runtime::Builder::new_current_thread()
-                        .enable_io()
-                        .enable_time()
-                        .build()?
-                        .block_on(session_manager.handle_ingest(&filepath.to_string()))?;
+                    session_manager.handle_ingest(&filepath.to_string()).await?;
                 } else {
                     if input == "exit" || input == "quit" {
                         session_manager.save_last_session_filename();
@@ -145,11 +141,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     };
                     session_manager.session_data.requests.push(user_message);
 
-                    match tokio::runtime::Builder::new_current_thread()
-                        .enable_io()
-                        .enable_time()
-                        .build()?
-                        .block_on(gpt.send_request(vec![input.to_string()]))
+                    match gpt.send_request(vec![input.to_string()]).await
                     {
                         Ok(response) => {
                             for choice in &response.choices {
