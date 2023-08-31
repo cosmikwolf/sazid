@@ -32,6 +32,15 @@ pub static ref GPT4_TURBO: Model = Model {
     token_limit: 5000,
 };
 }
+pub fn lookup_model_by_name(model_name: &str) -> Result<Model,GPTConnectorError> {
+    let models = vec![GPT3_TURBO.clone(), GPT4_TURBO.clone()];
+    for model in models {
+        if model.name == model_name {
+            return Ok(model);
+        }
+    }
+    Err(GPTConnectorError::Other("Invalid model".to_string()))
+}
 async fn select_model(
     settings: &config::Config,
     client: &Client<OpenAIConfig>,
@@ -112,7 +121,7 @@ impl GPTConnector {
         }
         // Construct the request using CreateChatCompletionRequest
         let request = CreateChatCompletionRequest {
-            model: "gpt-3.5-turbo".to_string(), // Assuming this as the model you want to use
+            model: lookup_model_by_name(self.model.name.as_str()).unwrap().name , // Assuming this as the model you want to use
             messages: constructed_messages,     // Removed the Some() wrapping
             ..Default::default()                // Use default values for other fields
         };

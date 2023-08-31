@@ -83,23 +83,23 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     if opts.new {
         // Instantiate a new SessionManager for a new session.
         let session_id = generate_session_id();
-        let session_manager = SessionManager::new(session_id, gpt).await;
+        session_manager = SessionManager::new(session_id, &gpt).await;
     } else {
         // Check if a specific session is provided via the `--continue` flag.
         match opts.continue_session {
             Some(session_file) => {
                 // Load the provided session.
-                session_manager = SessionManager::load_session(&session_file).await?;
-            },
+                session_manager = load_session(&session_file, gpt).await?;
+            }
             None => {
                 // Check if there's a last session.
                 if let Some(last_session) = SessionManager::load_last_session_filename() {
                     // Load the last session.
-                    session_manager = SessionManager::load_session(&last_session).await?;
+                    session_manager = load_session(&last_session.to_str().unwrap(), gpt).await?;
                 } else {
                     // No last session available. Instantiate a new SessionManager for a new session.
                     let session_id = generate_session_id();
-                    let session_manager = SessionManager::new(session_id, gpt).await;
+                    session_manager = SessionManager::new(session_id, &gpt).await;
                 }
             }
         }
@@ -133,8 +133,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         .block_on(session_manager.handle_ingest(&filepath.to_string()))?;
                 } else {
                     if input == "exit" || input == "quit" {
-                        session_manager
-                            .save_last_session_filename(&session_manager.session_file);
+                        session_manager.save_last_session_filename();
                         UI::display_exit_message();
                         break;
                     }
@@ -173,26 +172,23 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     }
                 }
             }
-            Err(e) => {
-                println!("Error sending request to GPT: {:?}", e);
-            }
+
             Err(ReadlineError::Interrupted) => {
                 let session_filename = session_manager.get_session_filepath();
                 // session_manager.save_chat_to_session(&session_filename, &messages)?;
-                session_manager.save_last_session_filename(&session_filename);
+                session_manager.save_last_session_filename();
                 UI::display_exit_message();
                 // break;
             }
             Err(ReadlineError::Eof) => {
                 let session_filename = session_manager.get_session_filepath();
                 // session_manager.save_chat_to_session(&session_filename, &messages)?;
-                session_manager.save_last_session_filename(&session_filename);
+                session_manager.save_last_session_filename();
                 UI::display_exit_message();
                 break;
             }
-            Err(err) => {
-                println!("Error: {:?}", err);
-                break;
+            Err(e) => {
+                println!("Error sending request to GPT: {:?}", e);
             }
         }
     }

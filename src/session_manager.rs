@@ -9,6 +9,7 @@ use crate::errors::SessionManagerError;
 use crate::file_chunker::FileChunker;
 use crate::gpt_connector::GPTConnector;
 use crate::gpt_connector::Model;
+use crate::gpt_connector::lookup_model_by_name;
 
 const SESSIONS_DIR: &str = "./data/sessions";
 const INGESTED_DIR: &str = "./data/ingested";
@@ -39,21 +40,21 @@ pub struct IngestedData {
     content: String,
 }
 pub struct SessionManager {
-    gpt_connector: GPTConnector, 
-    session_data: Session,
+    gpt_connector: &GPTConnector, 
+    pub session_data: Session,
 }
 
 impl SessionManager {
-    pub async fn new(session_id: String, gpt_connector: GPTConnector) -> Self {
+    pub fn new(session_id: String, gpt_connector: &GPTConnector) -> Self {
         let model = gpt_connector.model.clone();
         Self { gpt_connector, session_data: Session::new(session_id, model ) }
     }
-
-    pub async fn load_session(&self, gpt: GPTConnector) -> Self {
-        let session_file_path = self.get_session_filepath();
+    pub fn load_session(session_file: &str, mut gpt: GPTConnector) -> Result<SessionManager, std::io::Error> {
+        let session_file_path = Path::new(session_file);
         let data = fs::read_to_string(session_file_path).unwrap();
         let session_data: Session = serde_json::from_str(&data).unwrap();
-        Self { gpt_connector: GPTConnector::new(gpt.settings).await, session_data }
+        gpt.model =  lookup_model_by_name(gpt.model.name.as_str()).unwrap();
+        Ok(SessionManager { gpt_connector: &gpt, session_data })
     }
 
     pub fn save_session(&self ) -> io::Result<()> {
@@ -62,8 +63,23 @@ impl SessionManager {
         fs::write(session_file_path, data)?;
         Ok(())
     }
+    pub fn get_requests(&self) -> &Vec<ChatCompletionRequestMessage> {
+        &self.session_data.requests
+    }
 
-    // pub fn load_session(&self, session_filename: &Path) -> Result<Session, io::Error> {
+    pub fn get_responses(&self) -> &Vec<CreateChatCompletionResponse> {
+        &self.session_data.responses
+    }
+
+    pub fn add_request(&mut self, request: ChatCompletionRequestMessage) {
+        self.session_data.requests.push(request);
+    }
+
+    pub fn add_response(&mut self, response: CreateChatCompletionResponse) {
+        self.session_data.responses.push(response);
+    }
+
+    // pub fn load_session(&self, session_filename: &Path) ult<Session, io::Error> {
     //     let session_content = fs::read_to_string(session_filename)?;
     //     serde_json::from_str(&session_content)
     //         .map_err(|e| io::Error::new(io::ErrorKind::Other, e.to_string()))
@@ -78,9 +94,9 @@ impl SessionManager {
         }
     }
 
-    pub fn save_last_session_filename(&self, session_filename: &Path) {
+    pub fn save_last_session_filename(&self) {
         let last_session_path = Path::new(SESSIONS_DIR).join("last_session.txt");
-        fs::write(last_session_path, session_filename.display().to_string()).unwrap();
+        fs::write(last_session_path, self.get_session_filepath().display().to_string()).unwrap();
     }
 
     fn ensure_directory_exists(dir: &str) -> io::Result<()> {
