@@ -40,13 +40,12 @@ impl Chunkifier {
             } else {
                 // if it is a path, but its not a file or a directory, then it is a URL
                 println!("URL detected, but not implemented. ingesting as text");
-                Ok::<Vec<std::string::String>, ChunkifierError>(Self::chunkify_text(input, tokens_per_chunk));
+                return Ok::<Vec<std::string::String>, ChunkifierError>(Self::chunkify_text(input, tokens_per_chunk));
             }
         } else {
             // If not a file path, chunkify the input text directly
-            Ok::<Vec<std::string::String>, ChunkifierError>(Self::chunkify_text(input, tokens_per_chunk));
+            return Ok::<Vec<std::string::String>, ChunkifierError>(Self::chunkify_text(input, tokens_per_chunk));
         };
-        Err(ChunkifierError::Other("Failed to read directory".to_string()))
     }
 
     /// Ingest a file by chunkifying its contents  

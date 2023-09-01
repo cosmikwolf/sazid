@@ -12,8 +12,9 @@ use crate::gpt_connector::Model;
 use crate::ui;
 use crate::utils;
 
-pub const SESSIONS_DIR: &str = "./data/sessions";
-pub const INGESTED_DIR: &str = "./data/ingested";
+pub const SESSIONS_DIR: &str = "data/sessions";
+pub const INGESTED_DIR: &str = "data/ingested";
+
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Session {
@@ -59,25 +60,17 @@ impl<'a> SessionManager<'a> {
         session_file_path: PathBuf,
         gpt_connector: &'a GPTConnector,
     ) -> SessionManager<'a> {
-        // let session_file_path = Path::new(session_file_path);
         if !session_file_path.exists(){
             ui::UI::display_error_message(format!("Session file not found: {}", session_file_path.display()));
-            SessionManager::new(utils::generate_session_id(), gpt_connector);
-        }
-        let data = fs::read_to_string(session_file_path).unwrap();
-        let session_data: Session = serde_json::from_str(&data).unwrap();
-
-        Self::load_session_from_session_data(session_data, gpt_connector)
-    }
-
-    // For creating from existing session data
-    pub fn load_session_from_session_data(
-        session_data: Session,
-        gpt_connector: &'a GPTConnector,
-    ) -> SessionManager<'a> {
-        Self {
-            gpt_connector,
-            session_data,
+            return SessionManager::new(utils::generate_session_id(), gpt_connector);
+        } else {
+            let data = fs::read_to_string(session_file_path).unwrap();
+            let session_data: Session = serde_json::from_str(&data).unwrap();
+    
+            Self {
+                gpt_connector,
+                session_data,
+            }
         }
     }
 
@@ -103,12 +96,6 @@ impl<'a> SessionManager<'a> {
     pub fn add_response(&mut self, response: CreateChatCompletionResponse) {
         self.session_data.responses.push(response);
     }
-
-    // pub fn load_session(&self, session_filename: &Path) ult<Session, io::Error> {
-    //     let session_content = fs::read_to_string(session_filename)?;
-    //     serde_json::from_str(&session_content)
-    //         .map_err(|e| io::Error::new(io::ErrorKind::Other, e.to_string()))
-    // }
 
     pub fn load_last_session_file_path() -> Option<PathBuf> {
         let last_session_path = Path::new(SESSIONS_DIR).join("last_session.txt");

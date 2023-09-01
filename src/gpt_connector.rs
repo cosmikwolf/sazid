@@ -124,10 +124,10 @@ impl GPTConnector {
 
         // Construct the request using construct_request
         let request = self.construct_request(messages);
-
+        
         // Make the API call
         let response_result = self.client.chat().create(request).await;
-
+        
         match response_result {
             Ok(response) => Ok(response),
             Err(e) => {

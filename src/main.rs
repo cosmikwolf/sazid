@@ -1,57 +1,25 @@
 use async_openai::types::ChatCompletionRequestMessage;
 use async_openai::types::Role;
 use clap::Parser;
+use futures::TryFutureExt;
 use rustyline::error::ReadlineError;
 use sazid::gpt_connector::GPTConnector;
 use sazid::gpt_connector::GPTSettings;
 use sazid::session_manager::SessionManager;
 use sazid::ui::UI;
 use sazid::utils::generate_session_id;
-use std::ffi::OsString;
 use std::path::PathBuf;
 use toml;
-#[derive(Parser)]
-#[clap(
-    version = "1.0",
-    author = "Your Name",
-    about = "Interactive chat with GPT"
-)]
-struct Opts {
-    #[clap(
-        short = 'm',
-        long,
-        value_name = "MODEL_NAME",
-        help = "Specify the model to use (e.g., gpt-4, gpt-3.5-turbo-16k)"
-    )]
-    model: Option<String>,
+use sazid::ui::Opts;
+use tokio::runtime::Runtime;
 
-    #[clap(
-        short = 'l',
-        long = "list-models",
-        help = "List the models the user has access to"
-    )]
-    list_models: bool,
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let rt  = Runtime::new()?;
 
-    #[clap(short = 'n', long, help = "Start a new chat session")]
-    new: bool,
-
-    #[clap(short = 'c', long, help = "Continue from a specified session file")]
-    continue_session: Option<String>,
-
-    #[clap(
-        short = 'i',
-        long,
-        value_name = "PATH",
-        help = "Import a file or directory for GPT to process"
-    )]
-    ingest: Option<OsString>,
-}
-
-#[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let opts: Opts = Opts::parse();
     let settings: GPTSettings = toml::from_str(std::fs::read_to_string("Settings.toml").unwrap().as_str()).unwrap();
-    let gpt: GPTConnector = GPTConnector::new(&settings).await;
+    
+    let gpt: GPTConnector = rt.block_on( GPTConnector::new(&settings));
 
     // Handle model selection based on CLI flag
     if let Some(model_name) = &opts.model {
@@ -99,17 +67,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     if let Some(path) = &opts.ingest {
-        tokio::runtime::Builder::new_current_thread()
-            .enable_io()
-            .enable_time()
-            .build()?
-            .block_on(session_manager.handle_ingest(&path.to_string_lossy().to_string()))?;
+        rt.block_on(async{session_manager.handle_ingest(&path.to_string_lossy().to_string()).await}).unwrap();
     }
 
     UI::display_startup_message();
 
     for message in &session_manager.session_data.requests {
         UI::display_message(message.role.clone(), message.content.clone().unwrap_or_default());
+    }
+    for message in &session_manager.session_data.responses {
+        message.choices.clone().into_iter().for_each(|choice| {
+            UI::display_message(choice.message.role.clone(), choice.message.content.clone().unwrap_or_default());
+        });
     }
 
     loop {
@@ -119,12 +88,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
                 if input.starts_with("ingest ") {
                     let filepath = input.split_whitespace().nth(1).unwrap_or_default();
-                    session_manager.handle_ingest(&filepath.to_string()).await?;
+                    rt.block_on(async{session_manager.handle_ingest(&filepath.to_string()).await}).unwrap();
                 } else {
                     if input == "exit" || input == "quit" {
-                        session_manager.save_last_session_file_path();
+                        session_manager.save_session().unwrap();
                         UI::display_exit_message();
-                        break;
+                        return Ok(());
                     }
                     let user_message = ChatCompletionRequestMessage {
                         role: Role::User,
@@ -133,11 +102,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         name: None,          // If you have appropriate data, replace None
                     };
                     session_manager.session_data.requests.push(user_message);
-
-                    match gpt.send_request(
+                    
+                    match rt.block_on(async{ gpt.send_request(
                         gpt.construct_request_message_array(Role::User, vec![input.to_string()])    
                     ).await
-                    {
+                })
+                {
+                        
                         Ok(response) => {
                             for choice in &response.choices {
                                 UI::display_message(
@@ -159,12 +130,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     }
                 }
             }
-
             Err(ReadlineError::Interrupted) => {
                 // session_manager.save_chat_to_session(&session_filename, &messages)?;
                 session_manager.save_last_session_file_path();
                 UI::display_exit_message();
-                // break;
+                break;
             }
             Err(ReadlineError::Eof) => {
                 // session_manager.save_chat_to_session(&session_filename, &messages)?;
