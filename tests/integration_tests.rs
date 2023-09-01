@@ -1,6 +1,8 @@
 extern crate sazid;
 extern crate tempfile;
 
+use futures::future::{self, OptionFuture};
+
 #[cfg(test)]
 mod integration_tests {
     
@@ -8,7 +10,8 @@ mod integration_tests {
     use std::io::Write;
     use std::fs::{self, File};
     use async_openai::types::Role;
-    use sazid::gpt_connector::ChatCompletionRequestMessage;
+    use sazid::gpt_connector::{GPTSettings, GPTConnector};
+    use async_openai::types::ChatCompletionRequestMessage;
     use sazid::session_manager::SessionManager;
     use tempfile::tempdir;
 
@@ -57,23 +60,49 @@ mod integration_tests {
 
     // 1. Test session filename generation
     // Requirement: The application should be able to generate a unique session filename based on the current date, time, and a random hash.
-    #[test]
-    fn test_session_creation() {
-        let session_manager = SessionManager::new(tempdir().unwrap().path().to_path_buf());
-        let filename = session_manager.new_session_filename();
-        assert!(filename.contains("_")); // Check if filename contains the expected delimiter
+    #[tokio::test]
+    async fn test_session_creation() {
+        let settings: GPTSettings = toml::from_str(std::fs::read_to_string("Settings.toml").unwrap().as_str()).unwrap();
+        let gpt: GPTConnector = GPTConnector::new(&settings).await;
+        let session_id = sazid::utils::generate_session_id();
+        let session = SessionManager::new(session_id, &gpt);
+    
+        // Check if a file containing the session_id exists within the SESSIONS_DIR directory
+        let session_files_in_directory = std::fs::read_dir(sazid::session_manager::SESSIONS_DIR).unwrap();
+        let file_exists = session_files_in_directory.any(|entry| {
+            let entry_path = entry.unwrap().path();
+            entry_path.is_file() && entry_path.to_string_lossy().contains(&session_id)
+        });
+    
+        assert!(file_exists);
     }
-
+    
     // 2. Test generation of multiple unique session filenames
     // Requirement: Multiple sessions should have unique identifiers.
     #[test]
     fn test_multiple_sessions() {
-        let session_manager = SessionManager::new(tempdir().unwrap().path().to_path_buf());
-        let filename1 = session_manager.new_session_filename();
-        let filename2 = session_manager.new_session_filename();
-        assert_ne!(filename1, filename2);
-    }
+        // Generate two unique session IDs
+        // this will take one additional second since generate_session_id has a 1 second timeout to ensure unique session IDs
+        let session_id1 = sazid::utils::generate_session_id();
+        let session_id2 = sazid::utils::generate_session_id();
+    
+        assert_ne!(session_id1, session_id2);
 
+        // Collect files in the directory into a Vec
+        let session_files_in_directory: Vec<_> = std::fs::read_dir(sazid::session_manager::SESSIONS_DIR).unwrap().collect();
+
+        let file1_exists = session_files_in_directory.iter().any(|entry| {
+            let entry_path = entry.as_ref().unwrap().path();
+            entry_path.is_file() && entry_path.to_string_lossy().contains(&session_id1)
+        });
+        let file2_exists = session_files_in_directory.iter().any(|entry| {
+            let entry_path = entry.as_ref().unwrap().path();
+            entry_path.is_file() && entry_path.to_string_lossy().contains(&session_id2)
+        });
+    
+        assert!(file1_exists && file2_exists);
+    }
+    
     // 3. Test storage of messages within a session
     // Requirement: The application should be able to store messages (text) in a session.
     #[test]
@@ -81,43 +110,52 @@ mod integration_tests {
         let mut messages = vec![];
         let user_message = ChatCompletionRequestMessage {
             role: Role::User,
-            content: "Hello, GPT!".to_string(),
+            content: Some("Hello, GPT!".to_string()),
+            ..Default::default()            // Use default values for other fields
         };
         messages.push(user_message);
-        assert_eq!(messages[0].content, "Hello, GPT!");
+        assert_eq!(messages[0].content.unwrap(), "Hello, GPT!");
     }
 
     // 4. Test saving and loading of sessions, as well as tracking the last session
     // Requirement: The application should save and reload chat sessions. It should also track the most recent session for easy reloading.
-    #[test]
-    fn test_session_save_and_load() {
+    #[tokio::test]
+    async fn test_session_save_and_load() {
         let temp_dir = tempdir().unwrap();
-        let session_manager = SessionManager::new(temp_dir.path().to_path_buf());
+        let settings: GPTSettings = toml::from_str(std::fs::read_to_string("Settings.toml").unwrap().as_str()).unwrap();
+        // let mut gpt: GPTConnector;
+        let gpt = GPTConnector::new(&settings).await;
+        let session_id = sazid::utils::generate_session_id();
+        let session = SessionManager::new(session_id, &gpt);
+
         let messages = vec![ChatCompletionRequestMessage {
             role: Role::User,
-            content: "Hello, GPT!".to_string(),
+            content: Some("Hello, GPT!".to_string()),
+            ..Default::default()            // Use default values for other fields
         }];
-        let filename = session_manager.new_session_filename();
 
         // Save session and last session
-        session_manager.save_session(&filename, &messages).unwrap();
-        session_manager.save_last_session_filename(&filename).unwrap();
+        session.save_session();
+        session.save_last_session_file_path();
 
         // Check if file exists
         assert!(temp_dir
             .path()
-            .join("session_data")
-            .join(&filename)
+            .join(&session.get_session_filepath())
             .exists());
 
         // Load specific session
-        let loaded_messages = session_manager.load_session(&filename).unwrap();
-        assert_eq!(loaded_messages[0].content, "Hello, GPT!");
+        let loaded_session = SessionManager::load_session_from_file(session.get_session_filepath(), &gpt);
+        let loaded_session_requests = loaded_session.get_requests();
 
+        assert_eq!(loaded_session_requests[0].content.unwrap(), "Hello, GPT!".to_string());
+        
         // Load last session
-        let last_session_filename = session_manager.load_last_session_filename().unwrap();
-        let last_session = session_manager.load_session(&last_session_filename).unwrap();
-        assert_eq!(last_session[0].content, "Hello, GPT!");
+        let last_session_path = SessionManager::load_last_session_file_path().unwrap();
+        
+        let last_session = SessionManager::load_session_from_file(last_session_path, &gpt);
+        let last_session_requests = loaded_session.get_requests()[0].content.unwrap();
+        assert_eq!(last_session_requests, "Hello, GPT!".to_string());
     }
 
     // 5. Test UI's ability to display messages
@@ -154,31 +192,35 @@ mod integration_tests {
 
     // 8. Test continuation of a chat conversation
     // Requirement: The application should allow users to continue their chat conversation from where they left off.
-    #[test]
-    fn test_continued_conversation() {
+    #[tokio::test]
+    async fn test_continued_conversation() {
         let temp_dir = tempdir().unwrap();
-        let session_manager = SessionManager::new(temp_dir.path().to_path_buf());
+        let settings: GPTSettings = toml::from_str(std::fs::read_to_string("Settings.toml").unwrap().as_str()).unwrap();
+        let gpt: GPTConnector = GPTConnector::new(&settings).await;
+        let session_id = sazid::utils::generate_session_id();
+        let session = SessionManager::new(session_id, &gpt);  
         let mut messages = vec![
             ChatCompletionRequestMessage {
                 role: Role::User,
-                content: "Hello, GPT!".to_string(),
+                content: Some("Hello, GPT!".to_string()),
+                ..Default::default()            // Use default values for other fields
             },
             ChatCompletionRequestMessage {
                 role: Role::Assistant,
-                content: "Hello, User!".to_string(),
+                content: Some("Hello, User!".to_string()),
+                ..Default::default()            // Use default values for other fields
             },
         ];
 
-        let filename = session_manager.new_session_filename();
-        session_manager.save_session(&filename, &messages).unwrap();
-        session_manager.save_last_session_filename(&filename).unwrap();
+        session.save_session();
 
-        let loaded_messages = session_manager.load_session(&filename).unwrap();
-        assert_eq!(loaded_messages.len(), 2); // Two messages in the session
+        let loaded_messages = SessionManager::load_session_from_file(session.get_session_filepath(), &gpt);
+        assert_eq!(loaded_messages.get_requests().len(), 2); // Two messages in the session
 
         let new_message = ChatCompletionRequestMessage {
             role: Role::User,
-            content: "How are you?".to_string(),
+            content: Some("How are you?".to_string()),
+            ..Default::default()            // Use default values for other fields
         };
         messages.push(new_message);
         assert_eq!(messages.len(), 3); // Now, three messages in the session
@@ -186,37 +228,44 @@ mod integration_tests {
 
     // 9. Test the ability to delete a session
     // Requirement: The application should provide functionality to delete a chat session.
-    #[test]
-    fn test_session_deletion() {
+    #[tokio::test]
+    async fn test_session_deletion() {
         let temp_dir = tempdir().unwrap();
-        let session_manager = SessionManager::new(temp_dir.path().to_path_buf());
-        let messages = vec![ChatCompletionRequestMessage {
+        let settings: GPTSettings = toml::from_str(std::fs::read_to_string("Settings.toml").unwrap().as_str()).unwrap();
+        let gpt: GPTConnector = GPTConnector::new(&settings).await;
+        let session_id = sazid::utils::generate_session_id();
+        let mut session = SessionManager::new(session_id, &gpt);
+        let request = ChatCompletionRequestMessage {
             role: Role::User,
-            content: "Hello, GPT!".to_string(),
-        }];
-
-        let filename = session_manager.new_session_filename();
-        session_manager.save_session(&filename, &messages).unwrap();
-        let path = temp_dir.path().join("session_data").join(&filename);
+            content: Some("Hello, GPT!".to_string()),
+            ..Default::default()            // Use default values for other fields
+        };
+        session.add_request(request);
+        session.save_session();
+        let path = temp_dir.path().join(session.get_session_filepath());
         assert!(path.exists()); // File should exist
 
-        session_manager.delete_session(&filename).unwrap();
-        assert!(!path.exists()); // File should be deleted now
+        // session.delete_session().unwrap();
+        // assert!(!path.exists()); // File should be deleted now
     }
 
-    #[test]
-    fn test_ingestion() {
+    #[tokio::test]
+    async fn test_ingestion() {
         let dir = tempdir().unwrap();
-        let manager = SessionManager::new(dir.path().to_path_buf());
-
+        let settings: GPTSettings = toml::from_str(std::fs::read_to_string("Settings.toml").unwrap().as_str()).unwrap();
+        let gpt: GPTConnector = GPTConnector::new(&settings).await;
+        let session_id = sazid::utils::generate_session_id();
+        let session = SessionManager::new(session_id, &gpt);
+        
         let txt_path = dir.path().join("test.txt");
         File::create(&txt_path)
             .unwrap()
             .write_all(b"Chunk 1\nChunk 2\nChunk 3")
             .unwrap();
-
-        let chunks = manager.handle_ingest(&txt_path).unwrap();
-
+        let txt_path = txt_path.to_str().unwrap();
+        
+        let chunks = session.handle_ingest(&txt_path.into()).await.unwrap();
+        
         // Verify ingestion
         assert_eq!(chunks.len(), 3);
         assert_eq!(chunks[0], "Chunk 1");

@@ -15,10 +15,14 @@ impl UI {
     // Display a message to the user.
     pub fn display_message(role: Role, message: String) {
         match role {
-            Role::User => println!("You: {}", message),
+            Role::User => println!("You: {}", message.blue()),
             Role::Assistant => println!("GPT: {}", message.green()),
             _ => {}
         }
+    }
+    // Display a error message.
+    pub fn display_error_message(message: String) {
+        println!("Error: {}", message.red());
     }
 
     // Display a startup message.
@@ -66,8 +70,8 @@ mod tests {
     fn test_ui_display_message() {
         // Just a simple test to make sure no panic occurs.
         // Real UI testing would require more advanced techniques.
-        UI::display_message(Role::User, "Test");
-        UI::display_message(Role::Assistant, "Test");
+        UI::display_message(Role::User, "Test".to_string());
+        UI::display_message(Role::Assistant, "Test".to_string());
 
         let sample_path = PathBuf::from("/path/to/file.txt");
         UI::display_import_message(&sample_path, ImportStatus::Success);

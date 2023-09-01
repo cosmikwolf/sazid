@@ -8,6 +8,7 @@ use sazid::session_manager::SessionManager;
 use sazid::ui::UI;
 use sazid::utils::generate_session_id;
 use std::ffi::OsString;
+use std::path::PathBuf;
 use toml;
 #[derive(Parser)]
 #[clap(
@@ -50,15 +51,7 @@ struct Opts {
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let opts: Opts = Opts::parse();
     let settings: GPTSettings = toml::from_str(std::fs::read_to_string("Settings.toml").unwrap().as_str()).unwrap();
-    // let settings = Config::builder()
-    //     // Add in `./Settings.toml`
-    //     .add_source(config::File::with_name("Settings"))
-    //     // Add in settings from the environment (with a prefix of APP)
-    //     // Eg.. `APP_DEBUG=1 ./target/app` would set the `debug` key
-    //     .build()
-    //     .unwrap();
-
-    let gpt = GPTConnector::new(&settings).await;
+    let gpt: GPTConnector = GPTConnector::new(&settings).await;
 
     // Handle model selection based on CLI flag
     if let Some(model_name) = &opts.model {
@@ -89,13 +82,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         match opts.continue_session {
             Some(session_file) => {
                 // Load the provided session.
-                session_manager = SessionManager::load_session(&session_file, &gpt);
+                session_manager = SessionManager::load_session_from_file(PathBuf::from(&session_file), &gpt);
             }
             None => {
                 // Check if there's a last session.
-                if let Some(last_session) = SessionManager::load_last_session_filename() {
+                if let Some(last_session) = SessionManager::load_last_session_file_path() {
                     // Load the last session.
-                    session_manager = SessionManager::load_session(&last_session.to_str().unwrap(), &gpt);
+                    session_manager = SessionManager::load_session_from_file(last_session, &gpt);
                 } else {
                     // No last session available. Instantiate a new SessionManager for a new session.
                     let session_id = generate_session_id();
@@ -129,7 +122,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     session_manager.handle_ingest(&filepath.to_string()).await?;
                 } else {
                     if input == "exit" || input == "quit" {
-                        session_manager.save_last_session_filename();
+                        session_manager.save_last_session_file_path();
                         UI::display_exit_message();
                         break;
                     }
@@ -141,7 +134,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     };
                     session_manager.session_data.requests.push(user_message);
 
-                    match gpt.send_request(vec![input.to_string()]).await
+                    match gpt.send_request(
+                        gpt.construct_request_message_array(Role::User, vec![input.to_string()])    
+                    ).await
                     {
                         Ok(response) => {
                             for choice in &response.choices {
@@ -167,13 +162,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
             Err(ReadlineError::Interrupted) => {
                 // session_manager.save_chat_to_session(&session_filename, &messages)?;
-                session_manager.save_last_session_filename();
+                session_manager.save_last_session_file_path();
                 UI::display_exit_message();
                 // break;
             }
             Err(ReadlineError::Eof) => {
                 // session_manager.save_chat_to_session(&session_filename, &messages)?;
-                session_manager.save_last_session_filename();
+                session_manager.save_last_session_file_path();
                 UI::display_exit_message();
                 break;
             }

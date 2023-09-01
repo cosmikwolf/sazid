@@ -20,18 +20,17 @@ pub struct Model {
 }
 lazy_static! {
     pub static ref GPT3_TURBO: Model = Model {
-    name: "gpt-3.5-turbo".to_string(),
-    endpoint: "https://api.openai.com/v1/completions".to_string(),
-    token_limit: 4096,
-};
-
-pub static ref GPT4_TURBO: Model = Model {
-    name: "gpt-4.0-turbo".to_string(),
-    endpoint: "https://api.openai.com/v1/completions".to_string(),
-    token_limit: 5000,
-};
+        name: "gpt-3.5-turbo".to_string(),
+        endpoint: "https://api.openai.com/v1/completions".to_string(),
+        token_limit: 4096,
+    };
+    pub static ref GPT4_TURBO: Model = Model {
+        name: "gpt-4.0-turbo".to_string(),
+        endpoint: "https://api.openai.com/v1/completions".to_string(),
+        token_limit: 5000,
+    };
 }
-pub fn lookup_model_by_name(model_name: &str) -> Result<Model,GPTConnectorError> {
+pub fn lookup_model_by_name(model_name: &str) -> Result<Model, GPTConnectorError> {
     let models = vec![GPT3_TURBO.clone(), GPT4_TURBO.clone()];
     for model in models {
         if model.name == model_name {
@@ -55,7 +54,7 @@ async fn select_model(
                 fallback: GPT4_TURBO.clone(),
             };
             // Check if the default model is in the list
-            if model_names.contains(&settings.default.name)  {
+            if model_names.contains(&settings.default.name) {
                 Ok(available_models.default)
             }
             // If not, check if the fallback model is in the list
@@ -105,33 +104,26 @@ impl GPTConnector {
         let client = Client::with_config(openai_config).with_backoff(backoff);
         let model = select_model(settings, &client).await.unwrap();
 
-        GPTConnector {
-            client,
-            model,
+        GPTConnector { client, model }
+    }
+
+    // Construct the request using CreateChatCompletionRequest
+    pub fn construct_request(&self, constructed_messages: Vec<ChatCompletionRequestMessage>) -> CreateChatCompletionRequest {
+        CreateChatCompletionRequest {
+            model: self.model.name.clone(),
+            messages: constructed_messages, // Removed the Some() wrapping
+            ..Default::default()            // Use default values for other fields
         }
     }
 
     pub async fn send_request(
         &self,
-        messages: Vec<String>,
+        messages: Vec<ChatCompletionRequestMessage>,
     ) -> Result<CreateChatCompletionResponse, GPTConnectorError> {
         // Using the client variable from the GPTConnector struct
 
-        let mut constructed_messages = Vec::new();
-        for message in messages {
-            constructed_messages.push(ChatCompletionRequestMessage {
-                role: Role::User,
-                content: Some(message),
-                function_call: None,
-                name: None,
-            });
-        }
-        // Construct the request using CreateChatCompletionRequest
-        let request = CreateChatCompletionRequest {
-            model: lookup_model_by_name(self.model.name.as_str()).unwrap().name , // Assuming this as the model you want to use
-            messages: constructed_messages,     // Removed the Some() wrapping
-            ..Default::default()                // Use default values for other fields
-        };
+        // Construct the request using construct_request
+        let request = self.construct_request(messages);
 
         // Make the API call
         let response_result = self.client.chat().create(request).await;
@@ -146,6 +138,22 @@ impl GPTConnector {
     pub fn set_gpt_model(&mut self, model: Model) {
         self.model = model;
     }
+
+    pub fn construct_request_message_array(&self, role: Role, content: Vec<String>) -> Vec<ChatCompletionRequestMessage> {
+        let mut messages: Vec<ChatCompletionRequestMessage> = Vec::new();
+        for message in content {
+            messages.push(self.construct_request_message(role.clone(), message));
+        }
+        messages
+    }
+
+    pub fn construct_request_message(&self, role: Role, content: String) -> ChatCompletionRequestMessage {
+        ChatCompletionRequestMessage {
+            role,
+            content: Some(content),
+            ..Default::default()
+        }
+    }
 }
 #[cfg(test)]
 mod tests {
@@ -153,14 +161,14 @@ mod tests {
 
     #[tokio::test]
     async fn test_send_request() {
-        let connector = GPTConnector::new();
+        let settings: GPTSettings =
+            toml::from_str(std::fs::read_to_string("Settings.toml").unwrap().as_str()).unwrap();
+        let connector = GPTConnector::new(&settings).await;
         let response = connector
-            .send_request(vec![ChatCompletionRequestMessage {
-                role: Role::User,
-                content: "Hello, GPT!".to_string(),
-            }])
-            .await;
+            .send_request(vec![
+                connector.construct_request_message(Role::User, "Hello".to_string()),
+            ]).await;
         assert!(response.is_ok());
-        assert_eq!(response.unwrap().role, Role::Assistant);
+        assert_eq!(response.unwrap().model, connector.model.name);
     }
 }

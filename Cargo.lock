@@ -1963,6 +1963,7 @@ dependencies = [
  "clap",
  "config",
  "fast_log",
+ "futures",
  "lazy_static",
  "lopdf",
  "os_str_bytes",

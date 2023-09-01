@@ -1,17 +1,19 @@
+use async_openai::types::Role;
 use async_openai::types::{ChatCompletionRequestMessage, CreateChatCompletionResponse};
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
-use std::str::FromStr;
 
+use crate::chunkifier::Chunkifier;
 use crate::errors::SessionManagerError;
-use crate::file_chunker::FileChunker;
 use crate::gpt_connector::GPTConnector;
 use crate::gpt_connector::Model;
+use crate::ui;
+use crate::utils;
 
-const SESSIONS_DIR: &str = "./data/sessions";
-const INGESTED_DIR: &str = "./data/ingested";
+pub const SESSIONS_DIR: &str = "./data/sessions";
+pub const INGESTED_DIR: &str = "./data/ingested";
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Session {
@@ -39,31 +41,51 @@ pub struct IngestedData {
     content: String,
 }
 pub struct SessionManager<'a> {
-    gpt_connector: &'a GPTConnector, 
+    gpt_connector: &'a GPTConnector,
     pub session_data: Session,
 }
 
 impl<'a> SessionManager<'a> {
     pub fn new(session_id: String, gpt_connector: &'a GPTConnector) -> SessionManager<'a> {
         let model = gpt_connector.model.clone();
-        Self { gpt_connector, session_data: Session::new(session_id, model ) }
-    }
-
-    // For creating from existing session data
-    pub fn load_session(session_file: &str, gpt_connector: &'a GPTConnector) ->  SessionManager<'a> {
-        let session_file_path = Path::new(session_file);
-        let data = fs::read_to_string(session_file_path).unwrap();
-        let session_data: Session = serde_json::from_str(&data).unwrap();
-        Self { 
-            gpt_connector, 
-            session_data 
+        Self {
+            gpt_connector,
+            session_data: Session::new(session_id, model),
         }
     }
 
-    pub fn save_session(&self ) -> io::Result<()> {
+    // load a session from a file
+    pub fn load_session_from_file(
+        session_file_path: PathBuf,
+        gpt_connector: &'a GPTConnector,
+    ) -> SessionManager<'a> {
+        // let session_file_path = Path::new(session_file_path);
+        if !session_file_path.exists(){
+            ui::UI::display_error_message(format!("Session file not found: {}", session_file_path.display()));
+            SessionManager::new(utils::generate_session_id(), gpt_connector);
+        }
+        let data = fs::read_to_string(session_file_path).unwrap();
+        let session_data: Session = serde_json::from_str(&data).unwrap();
+
+        Self::load_session_from_session_data(session_data, gpt_connector)
+    }
+
+    // For creating from existing session data
+    pub fn load_session_from_session_data(
+        session_data: Session,
+        gpt_connector: &'a GPTConnector,
+    ) -> SessionManager<'a> {
+        Self {
+            gpt_connector,
+            session_data,
+        }
+    }
+
+    pub fn save_session(&self) -> io::Result<()> {
         let session_file_path = self.get_session_filepath();
         let data = serde_json::to_string(&self.session_data)?;
         fs::write(session_file_path, data)?;
+        self.save_last_session_file_path();
         Ok(())
     }
     pub fn get_requests(&self) -> &Vec<ChatCompletionRequestMessage> {
@@ -88,7 +110,7 @@ impl<'a> SessionManager<'a> {
     //         .map_err(|e| io::Error::new(io::ErrorKind::Other, e.to_string()))
     // }
 
-    pub fn load_last_session_filename() -> Option<PathBuf> {
+    pub fn load_last_session_file_path() -> Option<PathBuf> {
         let last_session_path = Path::new(SESSIONS_DIR).join("last_session.txt");
         if last_session_path.exists() {
             Some(fs::read_to_string(last_session_path).unwrap().into())
@@ -97,10 +119,14 @@ impl<'a> SessionManager<'a> {
         }
     }
 
-    pub fn save_last_session_filename(&self) {
+    pub fn save_last_session_file_path(&self) {
         Self::ensure_directory_exists(SESSIONS_DIR).unwrap();
         let last_session_path = Path::new(SESSIONS_DIR).join("last_session.txt");
-        fs::write(last_session_path, self.get_session_filepath().display().to_string()).unwrap();
+        fs::write(
+            last_session_path,
+            self.get_session_filepath().display().to_string(),
+        )
+        .unwrap();
     }
 
     fn ensure_directory_exists(dir: &str) -> io::Result<()> {
@@ -112,7 +138,11 @@ impl<'a> SessionManager<'a> {
     }
 
     pub fn get_session_filepath(&self) -> PathBuf {
-        Path::new(SESSIONS_DIR).join(format!("{}.json", self.session_data.session_id))
+        Path::new(SESSIONS_DIR).join(self.get_session_filename())
+    }
+
+    pub fn get_session_filename(&self) -> String {
+        format!("{}.json", self.session_data.session_id)
     }
 
     pub fn get_ingested_filepath(&self) -> PathBuf {
@@ -130,91 +160,64 @@ impl<'a> SessionManager<'a> {
     /// This function takes in an input which could be a path to a directory, a path to a file,
     /// a block of text, or a URL. Depending on the type of input, it processes (or ingests) the
     /// content by converting it into chunks of text and then sends each chunk to the GPT API.
-    pub async fn handle_ingest(&self, input: &String) -> Result<(), SessionManagerError> {
-
-        // This vector will store paths that need to be processed.
-        let mut paths_to_process = Vec::new();
-
-        // Try to interpret the input as a path.
-        let input_path: Result<PathBuf, std::convert::Infallible> = PathBuf::from_str(input);
-
-        // If it's a valid path, check if it points to a directory or a file.
-        if let Ok(p) = input_path {
-            if p.is_dir() {
-                // If it's a directory, iterate through its contents and add all the file paths to the processing list.
-                for entry in fs::read_dir(&p)? {
-                    let entry_path = entry?.path();
-                    if entry_path.is_file() {
-                        paths_to_process.push(entry_path);
-                    }
-                }
-            } else if p.is_file() {
-                // If it's a file, add it directly to the processing list.
-                paths_to_process.push(p);
-            }
-        }
-
-        // If the list is empty, assume the input is a block of text and treat it accordingly.
-        if paths_to_process.is_empty() {
-            paths_to_process.push(PathBuf::from(input));
-        }
-
-        // Iterate through all the paths to process them.
-        for path in paths_to_process {
-            let chunks = if path.is_file() {
-                // If it's a file, chunkify its contents.
-                FileChunker::chunkify_input(path.to_str().unwrap(), self.gpt_connector.model.token_limit as usize)?
-            } else {
-                // Otherwise, chunkify the input directly.
-                FileChunker::chunkify_input(input, self.gpt_connector.model.token_limit as usize)?
-            };
-
-            // Send each chunk to the GPT API using the GPTConnector.
-            let response = self.gpt_connector.send_request(chunks).await?;
-
-            // After successful ingestion, copy the file to the 'ingested' directory.
-            if path.is_file() {
-                let dest_path = 
-                Path::new(INGESTED_DIR)
-                    .join("ingested")
-                    .join(path.file_name().unwrap());
-                fs::copy(&path, &dest_path)?;
-            }
-
-            for choice in &response.choices {
-                println!("{:?}", choice.message.content);
-            }
-        }
-
-        Ok(())
+    pub async fn handle_ingest(&mut self, input: &String) -> Result<(), SessionManagerError> {
+        let chunks =
+            Chunkifier::chunkify_input(input, self.gpt_connector.model.token_limit as usize)
+                .unwrap();
+        // Send each chunk to the GPT API using the GPTConnector.
+        let response = self.gpt_connector.send_request(
+            self.gpt_connector
+                .construct_request_message_array(Role::User, chunks),
+        ).await?;
+        // After successful ingestion, copy the file to the 'ingested' directory.
+        Ok(self.add_response(response))
     }
 }
-
 
 // Tests
 #[cfg(test)]
 mod tests {
+    use crate::gpt_connector::GPTSettings;
+
     use super::*;
+
     use tempfile::tempdir;
+    #[tokio::test]
+    async fn test_session_save_and_load() {
+        let temp_dir = tempdir().unwrap();
+        let settings: GPTSettings =
+            toml::from_str(std::fs::read_to_string("Settings.toml").unwrap().as_str()).unwrap();
+        let gpt: GPTConnector = GPTConnector::new(&settings).await;
+        let session_id = crate::utils::generate_session_id();
+        let mut session = SessionManager::new(session_id, &gpt);
 
-    #[test]
-    fn test_session_save_and_load() {
-        let session_id = String::from("test_session");
-        // let model = ;
-        let mut manager = SessionManager::new(session_id, model);
-
-        let session = Session {
-            user_messages: vec![String::from("Hello"), String::from("How are you?")],
-            bot_messages: vec![String::from("Hi!"), String::from("I'm good.")],
-        };
+        session.add_request(ChatCompletionRequestMessage {
+            role: async_openai::types::Role::User,
+            content: Some(String::from("Hello")),
+            name: Some("user".to_string()),
+            function_call: None,
+        });
+        session.add_request(ChatCompletionRequestMessage {
+            role: async_openai::types::Role::User,
+            content: Some(String::from("How are you?")),
+            name: Some("user".to_string()),
+            function_call: None,
+        });
 
         // Modify the SESSIONS_DIR to use a temporary directory for testing
         const SESSIONS_DIR: &str = "./data/sessions_test";
-        manager.save_session(&session).unwrap();
+        session.save_session().unwrap();
 
-        let loaded_session = manager.load_session().unwrap();
-        assert_eq!(session.user_messages, loaded_session.user_messages);
-        assert_eq!(session.bot_messages, loaded_session.bot_messages);
+        let loaded_session =
+            SessionManager::load_session_from_file(session.get_session_filepath(), &gpt);
+        assert_eq!(
+            session.session_data.requests,
+            loaded_session.session_data.requests
+        );
+        assert_eq!(
+            session.session_data.responses,
+            loaded_session.session_data.responses
+        );
 
         // Clean up the temporary test directory
         let dir = Path::new(SESSIONS_DIR);

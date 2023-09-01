@@ -5,7 +5,7 @@ extern crate lazy_static;
 pub mod gpt_connector;
 pub mod session_manager;
 pub mod ui;
-pub mod file_chunker;
+pub mod chunkifier;
 pub mod pdf_extractor;
 pub mod errors;
 pub mod utils;

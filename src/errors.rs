@@ -2,7 +2,7 @@ use async_openai::error::OpenAIError;
 use std::fmt;
 
 #[derive(Debug)]
-pub enum FileChunkerError {
+pub enum ChunkifierError {
     IO(std::io::Error),
     Utf8(std::string::FromUtf8Error),
     Other(String),
@@ -18,7 +18,7 @@ pub enum GPTConnectorError {
 
 #[derive(Debug)]
 pub enum SessionManagerError {
-    FileChunker(FileChunkerError),
+    FileChunker(ChunkifierError),
     GPTConnector(GPTConnectorError),
     PdfExtractor(PdfExtractorError),
     FileNotFound(String),
@@ -33,12 +33,12 @@ pub enum PdfExtractorError {
     Other(String),
 }
 
-impl fmt::Display for FileChunkerError {
+impl fmt::Display for ChunkifierError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            FileChunkerError::IO(err) => write!(f, "IO error: {}", err),
-            FileChunkerError::Utf8(err) => write!(f, "UTF-8 conversion error: {}", err),
-            FileChunkerError::Other(err) => write!(f, "Other error: {}", err),
+            ChunkifierError::IO(err) => write!(f, "IO error: {}", err),
+            ChunkifierError::Utf8(err) => write!(f, "UTF-8 conversion error: {}", err),
+            ChunkifierError::Other(err) => write!(f, "Other error: {}", err),
         }
     }
 }
@@ -86,8 +86,8 @@ impl From<std::io::Error> for SessionManagerError {
     }
 }
 
-impl From<FileChunkerError> for SessionManagerError {
-    fn from(err: FileChunkerError) -> SessionManagerError {
+impl From<ChunkifierError> for SessionManagerError {
+    fn from(err: ChunkifierError) -> SessionManagerError {
         SessionManagerError::FileChunker(err)
     }
 }
@@ -115,9 +115,9 @@ impl From<reqwest::Error> for GPTConnectorError {
     }
 }
 
-impl From<std::io::Error> for FileChunkerError {
-    fn from(err: std::io::Error) -> FileChunkerError {
-        FileChunkerError::IO(err)
+impl From<std::io::Error> for ChunkifierError {
+    fn from(err: std::io::Error) -> ChunkifierError {
+        ChunkifierError::IO(err)
     }
 }
 
