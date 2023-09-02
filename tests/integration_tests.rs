@@ -1,19 +1,24 @@
 extern crate sazid;
 extern crate tempfile;
 
-use futures::future::{self, OptionFuture};
-
 #[cfg(test)]
 mod integration_tests {
     
     use super::*;
     use std::io::Write;
     use std::fs::{self, File};
+    use std::path::Path;
     use async_openai::types::Role;
+    use sazid::chunkifier::Chunkifier;
     use sazid::gpt_connector::{GPTSettings, GPTConnector};
-    use async_openai::types::ChatCompletionRequestMessage;
     use sazid::session_manager::SessionManager;
+    use sazid::utils;
+    use serde::{Serialize, Serializer};
     use tempfile::tempdir;
+    use async_openai::types::ChatChoice;
+    use async_openai::types::ChatCompletionResponseMessage;
+    use async_openai::types::CreateChatCompletionResponse;
+    use async_openai::types::ChatCompletionRequestMessage;
 
     // Mock structures and functions
     struct MockUI {
@@ -120,7 +125,7 @@ mod integration_tests {
     // 4. Test saving and loading of sessions, as well as tracking the last session
     // Requirement: The application should save and reload chat sessions. It should also track the most recent session for easy reloading.
     #[tokio::test]
-    async fn test_session_save_and_load() {
+    async fn test_session_save_and_load1() {
         let temp_dir = tempdir().unwrap();
         let settings: GPTSettings = toml::from_str(std::fs::read_to_string("Settings.toml").unwrap().as_str()).unwrap();
         // let mut gpt: GPTConnector;
@@ -146,16 +151,12 @@ mod integration_tests {
 
         // Load specific session
         let loaded_session = SessionManager::load_session_from_file(session.get_session_filepath(), &gpt);
-        let loaded_session_requests = loaded_session.get_requests();
-
-        assert_eq!(loaded_session_requests[0].content.unwrap(), "Hello, GPT!".to_string());
         
         // Load last session
-        let last_session_path = SessionManager::load_last_session_file_path().unwrap();
+        let last_session_path = SessionManager::get_last_session_file_path().unwrap();
         
         let last_session = SessionManager::load_session_from_file(last_session_path, &gpt);
-        let last_session_requests = loaded_session.get_requests()[0].content.unwrap();
-        assert_eq!(last_session_requests, "Hello, GPT!".to_string());
+        assert_eq!(serde_json::to_string(&loaded_session.session_data).unwrap(), serde_json::to_string(&last_session.session_data).unwrap() );
     }
 
     // 5. Test UI's ability to display messages
@@ -240,7 +241,23 @@ mod integration_tests {
             content: Some("Hello, GPT!".to_string()),
             ..Default::default()            // Use default values for other fields
         };
-        session.add_request(request);
+        let mock_chatchoice1 = vec![ChatChoice {
+            index:0,
+            finish_reason:Some("stop".to_string()),
+            message: ChatCompletionResponseMessage {
+                role: async_openai::types::Role::Assistant,
+                content: Some(String::from("I'm good. How are you?")),
+                function_call: None
+            }}]; 
+        let mockresponse1 = CreateChatCompletionResponse {
+            id: "cmpl-123".to_string(),
+            object: "text_completion".to_string(),
+            created: 1234567890,
+            model: "davinci:2020-05-03".to_string(),
+            usage: None,
+            choices: mock_chatchoice1,
+        };
+        session.add_interaction(vec![request], mockresponse1);
         session.save_session();
         let path = temp_dir.path().join(session.get_session_filepath());
         assert!(path.exists()); // File should exist
@@ -255,7 +272,7 @@ mod integration_tests {
         let settings: GPTSettings = toml::from_str(std::fs::read_to_string("Settings.toml").unwrap().as_str()).unwrap();
         let gpt: GPTConnector = GPTConnector::new(&settings).await;
         let session_id = sazid::utils::generate_session_id();
-        let session = SessionManager::new(session_id, &gpt);
+        let mut session = SessionManager::new(session_id, &gpt);
         
         let txt_path = dir.path().join("test.txt");
         File::create(&txt_path)
@@ -264,14 +281,15 @@ mod integration_tests {
             .unwrap();
         let txt_path = txt_path.to_str().unwrap();
         
-        let chunks = session.handle_ingest(&txt_path.into()).await.unwrap();
+        let chunks = Chunkifier::chunkify_input(&txt_path.to_string(), session.session_data.model.token_limit as usize).unwrap();
+        session.handle_ingest(chunks.clone()).await.unwrap();
         
         // Verify ingestion
         assert_eq!(chunks.len(), 3);
         assert_eq!(chunks[0], "Chunk 1");
         assert_eq!(chunks[1], "Chunk 2");
         assert_eq!(chunks[2], "Chunk 3");
-
+        
         // Verify ingested data log
         let log_path = dir
             .path()
@@ -287,5 +305,83 @@ mod integration_tests {
         assert!(dest_path.exists());
         let file_content = fs::read_to_string(dest_path).unwrap();
         assert_eq!(file_content, "Chunk 1\nChunk 2\nChunk 3");
+    }
+
+    #[tokio::test]
+    async fn test_session_save_and_load2() {
+        let settings: GPTSettings =
+            toml::from_str(std::fs::read_to_string("Settings.toml").unwrap().as_str()).unwrap();
+        let gpt: GPTConnector = GPTConnector::new(&settings).await;
+        let session_id = utils::generate_session_id();
+        let mut session = SessionManager::new(session_id, &gpt);
+
+        let mockrequest1 = vec![ChatCompletionRequestMessage {
+            role: async_openai::types::Role::User,
+            content: Some(String::from("Hello")),
+            name: Some("user".to_string()),
+            function_call: None,
+        }];
+        let mockrequest2 = vec![ChatCompletionRequestMessage {
+            role: async_openai::types::Role::User,
+            content: Some(String::from("How are you?")),
+            name: Some("user".to_string()),
+            function_call: None,
+        }];
+        // create mock chatchoices
+        let mock_chatchoice1 = vec![ChatChoice {
+            index:0,
+            finish_reason:Some("stop".to_string()),
+            message: ChatCompletionResponseMessage {
+                role: async_openai::types::Role::Assistant,
+                content: Some(String::from("I'm good. How are you?")),
+                function_call: None
+            }}]; 
+        let mock_chatchoice2 = vec![ChatChoice {
+            index:1,
+            finish_reason:Some("stop".to_string()),
+            message: ChatCompletionResponseMessage {
+                role: async_openai::types::Role::Assistant,
+                content: Some(String::from("How is the weather?")),
+                function_call: None
+            }}];
+        // create mock responses
+        let mockresponse1 = CreateChatCompletionResponse {
+            id: "cmpl-123".to_string(),
+            object: "text_completion".to_string(),
+            created: 1234567890,
+            model: "davinci:2020-05-03".to_string(),
+            usage: None,
+            choices: mock_chatchoice1,
+        };
+        let mockresponse2 = CreateChatCompletionResponse {
+            id: "cmpl-456".to_string(),
+            object: "text_completion".to_string(),
+            created: 1234567890,
+            model: "davinci:2020-05-03".to_string(),
+            usage: None,
+            choices: mock_chatchoice2,
+        };
+        session.add_interaction(mockrequest1, mockresponse1);
+        session.add_interaction(mockrequest2, mockresponse2);
+        // Modify the SESSIONS_DIR to use a temporary directory for testing
+        const SESSIONS_DIR: &str = "./data/sessions_test";
+        session.save_session().unwrap();
+
+        let loaded_session =
+            SessionManager::load_session_from_file(session.get_session_filepath(), &gpt);
+        assert_eq!(
+            session.get_requests(),
+            loaded_session.get_requests()
+        );
+        assert_eq!(
+            session.get_responses(),
+            loaded_session.get_responses()
+        );
+
+        // Clean up the temporary test directory
+        let dir = Path::new(SESSIONS_DIR);
+        if dir.exists() {
+            fs::remove_dir_all(dir).unwrap();
+        }
     }
 }

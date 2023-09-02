@@ -58,6 +58,10 @@ impl UI {
             _ => {}
         }
     }
+
+    pub fn display_debug_message(message: String) {
+        println!("Debug: {}", message.yellow());
+    }
     // Display a error message.
     pub fn display_error_message(message: String) {
         println!("Error: {}", message.red());
@@ -71,6 +75,13 @@ impl UI {
     // Display an exit message.
     pub fn display_exit_message() {
         println!("Exiting gracefully. Goodbye!");
+    }
+
+    // Display each interaction in the chat history
+    pub fn display_chat_history(chat_history: &Vec<(Role, String)>) {
+        for (role, message) in chat_history {
+            Self::display_message(role.clone(), message.clone());
+        }
     }
 
     // Display a message about the import process.

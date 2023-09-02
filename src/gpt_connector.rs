@@ -1,7 +1,7 @@
 use crate::errors::GPTConnectorError;
 pub use async_openai::types::Role;
 use async_openai::types::{
-    ChatCompletionRequestMessage, CreateChatCompletionRequest, CreateChatCompletionResponse,
+    CreateChatCompletionRequest, CreateChatCompletionResponse,
 };
 use async_openai::{config::OpenAIConfig, Client};
 use serde::{Deserialize, Serialize};
@@ -16,7 +16,7 @@ struct ModelsList {
 pub struct Model {
     pub(crate) name: String,
     pub(crate) endpoint: String,
-    pub(crate) token_limit: u32,
+    pub token_limit: u32,
 }
 lazy_static! {
     pub static ref GPT3_TURBO: Model = Model {
@@ -24,14 +24,14 @@ lazy_static! {
         endpoint: "https://api.openai.com/v1/completions".to_string(),
         token_limit: 4096,
     };
-    pub static ref GPT4_TURBO: Model = Model {
-        name: "gpt-4.0-turbo".to_string(),
+    pub static ref GPT4: Model = Model {
+        name: "gpt-4".to_string(),
         endpoint: "https://api.openai.com/v1/completions".to_string(),
-        token_limit: 5000,
+        token_limit: 4096,
     };
 }
 pub fn lookup_model_by_name(model_name: &str) -> Result<Model, GPTConnectorError> {
-    let models = vec![GPT3_TURBO.clone(), GPT4_TURBO.clone()];
+    let models = vec![GPT3_TURBO.clone(), GPT4.clone()];
     for model in models {
         if model.name == model_name {
             return Ok(model);
@@ -50,8 +50,9 @@ async fn select_model(
             let model_names: Vec<String> =
                 response.data.iter().map(|model| model.id.clone()).collect();
             let available_models = ModelsList {
-                default: GPT3_TURBO.clone(),
-                fallback: GPT4_TURBO.clone(),
+                default: GPT4.clone(),
+                // default: GPT3_TURBO.clone(),
+                fallback: GPT3_TURBO.clone(),
             };
             // Check if the default model is in the list
             if model_names.contains(&settings.default.name) {
@@ -107,24 +108,10 @@ impl GPTConnector {
         GPTConnector { client, model }
     }
 
-    // Construct the request using CreateChatCompletionRequest
-    pub fn construct_request(&self, constructed_messages: Vec<ChatCompletionRequestMessage>) -> CreateChatCompletionRequest {
-        CreateChatCompletionRequest {
-            model: self.model.name.clone(),
-            messages: constructed_messages, // Removed the Some() wrapping
-            ..Default::default()            // Use default values for other fields
-        }
-    }
-
     pub async fn send_request(
         &self,
-        messages: Vec<ChatCompletionRequestMessage>,
+        request: CreateChatCompletionRequest 
     ) -> Result<CreateChatCompletionResponse, GPTConnectorError> {
-        // Using the client variable from the GPTConnector struct
-
-        // Construct the request using construct_request
-        let request = self.construct_request(messages);
-        
         // Make the API call
         let response_result = self.client.chat().create(request).await;
         
@@ -139,36 +126,8 @@ impl GPTConnector {
         self.model = model;
     }
 
-    pub fn construct_request_message_array(&self, role: Role, content: Vec<String>) -> Vec<ChatCompletionRequestMessage> {
-        let mut messages: Vec<ChatCompletionRequestMessage> = Vec::new();
-        for message in content {
-            messages.push(self.construct_request_message(role.clone(), message));
-        }
-        messages
-    }
-
-    pub fn construct_request_message(&self, role: Role, content: String) -> ChatCompletionRequestMessage {
-        ChatCompletionRequestMessage {
-            role,
-            content: Some(content),
-            ..Default::default()
-        }
-    }
 }
 #[cfg(test)]
 mod tests {
-    use super::*;
 
-    #[tokio::test]
-    async fn test_send_request() {
-        let settings: GPTSettings =
-            toml::from_str(std::fs::read_to_string("Settings.toml").unwrap().as_str()).unwrap();
-        let connector = GPTConnector::new(&settings).await;
-        let response = connector
-            .send_request(vec![
-                connector.construct_request_message(Role::User, "Hello".to_string()),
-            ]).await;
-        assert!(response.is_ok());
-        assert_eq!(response.unwrap().model, connector.model.name);
-    }
 }

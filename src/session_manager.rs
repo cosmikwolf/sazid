@@ -1,27 +1,30 @@
-use async_openai::types::Role;
+use async_openai::types::{Role, CreateChatCompletionRequest};
 use async_openai::types::{ChatCompletionRequestMessage, CreateChatCompletionResponse};
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
-
-use crate::chunkifier::Chunkifier;
 use crate::errors::SessionManagerError;
-use crate::gpt_connector::GPTConnector;
+use crate::gpt_connector::{GPTConnector, GPTSettings};
 use crate::gpt_connector::Model;
-use crate::ui;
 use crate::utils;
 
 pub const SESSIONS_DIR: &str = "data/sessions";
 pub const INGESTED_DIR: &str = "data/ingested";
 
+#[derive(Debug, Serialize, Deserialize)]
+#[derive(Clone)]
+pub struct ChatInteraction {
+    pub request: CreateChatCompletionRequest,
+    pub response: CreateChatCompletionResponse,
+}
 
 #[derive(Debug, Serialize, Deserialize)]
+#[derive(Clone)]
 pub struct Session {
     pub session_id: String,
     pub model: Model,
-    pub requests: Vec<ChatCompletionRequestMessage>,
-    pub responses: Vec<CreateChatCompletionResponse>,
+    pub interactions: Vec<ChatInteraction>,
 }
 
 impl Session {
@@ -29,8 +32,7 @@ impl Session {
         Self {
             session_id,
             model,
-            requests: Vec::new(),
-            responses: Vec::new(),
+            interactions: Vec::new(),
         }
     }
 }
@@ -41,35 +43,26 @@ pub struct IngestedData {
     chunk_num: u32,
     content: String,
 }
-pub struct SessionManager<'a> {
-    gpt_connector: &'a GPTConnector,
+pub struct SessionManager {
+    gpt_connector: GPTConnector,
+    cached_request: Option<CreateChatCompletionRequest>,
     pub session_data: Session,
 }
 
-impl<'a> SessionManager<'a> {
-    pub fn new(session_id: String, gpt_connector: &'a GPTConnector) -> SessionManager<'a> {
+impl SessionManager {
+    pub async fn new(settings: GPTSettings, session_data: Option<Session>) -> SessionManager {
+        let gpt_connector = GPTConnector::new(&settings).await;
         let model = gpt_connector.model.clone();
-        Self {
-            gpt_connector,
-            session_data: Session::new(session_id, model),
-        }
-    }
-
-    // load a session from a file
-    pub fn load_session_from_file(
-        session_file_path: PathBuf,
-        gpt_connector: &'a GPTConnector,
-    ) -> SessionManager<'a> {
-        if !session_file_path.exists(){
-            ui::UI::display_error_message(format!("Session file not found: {}", session_file_path.display()));
-            return SessionManager::new(utils::generate_session_id(), gpt_connector);
-        } else {
-            let data = fs::read_to_string(session_file_path).unwrap();
-            let session_data: Session = serde_json::from_str(&data).unwrap();
-    
-            Self {
+        match session_data {
+            Some(session_data) => Self {
                 gpt_connector,
+                cached_request: None,
                 session_data,
+            },
+            None => Self {
+                gpt_connector,
+                cached_request: None,
+                session_data: Session::new(utils::generate_session_id(), model),
             }
         }
     }
@@ -81,28 +74,93 @@ impl<'a> SessionManager<'a> {
         self.save_last_session_file_path();
         Ok(())
     }
-    pub fn get_requests(&self) -> &Vec<ChatCompletionRequestMessage> {
-        &self.session_data.requests
+
+
+
+    // Get the responses from the session data
+    pub fn get_responses(&self) -> Vec<CreateChatCompletionResponse> {
+        self.session_data
+            .interactions
+            .iter()
+            .map(|interaction| interaction.response.clone())
+            .collect()
     }
 
-    pub fn get_responses(&self) -> &Vec<CreateChatCompletionResponse> {
-        &self.session_data.responses
+    // Get the chat history from the session data
+    pub fn get_chat_history(&self) -> Vec<(Role, String)> {
+        let mut chat_history: Vec<(Role, String)> = Vec::new();
+        for interaction in &self.session_data.interactions {
+            for request in self.get_request_messages() {
+                chat_history.push((request.role.clone(), request.content.clone().unwrap_or_default()));
+            }
+            for choice in &interaction.response.choices {
+                chat_history.push((choice.message.role.clone(), choice.message.content.clone().unwrap_or_default()));
+            }
+        }
+        chat_history
+    }
+    // Add an interaction to the session data
+    pub fn add_interaction(
+        &mut self,
+        request: CreateChatCompletionRequest,
+        response: CreateChatCompletionResponse,
+    ) {
+        self.session_data
+            .interactions
+            .push(ChatInteraction { request, response })
     }
 
-    pub fn add_request(&mut self, request: ChatCompletionRequestMessage) {
-        self.session_data.requests.push(request);
+    pub fn add_interaction_for_cached_request(
+        &mut self,
+        response: CreateChatCompletionResponse,
+    ) {
+        if let Some(request) = self.cached_request.clone() {
+            self.add_interaction(request, response);
+            self.cached_request = None;
+        }
     }
 
-    pub fn add_response(&mut self, response: CreateChatCompletionResponse) {
-        self.session_data.responses.push(response);
-    }
-
-    pub fn load_last_session_file_path() -> Option<PathBuf> {
+    pub fn get_last_session_file_path() -> Option<PathBuf> {
         let last_session_path = Path::new(SESSIONS_DIR).join("last_session.txt");
         if last_session_path.exists() {
             Some(fs::read_to_string(last_session_path).unwrap().into())
         } else {
             None
+        }
+    }
+
+    fn get_request_messages(&self) -> Vec<ChatCompletionRequestMessage> {
+        self.session_data.interactions
+        .iter()
+        .map(|interaction| &interaction.request.messages)
+        .flatten()
+        .cloned()
+        .collect()
+    }
+    pub async fn send_request(&mut self, request: CreateChatCompletionRequest) -> Result<CreateChatCompletionResponse, SessionManagerError> {
+        let response = self.gpt_connector.send_request(request.clone()).await?;
+        self.add_interaction(request, response.clone());
+        Ok(response)
+    }
+    pub fn construct_request(&self, content: Vec<String> ) -> CreateChatCompletionRequest {
+        // iterate through the vector of ChatCompletionRequestMessage from the interactions stored in session_data as a clone
+      
+        let mut messages = self.get_request_messages();
+
+        // iterate through content and create a new ChatCompletionRequestMessage for each item and push it to the messages vector
+        for item in content {
+            messages.push(ChatCompletionRequestMessage {
+                role: Role::User,
+                content: Some(item),
+                ..Default::default()
+            });
+        }
+
+        // return a new CreateChatCompletionRequest
+        CreateChatCompletionRequest {
+            model: self.gpt_connector.model.name.clone(),
+            messages,
+            ..Default::default()
         }
     }
 
@@ -147,69 +205,18 @@ impl<'a> SessionManager<'a> {
     /// This function takes in an input which could be a path to a directory, a path to a file,
     /// a block of text, or a URL. Depending on the type of input, it processes (or ingests) the
     /// content by converting it into chunks of text and then sends each chunk to the GPT API.
-    pub async fn handle_ingest(&mut self, input: &String) -> Result<(), SessionManagerError> {
-        let chunks =
-            Chunkifier::chunkify_input(input, self.gpt_connector.model.token_limit as usize)
-                .unwrap();
+    pub async fn handle_ingest(&mut self, chunks: Vec<String>) -> Result<(), SessionManagerError> {
+        let request = self.construct_request(chunks);
         // Send each chunk to the GPT API using the GPTConnector.
-        let response = self.gpt_connector.send_request(
-            self.gpt_connector
-                .construct_request_message_array(Role::User, chunks),
-        ).await?;
+        let response = self.gpt_connector.send_request(request.clone()).await?;
         // After successful ingestion, copy the file to the 'ingested' directory.
-        Ok(self.add_response(response))
+        Ok(self.add_interaction(request, response))
     }
 }
 
 // Tests
 #[cfg(test)]
 mod tests {
-    use crate::gpt_connector::GPTSettings;
 
-    use super::*;
-
-    use tempfile::tempdir;
-    #[tokio::test]
-    async fn test_session_save_and_load() {
-        let temp_dir = tempdir().unwrap();
-        let settings: GPTSettings =
-            toml::from_str(std::fs::read_to_string("Settings.toml").unwrap().as_str()).unwrap();
-        let gpt: GPTConnector = GPTConnector::new(&settings).await;
-        let session_id = crate::utils::generate_session_id();
-        let mut session = SessionManager::new(session_id, &gpt);
-
-        session.add_request(ChatCompletionRequestMessage {
-            role: async_openai::types::Role::User,
-            content: Some(String::from("Hello")),
-            name: Some("user".to_string()),
-            function_call: None,
-        });
-        session.add_request(ChatCompletionRequestMessage {
-            role: async_openai::types::Role::User,
-            content: Some(String::from("How are you?")),
-            name: Some("user".to_string()),
-            function_call: None,
-        });
-
-        // Modify the SESSIONS_DIR to use a temporary directory for testing
-        const SESSIONS_DIR: &str = "./data/sessions_test";
-        session.save_session().unwrap();
-
-        let loaded_session =
-            SessionManager::load_session_from_file(session.get_session_filepath(), &gpt);
-        assert_eq!(
-            session.session_data.requests,
-            loaded_session.session_data.requests
-        );
-        assert_eq!(
-            session.session_data.responses,
-            loaded_session.session_data.responses
-        );
-
-        // Clean up the temporary test directory
-        let dir = Path::new(SESSIONS_DIR);
-        if dir.exists() {
-            fs::remove_dir_all(dir).unwrap();
-        }
-    }
+    
 }

@@ -1,25 +1,23 @@
-use async_openai::types::ChatCompletionRequestMessage;
 use async_openai::types::Role;
 use clap::Parser;
-use futures::TryFutureExt;
 use rustyline::error::ReadlineError;
-use sazid::gpt_connector::GPTConnector;
+use sazid::chunkifier::Chunkifier;
 use sazid::gpt_connector::GPTSettings;
+use sazid::session_manager::Session;
 use sazid::session_manager::SessionManager;
-use sazid::ui::UI;
-use sazid::utils::generate_session_id;
-use std::path::PathBuf;
-use toml;
 use sazid::ui::Opts;
+use sazid::ui::UI;
+use std::fs;
+use std::path::PathBuf;
 use tokio::runtime::Runtime;
+use toml;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let rt  = Runtime::new()?;
+    let rt = Runtime::new()?;
 
     let opts: Opts = Opts::parse();
-    let settings: GPTSettings = toml::from_str(std::fs::read_to_string("Settings.toml").unwrap().as_str()).unwrap();
-    
-    let gpt: GPTConnector = rt.block_on( GPTConnector::new(&settings));
+    let settings: GPTSettings =
+        toml::from_str(std::fs::read_to_string("Settings.toml").unwrap().as_str()).unwrap();
 
     // Handle model selection based on CLI flag
     if let Some(model_name) = &opts.model {
@@ -37,86 +35,104 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         return Ok(());
     }
 
-    // Declare the SessionManager object.
-    let mut session_manager: SessionManager;
-
+    let mut session_data: Option<Session> = None;
     // Check if the `--new` flag is provided.
     if opts.new {
         // Instantiate a new SessionManager for a new session.
-        let session_id = generate_session_id();
-        session_manager = SessionManager::new(session_id, &gpt);
     } else {
         // Check if a specific session is provided via the `--continue` flag.
         match opts.continue_session {
             Some(session_file) => {
                 // Load the provided session.
-                session_manager = SessionManager::load_session_from_file(PathBuf::from(&session_file), &gpt);
+                let session_path = PathBuf::from(&session_file);
+                if !session_path.exists() {
+                    UI::display_error_message(format!(
+                        "Session file not found: {}",
+                        session_path.display()
+                    ));
+                    return Err(Box::new(std::io::Error::new(
+                        std::io::ErrorKind::NotFound,
+                        format!("Session file not found: {}", session_path.display()),
+                    )));
+                } else {
+                    let session_file_path = PathBuf::from(&session_file);
+                    let data = fs::read_to_string(session_file_path).unwrap();
+                    session_data = Some(serde_json::from_str(&data).unwrap());
+                }
             }
             None => {
                 // Check if there's a last session.
-                if let Some(last_session) = SessionManager::load_last_session_file_path() {
+                if let Some(last_session) = SessionManager::get_last_session_file_path() {
                     // Load the last session.
-                    session_manager = SessionManager::load_session_from_file(last_session, &gpt);
-                } else {
-                    // No last session available. Instantiate a new SessionManager for a new session.
-                    let session_id = generate_session_id();
-                    session_manager = SessionManager::new(session_id, &gpt);
+                    if !last_session.exists() {
+                        UI::display_error_message(format!(
+                            "Session file not found: {}",
+                            last_session.display()
+                        ));
+                    } else {
+                        let session_file_path = PathBuf::from(&last_session);
+                        let data = fs::read_to_string(session_file_path).unwrap();
+                        session_data = Some(serde_json::from_str(&data).unwrap());
+                    }
                 }
             }
         }
     }
+    // Initialize the SessionManager.
+    let mut session_manager = rt.block_on(async { SessionManager::new(settings, session_data).await });
 
-    if let Some(path) = &opts.ingest {
-        rt.block_on(async{session_manager.handle_ingest(&path.to_string_lossy().to_string()).await}).unwrap();
-    }
-
+    // Display the welcome message.
     UI::display_startup_message();
 
-    for message in &session_manager.session_data.requests {
-        UI::display_message(message.role.clone(), message.content.clone().unwrap_or_default());
+    if let Some(path) = &opts.ingest {
+        rt.block_on(async {
+            let chunks = Chunkifier::chunkify_input(
+                &path.to_string_lossy().to_string(),
+                session_manager.session_data.model.token_limit as usize,
+            )
+            .unwrap();
+            session_manager.handle_ingest(chunks).await
+        })
+        .unwrap();
     }
-    for message in &session_manager.session_data.responses {
-        message.choices.clone().into_iter().for_each(|choice| {
-            UI::display_message(choice.message.role.clone(), choice.message.content.clone().unwrap_or_default());
-        });
+
+    // Display chat history if available
+    if !session_manager.session_data.interactions.is_empty() {
+        UI::display_chat_history(&session_manager.get_chat_history());
     }
 
     loop {
         match UI::read_input("You: ") {
             Ok(input) => {
                 let input = input.trim();
-
                 if input.starts_with("ingest ") {
-                    let filepath = input.split_whitespace().nth(1).unwrap_or_default();
-                    rt.block_on(async{session_manager.handle_ingest(&filepath.to_string()).await}).unwrap();
+                    let path = input.split_whitespace().nth(1).unwrap_or_default();
+                    rt.block_on(async {
+                        let chunks = Chunkifier::chunkify_input(
+                            &path.to_string(),
+                            session_manager.session_data.model.token_limit as usize,
+                        )
+                        .unwrap();
+                        session_manager.handle_ingest(chunks).await
+                    })
+                    .unwrap();
                 } else {
                     if input == "exit" || input == "quit" {
                         session_manager.save_session().unwrap();
                         UI::display_exit_message();
                         return Ok(());
                     }
-                    let user_message = ChatCompletionRequestMessage {
-                        role: Role::User,
-                        content: Some(input.to_string()),
-                        function_call: None, // If you have appropriate data, replace None
-                        name: None,          // If you have appropriate data, replace None
-                    };
-                    session_manager.session_data.requests.push(user_message);
-                    
-                    match rt.block_on(async{ gpt.send_request(
-                        gpt.construct_request_message_array(Role::User, vec![input.to_string()])    
-                    ).await
-                })
-                {
-                        
+                    let messages = session_manager.construct_request(vec![input.to_string()]);
+                    UI::display_debug_message(format!("request: {:?}", messages));
+                    match rt.block_on(async { session_manager.send_request(messages).await }) {
                         Ok(response) => {
+                            UI::display_debug_message(format!("response: {:?}", response));
                             for choice in &response.choices {
                                 UI::display_message(
                                     choice.message.role.clone(),
                                     choice.message.content.clone().unwrap_or_default(),
                                 );
                             }
-                            session_manager.session_data.responses.push(response);
                             session_manager.save_session()?;
                         }
                         Err(error) => {
