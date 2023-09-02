@@ -1,10 +1,10 @@
 use tiktoken_rs::cl100k_base;
 use crate::pdf_extractor::PdfText;
 use crate::session_manager::INGESTED_DIR;
+use crate::utils;
 use std::fs::{self, File};
 use std::io::Read;
 use std::path::{PathBuf, Path};
-use std::str::FromStr;
 use crate::errors::ChunkifierError;
 pub struct Chunkifier;
 
@@ -13,8 +13,9 @@ impl Chunkifier {
     /// If the input is a valid file path, it will chunkify the contents of the file.
     /// Otherwise, it will treat the input as plain text and chunkify it directly.
     pub fn chunkify_input(input: &str, tokens_per_chunk: usize) -> Result<Vec<String>, ChunkifierError> {
-        let path = PathBuf::from_str(input);
+        let path = PathBuf::try_from(input);
         // Check if the input can be treated as a file path
+        
         if let Ok(p) = path {
             if p.is_file() {
                 // If it's a file, chunkify its contents
@@ -59,10 +60,10 @@ impl Chunkifier {
     ) -> Result<Vec<String>, ChunkifierError> {
         let content = Self::extract_file_text(file_path)?;
         let chunks = Self::chunkify_text(&content, tokens_per_chunk);
+        utils::ensure_directory_exists(INGESTED_DIR).unwrap();
         if file_path.is_file() {
             let dest_path = 
             Path::new(INGESTED_DIR)
-                .join("ingested")
                 .join(file_path.file_name().unwrap());
             fs::copy(&file_path, &dest_path)?;
         }

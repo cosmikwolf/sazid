@@ -36,10 +36,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     let mut session_data: Option<Session> = None;
-    // Check if the `--new` flag is provided.
-    if opts.new {
-        // Instantiate a new SessionManager for a new session.
-    } else {
+    
+    // Check if the `--new` flag is provided (or not).
+    // If so, initiate a new SessionManager for a new session.
+    // for this nothing needs to be done as session_data is already None
+    if !opts.new {
         // Check if a specific session is provided via the `--continue` flag.
         match opts.continue_session {
             Some(session_file) => {
@@ -80,7 +81,25 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     // Initialize the SessionManager.
     let mut session_manager = rt.block_on(async { SessionManager::new(settings, session_data).await });
-
+    
+    // Handle ingesting text from stdin
+    match opts.stdin {
+        Some(stdin) => {
+            rt.block_on(async {
+                let chunks = Chunkifier::chunkify_input(
+                    &stdin.to_str().unwrap().to_string(),
+                    session_manager.session_data.model.token_limit as usize,
+                )
+                .unwrap();
+                // iterate through chunks and use ui read_stdin to display them
+                for chunk in chunks.clone() {
+                    UI::read_stdin(chunk);
+                } 
+                session_manager.handle_ingest(chunks).await
+            }).unwrap()
+        }
+        None => {}
+    }
     // Display the welcome message.
     UI::display_startup_message();
 
@@ -122,17 +141,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         UI::display_exit_message();
                         return Ok(());
                     }
-                    let messages = session_manager.construct_request(vec![input.to_string()]);
-                    UI::display_debug_message(format!("request: {:?}", messages));
+                    let messages = session_manager.construct_request_and_cache(vec![input.to_string()]);
                     match rt.block_on(async { session_manager.send_request(messages).await }) {
                         Ok(response) => {
-                            UI::display_debug_message(format!("response: {:?}", response));
-                            for choice in &response.choices {
-                                UI::display_message(
-                                    choice.message.role.clone(),
-                                    choice.message.content.clone().unwrap_or_default(),
-                                );
-                            }
+                            let usage = response.usage.unwrap();
+                            UI::display_debug_message(format!("created: {:?}\tmodel: {:?}\tfinish_reason:{:?}\tprompt_tokens:{:?}\tcompletion_tokens:{:?}\ttotal_tokens:{:?}\t", response.created, response.model, response.choices[0].finish_reason, usage.prompt_tokens, usage.completion_tokens, usage.total_tokens));
+                           
                             session_manager.save_session()?;
                         }
                         Err(error) => {

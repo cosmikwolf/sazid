@@ -1,4 +1,4 @@
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::{time::{SystemTime, UNIX_EPOCH}, path::Path, io, fs};
 
 pub fn generate_session_id() -> String {
     // Get the current time since UNIX_EPOCH in seconds.
@@ -12,4 +12,12 @@ pub fn generate_session_id() -> String {
 
     // Convert the duration to a String and return.
     since_the_epoch.to_string()
+}
+
+pub fn ensure_directory_exists(dir: &str) -> io::Result<()> {
+    let dir_path = Path::new(dir);
+    if !dir_path.exists() {
+        fs::create_dir_all(&dir_path)?;
+    }
+    Ok(())
 }

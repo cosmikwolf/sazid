@@ -1,8 +1,8 @@
 use async_openai::types::Role;
-use rustyline::error::ReadlineError;
-use owo_colors::OwoColorize;
-use std::{path::PathBuf, ffi::OsString};
 use clap::Parser;
+use owo_colors::OwoColorize;
+use rustyline::error::ReadlineError;
+use std::{ffi::OsString, path::PathBuf};
 pub struct UI;
 
 #[derive(Parser)]
@@ -40,8 +40,14 @@ pub struct Opts {
         help = "Import a file or directory for GPT to process"
     )]
     pub ingest: Option<OsString>,
-}
 
+    // write a positional argument that will be loaded into a string
+    #[clap(
+        value_name = "text",
+        help = "you can pipe data into sazid in order to ingest from stdin"
+    )]
+    pub stdin: Option<OsString>,
+}
 
 impl UI {
     // Read input from the user.
@@ -49,7 +55,9 @@ impl UI {
         let mut rl = rustyline::DefaultEditor::new()?;
         rl.readline(prompt)
     }
-
+    pub fn read_stdin(message: String) {
+        println!("stdin: {}", message.magenta())
+    }
     // Display a message to the user.
     pub fn display_message(role: Role, message: String) {
         match role {
