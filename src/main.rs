@@ -1,15 +1,12 @@
 use async_openai::types::Role;
 use clap::Parser;
-use rustyline::error::ReadlineError;
 use sazid::chunkifier::Chunkifier;
-use sazid::errors::SessionManagerError;
 use sazid::gpt_connector::GPTSettings;
 use sazid::session_manager::Session;
 use sazid::session_manager::SessionManager;
 use sazid::ui::Opts;
 use sazid::ui::UI;
 use std::fs;
-use std::io::ErrorKind;
 use std::path::PathBuf;
 use tokio::runtime::Runtime;
 use toml;

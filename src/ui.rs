@@ -1,7 +1,7 @@
 use async_openai::types::Role;
 use clap::Parser;
 use owo_colors::OwoColorize;
-use std::io::{stdin, stdout, Error, Stdin, Stdout, Write};
+use std::io::{stdin, stdout, Error, Write};
 use termion::input::TermRead;
 use termion::raw::IntoRawMode;
 
@@ -59,7 +59,7 @@ impl UI {
     pub fn init() -> Self {
         // initialize termion
         let stdout = stdout();
-        let mut stdout = stdout.lock().into_raw_mode().unwrap();
+        let stdout = stdout.lock().into_raw_mode().unwrap();
         let stdin = stdin();
         let stdin = stdin.lock();
         let mut ui = Self { stdin, stdout };
@@ -71,30 +71,36 @@ impl UI {
     pub fn read_input(&mut self, prompt: &str) -> Result<Option<String>, Error> {
         self.stdout.write_all(prompt.as_bytes()).unwrap();
         self.stdout.flush().unwrap();
-        self.stdin.read_line()
+        let input = self.stdin.read_line();
+        match input {
+            Ok(input) => {
+                self.stdout.write_all(input.clone().unwrap().as_bytes()).unwrap();
+                self.stdout.flush().unwrap();
+                Ok(input)
+                }
+            Err(e) => Err(e),
+        }
     }
-    pub fn read_stdin(&mut self, message: String) {
-        write!(self.stdout, "stdin: {}\n", message.magenta());
-    }
+
     // Display a message to the user.
     pub fn display_chat_message(&mut self, role: Role, message: String) {
         match role {
             Role::User => write!(self.stdout, "You: {}\n", message.blue()),
             Role::Assistant => write!(self.stdout, "GPT: {}\n", message.green()),
             _ => Ok(())
-        };
+        }.unwrap()
     }
 
     pub fn display_general_message(&mut self, message: String) {
-        write!(self.stdout, "{}", message);
+        write!(self.stdout, "{}", message).unwrap();
     }
 
     pub fn display_debug_message(&mut self, message: String) {
-        write!(self.stdout, "Debug: {}", message.yellow());
+        write!(self.stdout, "Debug: {}", message.yellow()).unwrap();
     }
     // Display a error message.
     pub fn display_error_message(&mut self, message: String) {
-        write!(self.stdout, "Error: {}", message.red());
+        write!(self.stdout, "Error: {}", message.red()).unwrap();
     }
 
     // Display a startup message.
@@ -114,7 +120,7 @@ impl UI {
 
     // Display an exit message.
     pub fn display_exit_message(&mut self) {
-        write!(self.stdout, "Exiting gracefully. Goodbye!");
+        write!(self.stdout, "Exiting gracefully. Goodbye!").unwrap();
     }
 
     // Display each interaction in the chat history
@@ -135,12 +141,12 @@ impl UI {
 
     // Display a message about starting the import process.
     pub fn display_import_start_message(&mut self) {
-        write!(self.stdout, "Starting import process. Press Ctrl-C to skip a file. Press Ctrl-C twice quickly to cancel.");
+        write!(self.stdout, "Starting import process. Press Ctrl-C to skip a file. Press Ctrl-C twice quickly to cancel.").unwrap();
     }
 
     // Display a message about the conclusion of the import process.
     pub fn display_import_end_message(&mut self) {
-        write!(self.stdout, "Import process completed.");
+        write!(self.stdout, "Import process completed.").unwrap();
     }
 }
 
@@ -157,7 +163,7 @@ mod tests {
 
     #[test]
     fn test_ui_display_message() {
-        let ui = UI::init();
+        let mut ui = UI::init();
         // Just a simple test to make sure no panic occurs.
         // Real UI testing would require more advanced techniques.
         ui.display_chat_message(Role::User, "Test".to_string());
