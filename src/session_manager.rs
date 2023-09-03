@@ -140,11 +140,11 @@ impl SessionManager {
             .flatten()
             .collect()
     }
-    pub async fn send_request(&mut self, request: CreateChatCompletionRequest) -> Result<CreateChatCompletionResponse, SessionManagerError> {
+    pub async fn send_request(&mut self, ui:&mut UI, request: CreateChatCompletionRequest) -> Result<CreateChatCompletionResponse, SessionManagerError> {
         let response = self.gpt_connector.send_request(request.clone()).await?;
         self.add_interaction_for_cached_request(response.clone());
         for choice in &response.choices {
-            UI::display_message(
+            ui.display_chat_message(
                 choice.message.role.clone(),
                 choice.message.content.clone().unwrap_or_default(),
             );
