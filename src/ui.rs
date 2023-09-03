@@ -1,42 +1,87 @@
 use async_openai::types::Role;
+use crossterm::{
+    cursor::{Hide, Show},
+    event::{read, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEvent},
+    execute,
+    terminal::{
+        disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen, window_size
+    },
+};
 use owo_colors::OwoColorize;
-use std::{io::{stdin, stdout, Error, Write, Read}};
-use termion::input::TermRead;
-use termion::raw::IntoRawMode;
-use std::path::PathBuf;
+use std::{io::{stdout, StdoutLock, Result, Write}, path::PathBuf};
+use tui_input::backend::crossterm as backend;
+use tui_input::backend::crossterm::EventHandler;
+use tui_input::Input;
+
 
 pub struct UI {
-    pub stdin: std::io::StdinLock<'static>,
-    pub stdout: termion::raw::RawTerminal<std::io::StdoutLock<'static>>,
-    // pub bytes:  std::io::Bytes<std::io::StdinLock<'static>>,
+    input: Input,
+    stdout: StdoutLock<'static>
 }
 
 impl UI {
-    // Initialize the UI.
-    pub fn init() -> Self {
-        // initialize termion
-        let stdout = stdout();
-        let stdout = stdout.lock().into_raw_mode().unwrap();
-        let stdin = stdin();
-        let stdin = stdin.lock();
-        // let bytes = stdin.bytes();
-        let mut ui = Self { 
-            stdin, 
-            stdout, 
-            // bytes
-        };
-        // Display a startup message.
-        ui.display_startup_message();
-        return ui;
+        // Initialize the UI.
+        pub fn init() -> Self {
+            // initialize tui
+            enable_raw_mode().unwrap();
+            let stdout = stdout();
+            let stdout = stdout.lock();
+            let input: Input = "Hello ".into();
+            // Display a startup message.
+            let mut ui = Self {
+                input,
+                stdout
+            };
+            execute!(ui.stdout, Hide, EnterAlternateScreen, EnableMouseCapture).unwrap();
+            let window_size = window_size().unwrap();
+            
+            backend::write(&mut ui.stdout, ui.input.value(), ui.input.cursor(), (0, 0), window_size.width ).unwrap();
+            ui.stdout.flush().unwrap();
+    
+            // ui.display_startup_message();
+            return ui;
+        }
+    pub fn cleanup_interface(&mut self) -> Result<()> {
+        execute!(self.stdout, Show, LeaveAlternateScreen, DisableMouseCapture)?;
+        disable_raw_mode()?;
+        println!("{}", self.input);
+        Ok(())
+    }
+    pub fn interface_loop(&mut self) -> Result<()> {
+        loop {
+            let event = read()?;
+    
+            if let Event::Key(KeyEvent { code, .. }) = event {
+                match code {
+                    KeyCode::Esc | KeyCode::Enter => {
+                        break;
+                    }
+                    _ => {
+                        if self.input.handle_event(&event).is_some() {
+                            backend::write(
+                                &mut self.stdout,
+                                self.input.value(),
+                                self.input.cursor(),
+                                (0, 0),
+                                15,
+                            )?;
+                            self.stdout.flush().unwrap();
+                        }
+                    }
+                }
+            }
+        }
+        self.cleanup_interface().unwrap();
+        Ok(())
     }
     // Read input from the user.
-    pub fn read_input(&mut self, prompt: &str) -> Result<Option<String>, Error> {
-        self.stdout.write_all(prompt.as_bytes()).unwrap();
-        self.stdout.flush().unwrap();
-
+    pub fn read_input(&mut self, prompt: &str) -> Result<Option<String>> {
+        // self.stdout.write_all(prompt.as_bytes()).unwrap();
+        // self.stdout.flush().unwrap();
+        Ok(Some(String::from("test")))
         // let mut input_buf: Vec<u8> = Vec::new();
-        let input_buf = self.stdin.read_line().unwrap().unwrap();
-        Ok(Some(input_buf))
+        // self.stdin.read_line()
+        // Ok(Some(input_buf))
         /*
         loop {
             // let b = self.bytes.next().unwrap().unwrap();
@@ -74,7 +119,6 @@ impl UI {
             }
         }
         */
-    }
 
     // Display a message to the user.
     pub fn display_chat_message(&mut self, role: Role, message: String) {

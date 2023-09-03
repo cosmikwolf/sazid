@@ -46,12 +46,6 @@ pub struct Opts {
         help = "Import a file or directory for GPT to process"
     )]
     pub ingest: Option<OsString>,
-    // // write a positional argument that will be loaded into a string
-    // #[clap(
-    //     value_name = "text",
-    //     help = "you can pipe data into sazid in order to ingest from stdin"
-    // )]
-    // pub stdin: Option<OsString>,
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -63,7 +57,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     
     // Initialize the user interface
     let mut ui = UI::init();
+    ui.interface_loop().unwrap();
 
+    /*
     // Handle model selection based on CLI flag
     if let Some(model_name) = &opts.model {
         // In a real-world scenario, you would set the selected model in the session manager or GPT connector
@@ -211,5 +207,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
         println!("loop end") 
     }
+    */
     Ok(())
 }
