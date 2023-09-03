@@ -1,57 +1,14 @@
 use async_openai::types::Role;
-use clap::Parser;
 use owo_colors::OwoColorize;
-use std::io::{stdin, stdout, Error, Write};
+use std::{io::{stdin, stdout, Error, Write, Read}};
 use termion::input::TermRead;
 use termion::raw::IntoRawMode;
+use std::path::PathBuf;
 
-use std::{ffi::OsString, path::PathBuf};
-
-#[derive(Parser)]
-#[clap(
-    version = "1.0",
-    author = "Your Name",
-    about = "Interactive chat with GPT"
-)]
-pub struct Opts {
-    #[clap(
-        short = 'm',
-        long,
-        value_name = "MODEL_NAME",
-        help = "Specify the model to use (e.g., gpt-4, gpt-3.5-turbo-16k)"
-    )]
-    pub model: Option<String>,
-
-    #[clap(
-        short = 'l',
-        long = "list-models",
-        help = "List the models the user has access to"
-    )]
-    pub list_models: bool,
-
-    #[clap(short = 'n', long, help = "Start a new chat session")]
-    pub new: bool,
-
-    #[clap(short = 'c', long, help = "Continue from a specified session file")]
-    pub continue_session: Option<String>,
-
-    #[clap(
-        short = 'i',
-        long,
-        value_name = "PATH",
-        help = "Import a file or directory for GPT to process"
-    )]
-    pub ingest: Option<OsString>,
-    // // write a positional argument that will be loaded into a string
-    // #[clap(
-    //     value_name = "text",
-    //     help = "you can pipe data into sazid in order to ingest from stdin"
-    // )]
-    // pub stdin: Option<OsString>,
-}
 pub struct UI {
     pub stdin: std::io::StdinLock<'static>,
     pub stdout: termion::raw::RawTerminal<std::io::StdoutLock<'static>>,
+    // pub bytes:  std::io::Bytes<std::io::StdinLock<'static>>,
 }
 
 impl UI {
@@ -62,7 +19,12 @@ impl UI {
         let stdout = stdout.lock().into_raw_mode().unwrap();
         let stdin = stdin();
         let stdin = stdin.lock();
-        let mut ui = Self { stdin, stdout };
+        // let bytes = stdin.bytes();
+        let mut ui = Self { 
+            stdin, 
+            stdout, 
+            // bytes
+        };
         // Display a startup message.
         ui.display_startup_message();
         return ui;
@@ -71,22 +33,54 @@ impl UI {
     pub fn read_input(&mut self, prompt: &str) -> Result<Option<String>, Error> {
         self.stdout.write_all(prompt.as_bytes()).unwrap();
         self.stdout.flush().unwrap();
-        let input = self.stdin.read_line();
-        match input {
-            Ok(input) => {
-                self.stdout.write_all(input.clone().unwrap().as_bytes()).unwrap();
-                self.stdout.flush().unwrap();
-                Ok(input)
+
+        // let mut input_buf: Vec<u8> = Vec::new();
+        let input_buf = self.stdin.read_line().unwrap().unwrap();
+        Ok(Some(input_buf))
+        /*
+        loop {
+            // let b = self.bytes.next().unwrap().unwrap();
+            // write!(self.stdout, "{}", b as char).unwrap();
+            self.stdout.write_all(&[b]).unwrap();
+            input_buf.push(b);
+            self.stdout.flush().unwrap();
+            match b {
+                0x7f => {
+                    &input_buf.pop();
                 }
-            Err(e) => Err(e),
+                b'\r' => {
+                    let input =  String::from_utf8(input_buf).unwrap();
+                    match input.as_str() {
+                        "exit\r" | "quit\r" => {
+                            self.display_exit_message();
+                            return Ok(None);
+                        }
+                        "clear\r" => {
+                            write!(self.stdout, "{}", termion::clear::All ).unwrap();
+                            self.stdout.flush().unwrap();
+                            input_buf.clear();
+                        }
+                        _ => {
+                            self.stdout.write_all(b"\n\r").unwrap();
+                            self.stdout.flush().unwrap();
+                            return Ok(Some(input));
+                        }
+                    }
+                }
+                _ => {
+                    // self.stdout.write_all( "{}",b).unwrap();
+                    // self.stdout.flush().unwrap();
+                }
+            }
         }
+        */
     }
 
     // Display a message to the user.
     pub fn display_chat_message(&mut self, role: Role, message: String) {
         match role {
-            Role::User => write!(self.stdout, "You: {}\n", message.blue()),
-            Role::Assistant => write!(self.stdout, "GPT: {}\n", message.green()),
+            Role::User => writeln!(self.stdout, "You: {}\n", message.blue()),
+            Role::Assistant => writeln!(self.stdout, "GPT: {}\n", message.green()),
             _ => Ok(())
         }.unwrap()
     }
@@ -96,7 +90,7 @@ impl UI {
     }
 
     pub fn display_debug_message(&mut self, message: String) {
-        write!(self.stdout, "Debug: {}", message.yellow()).unwrap();
+        writeln!(self.stdout, "Debug: {}", message.yellow()).unwrap();
     }
     // Display a error message.
     pub fn display_error_message(&mut self, message: String) {
@@ -107,12 +101,11 @@ impl UI {
     pub fn display_startup_message(&mut self) {
         write!(
             self.stdout,
-            "{}{}{}yStarting interactive GPT chat session. Type 'exit' or 'quit' to end.{}{}\n",
+            "{}{}{}{}Starting interactive GPT chat session. Type 'exit' or 'quit' to end.\n\r",
             termion::clear::All,
-            termion::cursor::Goto(5, 5),
+            termion::cursor::Goto(1,1),
             termion::style::Bold,
             termion::style::Reset,
-            termion::cursor::Goto(20, 10)
         )
         .unwrap();
         self.stdout.flush().unwrap();
@@ -120,7 +113,7 @@ impl UI {
 
     // Display an exit message.
     pub fn display_exit_message(&mut self) {
-        write!(self.stdout, "Exiting gracefully. Goodbye!").unwrap();
+        write!(self.stdout, "Exiting gracefully. Goodbye!{}", termion::style::Reset).unwrap();
     }
 
     // Display each interaction in the chat history
