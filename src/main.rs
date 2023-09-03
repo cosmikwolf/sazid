@@ -81,25 +81,24 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     // Initialize the SessionManager.
     let mut session_manager = rt.block_on(async { SessionManager::new(settings, session_data).await });
-    
-    // Handle ingesting text from stdin
-    match opts.stdin {
-        Some(stdin) => {
-            rt.block_on(async {
-                let chunks = Chunkifier::chunkify_input(
-                    &stdin.to_str().unwrap().to_string(),
-                    session_manager.session_data.model.token_limit as usize,
-                )
-                .unwrap();
-                // iterate through chunks and use ui read_stdin to display them
-                for chunk in chunks.clone() {
-                    UI::read_stdin(chunk);
-                } 
-                session_manager.handle_ingest(chunks).await
-            }).unwrap()
-        }
-        None => {}
-    }
+    // // Handle ingesting text from stdin
+    // match opts.stdin {
+    //     Some(stdin) => {
+    //         rt.block_on(async {
+    //             let chunks = Chunkifier::chunkify_input(
+    //                 &stdin.to_str().unwrap().to_string(),
+    //                 session_manager.session_data.model.token_limit as usize,
+    //             )
+    //             .unwrap();
+    //             // iterate through chunks and use ui read_stdin to display them
+    //             for chunk in chunks.clone() {
+    //                 UI::read_stdin(chunk);
+    //             } 
+    //             session_manager.handle_ingest(chunks).await
+    //         }).unwrap()
+    //     }
+    //     None => {}
+    // }
     // Display the welcome message.
     UI::display_startup_message();
 
@@ -170,12 +169,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 // session_manager.save_chat_to_session(&session_filename, &messages)?;
                 session_manager.save_last_session_file_path();
                 UI::display_exit_message();
-                break;
+                // break;
             }
             Err(e) => {
                 println!("Error sending request to GPT: {:?}", e);
             }
         }
+        println!("loop end")
     }
+    println!("loop exited");
     Ok(())
 }

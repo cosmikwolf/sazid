@@ -41,17 +41,18 @@ pub struct Opts {
     )]
     pub ingest: Option<OsString>,
 
-    // write a positional argument that will be loaded into a string
-    #[clap(
-        value_name = "text",
-        help = "you can pipe data into sazid in order to ingest from stdin"
-    )]
-    pub stdin: Option<OsString>,
+    // // write a positional argument that will be loaded into a string
+    // #[clap(
+    //     value_name = "text",
+    //     help = "you can pipe data into sazid in order to ingest from stdin"
+    // )]
+    // pub stdin: Option<OsString>,
 }
 
 impl UI {
     // Read input from the user.
     pub fn read_input(prompt: &str) -> Result<String, ReadlineError> {
+        println!("readinput");
         let mut rl = rustyline::DefaultEditor::new()?;
         rl.readline(prompt)
     }
