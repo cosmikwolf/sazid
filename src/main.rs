@@ -56,8 +56,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         toml::from_str(std::fs::read_to_string("Settings.toml").unwrap().as_str()).unwrap();
     
     // Initialize the user interface
-    let mut ui = UI::init();
-    ui.interface_loop().unwrap();
+    let mut ui = UI::new();
+    ui.run_interface_loop().unwrap();
 
     /*
     // Handle model selection based on CLI flag

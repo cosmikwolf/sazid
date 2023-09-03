@@ -1,84 +1,215 @@
 use async_openai::types::Role;
-use crossterm::{
-    cursor::{Hide, Show},
-    event::{read, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEvent},
-    execute,
-    terminal::{
-        disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen, window_size
-    },
-};
 use owo_colors::OwoColorize;
-use std::{io::{stdout, StdoutLock, Result, Write}, path::PathBuf};
-use tui_input::backend::crossterm as backend;
-use tui_input::backend::crossterm::EventHandler;
-use tui_input::Input;
-
+use crossterm::{
+    cursor::{MoveTo, Hide, Show},
+    event::{self, KeyCode, KeyEvent, KeyModifiers},
+    execute,
+    ExecutableCommand,
+    style::{Color, Print, SetForegroundColor},
+    terminal::{self, ClearType, EnterAlternateScreen, LeaveAlternateScreen},
+    tty::IsTty,
+};
+use std::io::{self, Read, Write};
+use std::path::PathBuf; 
 
 pub struct UI {
-    input: Input,
-    stdout: StdoutLock<'static>
+    stdout: std::io::Stdout,
+    piped_input: String,
+    user_input: String,
 }
 
+
 impl UI {
-        // Initialize the UI.
-        pub fn init() -> Self {
-            // initialize tui
-            enable_raw_mode().unwrap();
-            let stdout = stdout();
-            let stdout = stdout.lock();
-            let input: Input = "Hello ".into();
-            // Display a startup message.
-            let mut ui = Self {
-                input,
-                stdout
-            };
-            execute!(ui.stdout, Hide, EnterAlternateScreen, EnableMouseCapture).unwrap();
-            let window_size = window_size().unwrap();
-            
-            backend::write(&mut ui.stdout, ui.input.value(), ui.input.cursor(), (0, 0), window_size.width ).unwrap();
-            ui.stdout.flush().unwrap();
-    
-            // ui.display_startup_message();
-            return ui;
+    pub fn new() -> Self {
+        let stdout = io::stdout();
+        let piped_input = Self::get_piped_input();
+        Self {
+            stdout,
+            piped_input,
+            user_input: String::new(),
         }
-    pub fn cleanup_interface(&mut self) -> Result<()> {
-        execute!(self.stdout, Show, LeaveAlternateScreen, DisableMouseCapture)?;
-        disable_raw_mode()?;
-        println!("{}", self.input);
+    }
+
+    fn get_piped_input() -> String {
+        let mut piped_input = String::new();
+        if !io::stdin().is_tty() {
+            let _ = io::stdin().read_to_string(&mut piped_input);
+        }
+        piped_input
+    }
+
+    fn setup(&mut self) -> io::Result<()> {
+        execute!(self.stdout, EnterAlternateScreen, MoveTo(0, 0), Hide)?;
+        terminal::enable_raw_mode()?;
         Ok(())
     }
-    pub fn interface_loop(&mut self) -> Result<()> {
+
+    fn teardown(&mut self) -> io::Result<()> {
+        execute!(self.stdout, Show, LeaveAlternateScreen)?;
+        terminal::disable_raw_mode()?;
+        Ok(())
+    }
+
+    fn display_prompt(&mut self) -> io::Result<()> {
+        let prompt = "Enter your input: ";
+        self.stdout.execute(Print(prompt))?;
+        self.stdout.flush()?;
+        Ok(())
+    }
+
+    fn execute_input(&mut self) -> io::Result<()> {
+        self.stdout.execute(SetForegroundColor(Color::Green))?;
+        write!(self.stdout, "\r\nYou entered: {}\r\n", self.user_input)?;
+        self.stdout.execute(SetForegroundColor(Color::Reset))?;
+        self.stdout.flush().unwrap();
+        Ok(())
+    }
+
+    pub fn check_piped_input(&mut self) -> io::Result<()> {
+        if !self.piped_input.is_empty() {
+            self.stdout.execute(SetForegroundColor(Color::Blue))?;
+            write!(self.stdout, "{}", &self.piped_input)?;
+            self.stdout.flush()?;
+            self.stdout.execute(SetForegroundColor(Color::Reset))?;
+            self.user_input = self.piped_input.clone();
+            self.piped_input.clear();
+        }
+        Ok(())
+    }
+
+    // Display a message to the user.
+    pub fn display_chat_message(&mut self, role: Role, message: String) {
+        match role {
+            Role::User => write!(self.stdout, "You: {}\n\r", message.blue()),
+            Role::Assistant => write!(self.stdout, "GPT: {}\n\r", message.green()),
+            _ => Ok(())
+        }.unwrap();
+        self.stdout.flush().unwrap()
+    }
+
+    pub fn display_general_message(&mut self, message: String) {
+        write!(self.stdout, "{}\r\n", message).unwrap();
+        self.stdout.flush().unwrap();
+    }
+
+    pub fn display_debug_message(&mut self, message: String) {
+        write!(self.stdout, "Debug: {}\r\n", message.yellow()).unwrap();
+        self.stdout.flush().unwrap();
+    }
+    // Display a error message.
+    pub fn display_error_message(&mut self, message: String) {
+        write!(self.stdout, "Error: {}\r\n", message.red()).unwrap();
+        self.stdout.flush().unwrap();
+    }
+
+    // Display a startup message.
+    pub fn display_startup_message(&mut self) {
+        write!( self.stdout, "Starting interactive GPT chat session. Type 'exit' or 'quit' to end.\n\r",) .unwrap();
+        self.stdout.flush().unwrap();
+    }
+
+    // Display an exit message.
+    pub fn display_exit_message(&mut self) {
+        write!(self.stdout, "Exiting gracefully. Goodbye!{}", termion::style::Reset).unwrap();
+    }
+
+    // Display each interaction in the chat history
+    pub fn display_chat_history(&mut self, chat_history: &Vec<(Role, String)>) {
+        for (role, message) in chat_history {
+            self.display_chat_message(role.clone(), message.clone());
+        }
+    }
+
+    // Display a message about the import process.
+    pub fn display_import_message(&mut self, file: &PathBuf, status: ImportStatus) {
+        match status {
+            ImportStatus::Success => write!(self.stdout, "Successfully imported: {}", file.display().blue()).unwrap(),
+            ImportStatus::Failure => write!(self.stdout, "Failed to import: {}", file.display().red()).unwrap(),
+            ImportStatus::Skipped => write!(self.stdout, "Skipped importing: {}", file.display().yellow()).unwrap(),
+        }
+    }
+
+    // Display a message about starting the import process.
+    pub fn display_import_start_message(&mut self) {
+        write!(self.stdout, "Starting import process. Press Ctrl-C to skip a file. Press Ctrl-C twice quickly to cancel.").unwrap();
+    }
+
+    // Display a message about the conclusion of the import process.
+    pub fn display_import_end_message(&mut self) {
+        write!(self.stdout, "Import process completed.").unwrap();
+    }
+
+    pub fn run_interface_loop(&mut self) -> io::Result<()> {
+        let mut exit_flag = false;
+
         loop {
-            let event = read()?;
-    
-            if let Event::Key(KeyEvent { code, .. }) = event {
-                match code {
-                    KeyCode::Esc | KeyCode::Enter => {
-                        break;
-                    }
-                    _ => {
-                        if self.input.handle_event(&event).is_some() {
-                            backend::write(
-                                &mut self.stdout,
-                                self.input.value(),
-                                self.input.cursor(),
-                                (0, 0),
-                                15,
-                            )?;
-                            self.stdout.flush().unwrap();
+            self.display_prompt()?;
+            self.check_piped_input()?;
+
+            if !self.user_input.is_empty() {
+                self.execute_input()?;
+                self.user_input.clear();
+                continue;
+            }
+
+            loop {
+                if let event::Event::Key(key_event) = event::read()? {
+                    match key_event {
+                        KeyEvent {
+                            code: KeyCode::Char('c'),
+                            modifiers: KeyModifiers::CONTROL,
+                            ..
+                        } => {
+                            exit_flag = true;
+                            break;
                         }
+                        KeyEvent {
+                            code: KeyCode::Backspace,
+                            ..
+                        } => {
+                            if !self.user_input.is_empty() {
+                                self.user_input.pop();
+                                self.stdout.execute(Print("\u{8} \u{8}"))?; // Handle backspace
+                            }
+                        }
+                        KeyEvent {
+                            code: KeyCode::Char(c),
+                            ..
+                        } => {
+                            self.user_input.push(c);
+                            self.stdout.execute(SetForegroundColor(Color::Blue))?;
+                            write!(self.stdout, "{}", c)?;
+                            self.stdout.flush()?;
+                        }
+                        KeyEvent {
+                            code: KeyCode::Enter,
+                            ..
+                        } => {
+                            if self.user_input.trim() == "exit" || self.user_input.trim() == "quit" {
+                                exit_flag = true;
+                            }
+                            break;
+                        }
+                        _ => {}
                     }
                 }
             }
+
+            if exit_flag {
+                break;
+            }
+
+            self.execute_input()?;
+            self.user_input.clear();
         }
-        self.cleanup_interface().unwrap();
+
         Ok(())
     }
     // Read input from the user.
-    pub fn read_input(&mut self, prompt: &str) -> Result<Option<String>> {
+    // pub fn read_input(&mut self, prompt: &str) -> Result<Option<String>> {
         // self.stdout.write_all(prompt.as_bytes()).unwrap();
         // self.stdout.flush().unwrap();
-        Ok(Some(String::from("test")))
+        // Ok(Some(String::from("test")))
         // let mut input_buf: Vec<u8> = Vec::new();
         // self.stdin.read_line()
         // Ok(Some(input_buf))
@@ -120,71 +251,6 @@ impl UI {
         }
         */
 
-    // Display a message to the user.
-    pub fn display_chat_message(&mut self, role: Role, message: String) {
-        match role {
-            Role::User => writeln!(self.stdout, "You: {}\n", message.blue()),
-            Role::Assistant => writeln!(self.stdout, "GPT: {}\n", message.green()),
-            _ => Ok(())
-        }.unwrap()
-    }
-
-    pub fn display_general_message(&mut self, message: String) {
-        write!(self.stdout, "{}", message).unwrap();
-    }
-
-    pub fn display_debug_message(&mut self, message: String) {
-        writeln!(self.stdout, "Debug: {}", message.yellow()).unwrap();
-    }
-    // Display a error message.
-    pub fn display_error_message(&mut self, message: String) {
-        write!(self.stdout, "Error: {}", message.red()).unwrap();
-    }
-
-    // Display a startup message.
-    pub fn display_startup_message(&mut self) {
-        write!(
-            self.stdout,
-            "{}{}{}{}Starting interactive GPT chat session. Type 'exit' or 'quit' to end.\n\r",
-            termion::clear::All,
-            termion::cursor::Goto(1,1),
-            termion::style::Bold,
-            termion::style::Reset,
-        )
-        .unwrap();
-        self.stdout.flush().unwrap();
-    }
-
-    // Display an exit message.
-    pub fn display_exit_message(&mut self) {
-        write!(self.stdout, "Exiting gracefully. Goodbye!{}", termion::style::Reset).unwrap();
-    }
-
-    // Display each interaction in the chat history
-    pub fn display_chat_history(&mut self, chat_history: &Vec<(Role, String)>) {
-        for (role, message) in chat_history {
-            self.display_chat_message(role.clone(), message.clone());
-        }
-    }
-
-    // Display a message about the import process.
-    pub fn display_import_message(&mut self, file: &PathBuf, status: ImportStatus) {
-        match status {
-            ImportStatus::Success => write!(self.stdout, "Successfully imported: {}", file.display().blue()).unwrap(),
-            ImportStatus::Failure => write!(self.stdout, "Failed to import: {}", file.display().red()).unwrap(),
-            ImportStatus::Skipped => write!(self.stdout, "Skipped importing: {}", file.display().yellow()).unwrap(),
-        }
-    }
-
-    // Display a message about starting the import process.
-    pub fn display_import_start_message(&mut self) {
-        write!(self.stdout, "Starting import process. Press Ctrl-C to skip a file. Press Ctrl-C twice quickly to cancel.").unwrap();
-    }
-
-    // Display a message about the conclusion of the import process.
-    pub fn display_import_end_message(&mut self) {
-        write!(self.stdout, "Import process completed.").unwrap();
-    }
 }
 
 #[derive(Debug, PartialEq)]
