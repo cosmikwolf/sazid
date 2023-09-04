@@ -34,4 +34,5 @@ tiktoken-rs = { version = "0.5.1", features = ["async-openai"] }
 tokio = "1.32.0"
 toml = "0.7.6"
 tui-input = "0.8.0"
+url = "2.4.1"
 uuid = { version = "1.4.1", features = ["v4"] }

@@ -1,3 +1,4 @@
+use shellexpand::full;
 use tiktoken_rs::cl100k_base;
 use crate::pdf_extractor::PdfText;
 use crate::session_manager::INGESTED_DIR;
@@ -6,9 +7,91 @@ use std::fs::{self, File};
 use std::io::Read;
 use std::path::{PathBuf, Path};
 use crate::errors::ChunkifierError;
+use url;
+struct UrlData {
+    urls: String,
+    data: String
+}
+struct FilePathData {
+    file_paths: String,
+    data: String
+}
+struct IngestData {
+    text: String,
+    urls: Vec<String>,
+    file_paths: Vec<PathBuf>
+}
 pub struct Chunkifier;
 
 impl Chunkifier {
+
+    // takes input text and returns chunks with all data extracted
+    pub fn parse_input(input: &str, tokens_per_chunk: usize) -> Result<Vec<String>, ChunkifierError> {
+        let ingest_data = Self::categorize_input(input)?;
+        let chunks = Self::chunkify_parsed_input(ingest_data, tokens_per_chunk).unwrap();
+        if Self::exceeds_max_token_limit(&chunks, tokens_per_chunk) {
+            return Err(ChunkifierError::Other("Input exceeds max token limit".to_string()));
+        } else {
+            return Ok(chunks);
+        }
+    }
+
+    fn categorize_input(input: &str) -> Result<IngestData, ChunkifierError> {
+        let mut ingest_data = IngestData {
+            text: input.to_string(),
+            urls: Vec::new(),
+            file_paths: Vec::new()
+        };
+        let tokens: Vec<&str> = input.split_whitespace().collect();
+        for token in tokens {
+            if let Ok(url) = url::Url::parse(token) {
+                ingest_data.urls.push(url.to_string());
+                continue;
+            } else {
+                let path = PathBuf::try_from(token);
+                if let Ok(p) = path {
+                    if p.is_file() {
+                        ingest_data.file_paths.push(p);
+                    } else if p.is_dir() {
+                        ChunkifierError::Other("Directories are not supported".to_string());
+                    } else {
+                        // this condition should not be reached
+                        ChunkifierError::Other("File import error".to_string());
+                    }
+                };
+            }
+        }
+        Ok(ingest_data)
+    }
+
+    fn chunkify_parsed_input(ingest_data: IngestData, tokens_per_chunk: usize) -> Result<Vec<String>, ChunkifierError> {
+        let mut full_text = ingest_data.text;   
+        // ingest_data.urls.iter().for_each(|url| {
+        //     let url_data = UrlData {
+        //         urls: url.to_string(),
+        //         data: reqwest::blocking::get(url).unwrap().text().unwrap()
+        //     };
+        //     full_text.push_str(&url_data.data);
+        // });
+        // ingest_data.file_paths.iter().for_each(|path| {
+        //     full_text.push_str(&Self::extract_file_text(path).unwrap());
+        // });
+        Ok(Self::chunkify_text(&full_text, tokens_per_chunk))
+    }
+
+    /// an algorithm that will determine if a Vec<String> string exceeds a model_max_tokens limit
+    pub fn exceeds_max_token_limit(chunks: &Vec<String>, model_max_tokens: usize) -> bool {
+        let bpe = cl100k_base().unwrap();
+        let mut token_count = 0;
+        for chunk in chunks {
+            token_count += bpe.encode_with_special_tokens(chunk).len();
+        }
+        token_count > model_max_tokens
+    }
+
+    // write a function that determines if any words in a string are a URL, file path, or text
+    // 
+    
     /// This function determines if the input is a file path or just a block of text.
     /// If the input is a valid file path, it will chunkify the contents of the file.
     /// Otherwise, it will treat the input as plain text and chunkify it directly.
@@ -145,6 +228,18 @@ mod tests {
         use std::fs::File;
         use std::io::Write;
         use tempfile::tempdir;
+
+        // a test for parse_input to verify that it is doing what it needs to do
+        // using fake text that has a URL, a filepath and also some text
+        // it should return a IngestData struct that contains the full text, a list of URLs, and a list of file paths
+        #[test]
+        fn test_parse_input() {
+            let input = "https://www.google.com/ src/main.rs this is some text";
+            let ingest_data = Chunkifier::categorize_input(input).unwrap();
+            assert_eq!(ingest_data.text, "https://www.google.com/ src/main.rs this is some text");
+            assert_eq!(ingest_data.urls, vec!["https://www.google.com/"]);
+            assert_eq!(ingest_data.file_paths, vec![PathBuf::from("src/main.rs")]);
+        }
 
         #[test]
         fn test_chunkify_pdf_file() {

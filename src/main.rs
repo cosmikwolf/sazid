@@ -49,23 +49,29 @@ pub struct Opts {
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let rt = Runtime::new()?;
-
+    let rt = Runtime::new().unwrap();
+ 
     let opts: Opts = Opts::parse();
     let settings: GPTSettings =
         toml::from_str(std::fs::read_to_string("Settings.toml").unwrap().as_str()).unwrap();
     
-    // Initialize the user interface
-    let mut ui = UI::new();
-    ui.run_interface_loop().unwrap();
+    // Initialize the SessionManager.
 
-    /*
+    let mut session_data: Option<Session> = None;
+
+    let session_manager = SessionManager::new(settings, session_data, rt);
+
+    // Initialize the user interface
+    let mut ui = UI::init(session_manager);
+
+
+
     // Handle model selection based on CLI flag
     if let Some(model_name) = &opts.model {
         // In a real-world scenario, you would set the selected model in the session manager or GPT connector
         ui.display_general_message(format!("Using model: {}", model_name));
     }
-
+    
     // Handle listing models based on CLI flag
     if opts.list_models {
         // In a real-world scenario, you would call the OpenAI API to list models the user has access to
@@ -75,53 +81,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         println!("gpt-4-32k");
         return Ok(());
     }
-
-    let mut session_data: Option<Session> = None;
     
-    // Check if the `--new` flag is provided (or not).
-    // If so, initiate a new SessionManager for a new session.
-    // for this nothing needs to be done as session_data is already None
-    if !opts.new {
-        // Check if a specific session is provided via the `--continue` flag.
-        match opts.continue_session {
-            Some(session_file) => {
-                // Load the provided session.
-                let session_path = PathBuf::from(&session_file);
-                if !session_path.exists() {
-                    ui.display_error_message(format!(
-                        "Session file not found: {}",
-                        session_path.display()
-                    ));
-                    return Err(Box::new(std::io::Error::new(
-                        std::io::ErrorKind::NotFound,
-                        format!("Session file not found: {}", session_path.display()),
-                    )));
-                } else {
-                    let session_file_path = PathBuf::from(&session_file);
-                    let data = fs::read_to_string(session_file_path).unwrap();
-                    session_data = Some(serde_json::from_str(&data).unwrap());
-                }
-            }
-            None => {
-                // Check if there's a last session.
-                if let Some(last_session) = SessionManager::get_last_session_file_path() {
-                    // Load the last session.
-                    if !last_session.exists() {
-                        ui.display_error_message(format!(
-                            "Session file not found: {}",
-                            last_session.display()
-                        ));
-                    } else {
-                        let session_file_path = PathBuf::from(&last_session);
-                        let data = fs::read_to_string(session_file_path).unwrap();
-                        session_data = Some(serde_json::from_str(&data).unwrap());
-                    }
-                }
-            }
-        }
-    }
-    // Initialize the SessionManager.
-    let mut session_manager = rt.block_on(async { SessionManager::new(settings, session_data).await });
+    
+    ui.run_interface_loop().unwrap();
+    /*
     // // Handle ingesting text from stdin
     // match opts.stdin {
     //     Some(stdin) => {

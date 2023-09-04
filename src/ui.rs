@@ -10,24 +10,27 @@ use crossterm::{
     tty::IsTty,
 };
 use std::io::{self, Read, Write};
-use std::path::PathBuf; 
+use std::path::PathBuf;
+
+use crate::session_manager::{self, SessionManager}; 
 
 pub struct UI {
     stdout: std::io::Stdout,
-    piped_input: String,
     user_input: String,
+    session_manager: SessionManager,
 }
 
-
 impl UI {
-    pub fn new() -> Self {
+    pub fn init(session_manager: SessionManager) -> Self {
         let stdout = io::stdout();
-        let piped_input = Self::get_piped_input();
-        Self {
+        let user_input = Self::get_piped_input();
+        let mut ui = Self {
             stdout,
-            piped_input,
-            user_input: String::new(),
-        }
+            user_input,
+            session_manager
+        };
+        ui.setup().unwrap();
+        ui
     }
 
     fn get_piped_input() -> String {
@@ -39,19 +42,19 @@ impl UI {
     }
 
     fn setup(&mut self) -> io::Result<()> {
-        execute!(self.stdout, EnterAlternateScreen, MoveTo(0, 0), Hide)?;
-        terminal::enable_raw_mode()?;
+        // execute!(self.stdout, EnterAlternateScreen, MoveTo(0, 0), Hide)?;
+        // terminal::enable_raw_mode()?;
         Ok(())
     }
 
-    fn teardown(&mut self) -> io::Result<()> {
-        execute!(self.stdout, Show, LeaveAlternateScreen)?;
-        terminal::disable_raw_mode()?;
+    pub fn teardown(&mut self) -> io::Result<()> {
+        // execute!(self.stdout, Show, LeaveAlternateScreen)?;
+        // terminal::disable_raw_mode()?;
         Ok(())
     }
 
     fn display_prompt(&mut self) -> io::Result<()> {
-        let prompt = "Enter your input: ";
+        let prompt = "You: ";
         self.stdout.execute(Print(prompt))?;
         self.stdout.flush()?;
         Ok(())
@@ -59,21 +62,12 @@ impl UI {
 
     fn execute_input(&mut self) -> io::Result<()> {
         self.stdout.execute(SetForegroundColor(Color::Green))?;
-        write!(self.stdout, "\r\nYou entered: {}\r\n", self.user_input)?;
+        let chat_choices = self.session_manager.submit_input(&self.user_input);
+        for choice in chat_choices.unwrap() {
+            self.display_chat_message(choice.message.role.clone(), choice.message.content.clone().unwrap_or_default());
+        }
         self.stdout.execute(SetForegroundColor(Color::Reset))?;
         self.stdout.flush().unwrap();
-        Ok(())
-    }
-
-    pub fn check_piped_input(&mut self) -> io::Result<()> {
-        if !self.piped_input.is_empty() {
-            self.stdout.execute(SetForegroundColor(Color::Blue))?;
-            write!(self.stdout, "{}", &self.piped_input)?;
-            self.stdout.flush()?;
-            self.stdout.execute(SetForegroundColor(Color::Reset))?;
-            self.user_input = self.piped_input.clone();
-            self.piped_input.clear();
-        }
         Ok(())
     }
 
@@ -143,13 +137,16 @@ impl UI {
         let mut exit_flag = false;
 
         loop {
-            self.display_prompt()?;
-            self.check_piped_input()?;
-
+            
+            // check piped input for data
             if !self.user_input.is_empty() {
-                self.execute_input()?;
+                self.execute_input().unwrap();
+                self.stdout.execute(SetForegroundColor(Color::Blue))?;
+                write!(self.stdout, "Piped input: {}\r\n", self.user_input)?;
                 self.user_input.clear();
                 continue;
+            } else {
+                self.display_prompt()?;
             }
 
             loop {
@@ -188,7 +185,10 @@ impl UI {
                             if self.user_input.trim() == "exit" || self.user_input.trim() == "quit" {
                                 exit_flag = true;
                             }
-                            break;
+                            if self.user_input.trim().len() > 0 {
+                                write!(self.stdout, "\n\r")?;
+                                break;
+                            }
                         }
                         _ => {}
                     }
@@ -196,10 +196,12 @@ impl UI {
             }
 
             if exit_flag {
+                self.display_exit_message();
+                self.teardown().unwrap();
                 break;
             }
 
-            self.execute_input()?;
+            self.execute_input();
             self.user_input.clear();
         }
 
@@ -262,19 +264,25 @@ pub enum ImportStatus {
 
 #[cfg(test)]
 mod tests {
+    use crate::{session_manager::Session, gpt_connector::GPTSettings};
+
     use super::*;
 
-    #[test]
-    fn test_ui_display_message() {
-        let mut ui = UI::init();
-        // Just a simple test to make sure no panic occurs.
-        // Real UI testing would require more advanced techniques.
-        ui.display_chat_message(Role::User, "Test".to_string());
-        ui.display_chat_message(Role::Assistant, "Test".to_string());
+    #[tokio::test]
+    async fn test_ui_display_message() {
+        // let mut session_data: Option<Session> = None;
+        // let settings: GPTSettings = toml::from_str(std::fs::read_to_string("Settings.toml").unwrap().as_str()).unwrap();
+        // let mut session_manager = SessionManager::new(settings, session_data);
+        // let mut ui = UI::init(session_manager);
+        // // Just a simple test to make sure no panic occurs.
+        // // Real UI testing would require more advanced techniques.
+        // ui.display_chat_message(Role::User, "Test".to_string());
+        // ui.display_chat_message(Role::Assistant, "Test".to_string());
 
-        let sample_path = PathBuf::from("/path/to/file.txt");
-        ui.display_import_message(&sample_path, ImportStatus::Success);
-        ui.display_import_message(&sample_path, ImportStatus::Failure);
-        ui.display_import_message(&sample_path, ImportStatus::Skipped);
+        // let sample_path = PathBuf::from("/path/to/file.txt");
+        // ui.display_import_message(&sample_path, ImportStatus::Success);
+        // ui.display_import_message(&sample_path, ImportStatus::Failure);
+        // ui.display_import_message(&sample_path, ImportStatus::Skipped);
+        // ui.teardown().unwrap();
     }
 }

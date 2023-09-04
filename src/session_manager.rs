@@ -1,6 +1,7 @@
-use async_openai::types::{Role, CreateChatCompletionRequest};
+use async_openai::types::{Role, CreateChatCompletionRequest, ChatChoice};
 use async_openai::types::{ChatCompletionRequestMessage, CreateChatCompletionResponse};
 use serde::{Deserialize, Serialize};
+use tokio::runtime::Runtime;
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
@@ -9,6 +10,7 @@ use crate::gpt_connector::{GPTConnector, GPTSettings};
 use crate::gpt_connector::Model;
 use crate::ui::UI;
 use crate::utils;
+use crate::chunkifier::Chunkifier;
 
 pub const SESSIONS_DIR: &str = "data/sessions";
 pub const INGESTED_DIR: &str = "data/ingested";
@@ -48,24 +50,32 @@ pub struct SessionManager {
     gpt_connector: GPTConnector,
     cached_request: Option<Vec<ChatCompletionRequestMessage>>,
     pub session_data: Session,
+    rt: Runtime,
 }
 
 impl SessionManager {
-    pub async fn new(settings: GPTSettings, session_data: Option<Session>) -> SessionManager {
-        let gpt_connector = GPTConnector::new(&settings).await;
+    pub fn new(settings: GPTSettings, session_data: Option<Session>, rt: Runtime) -> SessionManager {
+        let gpt_connector = rt.block_on(async { GPTConnector::new(&settings).await});
         let model = gpt_connector.model.clone();
         match session_data {
             Some(session_data) => Self {
                 gpt_connector,
                 cached_request: None,
                 session_data,
+                rt
             },
             None => Self {
                 gpt_connector,
                 cached_request: None,
                 session_data: Session::new(utils::generate_session_id(), model),
+                rt
             }
         }
+    }
+
+    pub fn load_session_data(&mut self, session_data: Session) -> io::Result<()> {
+        self.session_data = session_data;
+        Ok(())
     }
 
     pub fn save_session(&self) -> io::Result<()> {
@@ -76,8 +86,6 @@ impl SessionManager {
         self.save_last_session_file_path();
         Ok(())
     }
-
-
 
     // Get the responses from the session data
     pub fn get_responses(&self) -> Vec<CreateChatCompletionResponse> {
@@ -140,17 +148,17 @@ impl SessionManager {
             .flatten()
             .collect()
     }
-    pub async fn send_request(&mut self, ui:&mut UI, request: CreateChatCompletionRequest) -> Result<CreateChatCompletionResponse, SessionManagerError> {
-        let response = self.gpt_connector.send_request(request.clone()).await?;
+    
+    pub fn submit_input(&mut self, input: &String) -> Result<Vec<ChatChoice>, SessionManagerError> {
+        let chunks = Chunkifier::parse_input(&input, self.gpt_connector.model.token_limit as usize).unwrap();
+        let request = self.construct_request_and_cache(chunks);
+        // Send each chunk to the GPT API using the GPTConnector.
+        
+        let response = self.rt.block_on(async { self.gpt_connector.send_request(request).await }).unwrap();
         self.add_interaction_for_cached_request(response.clone());
-        for choice in &response.choices {
-            ui.display_chat_message(
-                choice.message.role.clone(),
-                choice.message.content.clone().unwrap_or_default(),
-            );
-        }
-        Ok(response)
+        Ok(response.choices)
     }
+    
     pub fn construct_request_and_cache(&mut self, content: Vec<String> ) -> CreateChatCompletionRequest {
         // iterate through the vector of ChatCompletionRequestMessage from the interactions stored in session_data as a clone
         let mut messages = self.get_request_messages();
@@ -207,6 +215,18 @@ impl SessionManager {
         Ok(())
     }
 
+    // a function that takes an a string input,
+    // it will chunkify with Chunkifier::chunkify_input and return a vector of strings
+    pub fn parse_input(&self, input:String) -> Vec<String> {
+        let chunks = Chunkifier::chunkify_input(
+            &input,
+            self.session_data.model.token_limit as usize,
+        )
+        .unwrap();
+        chunks
+    }
+    
+    
     /// This function takes in an input which could be a path to a directory, a path to a file,
     /// a block of text, or a URL. Depending on the type of input, it processes (or ingests) the
     /// content by converting it into chunks of text and then sends each chunk to the GPT API.
