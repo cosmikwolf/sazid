@@ -164,6 +164,22 @@ impl SessionManager {
         }
     }
 
+    // list all sessions in the sessions directory
+    pub fn list_sessions() -> io::Result<Vec<PathBuf>> {
+        utils::ensure_directory_exists(SESSIONS_DIR)?;
+        let mut sessions: Vec<PathBuf> = Vec::new();
+        for entry in fs::read_dir(SESSIONS_DIR)? {
+            let entry = entry?;
+            let path = entry.path();
+            if path.is_file() {
+                sessions.push(path);
+            }
+        }
+        Ok(sessions)
+    }
+
+    
+
     fn get_request_messages(&self) -> Vec<ChatCompletionRequestMessage> {
         self.session_data
             .interactions

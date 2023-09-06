@@ -79,6 +79,8 @@ async fn select_model(
 pub struct GPTSettings {
     pub default: ModelConfig,
     pub fallback: ModelConfig,
+    pub load_session: Option<String>,
+    pub save_session: Option<String>,
 }
 #[derive(Debug, Deserialize, Clone)]
 pub struct ModelConfig {

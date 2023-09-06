@@ -1,4 +1,5 @@
 use async_openai::types::Role;
+use clap::Parser;
 use sazid::chunkifier::Chunkifier;
 use sazid::gpt_connector::GPTSettings;
 use sazid::session_manager::Session;
@@ -9,15 +10,17 @@ use std::fs;
 use std::path::PathBuf;
 use tokio::runtime::Runtime;
 use toml;
-use clap::Parser;
 
 #[derive(Parser)]
 #[clap(
     version = "1.0",
-    author = "Your Name",
+    author = "Tenkai Kariya",
     about = "Interactive chat with GPT"
 )]
 pub struct Opts {
+    #[clap(short = 'n', long = "new", help = "Start a new chat session")]
+    pub new: bool,
+
     #[clap(
         short = 'm',
         long,
@@ -28,15 +31,26 @@ pub struct Opts {
 
     #[clap(
         short = 'l',
-        long = "list-models",
+        long = "list-sessions",
         help = "List the models the user has access to"
     )]
     pub list_models: bool,
 
-    #[clap(short = 'n', long, help = "Start a new chat session")]
-    pub new: bool,
-
-    #[clap(short = 'c', long, help = "Continue from a specified session file")]
+    #[clap(
+        short = 'p',
+        long = "print-session",
+        value_name = "SESSION_ID",
+        default_value = "last-session",
+        help = "Print a session to stdout, defaulting to the last session",
+    )]
+    pub print_session: String,
+    
+    #[clap(
+        short = 'c',
+        long = "continue",
+        help = "Continue from a specified session file",
+        value_name = "SESSION_ID"
+    )]
     pub continue_session: Option<String>,
 
     #[clap(
@@ -50,11 +64,11 @@ pub struct Opts {
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let rt = Runtime::new().unwrap();
- 
+
     let opts: Opts = Opts::parse();
     let settings: GPTSettings =
         toml::from_str(std::fs::read_to_string("Settings.toml").unwrap().as_str()).unwrap();
-    
+
     // Initialize the SessionManager.
 
     let mut session_data: Option<Session> = None;
@@ -64,25 +78,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Initialize the user interface
     let mut ui = UI::init(session_manager);
 
-
-
     // Handle model selection based on CLI flag
     if let Some(model_name) = &opts.model {
         // In a real-world scenario, you would set the selected model in the session manager or GPT connector
         ui.display_general_message(format!("Using model: {}", model_name));
     }
-    
-    // Handle listing models based on CLI flag
-    if opts.list_models {
-        // In a real-world scenario, you would call the OpenAI API to list models the user has access to
-        println!("Listing accessible models...");
-        println!("gpt-3.5-turbo-16k");
-        println!("gpt-4");
-        println!("gpt-4-32k");
-        return Ok(());
-    }
-    
-    
+
     ui.run_interface_loop().unwrap();
     /*
     // // Handle ingesting text from stdin
@@ -97,7 +98,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     //             // iterate through chunks and use ui read_stdin to display them
     //             for chunk in chunks.clone() {
     //                 ui.read_stdin(chunk);
-    //             } 
+    //             }
     //             session_manager.handle_ingest(chunks).await
     //         }).unwrap()
     //     }
@@ -147,7 +148,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         Ok(response) => {
                             let usage = response.usage.unwrap();
                             ui.display_debug_message(format!("created: {:?}\tmodel: {:?}\tfinish_reason:{:?}\tprompt_tokens:{:?}\tcompletion_tokens:{:?}\ttotal_tokens:{:?}\t", response.created, response.model, response.choices[0].finish_reason, usage.prompt_tokens, usage.completion_tokens, usage.total_tokens));
-                           
+
                             session_manager.save_session()?;
                         }
                         Err(error) => {
@@ -168,7 +169,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 break
             }
         }
-        println!("loop end") 
+        println!("loop end")
     }
     */
     Ok(())
