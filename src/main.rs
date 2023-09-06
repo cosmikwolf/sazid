@@ -1,53 +1,28 @@
 use async_openai::types::Role;
+use crossterm::event::DisableMouseCapture;
+use crossterm::event::EnableMouseCapture;
+use crossterm::execute;
+use crossterm::terminal::EnterAlternateScreen;
+use crossterm::terminal::LeaveAlternateScreen;
+use crossterm::terminal::disable_raw_mode;
+use crossterm::terminal::enable_raw_mode;
+use ratatui::Terminal;
+use ratatui::prelude::CrosstermBackend;
+use sazid::app::App;
 use sazid::chunkifier::Chunkifier;
 use sazid::gpt_connector::GPTSettings;
 use sazid::session_manager::Session;
 use sazid::session_manager::SessionManager;
-use sazid::ui::UI;
+// use sazid::ui::UI;
 use std::ffi::OsString;
 use std::fs;
+use std::io;
 use std::path::PathBuf;
 use tokio::runtime::Runtime;
 use toml;
 use clap::Parser;
-
-#[derive(Parser)]
-#[clap(
-    version = "1.0",
-    author = "Your Name",
-    about = "Interactive chat with GPT"
-)]
-pub struct Opts {
-    #[clap(
-        short = 'm',
-        long,
-        value_name = "MODEL_NAME",
-        help = "Specify the model to use (e.g., gpt-4, gpt-3.5-turbo-16k)"
-    )]
-    pub model: Option<String>,
-
-    #[clap(
-        short = 'l',
-        long = "list-models",
-        help = "List the models the user has access to"
-    )]
-    pub list_models: bool,
-
-    #[clap(short = 'n', long, help = "Start a new chat session")]
-    pub new: bool,
-
-    #[clap(short = 'c', long, help = "Continue from a specified session file")]
-    pub continue_session: Option<String>,
-
-    #[clap(
-        short = 'i',
-        long,
-        value_name = "PATH",
-        help = "Import a file or directory for GPT to process"
-    )]
-    pub ingest: Option<OsString>,
-}
-
+use sazid::cli_options::Opts;
+use sazid::app::run;
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let rt = Runtime::new().unwrap();
  
@@ -57,33 +32,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     
     // Initialize the SessionManager.
 
-    let mut session_data: Option<Session> = None;
+    let session_data: Option<Session> = None;
 
     let session_manager = SessionManager::new(settings, session_data, rt);
 
-    // Initialize the user interface
-    let mut ui = UI::init(session_manager);
+    run(session_manager).unwrap();
+    // let mut ui = UI::init(session_manager);
 
-
-
-    // Handle model selection based on CLI flag
-    if let Some(model_name) = &opts.model {
-        // In a real-world scenario, you would set the selected model in the session manager or GPT connector
-        ui.display_general_message(format!("Using model: {}", model_name));
-    }
-    
-    // Handle listing models based on CLI flag
-    if opts.list_models {
-        // In a real-world scenario, you would call the OpenAI API to list models the user has access to
-        println!("Listing accessible models...");
-        println!("gpt-3.5-turbo-16k");
-        println!("gpt-4");
-        println!("gpt-4-32k");
-        return Ok(());
-    }
-    
-    
-    ui.run_interface_loop().unwrap();
+    // ui.run_interface_loop().unwrap();
     /*
     // // Handle ingesting text from stdin
     // match opts.stdin {
@@ -171,5 +127,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         println!("loop end") 
     }
     */
+    // restore terminal
     Ok(())
 }

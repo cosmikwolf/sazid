@@ -8,9 +8,10 @@ use std::path::{Path, PathBuf};
 use crate::errors::SessionManagerError;
 use crate::gpt_connector::{GPTConnector, GPTSettings};
 use crate::gpt_connector::Model;
-use crate::ui::UI;
+// use crate::ui::UI;
 use crate::utils;
 use crate::chunkifier::Chunkifier;
+use crate::types::Message;
 
 pub const SESSIONS_DIR: &str = "data/sessions";
 pub const INGESTED_DIR: &str = "data/ingested";
@@ -21,6 +22,7 @@ pub struct ChatInteraction {
     pub request: Vec<ChatCompletionRequestMessage>,
     pub response: CreateChatCompletionResponse,
 }
+
 
 #[derive(Debug, Serialize, Deserialize)]
 #[derive(Clone)]
@@ -118,6 +120,28 @@ impl SessionManager {
         self.session_data
             .interactions
             .push(ChatInteraction { request, response })
+    }
+
+    // a function that will iterate through all the interactions 
+    // and return a Vec<Message> that contains all the messages
+    // in both the request and response
+    pub fn get_messages(&self) -> Vec<Message> {
+        let mut messages: Vec<Message> = Vec::new();
+        for interaction in &self.session_data.interactions {
+            for request in &interaction.request {
+                messages.push(Message {
+                    role: request.role.clone(),
+                    content: request.content.clone().unwrap_or_default(),
+                });
+            }
+            for choice in &interaction.response.choices {
+                messages.push(Message {
+                    role: choice.message.role.clone(),
+                    content: choice.message.content.clone().unwrap_or_default(),
+                });
+            }
+        }
+        messages
     }
 
     pub fn add_interaction_for_cached_request(
