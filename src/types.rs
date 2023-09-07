@@ -1,8 +1,69 @@
-use std::{path::PathBuf, collections::BTreeMap};
+use std::{path::PathBuf, collections::BTreeMap, ffi::OsString};
 
 use async_openai::{types::{Role, ChatCompletionRequestMessage, CreateChatCompletionResponse}, config::OpenAIConfig, Client};
+use clap::Parser;
 use serde::{Deserialize, Serialize};
 use tokio::runtime::Runtime;
+
+// options
+#[derive(Parser, Clone)]
+#[clap(
+    version = "1.0",
+    author = "Tenkai Kariya",
+    about = "Interactive chat with GPT"
+)]
+pub struct Opts {
+    #[clap(short = 'n', long = "new", help = "Start a new chat session")]
+    pub new: bool,
+
+    #[clap(
+        short = 'm',
+        long = "model",
+        value_name = "MODEL_NAME",
+        help = "Specify the model to use (e.g., gpt-4, gpt-3.5-turbo-16k)"
+    )]
+    pub model: Option<String>,
+
+    #[clap(
+        short = 'b',
+        long = "batch",
+        help = "Respond to stdin and exit"
+    )]
+    pub batch: bool,
+
+    #[clap(
+        short = 'l',
+        long = "list-sessions",
+        help = "List the models the user has access to"
+    )]
+    pub list_models: bool,
+
+    #[clap(
+        short = 'p',
+        long = "print-session",
+        value_name = "SESSION_ID",
+        default_value = "last-session",
+        help = "Print a session to stdout, defaulting to the last session",
+    )]
+    pub print_session: String,
+    
+    #[clap(
+        short = 'c',
+        long = "continue",
+        help = "Continue from a specified session file",
+        value_name = "SESSION_ID"
+    )]
+    pub continue_session: Option<String>,
+
+    #[clap(
+        short = 'i',
+        long,
+        value_name = "PATH",
+        help = "Import a file or directory for GPT to process"
+    )]
+    pub ingest: Option<OsString>,
+}
+
 
 // GPT Connector types
 #[derive(Debug, Deserialize, Clone)]
@@ -82,10 +143,12 @@ pub struct Message {
 
 // chunkifier types
 
+#[allow(dead_code)]
 pub struct UrlData {
     urls: String,
     data: String
 }
+#[allow(dead_code)]
 pub struct FilePathData {
     file_paths: String,
     data: String

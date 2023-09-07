@@ -31,7 +31,6 @@ async fn select_model(
                 response.data.iter().map(|model| model.id.clone()).collect();
             let available_models = ModelsList {
                 default: GPT4.clone(),
-                // default: GPT3_TURBO.clone(),
                 fallback: GPT3_TURBO.clone(),
             };
             // Check if the default model is in the list

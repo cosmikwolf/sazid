@@ -1,60 +1,8 @@
 use clap::Parser;
 use sazid::types::*;
 use sazid::ui::UI;
-use std::ffi::OsString;
 use tokio::runtime::Runtime;
 use toml;
-
-#[derive(Parser)]
-#[clap(
-    version = "1.0",
-    author = "Tenkai Kariya",
-    about = "Interactive chat with GPT"
-)]
-pub struct Opts {
-    #[clap(short = 'n', long = "new", help = "Start a new chat session")]
-    pub new: bool,
-
-    #[clap(
-        short = 'm',
-        long,
-        value_name = "MODEL_NAME",
-        help = "Specify the model to use (e.g., gpt-4, gpt-3.5-turbo-16k)"
-    )]
-    pub model: Option<String>,
-
-    #[clap(
-        short = 'l',
-        long = "list-sessions",
-        help = "List the models the user has access to"
-    )]
-    pub list_models: bool,
-
-    #[clap(
-        short = 'p',
-        long = "print-session",
-        value_name = "SESSION_ID",
-        default_value = "last-session",
-        help = "Print a session to stdout, defaulting to the last session",
-    )]
-    pub print_session: String,
-    
-    #[clap(
-        short = 'c',
-        long = "continue",
-        help = "Continue from a specified session file",
-        value_name = "SESSION_ID"
-    )]
-    pub continue_session: Option<String>,
-
-    #[clap(
-        short = 'i',
-        long,
-        value_name = "PATH",
-        help = "Import a file or directory for GPT to process"
-    )]
-    pub ingest: Option<OsString>,
-}
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let rt = Runtime::new().unwrap();
@@ -70,7 +18,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let session_manager = SessionManager::new(settings, session_data, rt);
 
     // Initialize the user interface
-    let mut ui = UI::init(session_manager);
+    let mut ui = UI::init(session_manager, opts.clone());
 
     // Handle model selection based on CLI flag
     if let Some(model_name) = &opts.model {
@@ -78,7 +26,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         ui.display_general_message(format!("Using model: {}", model_name));
     }
 
-    ui.run_interface_loop().unwrap();
+    ui.run_interface_loop(opts.batch).unwrap();
     /*
     // // Handle ingesting text from stdin
     // match opts.stdin {

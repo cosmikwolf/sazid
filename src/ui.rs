@@ -9,21 +9,24 @@ use crossterm::{
 use std::io::{self, Read, Write};
 use std::path::PathBuf;
 use crate::types::SessionManager;
+use crate::types::Opts;
 
 pub struct UI {
     stdout: std::io::Stdout,
     user_input: String,
     session_manager: SessionManager,
+    opts: Opts
 }
 
 impl UI {
-    pub fn init(session_manager: SessionManager) -> Self {
+    pub fn init(session_manager: SessionManager, opts: Opts) -> Self {
         let stdout = io::stdout();
         let user_input = Self::get_piped_input();
         let mut ui = Self {
             stdout,
             user_input,
-            session_manager
+            session_manager,
+            opts
         };
         ui.setup().unwrap();
         ui
@@ -57,23 +60,26 @@ impl UI {
     }
 
     fn execute_input(&mut self) -> io::Result<()> {
-        self.stdout.execute(SetForegroundColor(Color::Green))?;
         let chat_choices = self.session_manager.submit_input(&self.user_input);
+
         for choice in chat_choices.unwrap() {
             self.display_chat_message(choice.message.role.clone(), choice.message.content.clone().unwrap_or_default());
         }
-        self.stdout.execute(SetForegroundColor(Color::Reset))?;
         self.stdout.flush().unwrap();
         Ok(())
     }
 
     // Display a message to the user.
     pub fn display_chat_message(&mut self, role: Role, message: String) {
-        match role {
-            Role::User => write!(self.stdout, "You: {}\n\r", message.blue()),
-            Role::Assistant => write!(self.stdout, "GPT: {}\n\r", message.green()),
-            _ => Ok(())
-        }.unwrap();
+        if self.opts.batch {
+            write!(self.stdout, "{}\n\r", message).unwrap();
+        } else {
+            match role {
+                Role::User => write!(self.stdout, "You: {}\n\r", message.blue()),
+                Role::Assistant => write!(self.stdout, "GPT: {}\n\r", message.green()),
+                _ => Ok(())
+            }.unwrap();
+        }
         self.stdout.flush().unwrap()
     }
 
@@ -129,7 +135,7 @@ impl UI {
         write!(self.stdout, "Import process completed.").unwrap();
     }
 
-    pub fn run_interface_loop(&mut self) -> io::Result<()> {
+    pub fn run_interface_loop(&mut self,  batch: bool) -> io::Result<()> {
         let mut exit_flag = false;
 
         loop {
@@ -137,9 +143,11 @@ impl UI {
             // check piped input for data
             if !self.user_input.is_empty() {
                 self.execute_input().unwrap();
-                self.stdout.execute(SetForegroundColor(Color::Blue))?;
-                write!(self.stdout, "Piped input: {}\r\n", self.user_input)?;
                 self.user_input.clear();
+                if batch {
+                    self.teardown().unwrap();
+                    return Ok(())
+                }
                 continue;
             } else {
                 self.display_prompt()?;
@@ -170,7 +178,6 @@ impl UI {
                             ..
                         } => {
                             self.user_input.push(c);
-                            self.stdout.execute(SetForegroundColor(Color::Blue))?;
                             write!(self.stdout, "{}", c)?;
                             self.stdout.flush()?;
                         }
@@ -197,7 +204,7 @@ impl UI {
                 break;
             }
 
-            self.execute_input();
+            self.execute_input().unwrap();
             self.user_input.clear();
         }
 
