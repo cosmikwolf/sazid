@@ -50,7 +50,7 @@ impl Chunkifier {
     }
 
     fn chunkify_parsed_input(ingest_data: IngestData, tokens_per_chunk: usize) -> Result<Vec<String>, ChunkifierError> {
-        let mut full_text = ingest_data.text;   
+        let full_text = ingest_data.text;   
         // ingest_data.urls.iter().for_each(|url| {
         //     let url_data = UrlData {
         //         urls: url.to_string(),

@@ -1,18 +1,14 @@
 use async_openai::types::Role;
 use owo_colors::OwoColorize;
 use crossterm::{
-    cursor::{MoveTo, Hide, Show},
     event::{self, KeyCode, KeyEvent, KeyModifiers},
-    execute,
     ExecutableCommand,
     style::{Color, Print, SetForegroundColor},
-    terminal::{self, ClearType, EnterAlternateScreen, LeaveAlternateScreen},
     tty::IsTty,
 };
 use std::io::{self, Read, Write};
 use std::path::PathBuf;
 use crate::types::SessionManager;
-
 
 pub struct UI {
     stdout: std::io::Stdout,
@@ -264,9 +260,6 @@ pub enum ImportStatus {
 
 #[cfg(test)]
 mod tests {
-    use crate::types::*;
-    use super::*;
-
     #[tokio::test]
     async fn test_ui_display_message() {
         // let mut session_data: Option<Session> = None;

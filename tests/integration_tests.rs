@@ -9,11 +9,8 @@ mod integration_tests {
     use std::fs::{self, File};
     use std::path::Path;
     use async_openai::types::Role;
-    use sazid::chunkifier::Chunkifier;
-    use sazid::gpt_connector::{GPTSettings, GPTConnector};
-    use sazid::session_manager::SessionManager;
+    use sazid::types::*;
     use sazid::utils;
-    use serde::{Serialize, Serializer};
     use tempfile::tempdir;
     use async_openai::types::ChatChoice;
     use async_openai::types::ChatCompletionResponseMessage;

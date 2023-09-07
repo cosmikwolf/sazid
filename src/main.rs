@@ -65,7 +65,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Initialize the SessionManager.
 
-    let mut session_data: Option<Session> = None;
+    let session_data: Option<Session> = None;
 
     let session_manager = SessionManager::new(settings, session_data, rt);
 
