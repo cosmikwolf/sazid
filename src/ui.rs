@@ -3,7 +3,7 @@ use owo_colors::OwoColorize;
 use crossterm::{
     event::{self, KeyCode, KeyEvent, KeyModifiers},
     ExecutableCommand,
-    style::{Color, Print, SetForegroundColor},
+    style::Print,
     tty::IsTty,
 };
 use std::io::{self, Read, Write};

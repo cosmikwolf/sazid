@@ -1,31 +1,31 @@
-use tiktoken_rs::cl100k_base;
+use crate::errors::ChunkifierError;
 use crate::session_manager::INGESTED_DIR;
+use crate::types::*;
 use crate::utils;
 use std::fs::{self, File};
 use std::io::Read;
-use std::path::{PathBuf, Path};
-use crate::errors::ChunkifierError;
-use crate::types::*;
+use std::path::{Path, PathBuf};
+use tiktoken_rs::cl100k_base;
 use url;
 
 impl Chunkifier {
-
     // takes input text and returns chunks with all data extracted
-    pub fn parse_input(input: &str, tokens_per_chunk: usize) -> Result<Vec<String>, ChunkifierError> {
+    pub fn parse_input(
+        input: &str,
+        tokens_per_chunk: usize,
+        model_max_tokens: usize,
+    ) -> Result<Vec<String>, ChunkifierError> {
         let ingest_data = Self::categorize_input(input)?;
         let chunks = Self::chunkify_parsed_input(ingest_data, tokens_per_chunk).unwrap();
-        if Self::exceeds_max_token_limit(&chunks, tokens_per_chunk) {
-            return Err(ChunkifierError::Other("Input exceeds max token limit".to_string()));
-        } else {
-            return Ok(chunks);
-        }
+        Self::check_token_count_model_limit(&chunks, model_max_tokens).unwrap();
+        Ok(chunks)
     }
 
     fn categorize_input(input: &str) -> Result<IngestData, ChunkifierError> {
         let mut ingest_data = IngestData {
             text: input.to_string(),
             urls: Vec::new(),
-            file_paths: Vec::new()
+            file_paths: Vec::new(),
         };
         let tokens: Vec<&str> = input.split_whitespace().collect();
         for token in tokens {
@@ -49,8 +49,11 @@ impl Chunkifier {
         Ok(ingest_data)
     }
 
-    fn chunkify_parsed_input(ingest_data: IngestData, tokens_per_chunk: usize) -> Result<Vec<String>, ChunkifierError> {
-        let full_text = ingest_data.text;   
+    fn chunkify_parsed_input(
+        ingest_data: IngestData,
+        tokens_per_chunk: usize,
+    ) -> Result<Vec<String>, ChunkifierError> {
+        let full_text = ingest_data.text;
         // ingest_data.urls.iter().for_each(|url| {
         //     let url_data = UrlData {
         //         urls: url.to_string(),
@@ -65,31 +68,45 @@ impl Chunkifier {
     }
 
     /// an algorithm that will determine if a Vec<String> string exceeds a model_max_tokens limit
-    pub fn exceeds_max_token_limit(chunks: &Vec<String>, model_max_tokens: usize) -> bool {
+    pub fn check_token_count_model_limit(
+        chunks: &Vec<String>,
+        model_max_tokens: usize,
+    ) -> Result<(), ChunkifierError> {
         let bpe = cl100k_base().unwrap();
         let mut token_count = 0;
         for chunk in chunks {
             token_count += bpe.encode_with_special_tokens(chunk).len();
         }
-        token_count > model_max_tokens
+        if token_count > model_max_tokens {
+            return Err(ChunkifierError::Other(format!(
+                "Input exceeds max token limit: {} tokens",
+                token_count
+            )));
+        } else {
+            Ok(())
+        }
     }
 
     // write a function that determines if any words in a string are a URL, file path, or text
-    // 
-    
+    //
+
     /// This function determines if the input is a file path or just a block of text.
     /// If the input is a valid file path, it will chunkify the contents of the file.
     /// Otherwise, it will treat the input as plain text and chunkify it directly.
-    pub fn chunkify_input(input: &str, tokens_per_chunk: usize) -> Result<Vec<String>, ChunkifierError> {
+    pub fn chunkify_input(
+        input: &str,
+        tokens_per_chunk: usize,
+    ) -> Result<Vec<String>, ChunkifierError> {
         let path = PathBuf::try_from(input);
         // Check if the input can be treated as a file path
-        
+
         if let Ok(p) = path {
             if p.is_file() {
                 // If it's a file, chunkify its contents
                 return Self::chunkify_file(&p, tokens_per_chunk);
             } else if p.is_dir() {
-                let dirchunks = p.read_dir()
+                let dirchunks = p
+                    .read_dir()
                     .map_err(|_| ChunkifierError::Other("Failed to read directory".to_string()))
                     .and_then(|dir| {
                         dir.map(|entry| entry.map(|e| e.path()))
@@ -104,21 +121,27 @@ impl Chunkifier {
                             .map(|path| Self::chunkify_file(path, tokens_per_chunk))
                             .collect::<Result<Vec<_>, ChunkifierError>>()
                     })
-                    .map(|chunks| chunks.into_iter().flatten().collect()).unwrap();
+                    .map(|chunks| chunks.into_iter().flatten().collect())
+                    .unwrap();
                 return Ok(dirchunks);
             } else {
                 // if it is a path, but its not a file or a directory, then it is a URL
                 println!("URL detected, but not implemented. ingesting as text");
-                return Ok::<Vec<std::string::String>, ChunkifierError>(Self::chunkify_text(input, tokens_per_chunk));
+                return Ok::<Vec<std::string::String>, ChunkifierError>(Self::chunkify_text(
+                    input,
+                    tokens_per_chunk,
+                ));
             }
         } else {
             // If not a file path, chunkify the input text directly
-            return Ok::<Vec<std::string::String>, ChunkifierError>(Self::chunkify_text(input, tokens_per_chunk));
+            return Ok::<Vec<std::string::String>, ChunkifierError>(Self::chunkify_text(
+                input,
+                tokens_per_chunk,
+            ));
         };
     }
 
     /// Ingest a file by chunkifying its contents  
-
 
     /// Chunk the content of a file based on its type (PDF, text, etc.).
     /// Additionally, copy the file to the 'ingested' directory after chunking.
@@ -130,14 +153,12 @@ impl Chunkifier {
         let chunks = Self::chunkify_text(&content, tokens_per_chunk);
         utils::ensure_directory_exists(INGESTED_DIR).unwrap();
         if file_path.is_file() {
-            let dest_path = 
-            Path::new(INGESTED_DIR)
-                .join(file_path.file_name().unwrap());
+            let dest_path = Path::new(INGESTED_DIR).join(file_path.file_name().unwrap());
             fs::copy(&file_path, &dest_path)?;
         }
         Ok(chunks)
     }
-    
+
     fn chunkify_text(text: &str, tokens_per_chunk: usize) -> Vec<String> {
         let tokens: Vec<&str> = text.split_whitespace().collect();
         let bpe = cl100k_base().unwrap();
@@ -188,20 +209,14 @@ impl Chunkifier {
         if Self::is_pdf_file(file_path) {
             PdfText::from_pdf(file_path)
                 .and_then(|pdf_text| pdf_text.get_text())
-                .map_err(|_| {
-                    ChunkifierError::Other("Failed to extract text from PDF".to_string())
-                })
+                .map_err(|_| ChunkifierError::Other("Failed to extract text from PDF".to_string()))
         } else if Self::is_binary_file(file_path) {
-            Err(ChunkifierError::Other(
-                "Binary file detected".to_string(),
-            ))
+            Err(ChunkifierError::Other("Binary file detected".to_string()))
         } else {
-            fs::read_to_string(file_path).map_err(|_| {
-                ChunkifierError::Other("Failed to read text file".to_string())
-            })
+            fs::read_to_string(file_path)
+                .map_err(|_| ChunkifierError::Other("Failed to read text file".to_string()))
         }
     }
-
 }
 #[cfg(test)]
 mod tests {
@@ -221,7 +236,10 @@ mod tests {
         fn test_parse_input() {
             let input = "https://www.google.com/ src/main.rs this is some text";
             let ingest_data = Chunkifier::categorize_input(input).unwrap();
-            assert_eq!(ingest_data.text, "https://www.google.com/ src/main.rs this is some text");
+            assert_eq!(
+                ingest_data.text,
+                "https://www.google.com/ src/main.rs this is some text"
+            );
             assert_eq!(ingest_data.urls, vec!["https://www.google.com/"]);
             assert_eq!(ingest_data.file_paths, vec![PathBuf::from("src/main.rs")]);
         }

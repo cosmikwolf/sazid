@@ -1,5 +1,6 @@
 use crate::types::Model;
 
+pub const CHUNK_TOKEN_LIMIT: u32 = 4096u32;
 lazy_static! {
     pub static ref GPT3_TURBO_16K: Model = Model {
         name: "gpt-3.5-turbo-16k".to_string(),

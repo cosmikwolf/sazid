@@ -4,6 +4,7 @@ use tokio::runtime::Runtime;
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
+use crate::consts::CHUNK_TOKEN_LIMIT;
 use crate::errors::SessionManagerError;
 use crate::types::*;
 use crate::utils;
@@ -156,7 +157,7 @@ impl SessionManager {
     }
     
     pub fn submit_input(&mut self, input: &String) -> Result<Vec<ChatChoice>, SessionManagerError> {
-        let chunks = Chunkifier::parse_input(&input, self.gpt_connector.model.token_limit as usize).unwrap();
+        let chunks = Chunkifier::parse_input(&input, CHUNK_TOKEN_LIMIT as usize, self.gpt_connector.model.token_limit as usize).unwrap();
         let request = self.construct_request_and_cache(chunks);
         // Send each chunk to the GPT API using the GPTConnector.
         
