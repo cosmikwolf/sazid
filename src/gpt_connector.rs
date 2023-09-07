@@ -1,35 +1,15 @@
+use crate::consts::*;
 use crate::errors::GPTConnectorError;
+use crate::types::*;
 pub use async_openai::types::Role;
 use async_openai::types::{
     CreateChatCompletionRequest, CreateChatCompletionResponse,
 };
 use async_openai::{config::OpenAIConfig, Client};
-use serde::{Deserialize, Serialize};
 
 use backoff::ExponentialBackoffBuilder;
 use std::env;
-struct ModelsList {
-    default: Model,
-    fallback: Model,
-}
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct Model {
-    pub(crate) name: String,
-    pub(crate) endpoint: String,
-    pub token_limit: u32,
-}
-lazy_static! {
-    pub static ref GPT3_TURBO: Model = Model {
-        name: "gpt-3.5-turbo".to_string(),
-        endpoint: "https://api.openai.com/v1/completions".to_string(),
-        token_limit: 4096,
-    };
-    pub static ref GPT4: Model = Model {
-        name: "gpt-4".to_string(),
-        endpoint: "https://api.openai.com/v1/completions".to_string(),
-        token_limit: 4096,
-    };
-}
+
 pub fn lookup_model_by_name(model_name: &str) -> Result<Model, GPTConnectorError> {
     let models = vec![GPT3_TURBO.clone(), GPT4.clone()];
     for model in models {
@@ -75,27 +55,6 @@ async fn select_model(
     }
 }
 
-#[derive(Debug, Deserialize, Clone)]
-pub struct GPTSettings {
-    pub default: ModelConfig,
-    pub fallback: ModelConfig,
-    pub load_session: Option<String>,
-    pub save_session: Option<String>,
-}
-#[derive(Debug, Deserialize, Clone)]
-pub struct ModelConfig {
-    pub name: String,
-}
-#[derive(Clone)]
-pub struct GPTConnector {
-    client: Client<OpenAIConfig>,
-    pub(crate) model: Model,
-}
-
-pub struct GPTResponse {
-    pub role: Role,
-    pub content: String,
-}
 
 impl GPTConnector {
     pub async fn new(settings: &GPTSettings) -> GPTConnector {

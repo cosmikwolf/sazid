@@ -1,36 +1,15 @@
 use async_openai::types::{Role, CreateChatCompletionRequest, ChatChoice};
 use async_openai::types::{ChatCompletionRequestMessage, CreateChatCompletionResponse};
-use serde::{Deserialize, Serialize};
 use tokio::runtime::Runtime;
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
 use crate::errors::SessionManagerError;
-use crate::gpt_connector::{GPTConnector, GPTSettings};
-use crate::gpt_connector::Model;
-// use crate::ui::UI;
+use crate::types::*;
 use crate::utils;
-use crate::chunkifier::Chunkifier;
-use crate::types::Message;
 
 pub const SESSIONS_DIR: &str = "data/sessions";
 pub const INGESTED_DIR: &str = "data/ingested";
-
-#[derive(Debug, Serialize, Deserialize)]
-#[derive(Clone)]
-pub struct ChatInteraction {
-    pub request: Vec<ChatCompletionRequestMessage>,
-    pub response: CreateChatCompletionResponse,
-}
-
-
-#[derive(Debug, Serialize, Deserialize)]
-#[derive(Clone)]
-pub struct Session {
-    pub session_id: String,
-    pub model: Model,
-    pub interactions: Vec<ChatInteraction>,
-}
 
 impl Session {
     pub fn new(session_id: String, model: Model) -> Self {
@@ -40,19 +19,6 @@ impl Session {
             interactions: Vec::new(),
         }
     }
-}
-#[derive(Debug, Serialize, Deserialize)]
-pub struct IngestedData {
-    session_id: String,
-    file_path: String,
-    chunk_num: u32,
-    content: String,
-}
-pub struct SessionManager {
-    gpt_connector: GPTConnector,
-    cached_request: Option<Vec<ChatCompletionRequestMessage>>,
-    pub session_data: Session,
-    rt: Runtime,
 }
 
 impl SessionManager {

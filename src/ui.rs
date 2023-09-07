@@ -11,8 +11,8 @@ use crossterm::{
 };
 use std::io::{self, Read, Write};
 use std::path::PathBuf;
+use crate::types::SessionManager;
 
-use crate::session_manager::{self, SessionManager}; 
 
 pub struct UI {
     stdout: std::io::Stdout,
@@ -264,8 +264,7 @@ pub enum ImportStatus {
 
 #[cfg(test)]
 mod tests {
-    use crate::{session_manager::Session, gpt_connector::GPTSettings};
-
+    use crate::types::*;
     use super::*;
 
     #[tokio::test]

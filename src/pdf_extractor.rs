@@ -3,44 +3,11 @@ use lopdf::Object;
 use std::collections::BTreeMap;
 use std::path::Path;
 use std::error::Error;
-
-
-
-
-pub struct PdfText {
-    pub text: BTreeMap<u32, Vec<String>>, // Key is page number
-    pub errors: Vec<String>,
-}
-
-static IGNORE: &[&str] = &[
-    "Length",
-    "BBox",
-    "FormType",
-    "Matrix",
-    "Resources",
-    "Type",
-    "XObject",
-    "Subtype",
-    "Filter",
-    "ColorSpace",
-    "Width",
-    "Height",
-    "BitsPerComponent",
-    "Length1",
-    "Length2",
-    "Length3",
-    "PTEX.FileName",
-    "PTEX.PageNumber",
-    "PTEX.InfoDict",
-    "FontDescriptor",
-    "ExtGState",
-    "Font",
-    "MediaBox",
-    "Annot",
-];
+use crate::consts::*;
+use crate::types::*;
 
 fn filter_func(object_id: (u32, u16), object: &mut Object) -> Option<((u32, u16), Object)> {
-    if IGNORE.contains(&object.type_name().unwrap_or_default()) {
+    if PDF_IGNORE.contains(&object.type_name().unwrap_or_default()) {
         return None;
     }
     if let Ok(d) = object.as_dict_mut() {

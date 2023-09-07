@@ -1,27 +1,12 @@
-use shellexpand::full;
 use tiktoken_rs::cl100k_base;
-use crate::pdf_extractor::PdfText;
 use crate::session_manager::INGESTED_DIR;
 use crate::utils;
 use std::fs::{self, File};
 use std::io::Read;
 use std::path::{PathBuf, Path};
 use crate::errors::ChunkifierError;
+use crate::types::*;
 use url;
-struct UrlData {
-    urls: String,
-    data: String
-}
-struct FilePathData {
-    file_paths: String,
-    data: String
-}
-struct IngestData {
-    text: String,
-    urls: Vec<String>,
-    file_paths: Vec<PathBuf>
-}
-pub struct Chunkifier;
 
 impl Chunkifier {
 

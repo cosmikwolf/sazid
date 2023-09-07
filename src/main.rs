@@ -1,13 +1,7 @@
-use async_openai::types::Role;
 use clap::Parser;
-use sazid::chunkifier::Chunkifier;
-use sazid::gpt_connector::GPTSettings;
-use sazid::session_manager::Session;
-use sazid::session_manager::SessionManager;
+use sazid::types::*;
 use sazid::ui::UI;
 use std::ffi::OsString;
-use std::fs;
-use std::path::PathBuf;
 use tokio::runtime::Runtime;
 use toml;
 
