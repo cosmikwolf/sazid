@@ -1,20 +1,18 @@
+use std::path::PathBuf;
+
 use clap::Parser;
 use sazid::types::*;
 use sazid::ui::UI;
 use tokio::runtime::Runtime;
-use toml;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let rt = Runtime::new().unwrap();
 
     let opts: Opts = Opts::parse();
-    let settings: GPTSettings =
-        toml::from_str(std::fs::read_to_string("Settings.toml").unwrap().as_str()).unwrap();
+    let settings = GPTSettings::load(PathBuf::from("Settings.toml"));
 
     // Initialize the SessionManager.
-
     let session_data: Option<Session> = None;
-
     let session_manager = SessionManager::new(settings, session_data, rt);
 
     // Initialize the user interface

@@ -4,6 +4,8 @@ use async_openai::{types::{Role, ChatCompletionRequestMessage, CreateChatComplet
 use clap::Parser;
 use serde::{Deserialize, Serialize};
 use tokio::runtime::Runtime;
+use toml;
+use crate::consts::*;
 
 // options
 #[derive(Parser, Clone)]
@@ -66,18 +68,36 @@ pub struct Opts {
 
 
 // GPT Connector types
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Deserialize, Clone, Default)]
 pub struct GPTSettings {
-    pub default: ModelConfig,
-    pub fallback: ModelConfig,
+    pub default: Model,
+    pub fallback: Model,
     pub load_session: Option<String>,
     pub save_session: Option<String>,
+}
+
+impl GPTSettings {
+    fn default() -> Self {
+        GPTSettings {
+            default: GPT4.clone(),
+            fallback: GPT3_TURBO_16K.clone(),
+            load_session: None,
+            save_session: None,
+        }
+    }
+
+    pub fn load(path: std::path::PathBuf) -> Self {
+        match toml::from_str(std::fs::read_to_string(path).unwrap().as_str()) {
+            Ok(settings) => settings,
+            Err(_) => GPTSettings::default(),
+        }
+    }
 }
 #[derive(Debug, Deserialize, Clone)]
 pub struct ModelConfig {
     pub name: String,
 }
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, Default)]
 pub struct Model {
     pub(crate) name: String,
     pub(crate) endpoint: String,
