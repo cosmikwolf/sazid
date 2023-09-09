@@ -144,9 +144,7 @@ impl SessionManager {
         }
         Ok(sessions)
     }
-
     
-
     fn get_request_messages(&self) -> Vec<ChatCompletionRequestMessage> {
         self.session_data
             .interactions

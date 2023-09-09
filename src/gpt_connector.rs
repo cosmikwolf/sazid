@@ -3,11 +3,12 @@ use crate::errors::GPTConnectorError;
 use crate::types::*;
 pub use async_openai::types::Role;
 use async_openai::types::{
-    CreateChatCompletionRequest, CreateChatCompletionResponse,
+    CreateChatCompletionRequest, CreateChatCompletionResponse, ChatCompletionFunctions
 };
 use async_openai::{config::OpenAIConfig, Client};
 
 use backoff::ExponentialBackoffBuilder;
+use serde_json::json;
 use std::env;
 
 pub fn lookup_model_by_name(model_name: &str) -> Result<Model, GPTConnectorError> {
@@ -84,6 +85,23 @@ impl GPTConnector {
     }
     pub fn set_gpt_model(&mut self, model: Model) {
         self.model = model;
+    }
+
+    fn chat_fn_list_files() -> ChatCompletionFunctions {
+        ChatCompletionFunctions {
+            name: "list_files".to_string(),
+            description: Some("List files in a directory.".to_string()),
+            parameters: Some(json!({
+                "type": "object",
+                "parameters": {
+                    "path": {
+                        "type": "string",
+                        "description": "The path to the directory to list files in."
+                    }
+                },
+                "required": ["path"]
+            }))
+        }
     }
 
 }

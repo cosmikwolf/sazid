@@ -1,0 +1,14 @@
+[[command]]
+name = "list_files"
+description = "List files in a directory."
+required = ["path"]
+[[command.parameters]]
+name = "path"
+description = "The path to the directory to list files in."
+
+[[command]]
+name = "cargo_check"
+description = "Run cargo check to get any compiler errors."
+[[command.parameters]]
+description = "The path to the directory to list files in."
+required = ["path"]

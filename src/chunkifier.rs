@@ -27,23 +27,22 @@ impl Chunkifier {
             urls: Vec::new(),
             file_paths: Vec::new(),
         };
-        let tokens: Vec<&str> = input.split_whitespace().collect();
-        for token in tokens {
-            if let Ok(url) = url::Url::parse(token) {
+        let words: Vec<&str> = input.split_whitespace().collect();
+        for word in words {
+            if let Ok(url) = url::Url::parse(word) {
                 ingest_data.urls.push(url.to_string());
                 continue;
             } else {
-                let path = PathBuf::try_from(token);
+                let path = PathBuf::try_from(word);
                 if let Ok(p) = path {
                     if p.is_file() {
                         ingest_data.file_paths.push(p);
                     } else if p.is_dir() {
                         return Err(ChunkifierError::Other("Directories are not supported".to_string()));
                     } else {
-                        // this condition should not be reached
-                        return Err(ChunkifierError::Other("File import error".to_string()));
+                        // its not a file or a directory, so it must be text
                     }
-                };
+                }
             }
         }
         Ok(ingest_data)
