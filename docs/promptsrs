@@ -1,0 +1,10 @@
+// notes about how 
+
+"{ write me a rust command line program  \
+it must use the clap crate to parse command line arguments \
+it must use the crate tiktoken-rs to count the number of tokens in text \
+the text is either passed in as a file with a -f argument,  \
+or passed in via stdin \
+it must have an argument that allows the user to select the encoding for tiktoken-rs \
+it must use the c100k_base encoding by default}"
+
