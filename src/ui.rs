@@ -188,7 +188,7 @@ impl UI {
                             if self.user_input.trim() == "exit" || self.user_input.trim() == "quit" {
                                 exit_flag = true;
                             }
-                            if self.user_input.trim().len() > 0 {
+                            if !self.user_input.trim().is_empty() {
                                 write!(self.stdout, "\n\r")?;
                                 break;
                             }

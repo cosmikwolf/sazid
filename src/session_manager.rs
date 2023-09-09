@@ -151,13 +151,12 @@ impl SessionManager {
         self.session_data
             .interactions
             .iter()
-            .map(|interaction| interaction.request.clone())
-            .flatten()
+            .flat_map(|interaction| interaction.request.clone())
             .collect()
     }
     
     pub fn submit_input(&mut self, input: &String) -> Result<Vec<ChatChoice>, SessionManagerError> {
-        let chunks = Chunkifier::parse_input(&input, CHUNK_TOKEN_LIMIT as usize, self.gpt_connector.model.token_limit as usize).unwrap();
+        let chunks = Chunkifier::parse_input(input, CHUNK_TOKEN_LIMIT as usize, self.gpt_connector.model.token_limit as usize).unwrap();
         let request = self.construct_request_and_cache(chunks);
         // Send each chunk to the GPT API using the GPTConnector.
         
@@ -225,12 +224,12 @@ impl SessionManager {
     // a function that takes an a string input,
     // it will chunkify with Chunkifier::chunkify_input and return a vector of strings
     pub fn parse_input(&self, input:String) -> Vec<String> {
-        let chunks = Chunkifier::chunkify_input(
+        
+        Chunkifier::chunkify_input(
             &input,
             self.session_data.model.token_limit as usize,
         )
-        .unwrap();
-        chunks
+        .unwrap()
     }
     
     
@@ -242,7 +241,8 @@ impl SessionManager {
         // Send each chunk to the GPT API using the GPTConnector.
         let response = self.gpt_connector.send_request(request.clone()).await?;
         // After successful ingestion, copy the file to the 'ingested' directory.
-        Ok(self.add_interaction_for_cached_request(response.clone()))
+        self.add_interaction_for_cached_request(response.clone());
+        Ok(())
     }
 }
 

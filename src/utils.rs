@@ -17,7 +17,7 @@ pub fn generate_session_id() -> String {
 pub fn ensure_directory_exists(dir: &str) -> io::Result<()> {
     let dir_path = Path::new(dir);
     if !dir_path.exists() {
-        fs::create_dir_all(&dir_path)?;
+        fs::create_dir_all(dir_path)?;
     }
     Ok(())
 }

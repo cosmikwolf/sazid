@@ -38,10 +38,10 @@ impl Chunkifier {
                     if p.is_file() {
                         ingest_data.file_paths.push(p);
                     } else if p.is_dir() {
-                        ChunkifierError::Other("Directories are not supported".to_string());
+                        return Err(ChunkifierError::Other("Directories are not supported".to_string()));
                     } else {
                         // this condition should not be reached
-                        ChunkifierError::Other("File import error".to_string());
+                        return Err(ChunkifierError::Other("File import error".to_string()));
                     }
                 };
             }
@@ -78,10 +78,10 @@ impl Chunkifier {
             token_count += bpe.encode_with_special_tokens(chunk).len();
         }
         if token_count > model_max_tokens {
-            return Err(ChunkifierError::Other(format!(
+            Err(ChunkifierError::Other(format!(
                 "Input exceeds max token limit: {} tokens",
                 token_count
-            )));
+            )))
         } else {
             Ok(())
         }
@@ -103,7 +103,7 @@ impl Chunkifier {
         if let Ok(p) = path {
             if p.is_file() {
                 // If it's a file, chunkify its contents
-                return Self::chunkify_file(&p, tokens_per_chunk);
+                Self::chunkify_file(&p, tokens_per_chunk)
             } else if p.is_dir() {
                 let dirchunks = p
                     .read_dir()
@@ -134,11 +134,11 @@ impl Chunkifier {
             }
         } else {
             // If not a file path, chunkify the input text directly
-            return Ok::<Vec<std::string::String>, ChunkifierError>(Self::chunkify_text(
+            Ok::<Vec<std::string::String>, ChunkifierError>(Self::chunkify_text(
                 input,
                 tokens_per_chunk,
-            ));
-        };
+            ))
+        }
     }
 
     /// Ingest a file by chunkifying its contents  
@@ -154,7 +154,7 @@ impl Chunkifier {
         utils::ensure_directory_exists(INGESTED_DIR).unwrap();
         if file_path.is_file() {
             let dest_path = Path::new(INGESTED_DIR).join(file_path.file_name().unwrap());
-            fs::copy(&file_path, &dest_path)?;
+            fs::copy(file_path, dest_path)?;
         }
         Ok(chunks)
     }
