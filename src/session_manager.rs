@@ -1,5 +1,6 @@
 use async_openai::types::{Role, CreateChatCompletionRequest, ChatChoice};
 use async_openai::types::{ChatCompletionRequestMessage, CreateChatCompletionResponse};
+use tiktoken_rs::model;
 use tokio::runtime::Runtime;
 use std::fs;
 use std::io;
@@ -13,7 +14,7 @@ pub const SESSIONS_DIR: &str = "data/sessions";
 pub const INGESTED_DIR: &str = "data/ingested";
 
 impl Session {
-    pub fn new(session_id: String, model: Model) -> Self {
+    pub fn new(session_id: String, model:Model) -> Self {
         Self {
             session_id,
             model,
@@ -23,17 +24,19 @@ impl Session {
 }
 
 impl SessionManager {
-    pub fn new(settings: GPTSettings, session_data: Option<Session>, rt: Runtime) -> SessionManager {
-        let gpt_connector = rt.block_on(async { GPTConnector::new(&settings).await});
-        let model = gpt_connector.model.clone();
+    pub fn new(settings: GPTSettings, include_functions:bool, session_data: Option<Session>, rt: Runtime) -> SessionManager {
+        let gpt_connector = GPTConnector::new(settings.clone(), include_functions);
+        let model = rt.block_on( async {gpt_connector.select_model().await}).unwrap();
         match session_data {
             Some(session_data) => Self {
+                include_functions,
                 gpt_connector,
                 cached_request: None,
                 session_data,
                 rt
             },
             None => Self {
+                include_functions,
                 gpt_connector,
                 cached_request: None,
                 session_data: Session::new(utils::generate_session_id(), model),
@@ -42,6 +45,9 @@ impl SessionManager {
         }
     }
 
+    pub fn get_model(&self) -> Model {
+        self.session_data.model.clone()
+    }
     pub fn load_session_data(&mut self, session_data: Session) -> io::Result<()> {
         self.session_data = session_data;
         Ok(())
@@ -154,41 +160,16 @@ impl SessionManager {
     }
     
     pub fn submit_input(&mut self, input: &String) -> Result<Vec<ChatChoice>, SessionManagerError> {
-        let chunks = Chunkifier::parse_input(input, CHUNK_TOKEN_LIMIT as usize, self.gpt_connector.model.token_limit as usize).unwrap();
-        let request = self.construct_request_and_cache(chunks);
-        // Send each chunk to the GPT API using the GPTConnector.
+        let chunks = Chunkifier::parse_input(input, CHUNK_TOKEN_LIMIT as usize, self.session_data.model.token_limit as usize).unwrap();
+        let previous_messages = self.get_request_messages();
+        let request = self.gpt_connector.construct_request(chunks, previous_messages, self.session_data.model.clone());
         
         let response = self.rt.block_on(async { self.gpt_connector.send_request(request).await }).unwrap();
+        
         self.add_interaction_for_cached_request(response.clone());
         Ok(response.choices)
     }
     
-    pub fn construct_request_and_cache(&mut self, content: Vec<String> ) -> CreateChatCompletionRequest {
-        // iterate through the vector of ChatCompletionRequestMessage from the interactions stored in session_data as a clone
-        let mut messages = self.get_request_messages();
-
-        let mut new_messages: Vec<ChatCompletionRequestMessage> = Vec::new();
-        for item in content {
-            let message = ChatCompletionRequestMessage {
-                role: Role::User,
-                content: Some(item),
-                ..Default::default()
-            };
-            messages.push(message.clone());
-            new_messages.push(message);
-        }
-
-        // cache the request so it can be stored in the session data
-        self.cached_request = Some(new_messages);
-
-        // return a new CreateChatCompletionRequest
-        CreateChatCompletionRequest {
-            model: self.gpt_connector.model.name.clone(),
-            messages,
-            ..Default::default()
-        }
-    }
-
     pub fn save_last_session_file_path(&self) {
         utils::ensure_directory_exists(SESSIONS_DIR).unwrap();
         let last_session_path = Path::new(SESSIONS_DIR).join("last_session.txt");
@@ -228,19 +209,6 @@ impl SessionManager {
             self.session_data.model.token_limit as usize,
         )
         .unwrap()
-    }
-    
-    
-    /// This function takes in an input which could be a path to a directory, a path to a file,
-    /// a block of text, or a URL. Depending on the type of input, it processes (or ingests) the
-    /// content by converting it into chunks of text and then sends each chunk to the GPT API.
-    pub async fn handle_ingest(&mut self, chunks: Vec<String>) -> Result<(), SessionManagerError> {
-        let request = self.construct_request_and_cache(chunks);
-        // Send each chunk to the GPT API using the GPTConnector.
-        let response = self.gpt_connector.send_request(request.clone()).await?;
-        // After successful ingestion, copy the file to the 'ingested' directory.
-        self.add_interaction_for_cached_request(response.clone());
-        Ok(())
     }
 }
 

@@ -6,7 +6,6 @@ use std::fs::{self, File};
 use std::io::Read;
 use std::path::{Path, PathBuf};
 use tiktoken_rs::cl100k_base;
-use url;
 
 impl Chunkifier {
     // takes input text and returns chunks with all data extracted
@@ -22,30 +21,32 @@ impl Chunkifier {
     }
 
     fn categorize_input(input: &str) -> Result<IngestData, ChunkifierError> {
-        let mut ingest_data = IngestData {
+        let ingest_data = IngestData {
             text: input.to_string(),
             urls: Vec::new(),
             file_paths: Vec::new(),
         };
-        let words: Vec<&str> = input.split_whitespace().collect();
-        for word in words {
-            if let Ok(url) = url::Url::parse(word) {
-                ingest_data.urls.push(url.to_string());
-                continue;
-            } else {
-                let path = PathBuf::try_from(word);
-                if let Ok(p) = path {
-                    if p.is_file() {
-                        ingest_data.file_paths.push(p);
-                    } else if p.is_dir() {
-                        return Err(ChunkifierError::Other("Directories are not supported".to_string()));
-                    } else {
-                        // its not a file or a directory, so it must be text
-                    }
-                }
-            }
-        }
-        Ok(ingest_data)
+        return Ok(ingest_data);
+        // this code has a bug where any text that shared the name of a local directory results in a directories not supported error. need to just make this an argument -f
+        // let words: Vec<&str> = input.split_whitespace().collect();
+        // for word in words {
+        //     if let Ok(url) = url::Url::parse(word) {
+        //         ingest_data.urls.push(url.to_string());
+        //         continue;
+        //     } else {
+        //         let path = PathBuf::try_from(word);
+        //         if let Ok(p) = path {
+        //             if p.exists() && p.is_file() {
+        //                 ingest_data.file_paths.push(p);
+        //             } else if p.exists() && p.is_dir() {
+        //                 return Err(ChunkifierError::Other(format!("Directories are not supported. path: {:?}", p)));
+        //             } else {
+        //                 // its not a file or a directory, so it must be text
+        //             }
+        //         }
+        //     }
+        // }
+        // Ok(ingest_data)
     }
 
     fn chunkify_parsed_input(

@@ -135,11 +135,10 @@ impl UI {
         write!(self.stdout, "Import process completed.").unwrap();
     }
 
-    pub fn run_interface_loop(&mut self,  batch: bool) -> io::Result<()> {
+    pub fn run_interface_loop(&mut self, batch: bool) -> io::Result<()> {
         let mut exit_flag = false;
 
         loop {
-            
             // check piped input for data
             if !self.user_input.is_empty() {
                 self.execute_input().unwrap();

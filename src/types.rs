@@ -1,4 +1,4 @@
-use std::{path::PathBuf, collections::BTreeMap, ffi::OsString};
+use std::{path::PathBuf, collections::{BTreeMap, HashMap}, ffi::OsString};
 
 use async_openai::{types::{Role, ChatCompletionRequestMessage, CreateChatCompletionResponse}, config::OpenAIConfig, Client};
 use clap::Parser;
@@ -34,6 +34,13 @@ pub struct Opts {
     pub batch: bool,
 
     #[clap(
+        short = 'f',
+        long = "include-functions",
+        help = "Include chat functions"
+    )]
+    pub include_functions: bool,
+
+    #[clap(
         short = 'l',
         long = "list-sessions",
         help = "List the models the user has access to"
@@ -50,8 +57,8 @@ pub struct Opts {
     pub print_session: String,
     
     #[clap(
-        short = 'c',
-        long = "continue",
+        short = 's',
+        long = "session",
         help = "Continue from a specified session file",
         value_name = "SESSION_ID"
     )]
@@ -110,8 +117,9 @@ pub struct ModelsList {
 }
 #[derive(Clone)]
 pub struct GPTConnector {
-    pub client: Client<OpenAIConfig>,
-    pub model: Model,
+    pub settings: GPTSettings,
+    pub include_functions: bool,
+    pub client: Client<OpenAIConfig>
 }
 
 pub struct GPTResponse {
@@ -151,6 +159,7 @@ pub struct IngestedData {
     content: String,
 }
 pub struct SessionManager {
+    pub include_functions: bool,
     pub gpt_connector: GPTConnector,
     pub cached_request: Option<Vec<ChatCompletionRequestMessage>>,
     pub session_data: Session,
@@ -180,24 +189,34 @@ pub struct IngestData {
 }
 pub struct Chunkifier {}
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CommandsFile {
-    pub commands: Vec<Command>
-} 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Debug)]
+pub struct CommandProperty {
+    #[serde(rename = "type")]
+    pub property_type: String,
+    pub description: Option<String>,
+    #[serde(rename = "enum", default)]
+    pub enum_values: Option<Vec<String>>,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct CommandParameters {
+    #[serde(rename = "type")]
+    pub param_type: String,
+    pub required: Vec<String>,
+    pub properties: std::collections::HashMap<String, CommandProperty>,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
 pub struct Command {
     pub name: String,
-    pub description: String,
-    pub parameters: Vec<Properties>,
+    pub description: Option<String>,
+    pub parameters: Option<CommandParameters>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Properties {
-    pub name: String,
-    pub description: String,
-    pub required: bool,
+#[derive(Serialize, Deserialize, Debug)]
+pub struct Commands {
+    pub commands: Vec<Command>,
 }
-
 
 // a display function for Message
 impl std::fmt::Display for Message {
