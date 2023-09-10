@@ -40,7 +40,7 @@ pub fn define_commands() -> Vec<Command> {
                 (
                     "start_line".to_string(),
                     CommandProperty {
-                        property_type: "int".to_string(),
+                        property_type: "number".to_string(),
                         description: Some("line to start read".to_string()),
                         enum_values: None,
                     },
@@ -48,7 +48,7 @@ pub fn define_commands() -> Vec<Command> {
                 (
                     "end_line".to_string(),
                     CommandProperty {
-                        property_type: "int".to_string(),
+                        property_type: "number".to_string(),
                         description: Some("line to end read".to_string()),
                         enum_values: None,
                     },
@@ -80,7 +80,7 @@ pub fn define_commands() -> Vec<Command> {
                 (
                     "start_line".to_string(),
                     CommandProperty {
-                        property_type: "int".to_string(),
+                        property_type: "number".to_string(),
                         description: Some("line to start replace".to_string()),
                         enum_values: None,
                     },
@@ -88,7 +88,7 @@ pub fn define_commands() -> Vec<Command> {
                 (
                     "end_line".to_string(),
                     CommandProperty {
-                        property_type: "int".to_string(),
+                        property_type: "number".to_string(),
                         description: Some("line to end replace".to_string()),
                         enum_values: None,
                     },
@@ -105,12 +105,12 @@ pub fn define_commands() -> Vec<Command> {
         }),
     };
     commands.push(command);
-    let command = Command {
-        name: "cargo check".to_string(),
-        description: Some("run cargo check to discover any compilation errors".to_string()),
-        parameters: None,
-    };
-    commands.push(command);
+    // let command = Command {
+    //     name: "cargo check".to_string(),
+    //     description: Some("run cargo check to discover any compilation errors".to_string()),
+    //     parameters: None,
+    // };
+    // commands.push(command);
     commands
 }
 
@@ -200,8 +200,8 @@ pub fn create_chat_completion_function_args(commands: Vec<Command>) -> Vec<ChatC
 }
 
 pub fn handle_chat_response_function_call(response_choices: Vec<ChatChoice>) -> Option<Vec<ChatCompletionRequestMessage>> {
-    let mut response_string = String::new();
     let mut function_results:Vec<ChatCompletionRequestMessage> = Vec::new();
+    println!("response_choices: {:?}", response_choices);
     for choice in response_choices {
         if let Some(function_call) = choice.message.function_call {
             let function_name = function_call.name;
@@ -235,6 +235,7 @@ pub fn handle_chat_response_function_call(response_choices: Vec<ChatChoice>) -> 
             match output {
                 Some(output) => {
                    function_results.push(ChatCompletionRequestMessage {
+                    name: Some("Sazid".to_string()),
                     role: Role::Function,
                     content: Some(output),
                     ..Default::default()

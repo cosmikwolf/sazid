@@ -84,6 +84,7 @@ impl GPTConnector {
                     Some(mut output) => {
                         let mut new_request = request;
                         new_request.messages.append(&mut output);
+                        println!("Recursing with new request: {:?}", new_request);
                         return Ok(self.send_request(new_request, recusion_depth - 1).await.unwrap());
                     }
                     None => {}
