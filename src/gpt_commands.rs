@@ -1,4 +1,4 @@
-use async_openai::types::{ChatCompletionFunctions, ChatChoice, CreateChatCompletionRequest};
+use async_openai::types::{ChatCompletionFunctions, ChatChoice, CreateChatCompletionRequest, ChatCompletionRequestMessage, Role};
 
 use crate::types::*;
 use std::{collections::HashMap, io::{BufRead, Write}, io::Error};
@@ -199,8 +199,9 @@ pub fn create_chat_completion_function_args(commands: Vec<Command>) -> Vec<ChatC
     chat_completion_functions
 }
 
-pub fn handle_chat_response_function_call(request: CreateChatCompletionRequest, response_choices: Vec<ChatChoice>) -> Option<String> {
+pub fn handle_chat_response_function_call(response_choices: Vec<ChatChoice>) -> Option<Vec<ChatCompletionRequestMessage>> {
     let mut response_string = String::new();
+    let mut function_results:Vec<ChatCompletionRequestMessage> = Vec::new();
     for choice in response_choices {
         if let Some(function_call) = choice.message.function_call {
             let function_name = function_call.name;
@@ -233,14 +234,18 @@ pub fn handle_chat_response_function_call(request: CreateChatCompletionRequest, 
             }.unwrap();
             match output {
                 Some(output) => {
-                   response_string.push_str(&output); 
+                   function_results.push(ChatCompletionRequestMessage {
+                    role: Role::Function,
+                    content: Some(output),
+                    ..Default::default()
+                });
                 }
                 None => {}
             }
         }
     }
-    if response_string.len() > 0 {
-        Some(response_string)
+    if function_results.len() > 0 {
+        Some(function_results)
     } else {
         None
     }

@@ -6,7 +6,7 @@ use async_openai::types::{
     CreateChatCompletionRequest, CreateChatCompletionResponse, ChatCompletionFunctions, CreateEmbeddingResponse, CreateEmbeddingRequestArgs, ChatChoice, ChatCompletionRequestMessage
 };
 use async_openai::{config::OpenAIConfig, Client};
-
+use async_recursion::async_recursion;
 use backoff::ExponentialBackoffBuilder;
 use std::env;
 
@@ -21,6 +21,7 @@ pub fn lookup_model_by_name(model_name: &str) -> Result<Model, GPTConnectorError
 }
 
 impl GPTConnector {
+
     pub fn new(settings: GPTSettings, include_functions: bool) -> GPTConnector {
         let api_key: String = env::var("OPENAI_API_KEY").expect("OPENAI_API_KEY not set");
         let openai_config = OpenAIConfig::new().with_api_key(api_key);
@@ -64,18 +65,29 @@ impl GPTConnector {
         }
     }
     
-    
+    #[async_recursion]
     pub async fn send_request(
         &self,
         request: CreateChatCompletionRequest,
+        recusion_depth: u32,
     ) -> Result<CreateChatCompletionResponse, GPTConnectorError> {
-
         // Make the API call
         let response_result = self.client.chat().create(request.clone()).await;
 
         match response_result {
             Ok(response) => {
-                crate::gpt_commands::handle_chat_response_function_call(request, response.choices.clone());
+                if recusion_depth <= 0 {
+                    return Ok(response);
+                }
+                let output = crate::gpt_commands::handle_chat_response_function_call(response.choices.clone());
+                match output {
+                    Some(mut output) => {
+                        let mut new_request = request;
+                        new_request.messages.append(&mut output);
+                        return Ok(self.send_request(new_request, recusion_depth - 1).await.unwrap());
+                    }
+                    None => {}
+                };
                 Ok(response)
             },
             Err(e) => {

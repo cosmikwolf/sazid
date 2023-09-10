@@ -19,6 +19,7 @@ bench = false
 [dependencies]
 assert_cmd = { version = "2.0.12", features = ["color", "color-auto"] }
 async-openai = "0.14.0"
+async-recursion = "1.0.5"
 backoff = { version = "0.4.0" }
 bincode = "1.3.3"
 chrono = "0.4.26"

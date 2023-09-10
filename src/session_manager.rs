@@ -24,6 +24,8 @@ impl Session {
 }
 
 impl SessionManager {
+    const MAX_FUNCTION_CALL_DEPTH: u32 = 3;
+
     pub fn new(settings: GPTSettings, include_functions:bool, session_data: Option<Session>, rt: Runtime) -> SessionManager {
         let gpt_connector = GPTConnector::new(settings.clone(), include_functions);
         let model = rt.block_on( async {gpt_connector.select_model().await}).unwrap();
@@ -164,7 +166,7 @@ impl SessionManager {
         let previous_messages = self.get_request_messages();
         let request = self.gpt_connector.construct_request(chunks, previous_messages, self.session_data.model.clone());
         
-        let response = self.rt.block_on(async { self.gpt_connector.send_request(request).await }).unwrap();
+        let response = self.rt.block_on(async { self.gpt_connector.send_request(request, Self::MAX_FUNCTION_CALL_DEPTH).await }).unwrap();
         
         self.add_interaction_for_cached_request(response.clone());
         Ok(response.choices)
@@ -203,7 +205,6 @@ impl SessionManager {
     // a function that takes an a string input,
     // it will chunkify with Chunkifier::chunkify_input and return a vector of strings
     pub fn parse_input(&self, input:String) -> Vec<String> {
-        
         Chunkifier::chunkify_input(
             &input,
             self.session_data.model.token_limit as usize,
