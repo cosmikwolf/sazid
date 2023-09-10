@@ -1,0 +1,29 @@
+write me a rust command line program 
+it must use the clap crate to parse command line arguments 
+it must use the crate tiktoken-rs to count the number of tokens in text 
+the text is either passed in as a file with a -f argument,
+or passed in via stdin 
+it must have an argument that allows the user to select the encoding for tiktoken-rs 
+it must use the c100k_base encoding by default
+provide me only the main.rs code with no extra text
+avoid using the crate anyhow
+use the following method of declaring options:
+#[derive(Parser, Clone)]
+#[clap(
+    version = "1.0",
+    author = "Tenkai Kariya",
+    about = "Interactive chat with GPT"
+)]
+pub struct Opts {
+    #[clap(short = 'n', long = "new", help = "Start a new chat session")]
+    pub new: bool,
+
+    #[clap(
+        short = 'm',
+        long = "model",
+        value_name = "MODEL_NAME",
+        help = "Specify the model to use (e.g., gpt-4, gpt-3.5-turbo-16k)"
+    )]
+    pub model: Option<String>,
+}
+

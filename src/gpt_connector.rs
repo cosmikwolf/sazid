@@ -3,13 +3,14 @@ use crate::errors::GPTConnectorError;
 use crate::types::*;
 pub use async_openai::types::Role;
 use async_openai::types::{
-    CreateChatCompletionRequest, CreateChatCompletionResponse, ChatCompletionFunctions
+    CreateChatCompletionRequest, CreateChatCompletionResponse, ChatCompletionFunctions, CreateEmbeddingResponse, CreateEmbeddingRequestArgs
 };
 use async_openai::{config::OpenAIConfig, Client};
 
 use backoff::ExponentialBackoffBuilder;
-use serde_json::json;
 use std::env;
+use std::path::Path;
+
 
 pub fn lookup_model_by_name(model_name: &str) -> Result<Model, GPTConnectorError> {
     let models = vec![GPT3_TURBO.clone(), GPT4.clone()];
@@ -87,25 +88,53 @@ impl GPTConnector {
         self.model = model;
     }
 
-    fn chat_fn_list_files() -> ChatCompletionFunctions {
-        ChatCompletionFunctions {
-            name: "list_files".to_string(),
-            description: Some("List files in a directory.".to_string()),
-            parameters: Some(json!({
-                "type": "object",
-                "parameters": {
-                    "path": {
-                        "type": "string",
-                        "description": "The path to the directory to list files in."
-                    }
-                },
-                "required": ["path"]
-            }))
-        }
+    pub async fn create_embedding_request(
+        model: &str,
+        input: Vec<&str>,
+    ) -> Result<CreateEmbeddingResponse, GPTConnectorError> {
+        let client = Client::new();
+    
+        let request = CreateEmbeddingRequestArgs::default()
+            .model(model)
+            .input(input)
+            .build()?;
+    
+        let response = client.embeddings().create(request).await?;
+    
+        Ok(response)
     }
+
+    // create a function that will parse the file Commands.toml at compile time and return a list of ChatCompletionFunctions
+    pub fn parse_commands() -> Result<Vec<ChatCompletionFunctions>, GPTConnectorError> {
+        let path = Path::new("Commands.toml");
+        let commands_file: CommandsFile = toml::from_str(std::fs::read_to_string(path).unwrap().as_str()).unwrap();
+        println!("{:?}", commands_file.commands);
+        let mut chat_completion_functions: Vec<ChatCompletionFunctions> = Vec::new();
+        for command in commands_file.commands {
+            let mut parameters: String = String::new();
+            for parameter in command.parameters {
+                parameters.push_str(toml::to_string(&parameter).unwrap().as_str())
+            }
+
+            let chat_completion_function = ChatCompletionFunctions {
+                name: command.name,
+                description: Some(command.description),
+                parameters: serde_json::from_str(parameters.as_str()).unwrap(),
+            };
+            chat_completion_functions.push(chat_completion_function);
+        }
+        Ok(chat_completion_functions)
+    }
+
 
 }
 #[cfg(test)]
 mod tests {
 
+   #[test]
+    fn test_parse_commands() {
+         let commands = super::GPTConnector::parse_commands().unwrap();
+         println!("{:?}", commands);
+         assert_eq!(commands.len(), 2);
+    } 
 }

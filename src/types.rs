@@ -180,6 +180,25 @@ pub struct IngestData {
 }
 pub struct Chunkifier {}
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CommandsFile {
+    pub commands: Vec<Command>
+} 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Command {
+    pub name: String,
+    pub description: String,
+    pub parameters: Vec<Properties>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Properties {
+    pub name: String,
+    pub description: String,
+    pub required: bool,
+}
+
+
 // a display function for Message
 impl std::fmt::Display for Message {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
