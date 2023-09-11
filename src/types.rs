@@ -1,11 +1,22 @@
-use std::{path::PathBuf, collections::{BTreeMap, HashMap}, ffi::OsString};
+use std::{
+    collections::{BTreeMap, HashMap},
+    ffi::OsString,
+    path::PathBuf,
+};
 
-use async_openai::{types::{Role, ChatCompletionRequestMessage, CreateChatCompletionResponse}, config::OpenAIConfig, Client};
+use crate::consts::*;
+use async_openai::{
+    config::OpenAIConfig,
+    types::{
+        ChatCompletionRequestMessage, ChatCompletionResponseMessage,
+        Role,
+    },
+    Client,
+};
 use clap::Parser;
 use serde::{Deserialize, Serialize};
-use tokio::runtime::Runtime;
+use tokio::runtime::{Runtime, Handle};
 use toml;
-use crate::consts::*;
 
 // options
 #[derive(Parser, Clone)]
@@ -26,11 +37,7 @@ pub struct Opts {
     )]
     pub model: Option<String>,
 
-    #[clap(
-        short = 'b',
-        long = "batch",
-        help = "Respond to stdin and exit"
-    )]
+    #[clap(short = 'b', long = "batch", help = "Respond to stdin and exit")]
     pub batch: bool,
 
     #[clap(
@@ -52,10 +59,10 @@ pub struct Opts {
         long = "print-session",
         value_name = "SESSION_ID",
         default_value = "last-session",
-        help = "Print a session to stdout, defaulting to the last session",
+        help = "Print a session to stdout, defaulting to the last session"
     )]
     pub print_session: String,
-    
+
     #[clap(
         short = 's',
         long = "session",
@@ -72,7 +79,6 @@ pub struct Opts {
     )]
     pub ingest: Option<OsString>,
 }
-
 
 // GPT Connector types
 #[derive(Debug, Deserialize, Clone, Default)]
@@ -116,10 +122,12 @@ pub struct ModelsList {
     pub fallback: Model,
 }
 #[derive(Clone)]
-pub struct GPTConnector {
+pub struct GPTConnector<'session> {
     pub settings: GPTSettings,
     pub include_functions: bool,
-    pub client: Client<OpenAIConfig>
+    pub client: Client<OpenAIConfig>,
+    pub session_data: &'session Session,
+    pub model: Model,
 }
 
 pub struct GPTResponse {
@@ -135,20 +143,67 @@ pub struct PdfText {
 
 // Session Manager types
 
-#[derive(Debug, Serialize, Deserialize)]
-#[derive(Clone)]
-pub struct ChatInteraction {
-    pub request: Vec<ChatCompletionRequestMessage>,
-    pub response: CreateChatCompletionResponse,
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub enum ChatMessage {
+    ChatCompletionRequestMessage,
+    ChatCompletionResponseMessage,
 }
 
+// impl AsMut<async_openai::types::ChatCompletionRequestMessage> for ChatMessage {
+//     fn as_mut(&mut self) -> &mut async_openai::types::ChatCompletionRequestMessage {
+//         match self {
+//             ChatMessage::ChatCompletionRequestMessage => {
+//                 &mut self.as_mut()
+//             }
+//             _ => panic!("Wrong type"),
+//         }
+//     }
+// }
+// impl AsMut<async_openai::types::ChatCompletionResponseMessage> for ChatMessage {
+//     fn as_mut(&mut self) -> &mut async_openai::types::ChatCompletionResponseMessage {
+//         match self {
+//             ChatMessage::ChatCompletionResponseMessage => {
+//                 &mut self.as_mut()
+//             }
+//             _ => panic!("Wrong type"),
+//         }
+//     }
+// }
+impl From<ChatCompletionRequestMessage> for ChatMessage {
+    fn from(message: ChatCompletionRequestMessage) -> Self {
+        message.into()
+    }
+}
 
-#[derive(Debug, Serialize, Deserialize)]
-#[derive(Clone)]
+impl From<ChatCompletionResponseMessage> for ChatMessage {
+    fn from(message: ChatCompletionResponseMessage) -> Self {
+        message.into()
+    }
+}
+impl From<ChatMessage> for async_openai::types::ChatCompletionRequestMessage {
+    fn from(message: ChatMessage) -> Self {
+        match message {
+            ChatMessage::ChatCompletionRequestMessage => message.into(),
+            _ => panic!("Wrong type"),
+        }
+    }
+}
+
+impl From<ChatMessage> for async_openai::types::ChatCompletionResponseMessage {
+    fn from(message: ChatMessage) -> Self {
+        match message {
+            ChatMessage::ChatCompletionResponseMessage => message.into(),
+            _ => panic!("Wrong type"),
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize)]
 pub struct Session {
     pub session_id: String,
     pub model: Model,
-    pub interactions: Vec<ChatInteraction>,
+    pub messages: Vec<ChatMessage>,
+    pub include_functions: bool,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -160,10 +215,8 @@ pub struct IngestedData {
 }
 pub struct SessionManager {
     pub include_functions: bool,
-    pub gpt_connector: GPTConnector,
     pub cached_request: Option<Vec<ChatCompletionRequestMessage>>,
     pub session_data: Session,
-    pub rt: Runtime,
 }
 pub struct Message {
     pub role: Role,
@@ -175,17 +228,17 @@ pub struct Message {
 #[allow(dead_code)]
 pub struct UrlData {
     urls: String,
-    data: String
+    data: String,
 }
 #[allow(dead_code)]
 pub struct FilePathData {
     file_paths: String,
-    data: String
+    data: String,
 }
 pub struct IngestData {
     pub text: String,
     pub urls: Vec<String>,
-    pub file_paths: Vec<PathBuf>
+    pub file_paths: Vec<PathBuf>,
 }
 pub struct Chunkifier {}
 
@@ -195,6 +248,7 @@ pub struct CommandProperty {
     pub property_type: String,
     pub description: Option<String>,
     #[serde(rename = "enum", default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub enum_values: Option<Vec<String>>,
 }
 
@@ -225,11 +279,14 @@ impl std::fmt::Display for Message {
     }
 }
 
-fn format_chat_message(f: &mut std::fmt::Formatter<'_>, role: Role, message: String) -> std::fmt::Result {
+fn format_chat_message(
+    f: &mut std::fmt::Formatter<'_>,
+    role: Role,
+    message: String,
+) -> std::fmt::Result {
     match role {
         Role::User => write!(f, "You: {}\n\r", message),
         Role::Assistant => write!(f, "GPT: {}\n\r", message),
         _ => Ok(()),
     }
 }
-

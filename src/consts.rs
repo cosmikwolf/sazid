@@ -1,5 +1,5 @@
 use crate::types::Model;
-
+pub const MAX_FUNCTION_CALL_DEPTH: u32 = 3;
 pub const CHUNK_TOKEN_LIMIT: u32 = 4096u32;
 lazy_static! {
     pub static ref GPT3_TURBO_16K: Model = Model {

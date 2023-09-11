@@ -12,7 +12,7 @@ pub enum ChunkifierError {
 pub enum GPTConnectorError {
     Reqwest(reqwest::Error),
     OpenAI(OpenAIError),
-    APIError(String),
+    APIError(OpenAIError),
     Other(String),
 }
 

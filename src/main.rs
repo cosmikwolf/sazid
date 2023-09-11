@@ -13,10 +13,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Initialize the SessionManager.
     let session_data: Option<Session> = None;
-    let session_manager = SessionManager::new(settings, opts.include_functions, session_data, rt);
+    let session_manager = SessionManager::new(settings, opts.include_functions, session_data);
 
     // Initialize the user interface
-    let mut ui = UI::init(session_manager, opts.clone());
+    let mut ui = UI::init(session_manager, opts.clone(), rt.handle().clone());
 
     // Handle model selection based on CLI flag
     if let Some(model_name) = &opts.model {

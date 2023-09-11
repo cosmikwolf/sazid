@@ -370,11 +370,6 @@ mod integration_tests {
             session.get_requests(),
             loaded_session.get_requests()
         );
-        assert_eq!(
-            session.get_responses(),
-            loaded_session.get_responses()
-        );
-
         // Clean up the temporary test directory
         let dir = Path::new(SESSIONS_DIR);
         if dir.exists() {
