@@ -6,8 +6,6 @@ use sazid::ui::UI;
 use tokio::runtime::Runtime;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let rt = Runtime::new().unwrap();
-
     let opts: Opts = Opts::parse();
     let settings = GPTSettings::load(PathBuf::from("Settings.toml"));
 
@@ -16,7 +14,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let session_manager = SessionManager::new(settings, opts.include_functions, session_data);
 
     // Initialize the user interface
-    let mut ui = UI::init(session_manager, opts.clone(), rt.handle().clone());
+    let mut ui = UI::init(session_manager, opts.clone());
 
     // Handle model selection based on CLI flag
     if let Some(model_name) = &opts.model {

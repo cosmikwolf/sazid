@@ -1,7 +1,7 @@
-use async_openai::types::{ChatCompletionFunctions, ChatChoice, CreateChatCompletionRequest, ChatCompletionRequestMessage, Role};
+use async_openai::types::{ChatCompletionFunctions, ChatChoice, ChatCompletionRequestMessage, Role};
 
 use crate::types::*;
-use std::{collections::HashMap, io::{BufRead, Write}, io::Error};
+use std::{collections::HashMap, io::{BufRead, Write}};
 
 pub fn define_commands() -> Vec<Command> {
     let mut commands: Vec<Command> = Vec::new();

@@ -14,7 +14,7 @@ impl SessionManager {
         include_functions: bool,
         session_data: Option<Session>,
     ) -> SessionManager {
-        let mut session_data = match session_data {
+        let session_data = match session_data {
             Some(session_data) => session_data,
             None => Session::new(utils::generate_session_id() , settings, include_functions),
         };

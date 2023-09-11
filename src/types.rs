@@ -1,21 +1,14 @@
-use std::{
-    collections::{BTreeMap, HashMap},
-    ffi::OsString,
-    path::PathBuf,
-};
-
 use crate::consts::*;
 use async_openai::{
+    self,
     config::OpenAIConfig,
-    types::{
-        ChatCompletionRequestMessage, ChatCompletionResponseMessage,
-        Role,
-    },
+    types::{ChatCompletionRequestMessage, ChatCompletionResponseMessage, FunctionCall, Role},
     Client,
 };
 use clap::Parser;
 use serde::{Deserialize, Serialize};
-use tokio::runtime::{Runtime, Handle};
+use std::{collections::BTreeMap, ffi::OsString, path::PathBuf};
+
 use toml;
 
 // options
@@ -141,12 +134,59 @@ pub struct PdfText {
     pub errors: Vec<String>,
 }
 
-// Session Manager types
+#[derive(Default, Serialize, Deserialize, Clone, Debug)]
+pub struct ChatMessage {
+    pub response: Option<ChatCompletionResponseMessage>,
+    pub request: Option<ChatCompletionRequestMessage>,
+}
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub enum ChatMessage {
-    ChatCompletionRequestMessage,
-    ChatCompletionResponseMessage,
+impl From<ChatCompletionRequestMessage> for ChatMessage {
+    fn from(request: ChatCompletionRequestMessage) -> Self {
+        ChatMessage {
+            request: Some(request),
+            response: None,
+        }
+    }
+}
+impl From<ChatCompletionResponseMessage> for ChatMessage {
+    fn from(response: ChatCompletionResponseMessage) -> Self {
+        ChatMessage {
+            request: None,
+            response: Some(response),
+        }
+    }
+}
+
+impl TryFrom<ChatMessage> for ChatCompletionRequestMessage {
+    type Error = &'static str;
+    fn try_from(message: ChatMessage) -> Result<Self, Self::Error> {
+        match message.request {
+            Some(request) => {
+                Ok(ChatCompletionRequestMessage {
+                    role: request.role,
+                    content: request.content,
+                    name: request.name,
+                    function_call: request.function_call,
+                })
+            }
+            None => Err("Wrong type"),
+        }
+    }
+}
+impl TryFrom<ChatMessage> for ChatCompletionResponseMessage {
+    type Error = &'static str;
+    fn try_from(message: ChatMessage) -> Result<Self, Self::Error> {
+        match message.response {
+            Some(response) => {
+                Ok(ChatCompletionResponseMessage {
+                    role: response.role,
+                    content: response.content,
+                    function_call: response.function_call,
+                })
+            }
+            None => Err("Wrong type"),
+        }
+    }
 }
 
 // impl AsMut<async_openai::types::ChatCompletionRequestMessage> for ChatMessage {
@@ -169,34 +209,6 @@ pub enum ChatMessage {
 //         }
 //     }
 // }
-impl From<ChatCompletionRequestMessage> for ChatMessage {
-    fn from(message: ChatCompletionRequestMessage) -> Self {
-        message.into()
-    }
-}
-
-impl From<ChatCompletionResponseMessage> for ChatMessage {
-    fn from(message: ChatCompletionResponseMessage) -> Self {
-        message.into()
-    }
-}
-impl From<ChatMessage> for async_openai::types::ChatCompletionRequestMessage {
-    fn from(message: ChatMessage) -> Self {
-        match message {
-            ChatMessage::ChatCompletionRequestMessage => message.into(),
-            _ => panic!("Wrong type"),
-        }
-    }
-}
-
-impl From<ChatMessage> for async_openai::types::ChatCompletionResponseMessage {
-    fn from(message: ChatMessage) -> Self {
-        match message {
-            ChatMessage::ChatCompletionResponseMessage => message.into(),
-            _ => panic!("Wrong type"),
-        }
-    }
-}
 
 #[derive(Serialize, Deserialize)]
 pub struct Session {

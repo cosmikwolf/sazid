@@ -6,7 +6,7 @@ use crossterm::{
     style::Print,
     tty::IsTty,
 };
-use tokio::runtime::Handle;
+use tokio::runtime::Runtime;
 use std::io::{self, Read, Write};
 use std::path::PathBuf;
 use crate::types::SessionManager;
@@ -17,11 +17,12 @@ pub struct UI {
     user_input: String,
     session_manager: SessionManager,
     opts: Opts,
-    async_handle: Handle,
+    rt: Runtime,
 }
 
 impl UI {
-    pub fn init(session_manager: SessionManager, opts: Opts, async_handle: Handle) -> Self {
+    pub fn init(session_manager: SessionManager, opts: Opts) -> Self {
+        let rt = Runtime::new().unwrap();
         let stdout = io::stdout();
         let user_input = Self::get_piped_input();
         let mut ui = Self {
@@ -29,7 +30,7 @@ impl UI {
             user_input,
             session_manager,
             opts,
-            async_handle
+            rt
         };
         ui.setup().unwrap();
         ui
@@ -63,7 +64,7 @@ impl UI {
     }
 
     fn execute_input(&mut self) -> io::Result<()> {
-        let chat_choices = self.session_manager.session_data.submit_input(&self.user_input, &self.async_handle);
+        let chat_choices = self.session_manager.session_data.submit_input(&self.user_input, &self.rt);
 
         for choice in chat_choices.unwrap() {
             self.display_chat_message(choice.message.role.clone(), choice.message.content.clone().unwrap_or_default());

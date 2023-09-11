@@ -12,10 +12,10 @@ use crate::consts::{CHUNK_TOKEN_LIMIT,GPT3_TURBO, GPT4, MAX_FUNCTION_CALL_DEPTH}
 use crate::types::ChatMessage;
 use crate::errors::*;
 use crate::types::*;
-use tokio::runtime::Handle;    
+use tokio::runtime::{Handle, Runtime};    
 
 impl Session {
-    pub fn new(session_id: String, settings: GPTSettings, include_functions: bool) -> Session {
+    pub fn new(session_id: String, _settings: GPTSettings, include_functions: bool) -> Session {
         Self {
             session_id,
             model: GPT4.clone(),
@@ -32,7 +32,8 @@ impl Session {
         self.messages
             .clone()
             .into_iter()
-            .map(|x| x.into())
+            .take_while(|x| x.request.is_some())
+            .map(|x| x.try_into().unwrap_or_default())
             .collect()
     }
 
@@ -40,14 +41,15 @@ impl Session {
         self.messages
             .clone()
             .into_iter()
-            .map(|x| x.into())
+            .take_while(|x| x.response.is_some())
+            .map(|x| x.try_into().unwrap())
             .collect()
     }
 
-    pub fn submit_input(&mut self, input: &String, async_handle: &Handle) -> Result<Vec<ChatChoice>, SessionManagerError> {
+    pub fn submit_input(&mut self, input: &String, rt: &Runtime) -> Result<Vec<ChatChoice>, SessionManagerError> {
         let new_messages = construct_user_messages(input, &self.model).unwrap();
         let client = create_openai_client();
-        let response = async_handle
+        let response = rt
             .block_on(async {
                 self.send_request(new_messages, MAX_FUNCTION_CALL_DEPTH, client)
                     .await
@@ -65,9 +67,9 @@ impl Session {
         client: Client<OpenAIConfig>,
     ) -> Result<CreateChatCompletionResponse, GPTConnectorError> {
         // save new messages in session data
-        self.messages
-            .append(&mut new_messages.clone().into_iter().map(|x| x.into()).collect());
-
+        for message in new_messages.clone() {
+            self.messages.push(message.into());
+        }
         // append new messages to existing messages from session data to send in request
         let mut messages: Vec<ChatCompletionRequestMessage> = self.get_all_requests();
         messages.append(new_messages.clone().as_mut());
@@ -80,6 +82,9 @@ impl Session {
         match response_result {
             Ok(response) => {
                 // first save the response messages into session data
+                for choice in response.choices.clone() {
+                    self.messages.push(choice.message.into());
+                }
                 let _ = response
                 .choices
                 .clone()
