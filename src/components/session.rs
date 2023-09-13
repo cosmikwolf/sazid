@@ -11,11 +11,11 @@ use async_openai::{config::OpenAIConfig, Client};
 use async_recursion::async_recursion;
 use backoff::exponential::ExponentialBackoffBuilder;
 
-use crate::consts::*;
-use crate::errors::*;
-use crate::types::ChatMessage;
-use crate::types::*;
-use crate::ui::UI;
+use crate::components::consts::*;
+use crate::components::errors::*;
+use crate::components::types::ChatMessage;
+use crate::components::types::*;
+use crate::components::ui::UI;
 use tokio::runtime::Runtime;
 
 impl<'session> Session<'session> {
@@ -200,7 +200,7 @@ impl<'session> Session<'session> {
                     return Ok(response);
                 }
                 let function_call_response_messages =
-                    crate::gpt_commands::handle_chat_response_function_call(
+                    crate::components::gpt_commands::handle_chat_response_function_call(
                         response.choices.clone(),
                     );
                 match function_call_response_messages {
@@ -301,8 +301,8 @@ pub fn construct_request(
     include_functions: bool,
 ) -> CreateChatCompletionRequest {
     let functions = match include_functions {
-        true => Some(crate::gpt_commands::create_chat_completion_function_args(
-            crate::gpt_commands::define_commands(),
+        true => Some(crate::components::gpt_commands::create_chat_completion_function_args(
+            crate::components::gpt_commands::define_commands(),
         )),
         false => None,
     };

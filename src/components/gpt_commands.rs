@@ -1,6 +1,6 @@
 use async_openai::types::{ChatCompletionFunctions, ChatChoice, ChatCompletionRequestMessage, Role};
 
-use crate::types::*;
+use crate::components::types::*;
 use std::{collections::HashMap, io::{BufRead, Write}, path::{Path, PathBuf}};
 
 pub fn define_commands() -> Vec<Command> {

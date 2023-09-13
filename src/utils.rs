@@ -1,4 +1,4 @@
-use crate::consts::*;
+use crate::components::consts::*;
 use crate::tui::Tui;
 use directories::ProjectDirs;
 use tracing_error::ErrorLayer;

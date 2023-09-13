@@ -2,7 +2,6 @@
 #[macro_use]
 extern crate lazy_static;
 
-pub mod ui;
 pub mod utils;
 pub mod runner;
 pub mod tui;

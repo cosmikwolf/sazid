@@ -6,6 +6,7 @@ use tokio::sync::mpsc::UnboundedSender;
 use crate::{action::Action, tui::Event, tui::Frame};
 
 pub mod app;
+pub mod ui;
 pub mod pdf_extractor;
 pub mod chunkifier;
 pub mod gpt_commands;
@@ -13,7 +14,6 @@ pub mod errors;
 pub mod types;
 pub mod consts;
 pub mod session;
-pub mod components;
 //// ANCHOR: component
 pub trait Component {
   #[allow(unused_variables)]

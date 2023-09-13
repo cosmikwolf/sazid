@@ -1,6 +1,6 @@
-use crate::errors::ChunkifierError;
-use crate::consts::*;
-use crate::types::*;
+use crate::components::errors::ChunkifierError;
+use crate::components::consts::*;
+use crate::components::types::*;
 use crate::utils;
 use std::fs::{self, File};
 use std::io::Read;

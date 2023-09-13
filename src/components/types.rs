@@ -1,4 +1,4 @@
-use crate::{consts::*, ui::UI};
+use crate::components::{consts::*, ui::UI};
 use async_openai::{
     self,
     config::OpenAIConfig,
