@@ -63,11 +63,11 @@ impl UI {
         Ok(())
     }
 
-    fn execute_input(&mut self) -> io::Result<()> {
+    fn execute_input<'a>(&mut self ) -> io::Result<()> {
         println!("User input: {}", self.user_input);
         let _chat_choices = self
             .session_data
-            .submit_input(&self.user_input, &self.rt);
+            .submit_input(&self.user_input, &self.rt, &self);
 
         // for choice in chat_choices.unwrap() {
         //     self.display_chat_message(choice.message.role.clone(), choice.message.content.clone().unwrap_or_default());
@@ -158,7 +158,7 @@ impl UI {
         write!(self.stdout, "Import process completed.").unwrap();
     }
 
-    fn display_messages(&mut self) {
+    pub fn display_messages(&mut self) {
         let messages = self.session_data.get_messages_to_display();
         for message  in messages.clone()
             .iter()
@@ -173,6 +173,7 @@ impl UI {
         loop {
             tracing::trace!("entering input loop");
             // check piped input for data
+            
             if !self.user_input.is_empty() {
                 self.execute_input().unwrap();
                 if batch {

@@ -6,8 +6,9 @@ use async_openai::{
     Client,
 };
 use clap::Parser;
+use owo_colors::OwoColorize;
 use serde::{Deserialize, Serialize};
-use std::{collections::BTreeMap, ffi::OsString, path::PathBuf, fmt::Display};
+use std::{collections::BTreeMap, ffi::OsString, fmt::Display, path::PathBuf};
 
 use toml;
 
@@ -187,14 +188,12 @@ impl TryFrom<ChatMessage> for ChatCompletionRequestMessage {
     type Error = &'static str;
     fn try_from(message: ChatMessage) -> Result<Self, Self::Error> {
         match message.request {
-            Some(request) => {
-                Ok(ChatCompletionRequestMessage {
-                    role: request.role,
-                    content: request.content,
-                    name: request.name,
-                    function_call: request.function_call,
-                })
-            }
+            Some(request) => Ok(ChatCompletionRequestMessage {
+                role: request.role,
+                content: request.content,
+                name: request.name,
+                function_call: request.function_call,
+            }),
             None => Err("Wrong type"),
         }
     }
@@ -203,13 +202,11 @@ impl TryFrom<ChatMessage> for ChatCompletionResponseMessage {
     type Error = &'static str;
     fn try_from(message: ChatMessage) -> Result<Self, Self::Error> {
         match message.response {
-            Some(response) => {
-                Ok(ChatCompletionResponseMessage {
-                    role: response.role,
-                    content: response.content,
-                    function_call: response.function_call,
-                })
-            }
+            Some(response) => Ok(ChatCompletionResponseMessage {
+                role: response.role,
+                content: response.content,
+                function_call: response.function_call,
+            }),
             None => Err("Wrong type"),
         }
     }
@@ -327,13 +324,9 @@ fn format_chat_request(
 ) -> std::fmt::Result {
     match name {
         Some(name) => match function_call {
-            Some(function_call) => write!(
-                f,
-                "{}: {} ({:?})\n\r",
-                role,
-                message,
-                (name, function_call)
-            ),
+            Some(function_call) => {
+                write!(f, "{}: {} ({:?})\n\r", role, message, (name, function_call))
+            }
             None => write!(f, "{}: {} ({})\n\r", role, message, name),
         },
         None => match function_call {
@@ -353,9 +346,23 @@ fn format_chat_response(
 ) -> std::fmt::Result {
     match function_call {
         Some(function_call) => {
-            write!(f, "{}: {} ({:?})\n\r", role, message, function_call)
+            write!( f, "{}: {:?} ({:?})\n\r",
+                role, message.bright_green(), serde_json::to_string_pretty(&function_call).unwrap().purple())
         }
-        None => write!(f, "{}: {}\n\r", role, message),
+        None => match role {
+            Role::User => {
+                write!(f, "{}: {:?}\n\r", role, message.bright_green())
+            }
+            Role::Assistant => {
+                write!(f, "{}: {:?}\n\r", role, message.bright_blue())
+            }
+            Role::System => {
+                write!(f, "{}: {:?}\n\r", role, message.bright_yellow())
+            }
+            Role::Function => {
+                write!(f, "{}: {:?}\n\r", role, message.bright_yellow())
+            }
+        },
     }
 }
 

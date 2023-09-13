@@ -1,20 +1,22 @@
-use std::time::{UNIX_EPOCH, SystemTime};
+use std::path::{Path, PathBuf};
+use std::time::{SystemTime, UNIX_EPOCH};
 use std::{env, fs, io};
-use std::path::{PathBuf, Path};
 
-use async_openai::{Client, config::OpenAIConfig};
 use async_openai::types::{
-    ChatCompletionRequestMessage, ChatCompletionResponseMessage, CreateChatCompletionRequest,
-    CreateChatCompletionResponse, CreateEmbeddingRequestArgs, CreateEmbeddingResponse, Role, ChatChoice,
+    ChatChoice, ChatCompletionRequestMessage, ChatCompletionResponseMessage,
+    CreateChatCompletionRequest, CreateChatCompletionResponse, CreateEmbeddingRequestArgs,
+    CreateEmbeddingResponse, Role,
 };
-use backoff::exponential::ExponentialBackoffBuilder;
+use async_openai::{config::OpenAIConfig, Client};
 use async_recursion::async_recursion;
+use backoff::exponential::ExponentialBackoffBuilder;
 
-use crate::consts::{CHUNK_TOKEN_LIMIT,GPT3_TURBO, GPT4, MAX_FUNCTION_CALL_DEPTH, INGESTED_DIR, SESSIONS_DIR};
-use crate::types::ChatMessage;
+use crate::consts::*;
 use crate::errors::*;
+use crate::types::ChatMessage;
 use crate::types::*;
-use tokio::runtime::Runtime;    
+use crate::ui::UI;
+use tokio::runtime::Runtime;
 
 impl Session {
     pub fn new(_settings: GPTSettings, include_functions: bool) -> Session {
@@ -34,7 +36,7 @@ impl Session {
             Ok(session_data) => return serde_json::from_str(session_data.as_str()).unwrap(),
             Err(_) => {
                 println!("Failed to load session data, creating new session");
-                return Session::new(GPTSettings::default(), false)
+                return Session::new(GPTSettings::default(), false);
             }
         };
     }
@@ -46,22 +48,22 @@ impl Session {
             .duration_since(UNIX_EPOCH)
             .expect("Time went backwards")
             .as_secs();
-    
+
         // Introduce a delay of 1 second to ensure unique session IDs even if called rapidly.
         std::thread::sleep(std::time::Duration::from_secs(1));
-    
+
         // Convert the duration to a String and return.
         since_the_epoch.to_string()
     }
-    
+
     pub fn get_session_filepath(session_id: String) -> PathBuf {
         Path::new(SESSIONS_DIR).join(Self::get_session_filename(session_id))
     }
-    
+
     pub fn get_session_filename(session_id: String) -> String {
         format!("{}.json", session_id)
     }
-    
+
     pub fn get_last_session_file_path() -> Option<PathBuf> {
         crate::utils::ensure_directory_exists(SESSIONS_DIR).unwrap();
         let last_session_path = Path::new(SESSIONS_DIR).join("last_session.txt");
@@ -71,7 +73,7 @@ impl Session {
             None
         }
     }
-    
+
     pub fn load_last_session() -> Session {
         let last_session_path = Path::new(SESSIONS_DIR).join("last_session.txt");
         let last_session_id = fs::read_to_string(last_session_path).unwrap();
@@ -90,10 +92,7 @@ impl Session {
     pub fn save_last_session_id(&self) {
         crate::utils::ensure_directory_exists(SESSIONS_DIR).unwrap();
         let last_session_path = Path::new(SESSIONS_DIR).join("last_session.txt");
-        fs::write(
-            last_session_path,
-            self.session_id.clone(),
-        ).unwrap();
+        fs::write(last_session_path, self.session_id.clone()).unwrap();
     }
 
     pub fn get_all_messages(&self) -> Vec<ChatMessage> {
@@ -118,15 +117,19 @@ impl Session {
             .collect()
     }
 
-    #[tracing::instrument(skip(self))]
-    pub fn submit_input(&mut self, input: &String, rt: &Runtime) -> Result<Vec<ChatChoice>, SessionManagerError> {
+    // #[tracing::instrument(skip(self))]
+    pub fn submit_input<'a>(
+        &mut self,
+        input: &String,
+        rt: &Runtime,
+        ui: &mut UI,
+    ) -> Result<Vec<ChatChoice>, SessionManagerError> {
         let new_messages = construct_user_messages(input, &self.model).unwrap();
         let client = create_openai_client();
-        let response = rt
-            .block_on(async {
-                self.send_request(new_messages, MAX_FUNCTION_CALL_DEPTH, client)
-                    .await
-            });
+        let response = rt.block_on(async {
+            self.send_request(new_messages, MAX_FUNCTION_CALL_DEPTH, client, ui)
+                .await
+        });
         match response {
             Ok(response) => {
                 let _ = response
@@ -155,26 +158,28 @@ impl Session {
             }
         }
         messages_to_display
-    } 
+    }
 
-    #[tracing::instrument(skip(self, client))]
+    // #[tracing::instrument(skip(self, client))]
     #[async_recursion]
-    pub async fn send_request(
+    pub async fn send_request<'a>(
         &mut self,
         new_messages: Vec<ChatCompletionRequestMessage>,
         recusion_depth: u32,
         client: Client<OpenAIConfig>,
+        ui: &mut UI,
     ) -> Result<CreateChatCompletionResponse, GPTConnectorError> {
         // save new messages in session data
         tracing::debug!("entering send_request");
         for message in new_messages.clone() {
             self.messages.push(message.into());
+            ui.display_messages();
         }
         // append new messages to existing messages from session data to send in request
         let mut messages: Vec<ChatCompletionRequestMessage> = self.get_all_requests();
         messages.append(new_messages.clone().as_mut());
 
-        // form and send request 
+        // form and send request
         let request = construct_request(messages, self.model.clone(), self.include_functions);
         let response_result = client.chat().create(request.clone()).await;
         
@@ -184,12 +189,13 @@ impl Session {
                 // first save the response messages into session data
                 for choice in response.choices.clone() {
                     self.messages.push(choice.message.into());
+                    ui.display_messages();
                 }
                 let _ = response
-                .choices
-                .clone()
-                .into_iter()
-                .map(|choice| self.messages.push(choice.message.into()));
+                    .choices
+                    .clone()
+                    .into_iter()
+                    .map(|choice| self.messages.push(choice.message.into()));
 
                 if recusion_depth <= 0 {
                     return Ok(response);
@@ -208,6 +214,7 @@ impl Session {
                             function_call_response_messages,
                             recusion_depth - 1,
                             client,
+                            ui
                         )
                         .await
                     }

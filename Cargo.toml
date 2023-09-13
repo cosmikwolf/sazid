@@ -1,3 +1,4 @@
+#![feature(unboxed_closures)]
 [package]
 name = "sazid"
 version = "0.1.0"

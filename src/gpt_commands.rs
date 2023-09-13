@@ -1,7 +1,7 @@
 use async_openai::types::{ChatCompletionFunctions, ChatChoice, ChatCompletionRequestMessage, Role};
 
 use crate::types::*;
-use std::{collections::HashMap, io::{BufRead, Write}};
+use std::{collections::HashMap, io::{BufRead, Write}, path::{Path, PathBuf}};
 
 pub fn define_commands() -> Vec<Command> {
     let mut commands: Vec<Command> = Vec::new();
@@ -125,7 +125,7 @@ pub fn list_dir(path: &str) -> Result<Option<String>, std::io::Error> {
     }
     Ok(Some(dir_contents))
 }
-
+#[tracing::instrument]
 pub fn read_file_lines(path: &str, start_line: Option<usize>, end_line: Option<usize>) -> Result<Option<String>, std::io::Error> {
     let start_line = match start_line {
         Some(start_line) => start_line,
@@ -134,7 +134,7 @@ pub fn read_file_lines(path: &str, start_line: Option<usize>, end_line: Option<u
     let end_line = match end_line {
         Some(end_line) => end_line,
         None => {
-            let file = std::fs::File::open(path)?;
+            let file = std::fs::File::open(PathBuf::from(path)).unwrap();
             let reader = std::io::BufReader::new(file);
             reader.lines().count()
         }
@@ -206,15 +206,15 @@ pub fn handle_chat_response_function_call(response_choices: Vec<ChatChoice>) -> 
         if let Some(function_call) = choice.message.function_call {
             let function_name = function_call.name;
             let function_args: serde_json::Value = function_call.arguments.parse().unwrap();
-            let output: Option<String> = match function_name.as_str() {
+            let function_call_result: Result<Option<String>, std::io::Error> = match function_name.as_str() {
                 "list_dir" => {
                     list_dir(function_args["path"].as_str().unwrap())
                 }
                 "read_lines" => {
                     read_file_lines(
                         function_args["path"].as_str().unwrap(), 
-                        Some(function_args["start_line"].as_u64().unwrap() as usize), 
-                        Some(function_args["end_line"].as_u64().unwrap() as usize)
+                        Some(function_args["start_line"].as_u64().unwrap_or_default() as usize), 
+                        Some(function_args["end_line"].as_u64().unwrap_or_default() as usize)
                     )
                 }
                 "replace_lines" => { 
@@ -231,17 +231,25 @@ pub fn handle_chat_response_function_call(response_choices: Vec<ChatChoice>) -> 
                 _ => {
                     Ok(None)
                 }
-            }.unwrap();
-            match output {
-                Some(output) => {
-                   function_results.push(ChatCompletionRequestMessage {
-                    name: Some("Sazid".to_string()),
-                    role: Role::Function,
-                    content: Some(output),
-                    ..Default::default()
-                });
+            };
+            match function_call_result {
+                Ok(Some(output)) => {
+                        function_results.push(ChatCompletionRequestMessage {
+                            name: Some("Sazid".to_string()),
+                            role: Role::Function,
+                            content: Some(output),
+                            ..Default::default()
+                        });
+                    }
+                Ok(None) => {}
+                Err(e) => {
+                    function_results.push(ChatCompletionRequestMessage {
+                        name: Some("Sazid".to_string()),
+                        role: Role::Function,
+                        content: Some(format!("Error: {:?}", e)),
+                        ..Default::default()
+                    });
                 }
-                None => {}
             }
         }
     }
