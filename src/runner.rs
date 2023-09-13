@@ -4,13 +4,13 @@ use tokio::sync::mpsc;
 use crate::{
   action::Action,
   components::{app::App, Component},
-  // config::Config,
-  // trace_dbg,
-  // tui::Tui,
+  config::Config,
+  trace_dbg,
+  tui::Tui,
 };
 
 pub struct Runner {
-  // pub config: Config,
+  pub config: Config,
   pub tick_rate: (usize, usize),
   pub components: Vec<Box<dyn Component>>,
   pub should_quit: bool,

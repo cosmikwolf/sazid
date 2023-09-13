@@ -14,3 +14,5 @@ pub mod runner;
 pub mod action;
 pub mod session;
 pub mod components;
+pub mod config;
+pub mod tui;
