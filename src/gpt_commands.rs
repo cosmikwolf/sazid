@@ -201,7 +201,7 @@ pub fn create_chat_completion_function_args(commands: Vec<Command>) -> Vec<ChatC
 
 pub fn handle_chat_response_function_call(response_choices: Vec<ChatChoice>) -> Option<Vec<ChatCompletionRequestMessage>> {
     let mut function_results:Vec<ChatCompletionRequestMessage> = Vec::new();
-    println!("response_choices: {:?}", response_choices);
+    // println!("response_choices: {:?}", response_choices);
     for choice in response_choices {
         if let Some(function_call) = choice.message.function_call {
             let function_name = function_call.name;

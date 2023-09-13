@@ -1,20 +1,34 @@
 use std::path::PathBuf;
 
 use clap::Parser;
-use sazid::types::*;
+use sazid::{types::*, utils::initialize_tracing};
 use sazid::ui::UI;
-use tokio::runtime::Runtime;
+use tracing::{self, event, Level};
 
-fn main() -> Result<(), Box<dyn std::error::Error>> {
+fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>>  {
+    initialize_tracing().unwrap();
+    tracing::debug!("sazid start main");
     let opts: Opts = Opts::parse();
     let settings = GPTSettings::load(PathBuf::from("Settings.toml"));
 
     // Initialize the SessionManager.
-    let session_data: Option<Session> = None;
-    let session_manager = SessionManager::new(settings, opts.include_functions, session_data);
-
+    let session_data = match &opts.new {
+        true => {
+            Session::new(settings, opts.include_functions)
+        }
+        false => {
+            match &opts.continue_session {
+                Some(session_id) => {
+                    Session::load_session_by_id(session_id.clone())
+                }
+                None => {
+                    Session::load_last_session()
+                }
+            }
+        }
+    };
     // Initialize the user interface
-    let mut ui = UI::init(session_manager, opts.clone());
+    let mut ui = UI::init(session_data, opts.clone());
 
     // Handle model selection based on CLI flag
     if let Some(model_name) = &opts.model {

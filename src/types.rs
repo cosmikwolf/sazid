@@ -7,7 +7,7 @@ use async_openai::{
 };
 use clap::Parser;
 use serde::{Deserialize, Serialize};
-use std::{collections::BTreeMap, ffi::OsString, path::PathBuf};
+use std::{collections::BTreeMap, ffi::OsString, path::PathBuf, fmt::Display};
 
 use toml;
 
@@ -138,13 +138,38 @@ pub struct PdfText {
 pub struct ChatMessage {
     pub response: Option<ChatCompletionResponseMessage>,
     pub request: Option<ChatCompletionRequestMessage>,
+    #[serde(skip)]
+    pub displayed: bool,
 }
 
+impl Display for ChatMessage {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match &self.request {
+            Some(request) => format_chat_request(
+                f,
+                request.role.clone(),
+                request.content.clone().unwrap(),
+                request.name.clone(),
+                request.function_call.clone(),
+            ),
+            None => match &self.response {
+                Some(response) => format_chat_response(
+                    f,
+                    response.role.clone(),
+                    response.content.clone().unwrap_or_default(),
+                    response.function_call.clone(),
+                ),
+                None => Ok(()),
+            },
+        }
+    }
+}
 impl From<ChatCompletionRequestMessage> for ChatMessage {
     fn from(request: ChatCompletionRequestMessage) -> Self {
         ChatMessage {
             request: Some(request),
             response: None,
+            displayed: false,
         }
     }
 }
@@ -153,6 +178,7 @@ impl From<ChatCompletionResponseMessage> for ChatMessage {
         ChatMessage {
             request: None,
             response: Some(response),
+            displayed: false,
         }
     }
 }
@@ -210,7 +236,7 @@ impl TryFrom<ChatMessage> for ChatCompletionResponseMessage {
 //     }
 // }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Debug)]
 pub struct Session {
     pub session_id: String,
     pub model: Model,
@@ -225,6 +251,7 @@ pub struct IngestedData {
     chunk_num: u32,
     content: String,
 }
+#[derive(Debug)]
 pub struct SessionManager {
     pub include_functions: bool,
     pub cached_request: Option<Vec<ChatCompletionRequestMessage>>,
@@ -288,6 +315,47 @@ pub struct Commands {
 impl std::fmt::Display for Message {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         format_chat_message(f, self.role.clone(), self.content.clone())
+    }
+}
+
+fn format_chat_request(
+    f: &mut std::fmt::Formatter<'_>,
+    role: Role,
+    message: String,
+    name: Option<String>,
+    function_call: Option<FunctionCall>,
+) -> std::fmt::Result {
+    match name {
+        Some(name) => match function_call {
+            Some(function_call) => write!(
+                f,
+                "{}: {} ({:?})\n\r",
+                role,
+                message,
+                (name, function_call)
+            ),
+            None => write!(f, "{}: {} ({})\n\r", role, message, name),
+        },
+        None => match function_call {
+            Some(function_call) => {
+                write!(f, "{}: {} ({:?})\n\r", role, message, function_call)
+            }
+            None => write!(f, "{}: {}\n\r", role, message),
+        },
+    }
+}
+
+fn format_chat_response(
+    f: &mut std::fmt::Formatter<'_>,
+    role: Role,
+    message: String,
+    function_call: Option<FunctionCall>,
+) -> std::fmt::Result {
+    match function_call {
+        Some(function_call) => {
+            write!(f, "{}: {} ({:?})\n\r", role, message, function_call)
+        }
+        None => write!(f, "{}: {}\n\r", role, message),
     }
 }
 

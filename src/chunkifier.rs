@@ -1,5 +1,5 @@
 use crate::errors::ChunkifierError;
-use crate::session_manager::INGESTED_DIR;
+use crate::consts::*;
 use crate::types::*;
 use crate::utils;
 use std::fs::{self, File};
