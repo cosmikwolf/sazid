@@ -1,6 +1,5 @@
 use crate::types::{Opts, Session};
-use crate::types::{ChatMessage, SessionManager};
-use async_openai::types::Role;
+use crate::types::ChatMessage;
 use crossterm::{
     event::{self, KeyCode, KeyEvent, KeyModifiers},
     style::Print,
@@ -11,25 +10,36 @@ use owo_colors::OwoColorize;
 use std::io::{self, Read, Write};
 use std::path::PathBuf;
 use tokio::runtime::Runtime;
+#[derive(Debug)]
 
-pub struct UI {
+pub struct UI<'session> {
     stdout: std::io::Stdout,
     user_input: String,
-    session_data: Session,
-    opts: Opts,
+    opts: &'session Opts,
+    session: &'session Session<'session>,
     rt: Runtime,
 }
-
-impl UI {
-    pub fn init(session_data: Session, opts: Opts) -> Self {
+impl<'session> Default for &UI<'_> {
+    fn default() -> Self {
+        Self {
+            stdout: io::stdout(),
+            user_input: String::new(),
+            opts: &Opts::default(),
+            session: &Session::default(),
+            rt: Runtime::new().unwrap(),
+        }
+    }
+}
+impl<'b> UI<'b> {
+    pub fn init(opts: &Opts, session: &Session) -> Self {
         let rt = Runtime::new().unwrap();
         let stdout = io::stdout();
         let user_input = Self::get_piped_input();
         let mut ui = Self {
             stdout,
             user_input,
-            session_data,
             opts,
+            session,
             rt,
         };
         ui.setup().unwrap();
@@ -65,9 +75,8 @@ impl UI {
 
     fn execute_input<'a>(&mut self ) -> io::Result<()> {
         println!("User input: {}", self.user_input);
-        let _chat_choices = self
-            .session_data
-            .submit_input(&self.user_input, &self.rt, &self);
+        let _chat_choices = self.session
+            .submit_input(&self.user_input, &self.rt);
 
         // for choice in chat_choices.unwrap() {
         //     self.display_chat_message(choice.message.role.clone(), choice.message.content.clone().unwrap_or_default());
@@ -159,7 +168,7 @@ impl UI {
     }
 
     pub fn display_messages(&mut self) {
-        let messages = self.session_data.get_messages_to_display();
+        let messages = self.session.get_messages_to_display();
         for message  in messages.clone()
             .iter()
             .take_while(|x| x.displayed == false)
@@ -260,9 +269,9 @@ pub enum ImportStatus {
 mod tests {
     #[tokio::test]
     async fn test_ui_display_message() {
-        // let mut session_data: Option<Session> = None;
+        // let mut session: Option<Session> = None;
         // let settings: GPTSettings = toml::from_str(std::fs::read_to_string("Settings.toml").unwrap().as_str()).unwrap();
-        // let mut session_manager = SessionManager::new(settings, session_data);
+        // let mut session_manager = SessionManager::new(settings, session);
         // let mut ui = UI::init(session_manager);
         // // Just a simple test to make sure no panic occurs.
         // // Real UI testing would require more advanced techniques.

@@ -1,4 +1,4 @@
-use crate::consts::*;
+use crate::{consts::*, ui::UI};
 use async_openai::{
     self,
     config::OpenAIConfig,
@@ -13,7 +13,7 @@ use std::{collections::BTreeMap, ffi::OsString, fmt::Display, path::PathBuf};
 use toml;
 
 // options
-#[derive(Parser, Clone)]
+#[derive(Parser, Clone, Default, Debug)]
 #[clap(
     version = "1.0",
     author = "Tenkai Kariya",
@@ -116,11 +116,11 @@ pub struct ModelsList {
     pub fallback: Model,
 }
 #[derive(Clone)]
-pub struct GPTConnector<'session> {
+pub struct GPTConnector<'session, 'a> {
     pub settings: GPTSettings,
     pub include_functions: bool,
     pub client: Client<OpenAIConfig>,
-    pub session_data: &'session Session,
+    pub session_data: &'session Session<'a>,
     pub model: Model,
 }
 
@@ -233,12 +233,14 @@ impl TryFrom<ChatMessage> for ChatCompletionResponseMessage {
 //     }
 // }
 
-#[derive(Serialize, Deserialize, Debug)]
-pub struct Session {
+#[derive(Default, Serialize, Deserialize, Debug)]
+pub struct Session<'session> {
     pub session_id: String,
     pub model: Model,
     pub messages: Vec<ChatMessage>,
     pub include_functions: bool,
+    #[serde(skip)]
+    pub ui: &'session UI<'session>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -247,12 +249,6 @@ pub struct IngestedData {
     file_path: String,
     chunk_num: u32,
     content: String,
-}
-#[derive(Debug)]
-pub struct SessionManager {
-    pub include_functions: bool,
-    pub cached_request: Option<Vec<ChatCompletionRequestMessage>>,
-    pub session_data: Session,
 }
 pub struct Message {
     pub role: Role,

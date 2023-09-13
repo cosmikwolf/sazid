@@ -18,25 +18,26 @@ use crate::types::*;
 use crate::ui::UI;
 use tokio::runtime::Runtime;
 
-impl Session {
-    pub fn new(_settings: GPTSettings, include_functions: bool) -> Session {
+impl<'session> Session<'session> {
+    pub fn new(include_functions: bool, ui: &UI) -> Session<'session> {
         let session_id = Self::generate_session_id();
         Self {
             session_id,
             model: GPT4.clone(),
             messages: Vec::new(),
             include_functions,
+            ui,
         }
     }
 
-    pub fn load_session_by_id(session_id: String) -> Session {
+    pub fn load_session_by_id(session_id: String, ui: &UI) -> Session<'session> {
         Self::get_session_filepath(session_id.clone());
         let load_result = fs::read_to_string(Self::get_session_filepath(session_id.clone()));
         match load_result {
             Ok(session_data) => return serde_json::from_str(session_data.as_str()).unwrap(),
             Err(_) => {
                 println!("Failed to load session data, creating new session");
-                return Session::new(GPTSettings::default(), false);
+                return Session::new(false, ui);
             }
         };
     }
@@ -74,10 +75,10 @@ impl Session {
         }
     }
 
-    pub fn load_last_session() -> Session {
+    pub fn load_last_session(ui: &UI) -> Session<'session> {
         let last_session_path = Path::new(SESSIONS_DIR).join("last_session.txt");
         let last_session_id = fs::read_to_string(last_session_path).unwrap();
-        Self::load_session_by_id(last_session_id)
+        Self::load_session_by_id(last_session_id, ui)
     }
 
     fn save_session(&self) -> io::Result<()> {
@@ -122,12 +123,11 @@ impl Session {
         &mut self,
         input: &String,
         rt: &Runtime,
-        ui: &mut UI,
     ) -> Result<Vec<ChatChoice>, SessionManagerError> {
         let new_messages = construct_user_messages(input, &self.model).unwrap();
         let client = create_openai_client();
         let response = rt.block_on(async {
-            self.send_request(new_messages, MAX_FUNCTION_CALL_DEPTH, client, ui)
+            self.send_request(new_messages, MAX_FUNCTION_CALL_DEPTH, client)
                 .await
         });
         match response {
@@ -167,13 +167,12 @@ impl Session {
         new_messages: Vec<ChatCompletionRequestMessage>,
         recusion_depth: u32,
         client: Client<OpenAIConfig>,
-        ui: &mut UI,
     ) -> Result<CreateChatCompletionResponse, GPTConnectorError> {
         // save new messages in session data
         tracing::debug!("entering send_request");
         for message in new_messages.clone() {
             self.messages.push(message.into());
-            ui.display_messages();
+            self.ui.display_messages();
         }
         // append new messages to existing messages from session data to send in request
         let mut messages: Vec<ChatCompletionRequestMessage> = self.get_all_requests();
@@ -189,7 +188,7 @@ impl Session {
                 // first save the response messages into session data
                 for choice in response.choices.clone() {
                     self.messages.push(choice.message.into());
-                    ui.display_messages();
+                    self.ui.display_messages();
                 }
                 let _ = response
                     .choices
@@ -213,8 +212,7 @@ impl Session {
                         self.send_request(
                             function_call_response_messages,
                             recusion_depth - 1,
-                            client,
-                            ui
+                            client
                         )
                         .await
                     }
