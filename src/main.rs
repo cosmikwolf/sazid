@@ -1,11 +1,14 @@
 #![allow(dead_code)]
 #![allow(unused_imports)]
 #![allow(unused_variables)]
+#[macro_use]
+extern crate lazy_static;
 
 pub mod action;
 pub mod app;
 pub mod cli;
 pub mod components;
+pub mod modules;
 pub mod config;
 pub mod tui;
 pub mod utils;

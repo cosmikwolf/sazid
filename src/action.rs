@@ -16,6 +16,12 @@ pub enum Action {
   Refresh,
   Error(String),
   Help,
+  ProcessInput(String),
+  EnterNormal,
+  EnterInsert,
+  EnterProcessing,
+  ExitProcessing,
+  Update
 }
 
 impl<'de> Deserialize<'de> for Action {
@@ -44,6 +50,8 @@ impl<'de> Deserialize<'de> for Action {
           "Quit" => Ok(Action::Quit),
           "Refresh" => Ok(Action::Refresh),
           "Help" => Ok(Action::Help),
+          "EnterInsert" => Ok(Action::EnterInsert),
+          "EnterNormal" => Ok(Action::EnterNormal),
           data if data.starts_with("Error(") => {
             let error_msg = data.trim_start_matches("Error(").trim_end_matches(")");
             Ok(Action::Error(error_msg.to_string()))
