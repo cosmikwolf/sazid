@@ -1,60 +1,42 @@
-use std::path::PathBuf;
-
-use clap::Parser;
-use sazid::{types::*, utils::initialize_tracing};
-use sazid::ui::UI;
-use tracing::{self, event, Level};
-
-fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>>  {
-    initialize_tracing().unwrap();
-    tracing::debug!("sazid start main");
- 
-    // Handle model selection based on CLI flag
-    if let Some(model_name) = &opts.model {
-        // In a real-world scenario, you would set the selected model in the session manager or GPT connector
-        ui.display_general_message(format!("Using model: {}", model_name));
-    }
-
-    ui.run_interface_loop(opts.batch).unwrap();
-    
-    Ok(())
-}
-
-
-
-
-// ANCHOR: all
-pub mod runner;
+#![allow(dead_code)]
+#![allow(unused_imports)]
+#![allow(unused_variables)]
 
 pub mod action;
-
+pub mod app;
+pub mod cli;
 pub mod components;
-
 pub mod config;
-
 pub mod tui;
-
 pub mod utils;
 
-use crate::{
-  runner::Runner,
-  utils::{initialize_logging, initialize_panic_handler, version},
-};
 use clap::Parser;
+use cli::Cli;
 use color_eyre::eyre::Result;
 
-//// ANCHOR: args
-// Define the command line arguments structure
+use crate::{
+  app::App,
+  utils::{initialize_logging, initialize_panic_handler, version},
+};
 
-#[tokio::main]
-async fn main() -> Result<()> {
+async fn tokio_main() -> Result<()> {
   initialize_logging()?;
+
   initialize_panic_handler()?;
-  let tick_rate = 250;
-  let render_tick_rate = 100;
-  let mut runner = Runner::new((tick_rate, render_tick_rate))?;
-  runner.run().await?;
+
+  let args = Cli::parse();
+  let mut app = App::new(args.tick_rate, args.frame_rate)?;
+  app.run().await?;
 
   Ok(())
 }
-// ANCHOR_END: all
+
+#[tokio::main]
+async fn main() -> Result<()> {
+  if let Err(e) = tokio_main().await {
+    eprintln!("{} error: Something went wrong", env!("CARGO_PKG_NAME"));
+    Err(e)
+  } else {
+    Ok(())
+  }
+}

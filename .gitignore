@@ -6,3 +6,4 @@ session_data
 history.txt
 data
 tmp
+.data/*.log

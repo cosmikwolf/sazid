@@ -5,40 +5,43 @@ use tokio::sync::mpsc::UnboundedSender;
 
 use crate::{
   action::Action,
+  config::Config,
   tui::{Event, Frame},
 };
 
-pub mod app;
-pub mod fps;
-pub mod ui;
-pub mod session;
-pub mod gpt_commands;
+pub mod home;
 
-//// ANCHOR: component
 pub trait Component {
   #[allow(unused_variables)]
-  fn init(&mut self, tx: UnboundedSender<Action>) -> Result<()> {
+  fn register_action_handler(&mut self, tx: UnboundedSender<Action>) -> Result<()> {
     Ok(())
   }
-  fn handle_events(&mut self, event: Option<Event>) -> Option<Action> {
-    match event {
-      Some(Event::Key(key_event)) => self.handle_key_events(key_event),
-      Some(Event::Mouse(mouse_event)) => self.handle_mouse_events(mouse_event),
+  #[allow(unused_variables)]
+  fn register_config_handler(&mut self, config: Config) -> Result<()> {
+    Ok(())
+  }
+  fn init(&mut self, area: Rect) -> Result<()> {
+    Ok(())
+  }
+  fn handle_events(&mut self, event: Option<Event>) -> Result<Option<Action>> {
+    let r = match event {
+      Some(Event::Key(key_event)) => self.handle_key_events(key_event)?,
+      Some(Event::Mouse(mouse_event)) => self.handle_mouse_events(mouse_event)?,
       _ => None,
-    }
+    };
+    Ok(r)
   }
   #[allow(unused_variables)]
-  fn handle_key_events(&mut self, key: KeyEvent) -> Option<Action> {
-    None
+  fn handle_key_events(&mut self, key: KeyEvent) -> Result<Option<Action>> {
+    Ok(None)
   }
   #[allow(unused_variables)]
-  fn handle_mouse_events(&mut self, mouse: MouseEvent) -> Option<Action> {
-    None
+  fn handle_mouse_events(&mut self, mouse: MouseEvent) -> Result<Option<Action>> {
+    Ok(None)
   }
   #[allow(unused_variables)]
   fn update(&mut self, action: Action) -> Result<Option<Action>> {
     Ok(None)
   }
-  fn draw(&mut self, f: &mut Frame<'_>, rect: Rect);
+  fn draw(&mut self, f: &mut Frame<'_>, area: Rect) -> Result<()>;
 }
-//// ANCHOR_END: component
