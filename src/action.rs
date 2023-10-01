@@ -1,6 +1,7 @@
+use async_openai::types::CreateChatCompletionResponse;
 use serde_derive::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum Action {
   Quit,
   Tick,
@@ -19,4 +20,6 @@ pub enum Action {
   EnterProcessing,
   ExitProcessing,
   Update,
+  Error(String),
+  GPTResponse(CreateChatCompletionResponse)
 }

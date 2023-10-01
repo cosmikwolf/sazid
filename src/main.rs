@@ -19,3 +19,42 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>>  {
     
     Ok(())
 }
+
+
+
+
+// ANCHOR: all
+pub mod runner;
+
+pub mod action;
+
+pub mod components;
+
+pub mod config;
+
+pub mod tui;
+
+pub mod utils;
+
+use crate::{
+  runner::Runner,
+  utils::{initialize_logging, initialize_panic_handler, version},
+};
+use clap::Parser;
+use color_eyre::eyre::Result;
+
+//// ANCHOR: args
+// Define the command line arguments structure
+
+#[tokio::main]
+async fn main() -> Result<()> {
+  initialize_logging()?;
+  initialize_panic_handler()?;
+  let tick_rate = 250;
+  let render_tick_rate = 100;
+  let mut runner = Runner::new((tick_rate, render_tick_rate))?;
+  runner.run().await?;
+
+  Ok(())
+}
+// ANCHOR_END: all

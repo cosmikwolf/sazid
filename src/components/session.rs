@@ -1,6 +1,16 @@
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 use std::{env, fs, io};
+use crossterm::event::{KeyEvent, MouseEvent};
+use ratatui::layout::Rect;
+use serde_derive::{Serialize, Deserialize};
+use tokio::sync::mpsc::UnboundedSender;
+use super::Component;
+use color_eyre::eyre::Result;
+use crate::{
+  action::Action,
+  tui::{Event, Frame},
+};
 
 use async_openai::types::{
     ChatChoice, ChatCompletionRequestMessage, ChatCompletionResponseMessage,
@@ -11,33 +21,99 @@ use async_openai::{config::OpenAIConfig, Client};
 use async_recursion::async_recursion;
 use backoff::exponential::ExponentialBackoffBuilder;
 
-use crate::components::consts::*;
-use crate::components::errors::*;
-use crate::components::types::ChatMessage;
-use crate::components::types::*;
+use crate::tools::chunkifier::*;
+use crate::consts::*;
+use crate::errors::*;
+use crate::types::ChatMessage;
+use crate::types::*;
 use crate::components::ui::UI;
 use tokio::runtime::Runtime;
 
-impl<'session> Session<'session> {
-    pub fn new(include_functions: bool, ui: &UI) -> Session<'session> {
-        let session_id = Self::generate_session_id();
-        Self {
-            session_id,
-            model: GPT4.clone(),
-            messages: Vec::new(),
-            include_functions,
-            ui,
-        }
+#[derive(Default, Serialize, Deserialize, Debug, Clone)]
+pub struct Session {
+    pub session_id: String,
+    pub model: Model,
+    pub messages: Vec<ChatMessage>,
+    pub include_functions: bool,
+    #[serde(skip)]
+    pub action_tx: Option<UnboundedSender<Action>>,
+}
+
+impl Component for Session {
+    #[allow(unused_variables)]
+    fn init(&mut self, tx: UnboundedSender<Action>) -> Result<()> {
+      Ok(())
     }
 
-    pub fn load_session_by_id(session_id: String, ui: &UI) -> Session<'session> {
+    fn handle_events(&mut self, event: Option<Event>) -> Option<Action> {
+      match event {
+        Some(Event::Key(key_event)) => self.handle_key_events(key_event),
+        Some(Event::Mouse(mouse_event)) => self.handle_mouse_events(mouse_event),
+        _ => None,
+      }
+    }
+
+    #[allow(unused_variables)]
+    fn handle_key_events(&mut self, key: KeyEvent) -> Option<Action> {
+      None
+    }
+    
+    #[allow(unused_variables)]
+    fn handle_mouse_events(&mut self, mouse: MouseEvent) -> Option<Action> {
+      None
+    }
+
+    #[allow(unused_variables)]
+    fn update(&mut self, action: Action) -> Result<Option<Action>> {
+        match action {
+            Action::CompleteInput(s) => tokio::spawn(async move {self.submit_input(&s).await;}),
+            Action::Quit => todo!(),
+            Action::Tick => todo!(),
+            Action::Render => todo!(),
+            Action::Resume => todo!(),
+            Action::Suspend => todo!(),
+            Action::Resize(_, _) => todo!(),
+            Action::ToggleShowHelp => todo!(),
+            Action::ScheduleIncrement => todo!(),
+            Action::ScheduleDecrement => todo!(),
+            Action::Increment(_) => todo!(),
+            Action::Decrement(_) => todo!(),
+            Action::EnterNormal => todo!(),
+            Action::EnterInsert => todo!(),
+            Action::EnterProcessing => todo!(),
+            Action::ExitProcessing => todo!(),
+            Action::Update => todo!(),
+            Action::Error(_) => todo!(),
+            Action::GPTResponse(_) => todo!(),
+        };
+      Ok(None)
+    }
+    fn draw(&mut self, f: &mut Frame<'_>, rect: Rect) {
+
+    }
+  }
+
+impl Session {
+    pub fn new(include_functions: bool) -> Session {
+        let session_id = Self::generate_session_id();
+        Self::default()
+        // Self {
+        //     session_id,
+        //     model: GPT4.clone(),
+        //     messages: Vec::new(),
+        //     include_functions,
+        //     action_tx: todo!(),
+        // }
+    }
+
+    pub fn load_session_by_id(session_id: String, ui: &UI) -> Session {
         Self::get_session_filepath(session_id.clone());
         let load_result = fs::read_to_string(Self::get_session_filepath(session_id.clone()));
         match load_result {
             Ok(session_data) => return serde_json::from_str(session_data.as_str()).unwrap(),
             Err(_) => {
                 println!("Failed to load session data, creating new session");
-                return Session::new(false, ui);
+                return Session::new(false);
             }
         };
     }
@@ -75,7 +151,7 @@ impl<'session> Session<'session> {
         }
     }
 
-    pub fn load_last_session(ui: &UI) -> Session<'session> {
+    pub fn load_last_session(ui: &UI) -> Session {
         let last_session_path = Path::new(SESSIONS_DIR).join("last_session.txt");
         let last_session_id = fs::read_to_string(last_session_path).unwrap();
         Self::load_session_by_id(last_session_id, ui)
@@ -119,34 +195,36 @@ impl<'session> Session<'session> {
     }
 
     // #[tracing::instrument(skip(self))]
-    pub fn submit_input<'a>(
+    pub async fn submit_input<'a>(
         &mut self,
         input: &String,
-        rt: &Runtime,
-    ) -> Result<Vec<ChatChoice>, SessionManagerError> {
+    ) {
         let new_messages = construct_user_messages(input, &self.model).unwrap();
         let client = create_openai_client();
-        let response = rt.block_on(async {
-            self.send_request(new_messages, MAX_FUNCTION_CALL_DEPTH, client)
-                .await
-        });
-        match response {
-            Ok(response) => {
-                let _ = response
-                    .choices
-                    .clone()
-                    .into_iter()
-                    .map(|choice| self.messages.push(choice.message.into()));
-                self.save_session().unwrap();
-                Ok(response.choices)
+        let tx = self.action_tx.clone().unwrap();
+        
+        let response = self.send_request(
+            new_messages,
+            MAX_FUNCTION_CALL_DEPTH, 
+            client).await;
+                match response {
+                    Ok(response) => {
+                        let _ = response
+                        .choices
+                        .clone()
+                        .into_iter()
+                        .map(|choice| self.messages.push(choice.message.into()));
+                    self.save_session().unwrap();
+                    tx.send(Action::GPTResponse(response)).unwrap();
+                }
+                Err(err) => {
+                    tx.send(Action::Error(format!("Error: {:?}", err))).unwrap();
+                    Err(SessionManagerError::Other(
+                        "Failed to send reply to function call".to_string(),
+                    ));
+                }
             }
-            Err(err) => {
-                println!("Error: {:?}", err);
-                Err(SessionManagerError::Other(
-                    "Failed to send reply to function call".to_string(),
-                ))
-            }
-        }
+            Ok(())
     }
 
     pub fn get_messages_to_display(&mut self) -> Vec<ChatMessage> {
@@ -172,7 +250,7 @@ impl<'session> Session<'session> {
         tracing::debug!("entering send_request");
         for message in new_messages.clone() {
             self.messages.push(message.into());
-            self.ui.display_messages();
+            // self.ui.display_messages();
         }
         // append new messages to existing messages from session data to send in request
         let mut messages: Vec<ChatCompletionRequestMessage> = self.get_all_requests();
@@ -188,7 +266,7 @@ impl<'session> Session<'session> {
                 // first save the response messages into session data
                 for choice in response.choices.clone() {
                     self.messages.push(choice.message.into());
-                    self.ui.display_messages();
+                    // self.ui.display_messages();
                 }
                 let _ = response
                     .choices
@@ -277,7 +355,7 @@ pub fn construct_user_messages(
     content: &str,
     model: &Model,
 ) -> Result<Vec<ChatCompletionRequestMessage>, GPTConnectorError> {
-    let chunks = Chunkifier::parse_input(
+    let chunks = parse_input(
         content,
         CHUNK_TOKEN_LIMIT as usize,
         model.token_limit as usize,

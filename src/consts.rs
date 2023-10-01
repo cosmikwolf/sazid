@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use crate::components::types::Model;
+use crate::types::Model;
 pub const MAX_FUNCTION_CALL_DEPTH: u32 = 3;
 pub const CHUNK_TOKEN_LIMIT: u32 = 4096u32;
 

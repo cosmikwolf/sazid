@@ -3,8 +3,8 @@ use lopdf::Object;
 use std::collections::BTreeMap;
 use std::path::Path;
 use std::error::Error;
-use crate::components::consts::*;
-use crate::components::types::*;
+use crate::consts::*;
+use crate::types::*;
 
 fn filter_func(object_id: (u32, u16), object: &mut Object) -> Option<((u32, u16), Object)> {
     if PDF_IGNORE.contains(&object.type_name().unwrap_or_default()) {

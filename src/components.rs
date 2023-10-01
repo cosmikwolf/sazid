@@ -3,17 +3,17 @@ use crossterm::event::{KeyEvent, MouseEvent};
 use ratatui::layout::Rect;
 use tokio::sync::mpsc::UnboundedSender;
 
-use crate::{action::Action, tui::Event, tui::Frame};
+use crate::{
+  action::Action,
+  tui::{Event, Frame},
+};
 
 pub mod app;
+pub mod fps;
 pub mod ui;
-pub mod pdf_extractor;
-pub mod chunkifier;
-pub mod gpt_commands;
-pub mod errors;
-pub mod types;
-pub mod consts;
 pub mod session;
+pub mod gpt_commands;
+
 //// ANCHOR: component
 pub trait Component {
   #[allow(unused_variables)]
@@ -21,17 +21,11 @@ pub trait Component {
     Ok(())
   }
   fn handle_events(&mut self, event: Option<Event>) -> Option<Action> {
-    let action = match event {
-      Some(Event::Quit) => Action::Quit,
-      Some(Event::Tick) => Action::Tick,
-      Some(Event::Render) => Action::Render,
-      Some(Event::Key(key_event)) => return self.handle_key_events(key_event),
-      Some(Event::Mouse(mouse_event)) => return self.handle_mouse_events(mouse_event),
-      Some(Event::Resize(x, y)) => Action::Resize(x, y),
-      Some(_) => return None,
-      None => return None,
-    };
-    Some(action)
+    match event {
+      Some(Event::Key(key_event)) => self.handle_key_events(key_event),
+      Some(Event::Mouse(mouse_event)) => self.handle_mouse_events(mouse_event),
+      _ => None,
+    }
   }
   #[allow(unused_variables)]
   fn handle_key_events(&mut self, key: KeyEvent) -> Option<Action> {

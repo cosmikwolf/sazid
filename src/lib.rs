@@ -8,3 +8,7 @@ pub mod tui;
 pub mod action;
 pub mod config;
 pub mod components;
+pub mod consts;
+pub mod types;
+pub mod errors;
+pub mod tools;

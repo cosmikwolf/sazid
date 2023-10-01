@@ -1,22 +1,22 @@
-use crate::components::errors::ChunkifierError;
-use crate::components::consts::*;
-use crate::components::types::*;
+use crate::errors::ChunkifierError;
+use crate::consts::*;
+use crate::types::*;
+use crate::types::PdfText;
 use crate::utils;
 use std::fs::{self, File};
 use std::io::Read;
 use std::path::{Path, PathBuf};
 use tiktoken_rs::cl100k_base;
 
-impl Chunkifier {
     // takes input text and returns chunks with all data extracted
     pub fn parse_input(
         input: &str,
         tokens_per_chunk: usize,
         model_max_tokens: usize,
     ) -> Result<Vec<String>, ChunkifierError> {
-        let ingest_data = Self::categorize_input(input)?;
-        let chunks = Self::chunkify_parsed_input(ingest_data, tokens_per_chunk).unwrap();
-        Self::check_token_count_model_limit(&chunks, model_max_tokens).unwrap();
+        let ingest_data = categorize_input(input)?;
+        let chunks = chunkify_parsed_input(ingest_data, tokens_per_chunk).unwrap();
+        check_token_count_model_limit(&chunks, model_max_tokens).unwrap();
         Ok(chunks)
     }
 
@@ -64,7 +64,7 @@ impl Chunkifier {
         // ingest_data.file_paths.iter().for_each(|path| {
         //     full_text.push_str(&Self::extract_file_text(path).unwrap());
         // });
-        Ok(Self::chunkify_text(&full_text, tokens_per_chunk))
+        Ok(chunkify_text(&full_text, tokens_per_chunk))
     }
 
     /// an algorithm that will determine if a Vec<String> string exceeds a model_max_tokens limit
@@ -103,7 +103,7 @@ impl Chunkifier {
         if let Ok(p) = path {
             if p.is_file() {
                 // If it's a file, chunkify its contents
-                Self::chunkify_file(&p, tokens_per_chunk)
+                chunkify_file(&p, tokens_per_chunk)
             } else if p.is_dir() {
                 let dirchunks = p
                     .read_dir()
@@ -118,7 +118,7 @@ impl Chunkifier {
                     .and_then(|paths| {
                         paths
                             .iter()
-                            .map(|path| Self::chunkify_file(path, tokens_per_chunk))
+                            .map(|path| chunkify_file(path, tokens_per_chunk))
                             .collect::<Result<Vec<_>, ChunkifierError>>()
                     })
                     .map(|chunks| chunks.into_iter().flatten().collect())
@@ -127,14 +127,14 @@ impl Chunkifier {
             } else {
                 // if it is a path, but its not a file or a directory, then it is a URL
                 println!("URL detected, but not implemented. ingesting as text");
-                return Ok::<Vec<std::string::String>, ChunkifierError>(Self::chunkify_text(
+                return Ok::<Vec<std::string::String>, ChunkifierError>(chunkify_text(
                     input,
                     tokens_per_chunk,
                 ));
             }
         } else {
             // If not a file path, chunkify the input text directly
-            Ok::<Vec<std::string::String>, ChunkifierError>(Self::chunkify_text(
+            Ok::<Vec<std::string::String>, ChunkifierError>(chunkify_text(
                 input,
                 tokens_per_chunk,
             ))
@@ -149,8 +149,8 @@ impl Chunkifier {
         file_path: &PathBuf,
         tokens_per_chunk: usize,
     ) -> Result<Vec<String>, ChunkifierError> {
-        let content = Self::extract_file_text(file_path)?;
-        let chunks = Self::chunkify_text(&content, tokens_per_chunk);
+        let content = extract_file_text(file_path)?;
+        let chunks = chunkify_text(&content, tokens_per_chunk);
         utils::ensure_directory_exists(INGESTED_DIR).unwrap();
         if file_path.is_file() {
             let dest_path = Path::new(INGESTED_DIR).join(file_path.file_name().unwrap());
@@ -206,18 +206,17 @@ impl Chunkifier {
     }
 
     fn extract_file_text(file_path: &PathBuf) -> Result<String, ChunkifierError> {
-        if Self::is_pdf_file(file_path) {
+        if is_pdf_file(file_path) {
             PdfText::from_pdf(file_path)
                 .and_then(|pdf_text| pdf_text.get_text())
                 .map_err(|_| ChunkifierError::Other("Failed to extract text from PDF".to_string()))
-        } else if Self::is_binary_file(file_path) {
+        } else if is_binary_file(file_path) {
             Err(ChunkifierError::Other("Binary file detected".to_string()))
         } else {
             fs::read_to_string(file_path)
                 .map_err(|_| ChunkifierError::Other("Failed to read text file".to_string()))
         }
     }
-}
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -235,7 +234,7 @@ mod tests {
         #[test]
         fn test_parse_input() {
             let input = "https://www.google.com/ src/main.rs this is some text";
-            let ingest_data = Chunkifier::categorize_input(input).unwrap();
+            let ingest_data = categorize_input(input).unwrap();
             assert_eq!(
                 ingest_data.text,
                 "https://www.google.com/ src/main.rs this is some text"
@@ -247,7 +246,7 @@ mod tests {
         #[test]
         fn test_chunkify_pdf_file() {
             let pdf_file_path = PathBuf::from("tests/data/NIST.SP.800-185.pdf");
-            let chunks = Chunkifier::chunkify_file(&pdf_file_path, 4).unwrap();
+            let chunks = chunkify_file(&pdf_file_path, 4).unwrap();
 
             // This will depend on the content of the PDF and the chunk size.
             // For the purpose of the test, let's check if the first chunk contains some expected stub text.
@@ -276,7 +275,7 @@ mod tests {
                 .write_all(b"Hello, world!\nHow are you?\nThis is a test!")
                 .unwrap();
 
-            let chunks = Chunkifier::chunkify_file(&text_file_path, 4).unwrap();
+            let chunks = chunkify_file(&text_file_path, 4).unwrap();
 
             // Print out the chunks for verification:
             for (i, chunk) in chunks.iter().enumerate() {
@@ -299,7 +298,7 @@ mod tests {
                 .write_all(&[0u8, 1, 2, 3, 4, 255])
                 .unwrap();
 
-            let result = Chunkifier::chunkify_file(&binary_file_path, 4);
+            let result = chunkify_file(&binary_file_path, 4);
 
             // We expect an error as the binary file is not processable.
             assert!(result.is_err());

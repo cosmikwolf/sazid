@@ -1,4 +1,4 @@
-use crate::components::{consts::*, ui::UI};
+use crate::{consts::*, components::ui::UI};
 use async_openai::{
     self,
     config::OpenAIConfig,
@@ -115,14 +115,7 @@ pub struct ModelsList {
     pub default: Model,
     pub fallback: Model,
 }
-#[derive(Clone)]
-pub struct GPTConnector<'session, 'a> {
-    pub settings: GPTSettings,
-    pub include_functions: bool,
-    pub client: Client<OpenAIConfig>,
-    pub session_data: &'session Session<'a>,
-    pub model: Model,
-}
+
 
 pub struct GPTResponse {
     pub role: Role,
@@ -233,15 +226,7 @@ impl TryFrom<ChatMessage> for ChatCompletionResponseMessage {
 //     }
 // }
 
-#[derive(Default, Serialize, Deserialize, Debug)]
-pub struct Session<'session> {
-    pub session_id: String,
-    pub model: Model,
-    pub messages: Vec<ChatMessage>,
-    pub include_functions: bool,
-    #[serde(skip)]
-    pub ui: &'session UI<'session>,
-}
+
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct IngestedData {
@@ -272,7 +257,6 @@ pub struct IngestData {
     pub urls: Vec<String>,
     pub file_paths: Vec<PathBuf>,
 }
-pub struct Chunkifier {}
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct CommandProperty {

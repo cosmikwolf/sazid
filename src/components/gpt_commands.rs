@@ -1,7 +1,19 @@
-use async_openai::types::{ChatCompletionFunctions, ChatChoice, ChatCompletionRequestMessage, Role};
+use color_eyre::eyre::Result;
 
-use crate::components::types::*;
-use std::{collections::HashMap, io::{BufRead, Write}, path::{Path, PathBuf}};
+
+use async_openai::{types::{ChatCompletionFunctions, ChatChoice, ChatCompletionRequestMessage, Role}, config::OpenAIConfig, Client};
+
+use crate::types::*;
+
+use std::{collections::HashMap, io::{BufRead, Write}, path::PathBuf};
+
+#[derive(Clone)]
+pub struct GPTConnector {
+    pub settings: GPTSettings,
+    pub include_functions: bool,
+    pub client: Client<OpenAIConfig>,
+    pub model: Model,
+}
 
 pub fn define_commands() -> Vec<Command> {
     let mut commands: Vec<Command> = Vec::new();

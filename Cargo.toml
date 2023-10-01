@@ -1,4 +1,5 @@
 #![feature(unboxed_closures)]
+#![feature(async_fn_in_trait)]
 [package]
 name = "sazid"
 version = "0.1.0"

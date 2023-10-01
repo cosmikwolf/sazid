@@ -1,5 +1,6 @@
 use crate::types::{Opts, Session};
 use crate::types::ChatMessage;
+
 use crossterm::{
     event::{self, KeyCode, KeyEvent, KeyModifiers},
     style::Print,
@@ -12,14 +13,15 @@ use std::path::PathBuf;
 use tokio::runtime::Runtime;
 #[derive(Debug)]
 
-pub struct UI<'session> {
+pub struct UI {
     stdout: std::io::Stdout,
     user_input: String,
-    opts: &'session Opts,
-    session: &'session Session<'session>,
+    opts: Opts,
+    session: Session,
     rt: Runtime,
 }
-impl<'session> Default for &UI<'_> {
+
+impl Default for UI {
     fn default() -> Self {
         Self {
             stdout: io::stdout(),
@@ -30,7 +32,8 @@ impl<'session> Default for &UI<'_> {
         }
     }
 }
-impl<'b> UI<'b> {
+
+impl UI {
     pub fn init(opts: &Opts, session: &Session) -> Self {
         let rt = Runtime::new().unwrap();
         let stdout = io::stdout();
