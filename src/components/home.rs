@@ -1,18 +1,18 @@
 use std::{collections::HashMap, time::Duration};
 
-use log::error;
+use super::{Component, Frame};
+use crate::{
+  action::Action,
+  components::session::Session,
+  config::{Config, KeyBindings},
+};
 use color_eyre::eyre::Result;
 use crossterm::event::{KeyCode, KeyEvent};
+use log::error;
 use ratatui::{prelude::*, widgets::*};
 use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc::UnboundedSender;
 use tui_input::{backend::crossterm::EventHandler, Input};
-use super::{Component, Frame};
-use crate::{
-  app::session::Session,
-  action::Action,
-  config::{Config, KeyBindings},
-};
 
 #[derive(Default, Copy, Clone, PartialEq, Eq)]
 pub enum Mode {
@@ -24,9 +24,6 @@ pub enum Mode {
 #[derive(Default)]
 pub struct Home {
   pub show_help: bool,
-  pub counter: usize,
-  pub app_ticker: usize,
-  pub render_ticker: usize,
   pub mode: Mode,
   pub input: Input,
   pub action_tx: Option<UnboundedSender<Action>>,
@@ -34,9 +31,8 @@ pub struct Home {
   pub text: Vec<String>,
   pub last_events: Vec<KeyEvent>,
   pub config: Config,
-  pub session: Session
+  pub session: Session,
 }
-
 
 impl Home {
   pub fn new() -> Self {
@@ -54,9 +50,16 @@ impl Home {
 
   pub fn process_input(&mut self, input: String) {
     let tx = self.action_tx.clone().unwrap();
+    let session_data = self.config.session_config.clone();
     tokio::spawn(async move {
       tx.send(Action::EnterProcessing).unwrap();
-      let response = self.session.submit_input(input).await;
+      let response = Session::submit_input(input, session_data).await;
+      match response {
+        Ok(response) => tx.send(Action::ProcessResponse(response)).unwrap(),
+        Err(e) => {
+          tx.send(Action::Error(format!("Error: {}", e))).unwrap();
+        },
+      }
       tx.send(Action::ExitProcessing).unwrap();
     });
   }
@@ -105,22 +108,20 @@ impl Component for Home {
     self.last_events.push(key.clone());
     let action = match self.mode {
       Mode::Normal | Mode::Processing => return Ok(None),
-      Mode::Insert => {
-        match key.code {
-          KeyCode::Esc => Action::EnterNormal,
-          KeyCode::Enter => {
-            if let Some(sender) = &self.action_tx {
-              if let Err(e) = sender.send(Action::ProcessInput(self.input.value().to_string())) {
-                error!("Failed to send action: {:?}", e);
-              }
+      Mode::Insert => match key.code {
+        KeyCode::Esc => Action::EnterNormal,
+        KeyCode::Enter => {
+          if let Some(sender) = &self.action_tx {
+            if let Err(e) = sender.send(Action::SubmitInput(self.input.value().to_string())) {
+              error!("Failed to send action: {:?}", e);
             }
-            Action::EnterNormal
-          },
-          _ => {
-            self.input.handle_event(&crossterm::event::Event::Key(key));
-            Action::Update
-          },
-        }
+          }
+          Action::EnterNormal
+        },
+        _ => {
+          self.input.handle_event(&crossterm::event::Event::Key(key));
+          Action::Update
+        },
       },
     };
     Ok(Some(action))
@@ -128,7 +129,7 @@ impl Component for Home {
 
   fn draw(&mut self, f: &mut Frame<'_>, area: Rect) -> Result<()> {
     let rects = Layout::default().constraints([Constraint::Percentage(100), Constraint::Min(3)].as_ref()).split(area);
-    let mut text: Vec<Line> = self.text.clone().iter().map(|l| Line::from(l.clone())).collect();
+    let text: Vec<Line> = self.text.clone().iter().map(|l| Line::from(l.clone())).collect();
     f.render_widget(
       Paragraph::new(text)
         .block(
@@ -169,4 +170,3 @@ impl Component for Home {
     Ok(())
   }
 }
-

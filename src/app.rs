@@ -4,7 +4,6 @@ use ratatui::prelude::Rect;
 use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc;
 
-pub mod session;
 pub mod gpt_interface;
 pub mod tools;
 pub mod types;

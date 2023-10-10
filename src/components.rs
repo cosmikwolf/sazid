@@ -10,6 +10,7 @@ use crate::{
 };
 
 pub mod home;
+pub mod session;
 
 pub trait Component {
   #[allow(unused_variables)]

@@ -8,7 +8,6 @@ pub mod action;
 pub mod app;
 pub mod cli;
 pub mod components;
-pub mod modules;
 pub mod config;
 pub mod tui;
 pub mod utils;

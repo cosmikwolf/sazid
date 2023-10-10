@@ -1,11 +1,12 @@
 use std::fmt;
 
+use async_openai::types::ChatCompletionResponseMessage;
 use serde::{
   de::{self, Deserializer, Visitor},
   Deserialize, Serialize,
 };
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
 pub enum Action {
   Tick,
   Render,
@@ -16,12 +17,13 @@ pub enum Action {
   Refresh,
   Error(String),
   Help,
-  ProcessInput(String),
+  SubmitInput(String),
+  ProcessResponse(Vec<ChatCompletionResponseMessage>),
   EnterNormal,
   EnterInsert,
   EnterProcessing,
   ExitProcessing,
-  Update
+  Update,
 }
 
 impl<'de> Deserialize<'de> for Action {

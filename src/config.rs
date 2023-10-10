@@ -11,7 +11,7 @@ use serde::{
 };
 use serde_json::Value as JsonValue;
 
-use crate::{action::Action, app::Mode};
+use crate::{action::Action, app::Mode, components::session::SessionConfig};
 
 const CONFIG: &str = include_str!("../.config/config.json5");
 
@@ -25,8 +25,10 @@ pub struct AppConfig {
 
 #[derive(Clone, Debug, Default, Deserialize)]
 pub struct Config {
+  #[serde(default)]
+  pub session_config: SessionConfig,
   #[serde(default, flatten)]
-  pub config: AppConfig,
+  pub app_config: AppConfig,
   #[serde(default)]
   pub keybindings: KeyBindings,
   #[serde(default)]

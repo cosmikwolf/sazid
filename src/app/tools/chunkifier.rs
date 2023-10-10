@@ -1,8 +1,8 @@
-use crate::errors::ChunkifierError;
-use crate::consts::*;
-use crate::types::*;
-use crate::types::PdfText;
-use crate::utils;
+use crate::app::errors::ChunkifierError;
+use crate::app::consts::*;
+use crate::app::types::*;
+use crate::app::tools::utils::*;
+use crate::app::tools::utils::ensure_directory_exists;
 use std::fs::{self, File};
 use std::io::Read;
 use std::path::{Path, PathBuf};
@@ -151,7 +151,7 @@ use tiktoken_rs::cl100k_base;
     ) -> Result<Vec<String>, ChunkifierError> {
         let content = extract_file_text(file_path)?;
         let chunks = chunkify_text(&content, tokens_per_chunk);
-        utils::ensure_directory_exists(INGESTED_DIR).unwrap();
+        ensure_directory_exists(INGESTED_DIR).unwrap();
         if file_path.is_file() {
             let dest_path = Path::new(INGESTED_DIR).join(file_path.file_name().unwrap());
             fs::copy(file_path, dest_path)?;
