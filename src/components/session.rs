@@ -52,6 +52,7 @@ impl Component for Session {
     Ok(())
   }
   fn register_config_handler(&mut self, config: Config) -> Result<()> {
+    self.config = config.session_config;
     Ok(())
   }
   fn init(&mut self, area: Rect) -> Result<()> {
@@ -138,7 +139,9 @@ impl Session {
   }
 
   pub fn process_response_handler(&mut self, response: Vec<ChatCompletionResponseMessage>) {
+    let tx = self.action_tx.clone().unwrap();
     self.messages.append(&mut response.into_iter().map(|x| x.into()).collect());
+    tx.send(Action::Update).unwrap();
   }
 
   pub async fn submit_input(

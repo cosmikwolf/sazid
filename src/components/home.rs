@@ -66,6 +66,7 @@ impl Component for Home {
       // Action::ScheduleDecrement => self.schedule_decrement(1),
       // Action::Increment(i) => self.increment(i),
       // Action::Decrement(i) => self.decrement(i),
+      // Action::ProcessResponse(s) => Action::Update(),
       Action::EnterNormal => {
         self.mode = Mode::Normal;
       },
@@ -110,10 +111,17 @@ impl Component for Home {
   fn draw(&mut self, f: &mut Frame<'_>, area: Rect) -> Result<()> {
     let rects = Layout::default().constraints([Constraint::Percentage(100), Constraint::Min(3)].as_ref()).split(area);
     // let text: Vec<Line> = self.text.clone().iter().map(|l| Line::from(l.clone())).collect();
-
+    let title_text = Line::from(vec![
+      Span::raw("sazid semantic llvm console "),
+      match self.mode {
+        Mode::Normal => Span::styled("Normal Mode", Style::default().fg(Color::Green)),
+        Mode::Insert => Span::styled("Insert Mode", Style::default().fg(Color::Yellow)),
+        Mode::Processing => Span::styled("Processing", Style::default().fg(Color::Yellow)),
+      },
+    ]);
     f.render_widget(
       Block::default()
-        .title("sazid semantic llvm console")
+        .title(title_text)
         .title_alignment(Alignment::Center)
         .borders(Borders::ALL)
         .border_style(match self.mode {
