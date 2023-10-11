@@ -1,6 +1,7 @@
 use color_eyre::eyre::Result;
 use crossterm::event::{KeyEvent, MouseEvent};
 use ratatui::layout::Rect;
+use ratatui::{prelude::*, widgets::*};
 use serde_derive::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -32,13 +33,13 @@ use crate::app::tools::utils::ensure_directory_exists;
 
 #[derive(Default, Serialize, Deserialize, Debug, Clone)]
 pub struct SessionConfig {
+  pub session_id: String,
   pub model: Model,
   pub include_functions: bool,
 }
 
 #[derive(Default, Serialize, Deserialize, Debug, Clone)]
 pub struct Session {
-  pub session_id: String,
   pub messages: Vec<ChatMessage>,
   pub config: SessionConfig,
   #[serde(skip)]
@@ -57,9 +58,54 @@ impl Component for Session {
     Ok(())
   }
   fn update(&mut self, action: Action) -> Result<Option<Action>> {
+    match action {
+      Action::SubmitInput(s) => self.submit_input_handler(s),
+      Action::ProcessResponse(response) => self.process_response_handler(response),
+      _ => (),
+    }
     Ok(None)
   }
+
   fn draw(&mut self, f: &mut Frame<'_>, area: Rect) -> Result<()> {
+    let rects = Layout::default().constraints([Constraint::Percentage(100), Constraint::Min(3)].as_ref()).split(area);
+    for message in self.messages.clone() {
+      if let Some(request) = message.request {
+        f.render_widget(
+          Paragraph::new(request.content.unwrap_or("no content".to_string()))
+            .style(Style::default().fg(Color::White))
+            .block(
+              Block::default()
+                .borders(Borders::ALL)
+                .border_style(match request.role {
+                  Role::User => Style::default().fg(Color::Yellow),
+                  Role::Assistant => Style::default().fg(Color::Green),
+                  Role::System => Style::default().fg(Color::Blue),
+                  Role::Function => Style::default().fg(Color::Red),
+                })
+                .border_type(BorderType::Rounded),
+            ),
+          rects[0],
+        )
+      }
+      if let Some(response) = message.response {
+        f.render_widget(
+          Paragraph::new(response.content.unwrap_or("no content".to_string()))
+            .style(Style::default().fg(Color::White))
+            .block(
+              Block::default()
+                .borders(Borders::ALL)
+                .border_style(match response.role {
+                  Role::User => Style::default().fg(Color::Yellow),
+                  Role::Assistant => Style::default().fg(Color::Green),
+                  Role::System => Style::default().fg(Color::Blue),
+                  Role::Function => Style::default().fg(Color::Red),
+                })
+                .border_type(BorderType::Rounded),
+            ),
+          area,
+        )
+      }
+    }
     Ok(())
   }
 }
@@ -77,123 +123,39 @@ impl Session {
     // }
   }
 
-  pub fn load_session_by_id(session_id: String) -> Session {
-    Self::get_session_filepath(session_id.clone());
-    let load_result = fs::read_to_string(Self::get_session_filepath(session_id.clone()));
-    match load_result {
-      Ok(session_data) => return serde_json::from_str(session_data.as_str()).unwrap(),
-      Err(_) => {
-        println!("Failed to load session data, creating new session");
-        Session::new(false)
-      },
-    }
-  }
-
-  pub fn generate_session_id() -> String {
-    // Get the current time since UNIX_EPOCH in seconds.
-    let start = SystemTime::now();
-    let since_the_epoch = start.duration_since(UNIX_EPOCH).expect("Time went backwards").as_secs();
-
-    // Introduce a delay of 1 second to ensure unique session IDs even if called rapidly.
-    std::thread::sleep(std::time::Duration::from_secs(1));
-
-    // Convert the duration to a String and return.
-    since_the_epoch.to_string()
-  }
-
-  pub fn get_session_filepath(session_id: String) -> PathBuf {
-    Path::new(SESSIONS_DIR).join(Self::get_session_filename(session_id))
-  }
-
-  pub fn get_session_filename(session_id: String) -> String {
-    format!("{}.json", session_id)
-  }
-
-  pub fn get_last_session_file_path() -> Option<PathBuf> {
-    ensure_directory_exists(SESSIONS_DIR).unwrap();
-    let last_session_path = Path::new(SESSIONS_DIR).join("last_session.txt");
-    if last_session_path.exists() {
-      Some(fs::read_to_string(last_session_path).unwrap().into())
-    } else {
-      None
-    }
-  }
-
-  pub fn load_last_session() -> Session {
-    let last_session_path = Path::new(SESSIONS_DIR).join("last_session.txt");
-    let last_session_id = fs::read_to_string(last_session_path).unwrap();
-    Self::load_session_by_id(last_session_id)
-  }
-
-  fn save_session(&self) -> io::Result<()> {
-    ensure_directory_exists(SESSIONS_DIR).unwrap();
-    let session_file_path = Self::get_session_filepath(self.session_id.clone());
-    let data = serde_json::to_string(&self)?;
-    fs::write(session_file_path, data)?;
-    self.save_last_session_id();
-    Ok(())
-  }
-
-  pub fn save_last_session_id(&self) {
-    ensure_directory_exists(SESSIONS_DIR).unwrap();
-    let last_session_path = Path::new(SESSIONS_DIR).join("last_session.txt");
-    fs::write(last_session_path, self.session_id.clone()).unwrap();
-  }
-
-  pub fn get_all_messages(&self) -> Vec<ChatMessage> {
-    self.messages.clone()
-  }
-
-  pub fn get_all_requests(&self) -> Vec<ChatCompletionRequestMessage> {
-    self
-      .messages
-      .clone()
-      .into_iter()
-      .take_while(|x| x.request.is_some())
-      .map(|x| x.try_into().unwrap_or_default())
-      .collect()
-  }
-
-  pub fn get_all_responses(&self) -> Vec<ChatCompletionResponseMessage> {
-    self.messages.clone().into_iter().take_while(|x| x.response.is_some()).map(|x| x.try_into().unwrap()).collect()
-  }
-
-  pub fn get_messages_to_display(&mut self) -> Vec<ChatMessage> {
-    let mut messages_to_display: Vec<ChatMessage> = Vec::new();
-    for mut message in self.messages.clone() {
-      if !message.displayed {
-        messages_to_display.push(message.clone());
-        message.displayed = true;
+  pub fn submit_input_handler(&mut self, input: String) {
+    let tx = self.action_tx.clone().unwrap();
+    let session_data = self.config.clone();
+    tokio::spawn(async move {
+      tx.send(Action::EnterProcessing).unwrap();
+      let response = Session::submit_input(input, session_data).await;
+      match response {
+        Ok(response) => tx.send(Action::ProcessResponse(response)).unwrap(),
+        Err(e) => tx.send(Action::Error(format!("Error: {}", e))).unwrap(),
       }
-    }
-    messages_to_display
+      tx.send(Action::ExitProcessing).unwrap();
+    });
   }
 
-  pub async fn submit_input<'a>(
-    // &mut self,
+  pub fn process_response_handler(&mut self, response: Vec<ChatCompletionResponseMessage>) {
+    self.messages.append(&mut response.into_iter().map(|x| x.into()).collect());
+  }
+
+  pub async fn submit_input(
     input: String,
     config: SessionConfig,
-    //receive_chat_completion_response_message: fn(ChatCompletionResponseMessage),
   ) -> std::result::Result<Vec<ChatCompletionResponseMessage>, GPTConnectorError> {
     let new_messages = construct_chat_completion_request_message(&input, &config.model).unwrap();
     let client = create_openai_client();
     let mut response_messages: Vec<ChatCompletionResponseMessage> = Vec::new();
     let response = Session::send_request(new_messages, MAX_FUNCTION_CALL_DEPTH, client, config).await;
-    //self.send_request(new_messages, MAX_FUNCTION_CALL_DEPTH, client, receive_chat_completion_response_message).await;
     match response {
       Ok(response) => {
-        let _ = response.choices.clone().into_iter().map(
-          // |choice| receive_chat_completion_response_message(choice.message.into()),
-          |choice| response_messages.push(choice.message),
-        );
+        let _ = response.choices.clone().into_iter().map(|choice| response_messages.push(choice.message));
         Ok(response_messages)
       },
-      Err(err) => {
-        // tx.send(Action::Error(format!("Error: {:?}", err))).unwrap();
-        Err(GPTConnectorError::Other("Failed to send reply to function call".to_string()))
-      },
+      Err(err) => Err(GPTConnectorError::Other("Failed to send reply to function call".to_string())),
     }
-    // Ok(())
   }
 
   #[async_recursion]
@@ -252,6 +214,98 @@ impl Session {
         Err(GPTConnectorError::Other("Failed to send reply to function call".to_string()))
       },
     }
+  }
+
+  pub fn load_session_by_id(session_id: String) -> Session {
+    Self::get_session_filepath(session_id.clone());
+    let load_result = fs::read_to_string(Self::get_session_filepath(session_id.clone()));
+    match load_result {
+      Ok(session_data) => return serde_json::from_str(session_data.as_str()).unwrap(),
+      Err(_) => {
+        println!("Failed to load session data, creating new session");
+        Session::new(false)
+      },
+    }
+  }
+
+  pub fn generate_session_id() -> String {
+    // Get the current time since UNIX_EPOCH in seconds.
+    let start = SystemTime::now();
+    let since_the_epoch = start.duration_since(UNIX_EPOCH).expect("Time went backwards").as_secs();
+
+    // Introduce a delay of 1 second to ensure unique session IDs even if called rapidly.
+    std::thread::sleep(std::time::Duration::from_secs(1));
+
+    // Convert the duration to a String and return.
+    since_the_epoch.to_string()
+  }
+
+  pub fn get_session_filepath(session_id: String) -> PathBuf {
+    Path::new(SESSIONS_DIR).join(Self::get_session_filename(session_id))
+  }
+
+  pub fn get_session_filename(session_id: String) -> String {
+    format!("{}.json", session_id)
+  }
+
+  pub fn get_last_session_file_path() -> Option<PathBuf> {
+    ensure_directory_exists(SESSIONS_DIR).unwrap();
+    let last_session_path = Path::new(SESSIONS_DIR).join("last_session.txt");
+    if last_session_path.exists() {
+      Some(fs::read_to_string(last_session_path).unwrap().into())
+    } else {
+      None
+    }
+  }
+
+  pub fn load_last_session() -> Session {
+    let last_session_path = Path::new(SESSIONS_DIR).join("last_session.txt");
+    let last_session_id = fs::read_to_string(last_session_path).unwrap();
+    Self::load_session_by_id(last_session_id)
+  }
+
+  fn save_session(&self) -> io::Result<()> {
+    ensure_directory_exists(SESSIONS_DIR).unwrap();
+    let session_file_path = Self::get_session_filepath(self.config.session_id.clone());
+    let data = serde_json::to_string(&self)?;
+    fs::write(session_file_path, data)?;
+    self.save_last_session_id();
+    Ok(())
+  }
+
+  pub fn save_last_session_id(&self) {
+    ensure_directory_exists(SESSIONS_DIR).unwrap();
+    let last_session_path = Path::new(SESSIONS_DIR).join("last_session.txt");
+    fs::write(last_session_path, self.config.session_id.clone()).unwrap();
+  }
+
+  pub fn get_all_messages(&self) -> Vec<ChatMessage> {
+    self.messages.clone()
+  }
+
+  pub fn get_all_requests(&self) -> Vec<ChatCompletionRequestMessage> {
+    self
+      .messages
+      .clone()
+      .into_iter()
+      .take_while(|x| x.request.is_some())
+      .map(|x| x.try_into().unwrap_or_default())
+      .collect()
+  }
+
+  pub fn get_all_responses(&self) -> Vec<ChatCompletionResponseMessage> {
+    self.messages.clone().into_iter().take_while(|x| x.response.is_some()).map(|x| x.try_into().unwrap()).collect()
+  }
+
+  pub fn get_messages_to_display(&mut self) -> Vec<ChatMessage> {
+    let mut messages_to_display: Vec<ChatMessage> = Vec::new();
+    for mut message in self.messages.clone() {
+      if !message.displayed {
+        messages_to_display.push(message.clone());
+        message.displayed = true;
+      }
+    }
+    messages_to_display
   }
 }
 

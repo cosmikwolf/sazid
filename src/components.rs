@@ -1,3 +1,4 @@
+use crate::app::types::ChatMessage;
 use color_eyre::eyre::Result;
 use crossterm::event::{KeyEvent, MouseEvent};
 use ratatui::layout::Rect;

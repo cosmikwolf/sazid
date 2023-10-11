@@ -6,6 +6,7 @@ use crate::{
   components::session::Session,
   config::{Config, KeyBindings},
 };
+use async_openai::types::ChatCompletionResponseMessage;
 use color_eyre::eyre::Result;
 use crossterm::event::{KeyCode, KeyEvent};
 use log::error;
@@ -43,26 +44,6 @@ impl Home {
     log::info!("Tick");
     self.last_events.drain(..);
   }
-
-  pub fn process_response(&mut self, response: String) {
-    self.text.push(response);
-  }
-
-  pub fn process_input(&mut self, input: String) {
-    let tx = self.action_tx.clone().unwrap();
-    let session_data = self.config.session_config.clone();
-    tokio::spawn(async move {
-      tx.send(Action::EnterProcessing).unwrap();
-      let response = Session::submit_input(input, session_data).await;
-      match response {
-        Ok(response) => tx.send(Action::ProcessResponse(response)).unwrap(),
-        Err(e) => {
-          tx.send(Action::Error(format!("Error: {}", e))).unwrap();
-        },
-      }
-      tx.send(Action::ExitProcessing).unwrap();
-    });
-  }
 }
 
 impl Component for Home {
@@ -85,7 +66,6 @@ impl Component for Home {
       // Action::ScheduleDecrement => self.schedule_decrement(1),
       // Action::Increment(i) => self.increment(i),
       // Action::Decrement(i) => self.decrement(i),
-      // Action::SubmitInput(s) => self.add(s),
       Action::EnterNormal => {
         self.mode = Mode::Normal;
       },
@@ -129,22 +109,18 @@ impl Component for Home {
 
   fn draw(&mut self, f: &mut Frame<'_>, area: Rect) -> Result<()> {
     let rects = Layout::default().constraints([Constraint::Percentage(100), Constraint::Min(3)].as_ref()).split(area);
-    let text: Vec<Line> = self.text.clone().iter().map(|l| Line::from(l.clone())).collect();
+    // let text: Vec<Line> = self.text.clone().iter().map(|l| Line::from(l.clone())).collect();
+
     f.render_widget(
-      Paragraph::new(text)
-        .block(
-          Block::default()
-            .title("sazid semantic llvm console")
-            .title_alignment(Alignment::Center)
-            .borders(Borders::ALL)
-            .border_style(match self.mode {
-              Mode::Processing => Style::default().fg(Color::Yellow),
-              _ => Style::default(),
-            })
-            .border_type(BorderType::Rounded),
-        )
-        .style(Style::default().fg(Color::Cyan))
-        .alignment(Alignment::Center),
+      Block::default()
+        .title("sazid semantic llvm console")
+        .title_alignment(Alignment::Center)
+        .borders(Borders::ALL)
+        .border_style(match self.mode {
+          Mode::Processing => Style::default().fg(Color::Yellow),
+          _ => Style::default(),
+        })
+        .border_type(BorderType::Rounded),
       rects[0],
     );
     let width = rects[1].width.max(3) - 3; // keep 2 for borders and 1 for cursor
@@ -158,7 +134,7 @@ impl Component for Home {
       .block(Block::default().borders(Borders::ALL).title(Line::from(vec![
         Span::raw("Enter Input Mode "),
         Span::styled("(Press ", Style::default().fg(Color::DarkGray)),
-        Span::styled("/", Style::default().add_modifier(Modifier::BOLD).fg(Color::Gray)),
+        Span::styled("i", Style::default().add_modifier(Modifier::BOLD).fg(Color::Gray)),
         Span::styled(" to start, ", Style::default().fg(Color::DarkGray)),
         Span::styled("ESC", Style::default().add_modifier(Modifier::BOLD).fg(Color::Gray)),
         Span::styled(" to finish)", Style::default().fg(Color::DarkGray)),
