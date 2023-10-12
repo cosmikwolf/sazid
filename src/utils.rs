@@ -4,6 +4,7 @@ use color_eyre::eyre::Result;
 use directories::ProjectDirs;
 use lazy_static::lazy_static;
 use tracing::error;
+use tracing::Level;
 use tracing_error::ErrorLayer;
 use tracing_subscriber::{self, prelude::__tracing_subscriber_SubscriberExt, util::SubscriberInitExt, Layer};
 
@@ -15,7 +16,7 @@ lazy_static! {
     std::env::var(format!("{}_CONFIG", PROJECT_NAME.clone())).ok().map(PathBuf::from);
   pub static ref GIT_COMMIT_HASH: String =
     std::env::var(format!("{}_GIT_INFO", PROJECT_NAME.clone())).unwrap_or_else(|_| String::from("UNKNOWN"));
-  pub static ref LOG_ENV: String = format!("{}_LOGLEVEL", PROJECT_NAME.clone());
+  pub static ref LOG_ENV: String = format!("{}_LOG_LEVEL", PROJECT_NAME.clone());
   pub static ref LOG_FILE: String = format!("{}.log", env!("CARGO_PKG_NAME"));
 }
 
@@ -104,6 +105,7 @@ pub fn initialize_logging() -> Result<()> {
       .or_else(|_| std::env::var(LOG_ENV.clone()))
       .unwrap_or_else(|_| format!("{}=info", env!("CARGO_CRATE_NAME"))),
   );
+  let console_layer = console_subscriber::ConsoleLayer::builder().with_default_env().spawn();
   let file_subscriber = tracing_subscriber::fmt::layer()
     .with_file(true)
     .with_line_number(true)
@@ -111,7 +113,11 @@ pub fn initialize_logging() -> Result<()> {
     .with_target(false)
     .with_ansi(false)
     .with_filter(tracing_subscriber::filter::EnvFilter::from_default_env());
-  tracing_subscriber::registry().with(file_subscriber).with(ErrorLayer::default()).init();
+  // a filter that removes the trace level
+  //  .with_filter(filter::filter_fn(|metadata| {
+  //              !metadata.().starts_with("metrics")
+  //          }))
+  tracing_subscriber::registry().with(file_subscriber).with(console_layer).with(ErrorLayer::default()).init();
   Ok(())
 }
 

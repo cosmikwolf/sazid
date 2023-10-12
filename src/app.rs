@@ -4,17 +4,17 @@ use ratatui::prelude::Rect;
 use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc;
 
+pub mod consts;
+pub mod errors;
 pub mod gpt_interface;
 pub mod tools;
 pub mod types;
-pub mod consts;
-pub mod errors;
 
 use crate::{
   action::Action,
-  components::{home::Home, Component},
+  components::{home::Home, session::Session, Component},
   config::Config,
-  tui,
+  trace_dbg, tui,
 };
 
 #[derive(Default, Debug, Copy, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -37,12 +37,13 @@ pub struct App {
 impl App {
   pub fn new(tick_rate: f64, frame_rate: f64) -> Result<Self> {
     let home = Home::new();
+    let session = Session::new();
     let config = Config::new()?;
     let mode = Mode::Home;
     Ok(Self {
       tick_rate,
       frame_rate,
-      components: vec![Box::new(home)],
+      components: vec![Box::new(home), Box::new(session)],
       should_quit: false,
       should_suspend: false,
       config,

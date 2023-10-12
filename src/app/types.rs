@@ -76,6 +76,7 @@ impl GPTSettings {
 pub struct ModelConfig {
   pub name: String,
 }
+
 #[derive(Debug, Serialize, Deserialize, Clone, Default)]
 pub struct Model {
   pub(crate) name: String,

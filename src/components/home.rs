@@ -5,6 +5,7 @@ use crate::{
   action::Action,
   components::session::Session,
   config::{Config, KeyBindings},
+  trace_dbg,
 };
 use async_openai::types::ChatCompletionResponseMessage;
 use color_eyre::eyre::Result;
@@ -15,14 +16,14 @@ use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc::UnboundedSender;
 use tui_input::{backend::crossterm::EventHandler, Input};
 
-#[derive(Default, Copy, Clone, PartialEq, Eq)]
+#[derive(Debug, Default, Copy, Clone, PartialEq, Eq)]
 pub enum Mode {
   #[default]
   Normal,
   Insert,
   Processing,
 }
-#[derive(Default)]
+#[derive(Debug, Default)]
 pub struct Home {
   pub show_help: bool,
   pub mode: Mode,
@@ -41,7 +42,7 @@ impl Home {
   }
 
   pub fn tick(&mut self) {
-    log::info!("Tick");
+    //log::info!("Tick");
     self.last_events.drain(..);
   }
 }
@@ -71,6 +72,7 @@ impl Component for Home {
         self.mode = Mode::Normal;
       },
       Action::EnterInsert => {
+        trace_dbg!("enter insert mode");
         self.mode = Mode::Insert;
       },
       Action::EnterProcessing => {
@@ -86,13 +88,16 @@ impl Component for Home {
   }
 
   fn handle_key_events(&mut self, key: KeyEvent) -> Result<Option<Action>> {
-    self.last_events.push(key.clone());
+    self.last_events.push(key);
     let action = match self.mode {
       Mode::Normal | Mode::Processing => return Ok(None),
       Mode::Insert => match key.code {
         KeyCode::Esc => Action::EnterNormal,
         KeyCode::Enter => {
           if let Some(sender) = &self.action_tx {
+            let string = format!("sending input: {}", self.input.value());
+            trace_dbg!(string);
+
             if let Err(e) = sender.send(Action::SubmitInput(self.input.value().to_string())) {
               error!("Failed to send action: {:?}", e);
             }
