@@ -145,6 +145,11 @@ macro_rules! trace_dbg {
     ($ex:expr) => {
         trace_dbg!(level: tracing::Level::DEBUG, $ex)
     };
+    // make trace_dbg compatible with formatted text
+    ($($arg:tt)*) => {
+        let res = format!($($arg)*);
+        trace_dbg!(level: tracing::Level::DEBUG, res)
+    }
 }
 
 pub fn version() -> String {

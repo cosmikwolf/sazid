@@ -70,17 +70,21 @@ impl Component for Home {
       // Action::ProcessResponse(s) => Action::Update(),
       Action::EnterNormal => {
         self.mode = Mode::Normal;
+        self.session.mode = Mode::Normal;
       },
       Action::EnterInsert => {
         trace_dbg!("enter insert mode");
         self.mode = Mode::Insert;
+        self.session.mode = Mode::Insert;
       },
       Action::EnterProcessing => {
         self.mode = Mode::Processing;
+        self.session.mode = Mode::Processing;
       },
       Action::ExitProcessing => {
         // TODO: Make this go to previous mode instead
         self.mode = Mode::Normal;
+        self.session.mode = Mode::Normal;
       },
       _ => (),
     }

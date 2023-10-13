@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 
 use crate::app::types::Model;
-pub const MAX_FUNCTION_CALL_DEPTH: u32 = 3;
+pub const MAX_FUNCTION_CALL_DEPTH: u32 = 0;
 pub const CHUNK_TOKEN_LIMIT: u32 = 4096u32;
 
 pub const SESSIONS_DIR: &str = "data/sessions";
@@ -42,28 +42,28 @@ lazy_static! {
     pub static ref LOG_FILE: String = format!("{}.log", env!("CARGO_PKG_NAME").to_lowercase());
 }
 pub static PDF_IGNORE: &[&str] = &[
-    "Length",
-    "BBox",
-    "FormType",
-    "Matrix",
-    "Resources",
-    "Type",
-    "XObject",
-    "Subtype",
-    "Filter",
-    "ColorSpace",
-    "Width",
-    "Height",
-    "BitsPerComponent",
-    "Length1",
-    "Length2",
-    "Length3",
-    "PTEX.FileName",
-    "PTEX.PageNumber",
-    "PTEX.InfoDict",
-    "FontDescriptor",
-    "ExtGState",
-    "Font",
-    "MediaBox",
-    "Annot",
+  "Length",
+  "BBox",
+  "FormType",
+  "Matrix",
+  "Resources",
+  "Type",
+  "XObject",
+  "Subtype",
+  "Filter",
+  "ColorSpace",
+  "Width",
+  "Height",
+  "BitsPerComponent",
+  "Length1",
+  "Length2",
+  "Length3",
+  "PTEX.FileName",
+  "PTEX.PageNumber",
+  "PTEX.InfoDict",
+  "FontDescriptor",
+  "ExtGState",
+  "Font",
+  "MediaBox",
+  "Annot",
 ];
