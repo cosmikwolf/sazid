@@ -3,8 +3,8 @@ use async_openai::{
   self,
   config::OpenAIConfig,
   types::{
-    ChatCompletionRequestMessage, ChatCompletionResponseMessage, ChatCompletionStreamResponseDelta, FunctionCall,
-    FunctionCallStream, Role,
+    ChatCompletionRequestMessage, ChatCompletionResponseMessage, ChatCompletionResponseStreamMessage,
+    ChatCompletionStreamResponseDelta, FunctionCall, FunctionCallStream, Role,
   },
   Client,
 };
@@ -106,7 +106,7 @@ pub struct PdfText {
 #[derive(Default, Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct ChatMessage {
   pub response: Option<ChatCompletionResponseMessage>,
-  pub stream_delta: Option<ChatCompletionStreamResponseDelta>,
+  pub response_stream: Option<ChatCompletionResponseStreamMessage>,
   pub request: Option<ChatCompletionRequestMessage>,
   #[serde(skip)]
   pub displayed: bool,
@@ -155,13 +155,13 @@ impl Display for ChatMessage {
           response.function_call.clone(),
           None,
         ),
-        None => match &self.stream_delta {
-          Some(stream_delta) => format_chat_response(
+        None => match &self.response_stream {
+          Some(response_stream) => format_chat_response(
             f,
-            stream_delta.role.clone(),
-            stream_delta.content.clone().unwrap_or_default(),
+            response_stream.delta.role.clone(),
+            response_stream.delta.content.clone().unwrap_or_default(),
             None,
-            stream_delta.function_call.clone(),
+            response_stream.delta.function_call.clone(),
           ),
           None => Ok(()),
         },
@@ -171,17 +171,17 @@ impl Display for ChatMessage {
 }
 impl From<ChatCompletionRequestMessage> for ChatMessage {
   fn from(request: ChatCompletionRequestMessage) -> Self {
-    ChatMessage { request: Some(request), response: None, stream_delta: None, displayed: false }
+    ChatMessage { request: Some(request), response: None, response_stream: None, displayed: false }
   }
 }
 impl From<ChatCompletionResponseMessage> for ChatMessage {
   fn from(response: ChatCompletionResponseMessage) -> Self {
-    ChatMessage { request: None, response: Some(response), stream_delta: None, displayed: false }
+    ChatMessage { request: None, response: Some(response), response_stream: None, displayed: false }
   }
 }
-impl From<ChatCompletionStreamResponseDelta> for ChatMessage {
-  fn from(stream_delta: ChatCompletionStreamResponseDelta) -> Self {
-    ChatMessage { request: None, response: None, stream_delta: Some(stream_delta), displayed: false }
+impl From<ChatCompletionResponseStreamMessage> for ChatMessage {
+  fn from(response_stream: ChatCompletionResponseStreamMessage) -> Self {
+    ChatMessage { request: None, response: None, response_stream: Some(response_stream), displayed: false }
   }
 }
 

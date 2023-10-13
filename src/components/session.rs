@@ -143,6 +143,7 @@ impl Component for Session {
       .split(shorter[1]);
 
     let mut message_text = Text::from("");
+    let mut style = Style::default();
     for message in self.messages.clone() {
       if let Some(request) = message.request {
         let style = match request.role {
@@ -154,7 +155,7 @@ impl Component for Session {
         message_text.extend(Text::styled(request.content.unwrap_or("no content".to_string()), style));
       };
       if let Some(response) = message.response {
-        let style = match response.role {
+        style = match response.role {
           Role::User => Style::default().fg(Color::Yellow),
           Role::Assistant => Style::default().fg(Color::Green),
           Role::System => Style::default().fg(Color::Blue),
@@ -162,15 +163,30 @@ impl Component for Session {
         };
         message_text.extend(Text::styled(response.content.unwrap_or("no content".to_string()), style));
       }
-      if let Some(response) = message.stream_delta {
-        let style = match response.role {
-          Some(Role::User) => Style::default().fg(Color::Yellow),
-          Some(Role::Assistant) => Style::default().fg(Color::Green),
-          Some(Role::System) => Style::default().fg(Color::Blue),
-          Some(Role::Function) => Style::default().fg(Color::Red),
-          None => Style::default().fg(Color::White),
-        };
-        message_text.extend(Text::styled(response.content.unwrap_or("no content".to_string()), style));
+      if let Some(response_stream) = message.response_stream {
+        if response_stream.finish_reason.is_none() {
+          match response_stream.delta.role {
+            Some(Role::User) => style = Style::default().fg(Color::Yellow),
+            Some(Role::Assistant) => style = Style::default().fg(Color::Green),
+            Some(Role::System) => style = Style::default().fg(Color::Blue),
+            Some(Role::Function) => style = Style::default().fg(Color::Red),
+            None => {},
+          };
+          if response_stream.delta.role.is_some() {
+            message_text.extend(Text::styled("".to_string(), style));
+          }
+
+          if let Some(content) = response_stream.delta.content {
+            let last_line = message_text.lines.last_mut().unwrap();
+            last_line.spans.push(Span::styled(content, style));
+          }
+          //message_text .extend(Text::styled(response_stream.delta.content.unwrap_or("no content".to_string()).trim_end(), style));
+          // if response_stream.delta.role.is_some() {
+          //   message_text.extend(Text::styled(response_stream.delta.content.unwrap_or("no content".to_string()), style));
+          // } else if let Some(content) = response_stream.delta.content {
+          //   message_text.extend(Text::raw(content));
+          // }
+        }
       }
     }
 
@@ -236,7 +252,7 @@ impl Session {
                 );
                 for choice in response.choices.clone() {
                   trace_dbg!("choice: {:?}", choice.delta.content);
-                  tx.send(Action::ProcessResponse(Box::new(choice.delta.clone().into()))).unwrap();
+                  tx.send(Action::ProcessResponse(Box::new(choice.clone().into()))).unwrap();
                 }
               },
               Err(e) => {
