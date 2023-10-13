@@ -1,7 +1,6 @@
 {
   "keybindings": {
     "Home": {
-      "<q>": "Quit", // Quit the application
       "<i>": "EnterInsert",
       "<Ctrl-d>": "Quit", // Another way to quit
       "<Ctrl-c>": "Quit", // Yet another way to quit

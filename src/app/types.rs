@@ -2,7 +2,10 @@ use crate::app::consts::*;
 use async_openai::{
   self,
   config::OpenAIConfig,
-  types::{ChatCompletionRequestMessage, ChatCompletionResponseMessage, FunctionCall, Role},
+  types::{
+    ChatCompletionRequestMessage, ChatCompletionResponseMessage, ChatCompletionStreamResponseDelta, FunctionCall,
+    FunctionCallStream, Role,
+  },
   Client,
 };
 use clap::Parser;
@@ -100,9 +103,10 @@ pub struct PdfText {
   pub errors: Vec<String>,
 }
 
-#[derive(Default, Serialize, Deserialize, Clone, Debug)]
+#[derive(Default, Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct ChatMessage {
   pub response: Option<ChatCompletionResponseMessage>,
+  pub stream_delta: Option<ChatCompletionStreamResponseDelta>,
   pub request: Option<ChatCompletionRequestMessage>,
   #[serde(skip)]
   pub displayed: bool,
@@ -146,23 +150,38 @@ impl Display for ChatMessage {
       None => match &self.response {
         Some(response) => format_chat_response(
           f,
-          response.role.clone(),
+          Some(response.role.clone()),
           response.content.clone().unwrap_or_default(),
           response.function_call.clone(),
+          None,
         ),
-        None => Ok(()),
+        None => match &self.stream_delta {
+          Some(stream_delta) => format_chat_response(
+            f,
+            stream_delta.role.clone(),
+            stream_delta.content.clone().unwrap_or_default(),
+            None,
+            stream_delta.function_call.clone(),
+          ),
+          None => Ok(()),
+        },
       },
     }
   }
 }
 impl From<ChatCompletionRequestMessage> for ChatMessage {
   fn from(request: ChatCompletionRequestMessage) -> Self {
-    ChatMessage { request: Some(request), response: None, displayed: false }
+    ChatMessage { request: Some(request), response: None, stream_delta: None, displayed: false }
   }
 }
 impl From<ChatCompletionResponseMessage> for ChatMessage {
   fn from(response: ChatCompletionResponseMessage) -> Self {
-    ChatMessage { request: None, response: Some(response), displayed: false }
+    ChatMessage { request: None, response: Some(response), stream_delta: None, displayed: false }
+  }
+}
+impl From<ChatCompletionStreamResponseDelta> for ChatMessage {
+  fn from(stream_delta: ChatCompletionStreamResponseDelta) -> Self {
+    ChatMessage { request: None, response: None, stream_delta: Some(stream_delta), displayed: false }
   }
 }
 
@@ -307,33 +326,46 @@ fn format_chat_request(
 
 fn format_chat_response(
   f: &mut std::fmt::Formatter<'_>,
-  role: Role,
+  role: Option<Role>,
   message: String,
   function_call: Option<FunctionCall>,
+  function_call_stream: Option<FunctionCallStream>,
 ) -> std::fmt::Result {
-  match function_call {
-    Some(function_call) => {
-      write!(
-        f,
-        "{}: {:?} ({:?})\n\r",
-        role,
-        message.bright_green(),
-        serde_json::to_string_pretty(&function_call).unwrap().purple()
-      )
+  // todo: this shoudl aggregate the writes and return them all at once at the end
+
+  if let Some(function_call) = function_call {
+    let _ = write!(
+      f,
+      "{}: {:?} ({:?})\n\r",
+      role.clone().unwrap(),
+      message.bright_green(),
+      serde_json::to_string_pretty(&function_call).unwrap().purple()
+    );
+  };
+  if let Some(function_call_stream) = function_call_stream {
+    let _ = write!(
+      f,
+      "{}: {:?} ({:?})\n\r",
+      role.clone().unwrap(),
+      message.bright_green(),
+      serde_json::to_string_pretty(&function_call_stream).unwrap().purple()
+    );
+  };
+  match role {
+    Some(Role::User) => {
+      write!(f, "{}: {:?}\n\r", role.unwrap(), message.bright_green())
     },
-    None => match role {
-      Role::User => {
-        write!(f, "{}: {:?}\n\r", role, message.bright_green())
-      },
-      Role::Assistant => {
-        write!(f, "{}: {:?}\n\r", role, message.bright_blue())
-      },
-      Role::System => {
-        write!(f, "{}: {:?}\n\r", role, message.bright_yellow())
-      },
-      Role::Function => {
-        write!(f, "{}: {:?}\n\r", role, message.bright_yellow())
-      },
+    Some(Role::Assistant) => {
+      write!(f, "{}: {:?}\n\r", role.unwrap(), message.bright_blue())
+    },
+    Some(Role::System) => {
+      write!(f, "{}: {:?}\n\r", role.unwrap(), message.bright_yellow())
+    },
+    Some(Role::Function) => {
+      write!(f, "{}: {:?}\n\r", role.unwrap(), message.bright_yellow())
+    },
+    None => {
+      write!(f, "{:?}\n\r", message)
     },
   }
 }

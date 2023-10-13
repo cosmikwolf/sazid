@@ -1,6 +1,11 @@
 use async_openai::error::OpenAIError;
+use async_openai::types::{
+  ChatChoice, ChatCompletionRequestMessage, ChatCompletionResponseMessage, CreateChatCompletionRequest,
+  CreateChatCompletionResponse, CreateEmbeddingRequestArgs, CreateEmbeddingResponse, Role,
+};
 use color_eyre::eyre::Result;
 use crossterm::event::{KeyCode, KeyEvent, MouseEvent};
+use futures::StreamExt;
 use ratatui::layout::Rect;
 use ratatui::{prelude::*, symbols::scrollbar, widgets::*};
 use serde_derive::{Deserialize, Serialize};
@@ -8,11 +13,6 @@ use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 use std::{env, fs, io};
 use tokio::sync::mpsc::UnboundedSender;
-
-use async_openai::types::{
-  ChatChoice, ChatCompletionRequestMessage, ChatCompletionResponseMessage, CreateChatCompletionRequest,
-  CreateChatCompletionResponse, CreateEmbeddingRequestArgs, CreateEmbeddingResponse, Role,
-};
 
 use async_openai::{config::OpenAIConfig, Client};
 use async_recursion::async_recursion;
@@ -40,11 +40,17 @@ pub struct SessionConfig {
   pub session_id: String,
   pub model: Model,
   pub include_functions: bool,
+  pub stream_response: bool,
 }
 
 impl Default for SessionConfig {
   fn default() -> Self {
-    SessionConfig { session_id: Self::generate_session_id(), model: GPT4.clone(), include_functions: false }
+    SessionConfig {
+      session_id: Self::generate_session_id(),
+      model: GPT4.clone(),
+      include_functions: false,
+      stream_response: true,
+    }
   }
 }
 impl SessionConfig {
@@ -95,21 +101,13 @@ impl Component for Session {
   }
   fn update(&mut self, action: Action) -> Result<Option<Action>> {
     match action {
-      Action::SubmitInput(s) => self.submit_input_handler(s),
-      Action::ProcessResponse(response) => self.process_response_handler(response),
+      Action::SubmitInput(s) => self.request_response(s),
+      Action::ProcessResponse(response) => self.process_response_handler(*response),
       _ => (),
     }
     Ok(None)
   }
 
-  //  fn handle_events(&mut self, event: Option<Event>) -> Result<Option<Action>> {
-  //    let r = match event {
-  //      Some(Action::SubmitInput(s)) => self.process_response_handler(s),
-  //      Some(Event::Mouse(mouse_event)) => self.handle_mouse_events(mouse_event)?,
-  //      _ => None,
-  //    };
-  //    Ok(r)
-  //  }
   fn handle_key_events(&mut self, key: KeyEvent) -> Result<Option<Action>> {
     self.last_events.push(key);
     match self.mode {
@@ -135,12 +133,16 @@ impl Component for Session {
       .direction(Direction::Vertical)
       .constraints([Constraint::Percentage(100), Constraint::Min(3)].as_ref())
       .split(area);
+    let shorter = Layout::default()
+      .direction(Direction::Horizontal)
+      .constraints(vec![Constraint::Length(1), Constraint::Min(10), Constraint::Length(1)])
+      .split(rects[0]);
     let textbox = Layout::default()
       .direction(Direction::Vertical)
-      .constraints(vec![Constraint::Length(10), Constraint::Min(2)])
-      .split(rects[0]);
+      .constraints(vec![Constraint::Length(1), Constraint::Min(1)])
+      .split(shorter[1]);
 
-    let mut message_text = Vec::new();
+    let mut message_text = Text::from("");
     for message in self.messages.clone() {
       if let Some(request) = message.request {
         let style = match request.role {
@@ -149,7 +151,7 @@ impl Component for Session {
           Role::System => Style::default().fg(Color::Blue),
           Role::Function => Style::default().fg(Color::Red),
         };
-        message_text.push(Line::from(Span::styled(request.content.unwrap_or("no content".to_string()), style)));
+        message_text.extend(Text::styled(request.content.unwrap_or("no content".to_string()), style));
       };
       if let Some(response) = message.response {
         let style = match response.role {
@@ -158,49 +160,19 @@ impl Component for Session {
           Role::System => Style::default().fg(Color::Blue),
           Role::Function => Style::default().fg(Color::Red),
         };
-        message_text.push(Line::from(Span::styled(response.content.unwrap_or("no content".to_string()), style)));
+        message_text.extend(Text::styled(response.content.unwrap_or("no content".to_string()), style));
+      }
+      if let Some(response) = message.stream_delta {
+        let style = match response.role {
+          Some(Role::User) => Style::default().fg(Color::Yellow),
+          Some(Role::Assistant) => Style::default().fg(Color::Green),
+          Some(Role::System) => Style::default().fg(Color::Blue),
+          Some(Role::Function) => Style::default().fg(Color::Red),
+          None => Style::default().fg(Color::White),
+        };
+        message_text.extend(Text::styled(response.content.unwrap_or("no content".to_string()), style));
       }
     }
-
-    // for message in self.messages.clone() {
-    //   if let Some(request) = message.request {
-    //     f.render_widget(
-    //       Paragraph::new(request.content.unwrap_or("no content".to_string()))
-    //         .style(Style::default().fg(Color::LightBlue))
-    //         .wrap(Wrap { trim: true })
-    //         .block(
-    //           Block::default()
-    //             .borders(Borders::ALL)
-    //             .border_style(match request.role {
-    //               Role::User => Style::default().fg(Color::Yellow),
-    //               Role::Assistant => Style::default().fg(Color::Green),
-    //               Role::System => Style::default().fg(Color::Blue),
-    //               Role::Function => Style::default().fg(Color::Red),
-    //             })
-    //             .border_type(BorderType::Rounded),
-    //         ),
-    //       rects[0],
-    //     )
-    //   }
-    //   if let Some(response) = message.response {
-    //     f.render_widget(
-    //       Paragraph::new(response.content.unwrap_or("no content".to_string()))
-    //         .style(Style::default().fg(Color::White))
-    //         .block(
-    //           Block::default()
-    //             .borders(Borders::ALL)
-    //             .border_style(match response.role {
-    //               Role::User => Style::default().fg(Color::Yellow),
-    //               Role::Assistant => Style::default().fg(Color::Green),
-    //               Role::System => Style::default().fg(Color::Blue),
-    //               Role::Function => Style::default().fg(Color::Red),
-    //             })
-    //             .border_type(BorderType::Rounded),
-    //         ),
-    //       rects[0],
-    //     )
-    //   }
-    // }
 
     let create_block = |title| {
       Block::default()
@@ -209,17 +181,18 @@ impl Component for Session {
         .title(Span::styled(title, Style::default().add_modifier(Modifier::BOLD)))
     };
 
-    let paragraph = Paragraph::new(message_text.clone())
+    let paragraph = Paragraph::new(message_text)
       .gray()
       .block(create_block("Vertical scrollbar with arrows"))
+      .wrap(Wrap { trim: true })
       .scroll((self.vertical_scroll, 0));
-    f.render_widget(paragraph, rects[0]);
+    f.render_widget(paragraph, textbox[1]);
     f.render_stateful_widget(
       Scrollbar::default()
         .orientation(ScrollbarOrientation::VerticalRight)
         .begin_symbol(Some("↑"))
         .end_symbol(Some("↓")),
-      rects[0],
+      textbox[1],
       &mut self.vertical_scroll_state,
     );
     Ok(())
@@ -241,32 +214,62 @@ impl Session {
     // }
   }
 
-  pub fn submit_input_handler(&mut self, input: String) {
-    trace_dbg!("submit_input_handler");
+  pub fn request_response(&mut self, input: String) {
+    trace_dbg!("request_response");
     let tx = self.action_tx.clone().unwrap();
     let request_messages = construct_chat_completion_request_message(&input, &self.config.model).unwrap();
     self.messages.append(&mut request_messages.clone().into_iter().map(|x| x.into()).collect());
     let request = construct_request(request_messages, &self.config);
+    let request_stream_response = self.config.stream_response;
     tokio::spawn(async move {
       tx.send(Action::EnterProcessing).unwrap();
       let client = create_openai_client();
-      let response_result = client.chat().create(request).await;
-
-      match response_result {
-        Ok(response) => {
-          let response_messages = response.choices.iter().map(|choice| choice.message.clone()).collect();
-          tx.send(Action::ProcessResponse(response_messages)).unwrap()
+      match request_stream_response {
+        true => {
+          let mut stream = client.chat().create_stream(request).await.unwrap();
+          while let Some(response_result) = stream.next().await {
+            match response_result {
+              Ok(response) => {
+                trace_dbg!(
+                  "stream next returned {}",
+                  response.choices[0].delta.content.clone().unwrap_or("no content".to_string())
+                );
+                for choice in response.choices.clone() {
+                  trace_dbg!("choice: {:?}", choice.delta.content);
+                  tx.send(Action::ProcessResponse(Box::new(choice.delta.clone().into()))).unwrap();
+                }
+              },
+              Err(e) => {
+                trace_dbg!("Error: {}", e);
+                tx.send(Action::Error(format!("Error: {}", e))).unwrap()
+              },
+            }
+          }
         },
-        Err(e) => tx.send(Action::Error(format!("Error: {}", e))).unwrap(),
-      }
+        false => {
+          let response_result = client.chat().create(request).await;
+          match response_result {
+            Ok(response) => {
+              let response_messages = response
+                .choices
+                .iter()
+                .map(|choice| tx.send(Action::ProcessResponse(Box::new(choice.message.clone().into()))).unwrap());
+            },
+            Err(e) => {
+              trace_dbg!("Error: {}", e);
+              tx.send(Action::Error(format!("Error: {}", e))).unwrap()
+            },
+          }
+        },
+      };
       tx.send(Action::ExitProcessing).unwrap();
     });
   }
 
-  pub fn process_response_handler(&mut self, response: Vec<ChatCompletionResponseMessage>) {
-    trace_dbg!("process_response_handler: {} messages received", response.len());
+  pub fn process_response_handler(&mut self, message: ChatMessage) {
     let tx = self.action_tx.clone().unwrap();
-    self.messages.append(&mut response.into_iter().map(|x| x.into()).collect());
+    trace_dbg!("process_response_handler");
+    self.messages.push(message);
     tx.send(Action::Update).unwrap();
   }
 
@@ -464,7 +467,13 @@ pub fn construct_request(
     true => Some(create_chat_completion_function_args(define_commands())),
     false => None,
   };
-  CreateChatCompletionRequest { model: config.model.name.clone(), messages, functions, ..Default::default() }
+  CreateChatCompletionRequest {
+    model: config.model.name.clone(),
+    messages,
+    functions,
+    stream: Some(config.stream_response),
+    ..Default::default()
+  }
 }
 
 pub async fn create_embedding_request(

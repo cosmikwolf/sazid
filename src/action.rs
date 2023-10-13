@@ -1,10 +1,10 @@
-use std::fmt;
-
-use async_openai::types::ChatCompletionResponseMessage;
+use crate::app::types::ChatMessage;
+use async_openai::types::{ChatCompletionResponseMessage, ChatCompletionStreamResponseDelta};
 use serde::{
   de::{self, Deserializer, Visitor},
   Deserialize, Serialize,
 };
+use std::fmt;
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub enum Action {
@@ -18,7 +18,7 @@ pub enum Action {
   Error(String),
   Help,
   SubmitInput(String),
-  ProcessResponse(Vec<ChatCompletionResponseMessage>),
+  ProcessResponse(Box<ChatMessage>),
   EnterNormal,
   EnterInsert,
   EnterProcessing,
