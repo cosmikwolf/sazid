@@ -86,6 +86,134 @@ pub struct Session {
   pub horizontal_scroll: u16,
 }
 
+impl Component for Session {
+  fn init(&mut self, area: Rect) -> Result<()> {
+    Ok(())
+  }
+  fn register_action_handler(&mut self, tx: UnboundedSender<Action>) -> Result<()> {
+    trace_dbg!("register_session_action_handler");
+    self.action_tx = Some(tx);
+    Ok(())
+  }
+  fn register_config_handler(&mut self, config: Config) -> Result<()> {
+    self.config = config.session_config;
+    Ok(())
+  }
+  fn update(&mut self, action: Action) -> Result<Option<Action>> {
+    match action {
+      Action::SubmitInput(s) => self.request_response(s),
+      Action::ProcessResponse(response) => self.process_response_handler(*response),
+      _ => (),
+    }
+    Ok(None)
+  }
+
+  fn handle_key_events(&mut self, key: KeyEvent) -> Result<Option<Action>> {
+    self.last_events.push(key);
+    match self.mode {
+      Mode::Normal => match key.code {
+        KeyCode::Char('j') => {
+          self.vertical_scroll = self.vertical_scroll.saturating_add(1);
+          self.vertical_scroll_state = self.vertical_scroll_state.position(self.vertical_scroll);
+          Ok(Some(Action::Update))
+        },
+        KeyCode::Char('k') => {
+          self.vertical_scroll = self.vertical_scroll.saturating_sub(1);
+          self.vertical_scroll_state = self.vertical_scroll_state.position(self.vertical_scroll);
+          Ok(Some(Action::Update))
+        },
+        _ => Ok(None),
+      },
+      _ => Ok(None),
+    }
+  }
+
+  fn draw(&mut self, f: &mut Frame<'_>, area: Rect) -> Result<()> {
+    let rects = Layout::default()
+      .direction(Direction::Vertical)
+      .constraints([Constraint::Percentage(100), Constraint::Min(3)].as_ref())
+      .split(area);
+    let shorter = Layout::default()
+      .direction(Direction::Horizontal)
+      .constraints(vec![Constraint::Length(1), Constraint::Min(10), Constraint::Length(1)])
+      .split(rects[0]);
+    let textbox = Layout::default()
+      .direction(Direction::Vertical)
+      .constraints(vec![Constraint::Length(1), Constraint::Min(1)])
+      .split(shorter[1]);
+
+    let mut message_text = Text::from("");
+    let mut style = Style::default();
+    for message in self.messages.clone() {
+      if let Some(request) = message.request {
+        let style = match request.role {
+          Role::User => Style::default().fg(Color::Yellow),
+          Role::Assistant => Style::default().fg(Color::Green),
+          Role::System => Style::default().fg(Color::Blue),
+          Role::Function => Style::default().fg(Color::Red),
+        };
+        message_text.extend(Text::styled(request.content.unwrap_or("no content".to_string()), style));
+      };
+      if let Some(response) = message.response {
+        style = match response.role {
+          Role::User => Style::default().fg(Color::Yellow),
+          Role::Assistant => Style::default().fg(Color::Green),
+          Role::System => Style::default().fg(Color::Blue),
+          Role::Function => Style::default().fg(Color::Red),
+        };
+        message_text.extend(Text::styled(response.content.unwrap_or("no content".to_string()), style));
+      }
+      if let Some(response_stream) = message.response_stream {
+        if response_stream.finish_reason.is_none() {
+          match response_stream.delta.role {
+            Some(Role::User) => style = Style::default().fg(Color::Yellow),
+            Some(Role::Assistant) => style = Style::default().fg(Color::Green),
+            Some(Role::System) => style = Style::default().fg(Color::Blue),
+            Some(Role::Function) => style = Style::default().fg(Color::Red),
+            None => {},
+          };
+          if response_stream.delta.role.is_some() {
+            message_text.extend(Text::styled("".to_string(), style));
+          }
+
+          if let Some(content) = response_stream.delta.content {
+            let last_line = message_text.lines.last_mut().unwrap();
+            last_line.spans.push(Span::styled(content, style));
+          }
+          //message_text .extend(Text::styled(response_stream.delta.content.unwrap_or("no content".to_string()).trim_end(), style));
+          // if response_stream.delta.role.is_some() {
+          //   message_text.extend(Text::styled(response_stream.delta.content.unwrap_or("no content".to_string()), style));
+          // } else if let Some(content) = response_stream.delta.content {
+          //   message_text.extend(Text::raw(content));
+          // }
+        }
+      }
+    }
+
+    let create_block = |title| {
+      Block::default()
+        .borders(Borders::ALL)
+        .gray()
+        .title(Span::styled(title, Style::default().add_modifier(Modifier::BOLD)))
+    };
+
+    let paragraph = Paragraph::new(message_text)
+      .gray()
+      .block(create_block("Vertical scrollbar with arrows"))
+      .wrap(Wrap { trim: true })
+      .scroll((self.vertical_scroll, 0));
+    f.render_widget(paragraph, textbox[1]);
+    f.render_stateful_widget(
+      Scrollbar::default()
+        .orientation(ScrollbarOrientation::VerticalRight)
+        .begin_symbol(Some("↑"))
+        .end_symbol(Some("↓")),
+      textbox[1],
+      &mut self.vertical_scroll_state,
+    );
+    Ok(())
+  }
+}
 impl Session {
   pub fn new() -> Session {
     Self::default()
