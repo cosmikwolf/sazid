@@ -212,20 +212,14 @@ impl From<ChatMessage> for RenderedChatMessage {
         id: None,
         role: Some(request.role),
         content: request.content.unwrap(),
-        function_call: match request.function_call {
-          Some(function_call) => Some(function_call.into()),
-          None => None,
-        },
+        function_call: request.function_call.map(|function_call| function_call.into()),
         finish_reason: None,
       },
       ChatMessage::Response(response) => RenderedChatMessage {
         id: None,
         role: Some(response.message.role),
         content: response.message.content.unwrap(),
-        function_call: match response.message.function_call {
-          Some(function_call) => Some(function_call.into()),
-          None => None,
-        },
+        function_call: response.message.function_call.map(|function_call| function_call.into()),
         finish_reason: response.finish_reason,
       },
       ChatMessage::StreamResponse(response_streams) => {
@@ -235,13 +229,13 @@ impl From<ChatMessage> for RenderedChatMessage {
         let mut role = None;
 
         for response_stream in response_streams.iter() {
-          content = format!("{}{}", content, response_stream.delta.content.unwrap_or_default());
-          if let Some(function_call_stream) = response_stream.delta.function_call {
+          content = format!("{}{}", content, response_stream.delta.content.clone().unwrap_or_default());
+          if let Some(function_call_stream) = response_stream.delta.function_call.clone() {
             function_call = Some(RenderedFunctionCall {
               name: if function_call_stream.name.is_some() {
                 Some(format!(
                   "{}{}",
-                  function_call.unwrap().name.unwrap(),
+                  function_call.clone().unwrap().name.unwrap(),
                   function_call_stream.name.as_ref().unwrap_or(&String::new())
                 ))
               } else {
@@ -259,10 +253,10 @@ impl From<ChatMessage> for RenderedChatMessage {
             })
           }
           if response_stream.finish_reason.is_some() {
-            finish_reason = response_stream.finish_reason;
+            finish_reason = response_stream.finish_reason.clone();
           }
           if response_stream.delta.role.is_some() {
-            role = response_stream.delta.role;
+            role = response_stream.delta.role.clone();
           }
         }
         RenderedChatMessage { id: None, role, content, function_call, finish_reason }
