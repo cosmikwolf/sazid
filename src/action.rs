@@ -1,4 +1,4 @@
-use crate::app::types::ChatMessage;
+use crate::app::types::{ChatMessage, ChatTransaction};
 use async_openai::types::{ChatCompletionResponseMessage, ChatCompletionStreamResponseDelta};
 use serde::{
   de::{self, Deserializer, Visitor},
@@ -18,7 +18,7 @@ pub enum Action {
   Error(String),
   Help,
   SubmitInput(String),
-  ProcessResponse(Box<ChatMessage>),
+  ProcessResponse(Box<ChatTransaction>),
   EnterNormal,
   EnterInsert,
   EnterProcessing,

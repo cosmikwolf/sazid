@@ -68,7 +68,7 @@ impl SessionConfig {
 }
 #[derive(Default, Serialize, Deserialize, Debug, Clone)]
 pub struct Session {
-  pub messages: Vec<ChatMessage>,
+  pub transactions: Vec<ChatTransaction>,
   pub config: SessionConfig,
   #[serde(skip)]
   pub action_tx: Option<UnboundedSender<Action>>,
@@ -88,25 +88,14 @@ pub struct Session {
 
 impl Session {
   pub fn new() -> Session {
-    // let mut session = Self::default();
-    // session.config.session_id = Self::generate_session_id();
-    // session
     Self::default()
-    // Self {
-    //     session_id,
-    //     model: GPT4.clone(),
-    //     messages: Vec::new(),
-    //     include_functions,
-    //     action_tx: todo!(),
-    // }
   }
 
   pub fn request_response(&mut self, input: String) {
-    trace_dbg!("request_response");
     let tx = self.action_tx.clone().unwrap();
     let request_messages = construct_chat_completion_request_message(&input, &self.config.model).unwrap();
-    self.messages.append(&mut request_messages.clone().into_iter().map(|x| ChatMessage::Request(x)).collect());
     let request = construct_request(request_messages, &self.config);
+    self.transactions.push(ChatTransaction::Request(request.clone()));
     tokio::spawn(async move {
       tx.send(Action::EnterProcessing).unwrap();
       let client = create_openai_client();
@@ -115,9 +104,7 @@ impl Session {
           while let Some(response_result) = client.chat().create_stream(request).await.unwrap().next().await {
             match response_result {
               Ok(response) => {
-                for choice in response.choices.clone() {
-                  tx.send(Action::ProcessResponse(Box::new(ChatMessage::StreamResponse(choice.clone())))).unwrap();
-                }
+                tx.send(Action::ProcessResponse(Box::new(ChatTransaction::StreamResponse(response)))).unwrap()
               },
               Err(e) => {
                 trace_dbg!("Error: {}", e);
@@ -127,12 +114,7 @@ impl Session {
           }
         },
         false => match client.chat().create(request).await {
-          Ok(response) => {
-            let response_messages = response
-              .choices
-              .iter()
-              .map(|choice| tx.send(Action::ProcessResponse(Box::new(ChatMessage::Response(choice.clone())))).unwrap());
-          },
+          Ok(response) => tx.send(Action::ProcessResponse(Box::new(ChatTransaction::Response(response)))).unwrap(),
           Err(e) => {
             trace_dbg!("Error: {}", e);
             tx.send(Action::Error(format!("Error: {}", e))).unwrap()
@@ -143,70 +125,11 @@ impl Session {
     });
   }
 
-  pub fn process_response_handler(&mut self, message: ChatMessage) {
+  pub fn process_response_handler(&mut self, transaction: ChatTransaction) {
     let tx = self.action_tx.clone().unwrap();
-    trace_dbg!("process_response_handler");
-    self.messages.push(message);
+    self.transactions.push(transaction);
     tx.send(Action::Update).unwrap();
   }
-
-  // #[async_recursion]
-  // pub async fn send_request(
-  //   request_messages: Vec<ChatCompletionRequestMessage>,
-  //   recusion_depth: u32,
-  //   client: Client<OpenAIConfig>,
-  //   config: SessionConfig,
-  // ) -> Result<CreateChatCompletionResponse, GPTConnectorError> {
-  //   // save new messages in session data
-  //   //  for message in new_messages.clone() {
-  //   //    self.messages.push(message.into());
-  //   //    // self.ui.display_messages();
-  //   //  }
-  //   // append new messages to existing messages from session data to send in request
-  //   // let mut messages: Vec<ChatCompletionRequestMessage> = self.get_all_requests();
-  //   // messages.append(new_messages.clone().as_mut());
-  //   let messages: Vec<ChatCompletionResponseMessage> = Vec::new();
-  //   // form and send request
-  //   let request = construct_request(request_messages, &config);
-  //   let response_result = client.chat().create(request.clone()).await;
-
-  //   // process result and recursively send function call response if necessary
-  //   match response_result {
-  //     Ok(response) => {
-  //       // first save the response messages into session data
-  //       for choice in response.choices.clone() {
-  //         // messages.push(choice.message);
-  //         // self.ui.display_messages();
-  //         trace_dbg!("choice: {:?}", choice);
-  //       }
-  //       // let _ = response.choices.clone().into_iter().map(|choice| {
-  //       //   messages.push(choice.message)
-  //       //   // receive_chat_completion_response_message(choice.message.into()
-  //       // });
-
-  //       if recusion_depth == 0 {
-  //         return Ok(response);
-  //       }
-  //       let function_call_response_messages = handle_chat_response_function_call(response.choices.clone());
-  //       match function_call_response_messages {
-  //         Some(function_call_response_messages) => {
-  //           Session::send_request(
-  //             function_call_response_messages,
-  //             recusion_depth - 1,
-  //             client,
-  //             config, // receive_chat_completion_response_message,
-  //           )
-  //           .await
-  //         },
-  //         None => Ok(response),
-  //       }
-  //     },
-  //     Err(err) => {
-  //       println!("Error: {:?}", err);
-  //       Err(GPTConnectorError::Other("Failed to send reply to function call".to_string()))
-  //     },
-  //   }
-  // }
 
   pub fn load_session_by_id(session_id: String) -> Session {
     Self::get_session_filepath(session_id.clone());
@@ -249,7 +172,6 @@ impl Session {
     let session_file_path = Self::get_session_filepath(self.config.session_id.clone());
     let data = serde_json::to_string(&self)?;
     fs::write(session_file_path, data)?;
-    self.save_last_session_id();
     Ok(())
   }
 
@@ -258,35 +180,6 @@ impl Session {
     let last_session_path = Path::new(SESSIONS_DIR).join("last_session.txt");
     fs::write(last_session_path, self.config.session_id.clone()).unwrap();
   }
-
-  pub fn get_all_messages(&self) -> Vec<ChatMessage> {
-    self.messages.clone()
-  }
-
-  // pub fn get_all_requests(&self) -> Vec<ChatCompletionRequestMessage> {
-  //   self
-  //     .messages
-  //     .clone()
-  //     .into_iter()
-  //     .take_while(|x| x.request.is_some())
-  //     .map(|x| x.try_into().unwrap_or_default())
-  //     .collect()
-  // }
-
-  // pub fn get_all_responses(&self) -> Vec<ChatCompletionResponseMessage> {
-  //   self.messages.clone().into_iter().take_while(|x| x.response.is_some()).map(|x| x.try_into().unwrap()).collect()
-  // }
-
-  // pub fn get_messages_to_display(&mut self) -> Vec<ChatMessage> {
-  //   let mut messages_to_display: Vec<ChatMessage> = Vec::new();
-  //   for mut message in self.messages.clone() {
-  //     if !message.displayed {
-  //       messages_to_display.push(message.clone());
-  //       message.displayed = true;
-  //     }
-  //   }
-  //   messages_to_display
-  // }
 }
 
 pub async fn select_model(settings: &GPTSettings, client: Client<OpenAIConfig>) -> Result<Model, GPTConnectorError> {

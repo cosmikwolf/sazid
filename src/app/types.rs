@@ -4,7 +4,8 @@ use async_openai::{
   config::OpenAIConfig,
   types::{
     ChatChoice, ChatCompletionRequestMessage, ChatCompletionResponseMessage, ChatCompletionResponseStreamMessage,
-    ChatCompletionStreamResponseDelta, FunctionCall, FunctionCallStream, Role,
+    ChatCompletionStreamResponseDelta, CreateChatCompletionRequest, CreateChatCompletionResponse,
+    CreateChatCompletionStreamResponse, FunctionCall, FunctionCallStream, Role,
   },
   Client,
 };
@@ -111,6 +112,40 @@ pub struct PdfText {
 //   #[serde(skip)]
 //   pub displayed: bool,
 // }
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+pub enum ChatTransaction {
+  Request(CreateChatCompletionRequest),
+  Response(CreateChatCompletionResponse),
+  StreamResponse(CreateChatCompletionStreamResponse),
+}
+
+impl From<ChatTransaction> for Option<CreateChatCompletionRequest> {
+  fn from(transaction: ChatTransaction) -> Self {
+    match transaction {
+      ChatTransaction::Request(request) => Some(request),
+      _ => None,
+    }
+  }
+}
+
+impl From<ChatTransaction> for Option<CreateChatCompletionResponse> {
+  fn from(transaction: ChatTransaction) -> Self {
+    match transaction {
+      ChatTransaction::Response(response) => Some(response),
+      _ => None,
+    }
+  }
+}
+
+impl From<ChatTransaction> for Option<CreateChatCompletionStreamResponse> {
+  fn from(transaction: ChatTransaction) -> Self {
+    match transaction {
+      ChatTransaction::StreamResponse(response) => Some(response),
+      _ => None,
+    }
+  }
+}
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub enum ChatMessage {
