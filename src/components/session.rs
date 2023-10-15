@@ -142,67 +142,77 @@ impl Component for Session {
       .constraints(vec![Constraint::Length(1), Constraint::Min(1)])
       .split(shorter[1]);
 
-    let mut message_text = Text::from("");
-    let mut style = Style::default();
-    for message in self.messages.clone() {
-      if let Some(request) = message.request {
-        let style = match request.role {
-          Role::User => Style::default().fg(Color::Yellow),
-          Role::Assistant => Style::default().fg(Color::Green),
-          Role::System => Style::default().fg(Color::Blue),
-          Role::Function => Style::default().fg(Color::Red),
-        };
-        message_text.extend(Text::styled(request.content.unwrap_or("no content".to_string()), style));
-      };
-      if let Some(response) = message.response {
-        style = match response.role {
-          Role::User => Style::default().fg(Color::Yellow),
-          Role::Assistant => Style::default().fg(Color::Green),
-          Role::System => Style::default().fg(Color::Blue),
-          Role::Function => Style::default().fg(Color::Red),
-        };
-        message_text.extend(Text::styled(response.content.unwrap_or("no content".to_string()), style));
-      }
-      if let Some(response_stream) = message.response_stream {
-        if response_stream.finish_reason.is_none() {
-          match response_stream.delta.role {
-            Some(Role::User) => style = Style::default().fg(Color::Yellow),
-            Some(Role::Assistant) => style = Style::default().fg(Color::Green),
-            Some(Role::System) => style = Style::default().fg(Color::Blue),
-            Some(Role::Function) => style = Style::default().fg(Color::Red),
-            None => {},
-          };
-          if response_stream.delta.role.is_some() {
-            message_text.extend(Text::styled("".to_string(), style));
-          }
-
-          if let Some(content) = response_stream.delta.content {
-            let last_line = message_text.lines.last_mut().unwrap();
-            last_line.spans.push(Span::styled(content, style));
-          }
-          //message_text .extend(Text::styled(response_stream.delta.content.unwrap_or("no content".to_string()).trim_end(), style));
-          // if response_stream.delta.role.is_some() {
-          //   message_text.extend(Text::styled(response_stream.delta.content.unwrap_or("no content".to_string()), style));
-          // } else if let Some(content) = response_stream.delta.content {
-          //   message_text.extend(Text::raw(content));
-          // }
-        }
-      }
-    }
-
-    let create_block = |title| {
-      Block::default()
-        .borders(Borders::ALL)
-        .gray()
-        .title(Span::styled(title, Style::default().add_modifier(Modifier::BOLD)))
+    let get_style_from_role = |role| match role {
+      Role::User => Style::default().fg(Color::Yellow),
+      Role::Assistant => Style::default().fg(Color::Green),
+      Role::System => Style::default().fg(Color::Blue),
+      Role::Function => Style::default().fg(Color::Red),
     };
 
-    let paragraph = Paragraph::new(message_text)
-      .gray()
-      .block(create_block("Vertical scrollbar with arrows"))
-      .wrap(Wrap { trim: true })
-      .scroll((self.vertical_scroll, 0));
-    f.render_widget(paragraph, textbox[1]);
+    for (index, transaction) in self.transactions.iter().enumerate() {
+      let mut transaction_text = String::new();
+      let mut style = Style::default();
+      match transaction {
+        ChatTransaction::Request(request) => {
+          for message in request.messages.clone() {
+            style = get_style_from_role(message.role);
+            if let Some(content) = message.content {
+              transaction_text = content;
+            }
+          }
+        },
+        ChatTransaction::Response(response) => {
+          for choice in response.choices.clone() {
+            style = get_style_from_role(choice.message.role);
+            if let Some(content) = choice.message.content {
+              transaction_text = content;
+            }
+          }
+        },
+        ChatTransaction::StreamResponse(stream_response) => {
+          let mut deltas = Vec::new();
+          let mut finished = false;
+          for transaction in self.transactions.iter().skip(index) {
+            if let ChatTransaction::StreamResponse(stream_response) = transaction {
+              for choice in stream_response.choices.iter() {
+                deltas.push(choice.delta.clone());
+                if choice.finish_reason == Some("stop".to_string()) {
+                  finished = true;
+                  break;
+                }
+              }
+            }
+            if finished {
+              break;
+            }
+          }
+          for delta in deltas {
+            if let Some(role) = delta.role {
+              style = get_style_from_role(role);
+            }
+            if let Some(content) = delta.content {
+              transaction_text = content;
+            }
+          }
+        },
+      }
+
+      let create_block = |title| {
+        Block::default()
+          .borders(Borders::ALL)
+          .gray()
+          .title(Span::styled(title, Style::default().add_modifier(Modifier::BOLD)))
+      };
+
+      let paragraph = Paragraph::new(transaction_text)
+        .style(style)
+        .gray()
+        .block(create_block("Vertical scrollbar with arrows"))
+        .wrap(Wrap { trim: true })
+        .scroll((self.vertical_scroll, 0));
+      f.render_widget(paragraph, textbox[1]);
+    }
+
     f.render_stateful_widget(
       Scrollbar::default()
         .orientation(ScrollbarOrientation::VerticalRight)
@@ -223,13 +233,15 @@ impl Session {
     let tx = self.action_tx.clone().unwrap();
     let request_messages = construct_chat_completion_request_message(&input, &self.config.model).unwrap();
     let request = construct_request(request_messages, &self.config);
+    let stream_response = self.config.stream_response;
     self.transactions.push(ChatTransaction::Request(request.clone()));
     tokio::spawn(async move {
       tx.send(Action::EnterProcessing).unwrap();
       let client = create_openai_client();
-      match self.config.stream_response {
+      match stream_response {
         true => {
-          while let Some(response_result) = client.chat().create_stream(request).await.unwrap().next().await {
+          let mut stream = client.chat().create_stream(request).await.unwrap();
+          while let Some(response_result) = stream.next().await {
             match response_result {
               Ok(response) => {
                 tx.send(Action::ProcessResponse(Box::new(ChatTransaction::StreamResponse(response)))).unwrap()
