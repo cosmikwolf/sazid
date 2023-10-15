@@ -149,68 +149,21 @@ impl Component for Session {
       Role::Function => Style::default().fg(Color::Red),
     };
 
-    for (index, transaction) in self.transactions.iter().enumerate() {
-      let mut transaction_text = String::new();
-      let mut style = Style::default();
-      match transaction {
-        ChatTransaction::Request(request) => {
-          for message in request.messages.clone() {
-            style = get_style_from_role(message.role);
-            if let Some(content) = message.content {
-              transaction_text = content;
-            }
-          }
-        },
-        ChatTransaction::Response(response) => {
-          for choice in response.choices.clone() {
-            style = get_style_from_role(choice.message.role);
-            if let Some(content) = choice.message.content {
-              transaction_text = content;
-            }
-          }
-        },
-        ChatTransaction::StreamResponse(stream_response) => {
-          let mut deltas = Vec::new();
-          let mut finished = false;
-          for transaction in self.transactions.iter().skip(index) {
-            if let ChatTransaction::StreamResponse(stream_response) = transaction {
-              for choice in stream_response.choices.iter() {
-                deltas.push(choice.delta.clone());
-                if choice.finish_reason == Some("stop".to_string()) {
-                  finished = true;
-                  break;
-                }
-              }
-            }
-            if finished {
-              break;
-            }
-          }
-          for delta in deltas {
-            if let Some(role) = delta.role {
-              style = get_style_from_role(role);
-            }
-            if let Some(content) = delta.content {
-              transaction_text = content;
-            }
-          }
-        },
+    let title = "Chat";
+
+    let block = Block::default()
+      .borders(Borders::ALL)
+      .gray()
+      .title(Span::styled(title, Style::default().add_modifier(Modifier::BOLD)));
+
+    for transaction in &self.transactions {
+      let messages: Vec<RenderedChatMessage> = transaction.clone().into();
+      for (i, message) in messages.iter().enumerate() {
+        let style = get_style_from_role(message.role.clone().unwrap());
+        let paragraph =
+          Paragraph::new(message.content.clone()).style(style).block(block.clone()).wrap(Wrap { trim: true });
+        f.render_widget(paragraph, textbox[1]);
       }
-
-      let create_block = |title| {
-        Block::default()
-          .borders(Borders::ALL)
-          .gray()
-          .title(Span::styled(title, Style::default().add_modifier(Modifier::BOLD)))
-      };
-
-      let paragraph = Paragraph::new(transaction_text)
-        .style(style)
-        .gray()
-        .block(create_block("Vertical scrollbar with arrows"))
-        .wrap(Wrap { trim: true })
-        .scroll((self.vertical_scroll, 0));
-      f.render_widget(paragraph, textbox[1]);
     }
 
     f.render_stateful_widget(

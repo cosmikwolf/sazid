@@ -151,7 +151,7 @@ impl From<ChatTransaction> for Option<CreateChatCompletionStreamResponse> {
 pub enum ChatMessage {
   Request(ChatCompletionRequestMessage),
   Response(ChatChoice),
-  StreamResponse(ChatCompletionResponseStreamMessage),
+  StreamResponse(Vec<ChatCompletionResponseStreamMessage>),
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
@@ -161,11 +161,10 @@ pub struct RenderedFunctionCall {
 }
 
 pub struct RenderedChatMessage {
-  pub index: Option<u32>,
+  pub id: Option<String>,
   pub role: Option<Role>,
   pub content: String,
   pub function_call: Option<RenderedFunctionCall>,
-  pub stream_fragment: bool,
   pub finish_reason: Option<String>,
 }
 
@@ -180,42 +179,93 @@ impl From<FunctionCallStream> for RenderedFunctionCall {
     RenderedFunctionCall { name: function_call.name, arguments: function_call.arguments }
   }
 }
-
+impl From<ChatTransaction> for Vec<RenderedChatMessage> {
+  fn from(transaction: ChatTransaction) -> Self {
+    match transaction {
+      ChatTransaction::Request(request) => request
+        .messages
+        .iter()
+        .map(|message| RenderedChatMessage::from(ChatMessage::Request(message.to_owned())))
+        .collect(),
+      ChatTransaction::Response(response) => response
+        .choices
+        .iter()
+        .map(|choice| {
+          let mut rendered_response = RenderedChatMessage::from(ChatMessage::Response(choice.to_owned()));
+          rendered_response.id = Some(response.id.clone());
+          rendered_response
+        })
+        .collect(),
+      ChatTransaction::StreamResponse(response_stream) => {
+        let mut rendered_response =
+          RenderedChatMessage::from(ChatMessage::StreamResponse(response_stream.choices.to_owned()));
+        rendered_response.id = Some(response_stream.id.clone());
+        vec![rendered_response]
+      },
+    }
+  }
+}
 impl From<ChatMessage> for RenderedChatMessage {
   fn from(message: ChatMessage) -> Self {
     match message {
       ChatMessage::Request(request) => RenderedChatMessage {
-        index: None,
+        id: None,
         role: Some(request.role),
         content: request.content.unwrap(),
         function_call: match request.function_call {
           Some(function_call) => Some(function_call.into()),
           None => None,
         },
-        stream_fragment: false,
         finish_reason: None,
       },
       ChatMessage::Response(response) => RenderedChatMessage {
-        index: Some(response.index),
+        id: None,
         role: Some(response.message.role),
         content: response.message.content.unwrap(),
         function_call: match response.message.function_call {
           Some(function_call) => Some(function_call.into()),
           None => None,
         },
-        stream_fragment: false,
         finish_reason: response.finish_reason,
       },
-      ChatMessage::StreamResponse(response_stream) => RenderedChatMessage {
-        index: Some(response_stream.index),
-        role: response_stream.delta.role,
-        content: response_stream.delta.content.unwrap_or_default(),
-        function_call: match response_stream.delta.function_call {
-          Some(function_call) => Some(function_call.into()),
-          None => None,
-        },
-        stream_fragment: true,
-        finish_reason: response_stream.finish_reason,
+      ChatMessage::StreamResponse(response_streams) => {
+        let mut content = String::new();
+        let mut function_call: Option<RenderedFunctionCall> = None;
+        let mut finish_reason = None;
+        let mut role = None;
+
+        for response_stream in response_streams.iter() {
+          content = format!("{}{}", content, response_stream.delta.content.unwrap_or_default());
+          if let Some(function_call_stream) = response_stream.delta.function_call {
+            function_call = Some(RenderedFunctionCall {
+              name: if function_call_stream.name.is_some() {
+                Some(format!(
+                  "{}{}",
+                  function_call.unwrap().name.unwrap(),
+                  function_call_stream.name.as_ref().unwrap_or(&String::new())
+                ))
+              } else {
+                None
+              },
+              arguments: if function_call_stream.arguments.is_some() {
+                Some(format!(
+                  "{}{}",
+                  function_call.unwrap().arguments.unwrap(),
+                  function_call_stream.arguments.as_ref().unwrap_or(&String::new())
+                ))
+              } else {
+                None
+              },
+            })
+          }
+          if response_stream.finish_reason.is_some() {
+            finish_reason = response_stream.finish_reason;
+          }
+          if response_stream.delta.role.is_some() {
+            role = response_stream.delta.role;
+          }
+        }
+        RenderedChatMessage { id: None, role, content, function_call, finish_reason }
       },
     }
   }
