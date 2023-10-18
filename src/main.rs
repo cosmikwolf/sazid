@@ -1,7 +1,7 @@
 // #![allow(dead_code)]
-#![allow(unused_imports)]
-#![allow(unused_variables)]
-#[macro_use]
+// #![allow(unused_imports)]
+// #![allow(unused_variables)]
+
 extern crate lazy_static;
 
 use clap::Parser;

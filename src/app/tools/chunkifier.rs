@@ -158,7 +158,7 @@ fn chunkify_text(text: &str, tokens_per_chunk: usize) -> Vec<String> {
 }
 
 /// Check if the given file is a PDF.
-fn is_pdf_file(file_path: &PathBuf) -> bool {
+fn is_pdf_file(file_path: &Path) -> bool {
   file_path.extension().and_then(|s| s.to_str()) == Some("pdf")
 }
 
@@ -183,79 +183,75 @@ fn extract_file_text(file_path: &PathBuf) -> Result<String, ChunkifierError> {
     fs::read_to_string(file_path).map_err(|_| ChunkifierError::Other("Failed to read text file".to_string()))
   }
 }
+
 #[cfg(test)]
 mod tests {
   use super::*;
+  use std::fs::File;
+  use std::io::Write;
+  use tempfile::tempdir;
 
-  #[cfg(test)]
-  mod tests {
-    use super::*;
-    use std::fs::File;
-    use std::io::Write;
-    use tempfile::tempdir;
+  // a test for parse_input to verify that it is doing what it needs to do
+  // using fake text that has a URL, a filepath and also some text
+  // it should return a IngestData struct that contains the full text, a list of URLs, and a list of file paths
+  #[test]
+  fn test_parse_input() {
+    let input = "https://www.google.com/ src/main.rs this is some text";
+    let ingest_data = categorize_input(input).unwrap();
+    assert_eq!(ingest_data.text, "https://www.google.com/ src/main.rs this is some text");
+    assert_eq!(ingest_data.urls, vec!["https://www.google.com/"]);
+    assert_eq!(ingest_data.file_paths, vec![PathBuf::from("src/main.rs")]);
+  }
 
-    // a test for parse_input to verify that it is doing what it needs to do
-    // using fake text that has a URL, a filepath and also some text
-    // it should return a IngestData struct that contains the full text, a list of URLs, and a list of file paths
-    #[test]
-    fn test_parse_input() {
-      let input = "https://www.google.com/ src/main.rs this is some text";
-      let ingest_data = categorize_input(input).unwrap();
-      assert_eq!(ingest_data.text, "https://www.google.com/ src/main.rs this is some text");
-      assert_eq!(ingest_data.urls, vec!["https://www.google.com/"]);
-      assert_eq!(ingest_data.file_paths, vec![PathBuf::from("src/main.rs")]);
+  #[test]
+  fn test_chunkify_pdf_file() {
+    let pdf_file_path = PathBuf::from("tests/data/NIST.SP.800-185.pdf");
+    let chunks = chunkify_file(&pdf_file_path, 4).unwrap();
+
+    // This will depend on the content of the PDF and the chunk size.
+    // For the purpose of the test, let's check if the first chunk contains some expected stub text.
+    // You can adjust the expected stub text based on the content of the PDF.
+    let expected_text = "NIST Special Publication"; // Adjust this as necessary
+
+    assert!(!chunks.is_empty());
+    assert!(chunks[0].contains(expected_text), "Expected stub text not found in the first chunk.");
+
+    // Print out the chunks for verification:
+    for (i, chunk) in chunks.iter().enumerate() {
+      println!("Chunk {}: {}", i + 1, chunk);
     }
+  }
 
-    #[test]
-    fn test_chunkify_pdf_file() {
-      let pdf_file_path = PathBuf::from("tests/data/NIST.SP.800-185.pdf");
-      let chunks = chunkify_file(&pdf_file_path, 4).unwrap();
+  #[test]
+  fn test_chunkify_text_file() {
+    let dir = tempdir().unwrap();
+    let text_file_path = dir.path().join("test.txt");
 
-      // This will depend on the content of the PDF and the chunk size.
-      // For the purpose of the test, let's check if the first chunk contains some expected stub text.
-      // You can adjust the expected stub text based on the content of the PDF.
-      let expected_text = "NIST Special Publication"; // Adjust this as necessary
+    File::create(&text_file_path).unwrap().write_all(b"Hello, world!\nHow are you?\nThis is a test!").unwrap();
 
-      assert!(!chunks.is_empty());
-      assert!(chunks[0].contains(expected_text), "Expected stub text not found in the first chunk.");
+    let chunks = chunkify_file(&text_file_path, 4).unwrap();
 
-      // Print out the chunks for verification:
-      for (i, chunk) in chunks.iter().enumerate() {
-        println!("Chunk {}: {}", i + 1, chunk);
-      }
+    // Print out the chunks for verification:
+    for (i, chunk) in chunks.iter().enumerate() {
+      println!("Chunk {}: {}", i + 1, chunk);
     }
+    assert_eq!(chunks.len(), 4);
+    assert_eq!(chunks[0], "Hello, world!");
+    assert_eq!(chunks[1], "How are you?");
+    assert_eq!(chunks[2], "This is a");
+    assert_eq!(chunks[3], "test!");
+  }
 
-    #[test]
-    fn test_chunkify_text_file() {
-      let dir = tempdir().unwrap();
-      let text_file_path = dir.path().join("test.txt");
+  #[test]
+  fn test_chunkify_binary_file() {
+    let dir = tempdir().unwrap();
+    let binary_file_path = dir.path().join("binary_test_file.bin");
 
-      File::create(&text_file_path).unwrap().write_all(b"Hello, world!\nHow are you?\nThis is a test!").unwrap();
+    File::create(&binary_file_path).unwrap().write_all(&[0u8, 1, 2, 3, 4, 255]).unwrap();
 
-      let chunks = chunkify_file(&text_file_path, 4).unwrap();
+    let result = chunkify_file(&binary_file_path, 4);
 
-      // Print out the chunks for verification:
-      for (i, chunk) in chunks.iter().enumerate() {
-        println!("Chunk {}: {}", i + 1, chunk);
-      }
-      assert_eq!(chunks.len(), 4);
-      assert_eq!(chunks[0], "Hello, world!");
-      assert_eq!(chunks[1], "How are you?");
-      assert_eq!(chunks[2], "This is a");
-      assert_eq!(chunks[3], "test!");
-    }
-
-    #[test]
-    fn test_chunkify_binary_file() {
-      let dir = tempdir().unwrap();
-      let binary_file_path = dir.path().join("binary_test_file.bin");
-
-      File::create(&binary_file_path).unwrap().write_all(&[0u8, 1, 2, 3, 4, 255]).unwrap();
-
-      let result = chunkify_file(&binary_file_path, 4);
-
-      // We expect an error as the binary file is not processable.
-      assert!(result.is_err());
-    }
+    // We expect an error as the binary file is not processable.
+    assert!(result.is_err());
   }
 }

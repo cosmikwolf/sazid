@@ -5,11 +5,7 @@ use color_eyre::eyre::Result;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use derive_deref::{Deref, DerefMut};
 use ratatui::style::{Color, Modifier, Style};
-use serde::{
-  de::{Deserializer},
-  Deserialize,
-};
-
+use serde::{de::Deserializer, Deserialize};
 
 use crate::{action::Action, app::Mode, components::session::SessionConfig};
 

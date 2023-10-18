@@ -1,12 +1,10 @@
-
 use async_openai::types::{
-  ChatCompletionRequestMessage,
-  CreateChatCompletionRequest,
-  CreateEmbeddingRequestArgs, CreateEmbeddingResponse, Role,
+  ChatCompletionRequestMessage, CreateChatCompletionRequest, CreateEmbeddingRequestArgs, CreateEmbeddingResponse, Role,
 };
 use color_eyre::eyre::Result;
 use crossterm::event::{KeyCode, KeyEvent};
 use futures::StreamExt;
+use insta;
 use ratatui::layout::Rect;
 use ratatui::{prelude::*, widgets::block::*, widgets::*};
 use serde_derive::{Deserialize, Serialize};
@@ -19,17 +17,10 @@ use async_openai::{config::OpenAIConfig, Client};
 
 use backoff::exponential::ExponentialBackoffBuilder;
 
-
-
 use super::{Component, Frame};
 use crate::app::{consts::*, errors::*, tools::chunkifier::*, types::*};
 use crate::trace_dbg;
-use crate::{
-  action::Action,
-  config::{Config},
-};
-
-
+use crate::{action::Action, config::Config};
 
 use crate::app::gpt_interface::{create_chat_completion_function_args, define_commands};
 use crate::app::tools::utils::ensure_directory_exists;
@@ -208,10 +199,10 @@ impl Session {
     tokio::spawn(async move {
       tx.send(Action::EnterProcessing).unwrap();
       let client = create_openai_client();
+      let mut file = File::create("saved_response.txt").unwrap();
       match stream_response {
         true => {
           let mut stream = client.chat().create_stream(request).await.unwrap();
-          let mut file = File::create("saved_response.txt").unwrap();
           while let Some(response_result) = stream.next().await {
             match response_result {
               Ok(response) => {
@@ -233,6 +224,7 @@ impl Session {
           },
         },
       };
+      file.close().unwrap();
       tx.send(Action::ExitProcessing).unwrap();
     });
   }
@@ -285,6 +277,7 @@ impl Session {
     Self::load_session_by_id(last_session_id)
   }
 
+  #[allow(dead_code)]
   fn save_session(&self) -> io::Result<()> {
     ensure_directory_exists(SESSIONS_DIR).unwrap();
     let session_file_path = Self::get_session_filepath(self.config.session_id.clone());
@@ -375,4 +368,9 @@ pub async fn create_embedding_request(
   let response = client.embeddings().create(request).await?;
 
   Ok(response)
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
 }

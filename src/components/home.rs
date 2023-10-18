@@ -1,12 +1,7 @@
-use std::{collections::HashMap};
+use std::collections::HashMap;
 
 use super::{Component, Frame};
-use crate::{
-  action::Action,
-  components::session::Session,
-  config::{Config},
-  trace_dbg,
-};
+use crate::{action::Action, components::session::Session, config::Config, trace_dbg};
 
 use color_eyre::eyre::Result;
 use crossterm::event::{KeyCode, KeyEvent};

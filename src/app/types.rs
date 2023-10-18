@@ -2,13 +2,11 @@ use crate::app::consts::*;
 use async_openai::{
   self,
   types::{
-    ChatChoice, ChatCompletionRequestMessage, ChatCompletionResponseStreamMessage, CreateChatCompletionRequest, CreateChatCompletionResponse,
-    CreateChatCompletionStreamResponse, FunctionCall, FunctionCallStream, Role,
+    ChatChoice, ChatCompletionRequestMessage, ChatCompletionResponseStreamMessage, CreateChatCompletionRequest,
+    CreateChatCompletionResponse, CreateChatCompletionStreamResponse, FunctionCall, FunctionCallStream, Role,
   },
 };
 use clap::Parser;
-use color_eyre::owo_colors;
-use owo_colors::OwoColorize;
 use serde::{Deserialize, Serialize};
 use std::{collections::BTreeMap, ffi::OsString, path::PathBuf};
 
@@ -429,75 +427,6 @@ pub struct Commands {
 impl std::fmt::Display for Message {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     format_chat_message(f, self.role.clone(), self.content.clone())
-  }
-}
-
-fn format_chat_request(
-  f: &mut std::fmt::Formatter<'_>,
-  role: Role,
-  message: String,
-  name: Option<String>,
-  function_call: Option<FunctionCall>,
-) -> std::fmt::Result {
-  match name {
-    Some(name) => match function_call {
-      Some(function_call) => {
-        write!(f, "{}: {} ({:?})\n\r", role, message, (name, function_call))
-      },
-      None => write!(f, "{}: {} ({})\n\r", role, message, name),
-    },
-    None => match function_call {
-      Some(function_call) => {
-        write!(f, "{}: {} ({:?})\n\r", role, message, function_call)
-      },
-      None => write!(f, "{}: {}\n\r", role, message),
-    },
-  }
-}
-
-fn format_chat_response(
-  f: &mut std::fmt::Formatter<'_>,
-  role: Option<Role>,
-  message: String,
-  function_call: Option<FunctionCall>,
-  function_call_stream: Option<FunctionCallStream>,
-) -> std::fmt::Result {
-  // todo: this shoudl aggregate the writes and return them all at once at the end
-
-  if let Some(function_call) = function_call {
-    let _ = write!(
-      f,
-      "{}: {:?} ({:?})\n\r",
-      role.clone().unwrap(),
-      message.bright_green(),
-      serde_json::to_string_pretty(&function_call).unwrap().purple()
-    );
-  };
-  if let Some(function_call_stream) = function_call_stream {
-    let _ = write!(
-      f,
-      "{}: {:?} ({:?})\n\r",
-      role.clone().unwrap(),
-      message.bright_green(),
-      serde_json::to_string_pretty(&function_call_stream).unwrap().purple()
-    );
-  };
-  match role {
-    Some(Role::User) => {
-      write!(f, "{}: {:?}\n\r", role.unwrap(), message.bright_green())
-    },
-    Some(Role::Assistant) => {
-      write!(f, "{}: {:?}\n\r", role.unwrap(), message.bright_blue())
-    },
-    Some(Role::System) => {
-      write!(f, "{}: {:?}\n\r", role.unwrap(), message.bright_yellow())
-    },
-    Some(Role::Function) => {
-      write!(f, "{}: {:?}\n\r", role.unwrap(), message.bright_yellow())
-    },
-    None => {
-      write!(f, "{:?}\n\r", message)
-    },
   }
 }
 

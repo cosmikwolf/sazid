@@ -1,0 +1,7 @@
+---
+source: tests/stream_response_test.rs
+expression: create_chat_completion_request_message_result
+---
+[[]]
+role = 'user'
+content = 'testing testing 1 2 3'
