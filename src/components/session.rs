@@ -1,13 +1,14 @@
 use async_openai::error::OpenAIError;
 use async_openai::types::{
-  ChatChoice, ChatCompletionRequestMessage, ChatCompletionResponseMessage, CreateChatCompletionRequest,
-  CreateChatCompletionResponse, CreateEmbeddingRequestArgs, CreateEmbeddingResponse, Role,
+  ChatChoice, ChatCompletionRequestMessage, ChatCompletionResponseMessage, ChatCompletionResponseStreamMessage,
+  CreateChatCompletionRequest, CreateChatCompletionResponse, CreateChatCompletionStreamResponse,
+  CreateEmbeddingRequestArgs, CreateEmbeddingResponse, Role,
 };
 use color_eyre::eyre::Result;
 use crossterm::event::{KeyCode, KeyEvent, MouseEvent};
 use futures::StreamExt;
 use ratatui::layout::Rect;
-use ratatui::{prelude::*, symbols::scrollbar, widgets::*};
+use ratatui::{prelude::*, symbols::scrollbar, widgets::block::*, widgets::*};
 use serde_derive::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -33,6 +34,9 @@ use crate::app::gpt_interface::handle_chat_response_function_call;
 use crate::app::gpt_interface::{create_chat_completion_function_args, define_commands};
 use crate::app::tools::utils::ensure_directory_exists;
 use crate::components::home::Mode;
+
+use std::fs::File;
+use std::io::prelude::*;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 
@@ -137,16 +141,20 @@ impl Component for Session {
       .direction(Direction::Horizontal)
       .constraints(vec![Constraint::Length(1), Constraint::Min(10), Constraint::Length(1)])
       .split(rects[0]);
+
+    // a function that will return a vec with an aribitrary numbr of the same item
+
     let textbox = Layout::default()
       .direction(Direction::Vertical)
-      .constraints(vec![Constraint::Length(1), Constraint::Min(1)])
+      .constraints(vec![Constraint::Min(2), Constraint::Length(3)])
       .split(shorter[1]);
 
     let get_style_from_role = |role| match role {
-      Role::User => Style::default().fg(Color::Yellow),
-      Role::Assistant => Style::default().fg(Color::Green),
-      Role::System => Style::default().fg(Color::Blue),
-      Role::Function => Style::default().fg(Color::Red),
+      Some(Role::User) => Style::default().fg(Color::Yellow),
+      Some(Role::Assistant) => Style::default().fg(Color::Green),
+      Some(Role::System) => Style::default().fg(Color::Blue),
+      Some(Role::Function) => Style::default().fg(Color::Red),
+      None => Style::default(),
     };
 
     let title = "Chat";
@@ -155,28 +163,37 @@ impl Component for Session {
       .borders(Borders::ALL)
       .gray()
       .title(Span::styled(title, Style::default().add_modifier(Modifier::BOLD)));
-
-    for transaction in &self.transactions {
-      let messages: Vec<RenderedChatMessage> = transaction.clone().into();
-      for (i, message) in messages.iter().enumerate() {
-        let style = get_style_from_role(message.role.clone().unwrap());
-        let paragraph =
-          Paragraph::new(message.content.clone()).style(style).block(block.clone()).wrap(Wrap { trim: true });
-        f.render_widget(paragraph, textbox[1]);
+    let mut text = Vec::new();
+    for (index, transaction) in self.transactions.iter().enumerate() {
+      let mut style = Style::default().fg(Color::White);
+      let mut content = String::new() + "test";
+      let messages = <Vec<RenderedChatMessage>>::from(transaction.clone());
+      for message in messages.iter() {
+        style = get_style_from_role(message.role.clone());
+        content = content + message.content.clone().as_str();
       }
+      text.push(Line::styled(content, style));
     }
+    let block = Block::default()
+      .borders(Borders::TOP)
+      .gray()
+      .title(Title::from("left").alignment(Alignment::Left))
+      .title(Title::from("right").alignment(Alignment::Right));
+    let paragraph = Paragraph::new(text).block(block).wrap(Wrap { trim: true });
+    f.render_widget(paragraph, textbox[0]);
 
-    f.render_stateful_widget(
-      Scrollbar::default()
-        .orientation(ScrollbarOrientation::VerticalRight)
-        .begin_symbol(Some("↑"))
-        .end_symbol(Some("↓")),
-      textbox[1],
-      &mut self.vertical_scroll_state,
-    );
+    // f.render_stateful_widget(
+    //   Scrollbar::default()
+    //     .orientation(ScrollbarOrientation::VerticalRight)
+    //     .begin_symbol(Some("↑"))
+    //     .end_symbol(Some("↓")),
+    //   textbox[1],
+    //   &mut self.vertical_scroll_state,
+    // );
     Ok(())
   }
 }
+
 impl Session {
   pub fn new() -> Session {
     Self::default()
@@ -194,9 +211,11 @@ impl Session {
       match stream_response {
         true => {
           let mut stream = client.chat().create_stream(request).await.unwrap();
+          let mut file = File::create("saved_response.txt").unwrap();
           while let Some(response_result) = stream.next().await {
             match response_result {
               Ok(response) => {
+                let _ = file.write_all(serde_json::to_string(&response).unwrap().as_bytes());
                 tx.send(Action::ProcessResponse(Box::new(ChatTransaction::StreamResponse(response)))).unwrap()
               },
               Err(e) => {
@@ -220,7 +239,13 @@ impl Session {
 
   pub fn process_response_handler(&mut self, transaction: ChatTransaction) {
     let tx = self.action_tx.clone().unwrap();
-    self.transactions.push(transaction);
+    if let ChatTransaction::StreamResponse(mut t) = transaction {
+      if let Some(ChatTransaction::StreamResponse(r)) = self.transactions.last_mut() {
+        r.choices.append(&mut t.choices);
+      }
+    } else {
+      self.transactions.push(transaction);
+    }
     tx.send(Action::Update).unwrap();
   }
 

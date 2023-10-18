@@ -151,7 +151,7 @@ impl From<ChatTransaction> for Option<CreateChatCompletionStreamResponse> {
 pub enum ChatMessage {
   Request(ChatCompletionRequestMessage),
   Response(ChatChoice),
-  StreamResponse(Vec<ChatCompletionResponseStreamMessage>),
+  StreamResponse(ChatCompletionResponseStreamMessage),
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
@@ -179,6 +179,7 @@ impl From<FunctionCallStream> for RenderedFunctionCall {
     RenderedFunctionCall { name: function_call.name, arguments: function_call.arguments }
   }
 }
+
 impl From<ChatTransaction> for Vec<RenderedChatMessage> {
   fn from(transaction: ChatTransaction) -> Self {
     match transaction {
@@ -196,15 +197,52 @@ impl From<ChatTransaction> for Vec<RenderedChatMessage> {
           rendered_response
         })
         .collect(),
-      ChatTransaction::StreamResponse(response_stream) => {
-        let mut rendered_response =
-          RenderedChatMessage::from(ChatMessage::StreamResponse(response_stream.choices.to_owned()));
-        rendered_response.id = Some(response_stream.id.clone());
-        vec![rendered_response]
-      },
+      ChatTransaction::StreamResponse(response_stream) => response_stream
+        .choices
+        .iter()
+        .map(|choice| {
+          // let mut content = String::new();
+          // let mut function_call: Option<RenderedFunctionCall> = None;
+          // let mut finish_reason = None;
+          // let mut role = None;
+          // content = content + response_stream.delta.content.clone().unwrap_or_default().as_str();
+          // if let Some(function_call_stream) = response_stream.delta.function_call.clone() {
+          //   function_call = Some(RenderedFunctionCall {
+          //     name: if function_call_stream.name.is_some() {
+          //       Some(format!(
+          //         "{}{}",
+          //         function_call.clone().unwrap().name.unwrap(),
+          //         function_call_stream.name.as_ref().unwrap_or(&String::new())
+          //       ))
+          //     } else {
+          //       None
+          //     },
+          //     arguments: if function_call_stream.arguments.is_some() {
+          //       Some(format!(
+          //         "{}{}",
+          //         function_call.unwrap().arguments.unwrap(),
+          //         function_call_stream.arguments.as_ref().unwrap_or(&String::new())
+          //       ))
+          //     } else {
+          //       None
+          //     },
+          //   })
+          // }
+          // if response_stream.finish_reason.is_some() {
+          //   finish_reason = response_stream.finish_reason.clone();
+          // }
+          // if response_stream.delta.role.is_some() {
+          //   role = response_stream.delta.role.clone();
+          // }
+          let mut rendered_response = RenderedChatMessage::from(ChatMessage::StreamResponse(choice.to_owned()));
+          rendered_response.id = Some(response_stream.id.clone());
+          rendered_response
+        })
+        .collect(),
     }
   }
 }
+
 impl From<ChatMessage> for RenderedChatMessage {
   fn from(message: ChatMessage) -> Self {
     match message {
@@ -222,44 +260,12 @@ impl From<ChatMessage> for RenderedChatMessage {
         function_call: response.message.function_call.map(|function_call| function_call.into()),
         finish_reason: response.finish_reason,
       },
-      ChatMessage::StreamResponse(response_streams) => {
-        let mut content = String::new();
-        let mut function_call: Option<RenderedFunctionCall> = None;
-        let mut finish_reason = None;
-        let mut role = None;
-
-        for response_stream in response_streams.iter() {
-          content = format!("{}{}", content, response_stream.delta.content.clone().unwrap_or_default());
-          if let Some(function_call_stream) = response_stream.delta.function_call.clone() {
-            function_call = Some(RenderedFunctionCall {
-              name: if function_call_stream.name.is_some() {
-                Some(format!(
-                  "{}{}",
-                  function_call.clone().unwrap().name.unwrap(),
-                  function_call_stream.name.as_ref().unwrap_or(&String::new())
-                ))
-              } else {
-                None
-              },
-              arguments: if function_call_stream.arguments.is_some() {
-                Some(format!(
-                  "{}{}",
-                  function_call.unwrap().arguments.unwrap(),
-                  function_call_stream.arguments.as_ref().unwrap_or(&String::new())
-                ))
-              } else {
-                None
-              },
-            })
-          }
-          if response_stream.finish_reason.is_some() {
-            finish_reason = response_stream.finish_reason.clone();
-          }
-          if response_stream.delta.role.is_some() {
-            role = response_stream.delta.role.clone();
-          }
-        }
-        RenderedChatMessage { id: None, role, content, function_call, finish_reason }
+      ChatMessage::StreamResponse(response_streams) => RenderedChatMessage {
+        id: None,
+        role: response_streams.delta.role,
+        content: response_streams.delta.content.unwrap_or_default(),
+        function_call: response_streams.delta.function_call.map(|function_call| function_call.into()),
+        finish_reason: response_streams.finish_reason,
       },
     }
   }
