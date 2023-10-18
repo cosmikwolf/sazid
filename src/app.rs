@@ -14,7 +14,7 @@ use crate::{
   action::Action,
   components::{home::Home, session::Session, Component},
   config::Config,
-  trace_dbg, tui,
+  tui,
 };
 
 #[derive(Default, Debug, Copy, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]

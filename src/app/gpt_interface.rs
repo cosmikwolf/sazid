@@ -145,10 +145,7 @@ pub fn read_file_lines(
   start_line: Option<usize>,
   end_line: Option<usize>,
 ) -> Result<Option<String>, std::io::Error> {
-  let start_line = match start_line {
-    Some(start_line) => start_line,
-    None => 0,
-  };
+  let start_line = start_line.unwrap_or(0);
   let end_line = match end_line {
     Some(end_line) => end_line,
     None => {
@@ -184,10 +181,7 @@ pub fn replace_lines(
       reader.lines().count()
     },
   };
-  let start_line = match start_line {
-    Some(start_line) => start_line,
-    None => 0,
-  };
+  let start_line = start_line.unwrap_or(0);
   let file = std::fs::File::open(path)?;
   let reader = std::io::BufReader::new(file);
   for (index, line) in reader.lines().enumerate() {
@@ -268,10 +262,10 @@ pub fn handle_chat_response_function_call(
       }
     }
   }
-  if function_results.len() > 0 {
-    Some(function_results)
-  } else {
+  if function_results.is_empty() {
     None
+  } else {
+    Some(function_results)
   }
 }
 #[cfg(test)]
@@ -301,4 +295,3 @@ mod test {
     assert!(cargo_check_result.is_ok());
   }
 }
-

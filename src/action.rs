@@ -1,5 +1,4 @@
-use crate::app::types::{ChatMessage, ChatTransaction};
-use async_openai::types::{ChatCompletionResponseMessage, ChatCompletionStreamResponseDelta};
+use crate::app::types::ChatTransaction;
 use serde::{
   de::{self, Deserializer, Visitor},
   Deserialize, Serialize,
