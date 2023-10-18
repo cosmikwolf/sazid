@@ -1,8 +1,9 @@
-extern crate sazid;
-pub mod app;
+#[macro_use]
+extern crate lazy_static;
 
 #[cfg(test)]
 mod tests {
+  use sazid::app::types::*;
   use std::fs::File;
   use std::io::Read;
   use std::path::PathBuf;
@@ -14,12 +15,21 @@ mod tests {
     path.push("tests/assets/saved_stream_response.json");
     let mut file = File::open(path).unwrap();
     let mut contents = String::new();
-    let transaction: ChatTransaction;
     file.read_to_string(&mut contents).unwrap();
     let parsed = serde_json::from_str::<ChatTransaction>(&contents).unwrap();
-    match parsed {
-      crate::ChatTransaction::StreamResponse { .. } => {},
-      _ => panic!("Parsed transaction was not a StreamResponse"),
+    match parsed.clone() {
+      ChatTransaction::StreamResponse(txn) => {
+        print!("{:?}", txn.choices.len());
+      },
+      _ => {
+        panic!("expected ChatTransaction::StreamResponse, got {:?}", parsed);
+      },
+    }
+    let mut content = String::new();
+    let messages = <Vec<RenderedChatMessage>>::from(parsed);
+    for message in messages {
+      content += message.content.clone().as_str();
+      print!("{}", content);
     }
   }
 }

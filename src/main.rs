@@ -4,21 +4,14 @@
 #[macro_use]
 extern crate lazy_static;
 
-pub mod action;
-pub mod app;
-pub mod cli;
-pub mod components;
-pub mod config;
-pub mod tui;
-pub mod utils;
-
 use clap::Parser;
-use cli::Cli;
 use color_eyre::eyre::Result;
 
-use crate::{
+use sazid::{
   app::App,
-  utils::{initialize_logging, initialize_panic_handler, version},
+  cli::Cli,
+  trace_dbg,
+  utils::{initialize_logging, initialize_panic_handler},
 };
 
 async fn tokio_main() -> Result<()> {

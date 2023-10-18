@@ -1,6 +1,7 @@
+use crate::app::types::Model;
+use lazy_static::lazy_static;
 use std::path::PathBuf;
 
-use crate::app::types::Model;
 pub const MAX_FUNCTION_CALL_DEPTH: u32 = 0;
 pub const CHUNK_TOKEN_LIMIT: u32 = 4096u32;
 
