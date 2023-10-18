@@ -1,7 +1,7 @@
 use crate::app::consts::*;
 use crate::app::errors::ChunkifierError;
 use crate::app::tools::utils::ensure_directory_exists;
-use crate::app::tools::utils::*;
+
 use crate::app::types::*;
 use std::fs::{self, File};
 use std::io::Read;
@@ -22,7 +22,7 @@ pub fn parse_input(
 
 fn categorize_input(input: &str) -> Result<IngestData, ChunkifierError> {
   let ingest_data = IngestData { text: input.to_string(), urls: Vec::new(), file_paths: Vec::new() };
-  return Ok(ingest_data);
+  Ok(ingest_data)
   // this code has a bug where any text that shared the name of a local directory results in a directories not supported error. need to just make this an argument -f
   // let words: Vec<&str> = input.split_whitespace().collect();
   // for word in words {

@@ -1,14 +1,14 @@
-use async_openai::error::OpenAIError;
+
 use async_openai::types::{
-  ChatChoice, ChatCompletionRequestMessage, ChatCompletionResponseMessage, ChatCompletionResponseStreamMessage,
-  CreateChatCompletionRequest, CreateChatCompletionResponse, CreateChatCompletionStreamResponse,
+  ChatCompletionRequestMessage,
+  CreateChatCompletionRequest,
   CreateEmbeddingRequestArgs, CreateEmbeddingResponse, Role,
 };
 use color_eyre::eyre::Result;
-use crossterm::event::{KeyCode, KeyEvent, MouseEvent};
+use crossterm::event::{KeyCode, KeyEvent};
 use futures::StreamExt;
 use ratatui::layout::Rect;
-use ratatui::{prelude::*, symbols::scrollbar, widgets::block::*, widgets::*};
+use ratatui::{prelude::*, widgets::block::*, widgets::*};
 use serde_derive::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -16,21 +16,21 @@ use std::{env, fs, io};
 use tokio::sync::mpsc::UnboundedSender;
 
 use async_openai::{config::OpenAIConfig, Client};
-use async_recursion::async_recursion;
+
 use backoff::exponential::ExponentialBackoffBuilder;
 
-use tokio::runtime::Runtime;
+
 
 use super::{Component, Frame};
-use crate::app::{consts::*, errors::*, tools::chunkifier::*, types::ChatMessage, types::*};
+use crate::app::{consts::*, errors::*, tools::chunkifier::*, types::*};
 use crate::trace_dbg;
 use crate::{
   action::Action,
-  config::{Config, KeyBindings},
+  config::{Config},
 };
-use tui_input::{backend::crossterm::EventHandler, Input};
 
-use crate::app::gpt_interface::handle_chat_response_function_call;
+
+
 use crate::app::gpt_interface::{create_chat_completion_function_args, define_commands};
 use crate::app::tools::utils::ensure_directory_exists;
 use crate::components::home::Mode;
@@ -91,7 +91,7 @@ pub struct Session {
 }
 
 impl Component for Session {
-  fn init(&mut self, area: Rect) -> Result<()> {
+  fn init(&mut self, _area: Rect) -> Result<()> {
     Ok(())
   }
   fn register_action_handler(&mut self, tx: UnboundedSender<Action>) -> Result<()> {
@@ -159,18 +159,18 @@ impl Component for Session {
 
     let title = "Chat";
 
-    let block = Block::default()
+    let _block = Block::default()
       .borders(Borders::ALL)
       .gray()
       .title(Span::styled(title, Style::default().add_modifier(Modifier::BOLD)));
     let mut text = Vec::new();
-    for (index, transaction) in self.transactions.iter().enumerate() {
+    for (_index, transaction) in self.transactions.iter().enumerate() {
       let mut style = Style::default().fg(Color::White);
       let mut content = String::new() + "test";
       let messages = <Vec<RenderedChatMessage>>::from(transaction.clone());
       for message in messages.iter() {
         style = get_style_from_role(message.role.clone());
-        content = content + message.content.clone().as_str();
+        content += message.content.clone().as_str();
       }
       text.push(Line::styled(content, style));
     }

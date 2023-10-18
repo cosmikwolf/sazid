@@ -1,4 +1,4 @@
-use crate::app::types::ChatMessage;
+
 use color_eyre::eyre::Result;
 use crossterm::event::{KeyEvent, MouseEvent};
 use ratatui::layout::Rect;
@@ -22,7 +22,7 @@ pub trait Component {
   fn register_config_handler(&mut self, config: Config) -> Result<()> {
     Ok(())
   }
-  fn init(&mut self, area: Rect) -> Result<()> {
+  fn init(&mut self, _area: Rect) -> Result<()> {
     Ok(())
   }
   fn handle_events(&mut self, event: Option<Event>) -> Result<Option<Action>> {

@@ -4,7 +4,7 @@ use color_eyre::eyre::Result;
 use directories::ProjectDirs;
 use lazy_static::lazy_static;
 use tracing::error;
-use tracing::Level;
+
 use tracing_error::ErrorLayer;
 use tracing_subscriber::{self, prelude::__tracing_subscriber_SubscriberExt, util::SubscriberInitExt, Layer};
 

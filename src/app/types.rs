@@ -1,19 +1,16 @@
 use crate::app::consts::*;
 use async_openai::{
   self,
-  config::OpenAIConfig,
   types::{
-    ChatChoice, ChatCompletionRequestMessage, ChatCompletionResponseMessage, ChatCompletionResponseStreamMessage,
-    ChatCompletionStreamResponseDelta, CreateChatCompletionRequest, CreateChatCompletionResponse,
+    ChatChoice, ChatCompletionRequestMessage, ChatCompletionResponseStreamMessage, CreateChatCompletionRequest, CreateChatCompletionResponse,
     CreateChatCompletionStreamResponse, FunctionCall, FunctionCallStream, Role,
   },
-  Client,
 };
 use clap::Parser;
 use color_eyre::owo_colors;
 use owo_colors::OwoColorize;
 use serde::{Deserialize, Serialize};
-use std::{collections::BTreeMap, ffi::OsString, fmt::Display, path::PathBuf};
+use std::{collections::BTreeMap, ffi::OsString, path::PathBuf};
 
 // options
 #[derive(Parser, Clone, Default, Debug)]

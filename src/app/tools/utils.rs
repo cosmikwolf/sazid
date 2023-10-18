@@ -16,7 +16,7 @@ use tracing_subscriber::{
 
 use color_eyre::eyre::Result;
 use lazy_static::lazy_static;
-use tracing::error;
+
 
 lazy_static! {
   pub static ref PROJECT_NAME: String = env!("CARGO_CRATE_NAME").to_uppercase().to_string();

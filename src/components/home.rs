@@ -1,18 +1,18 @@
-use std::{collections::HashMap, time::Duration};
+use std::{collections::HashMap};
 
 use super::{Component, Frame};
 use crate::{
   action::Action,
   components::session::Session,
-  config::{Config, KeyBindings},
+  config::{Config},
   trace_dbg,
 };
-use async_openai::types::ChatCompletionResponseMessage;
+
 use color_eyre::eyre::Result;
 use crossterm::event::{KeyCode, KeyEvent};
 use log::error;
 use ratatui::{prelude::*, widgets::*};
-use serde::{Deserialize, Serialize};
+
 use tokio::sync::mpsc::UnboundedSender;
 use tui_input::{backend::crossterm::EventHandler, Input};
 
