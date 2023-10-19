@@ -199,11 +199,12 @@ impl From<FunctionCallStream> for RenderedFunctionCall {
 impl From<ChatTransaction> for Vec<RenderedChatMessage> {
   fn from(transaction: ChatTransaction) -> Self {
     match transaction {
-      ChatTransaction::Request(request) => request
+      ChatTransaction::Request(request) => vec![request
         .messages
         .iter()
         .map(|message| RenderedChatMessage::from(ChatMessage::Request(message.clone())))
-        .collect(),
+        .last()
+        .unwrap()],
       ChatTransaction::Response(response) => response
         .choices
         .iter()

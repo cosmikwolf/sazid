@@ -130,43 +130,41 @@ impl Component for Session {
       .direction(Direction::Vertical)
       .constraints([Constraint::Percentage(100), Constraint::Min(3)].as_ref())
       .split(area);
-    let shorter = Layout::default()
-      .direction(Direction::Horizontal)
+    let inner = Layout::default()
+      .direction(Direction::Vertical)
       .constraints(vec![Constraint::Length(1), Constraint::Min(10), Constraint::Length(1)])
       .split(rects[0]);
+    let inner = Layout::default()
+      .direction(Direction::Horizontal)
+      .constraints(vec![Constraint::Length(1), Constraint::Min(10), Constraint::Length(1)])
+      .split(inner[1]);
 
     // a function that will return a vec with an aribitrary numbr of the same item
 
     let textbox = Layout::default()
       .direction(Direction::Vertical)
       .constraints(vec![Constraint::Min(2), Constraint::Length(3)])
-      .split(shorter[1]);
+      .split(rects[0]);
 
-    let title = "Chat";
-
-    let _block = Block::default()
-      .borders(Borders::ALL)
-      .gray()
-      .title(Span::styled(title, Style::default().add_modifier(Modifier::BOLD)));
+    let _title = "Chat";
 
     let lines: Vec<Line> = self.transactions.clone().into_iter().flat_map(<Vec<Line>>::from).collect();
 
-    let block = Block::default()
-      .borders(Borders::TOP)
-      .gray()
-      .title(Title::from("left").alignment(Alignment::Left))
-      .title(Title::from("right").alignment(Alignment::Right));
+    let block = Block::default().borders(Borders::NONE).gray();
+    // .title(Title::from("left").alignment(Alignment::Left))
+    //.title(Title::from("right").alignment(Alignment::Right));
     let paragraph = Paragraph::new(lines).block(block).wrap(Wrap { trim: true });
-    f.render_widget(paragraph, textbox[0]);
+    f.render_widget(paragraph, inner[1]);
 
-    // f.render_stateful_widget(
-    //   Scrollbar::default()
-    //     .orientation(ScrollbarOrientation::VerticalRight)
-    //     .begin_symbol(Some("↑"))
-    //     .end_symbol(Some("↓")),
-    //   textbox[1],
-    //   &mut self.vertical_scroll_state,
-    // );
+    f.render_stateful_widget(
+      Scrollbar::default()
+        .orientation(ScrollbarOrientation::VerticalRight)
+        .begin_symbol(Some("↑"))
+        .end_symbol(Some("↓")),
+      inner[1],
+      &mut self.vertical_scroll_state,
+    );
+
     Ok(())
   }
 }
@@ -178,7 +176,19 @@ impl Session {
 
   pub fn request_response(&mut self, input: String, tx: UnboundedSender<Action>) {
     //let tx = self.action_tx.clone().unwrap();
-    let request_messages = construct_chat_completion_request_message(&input, &self.config.model).unwrap();
+    let previous_requests: Vec<ChatCompletionRequestMessage> = self
+      .transactions
+      .clone()
+      .into_iter()
+      .filter_map(|t| match t {
+        ChatTransaction::Request(r) => Some(r.messages.clone()),
+        _ => None,
+      })
+      .flatten()
+      .collect();
+
+    let request_messages =
+      construct_chat_completion_request_message(&input, &self.config.model, Some(previous_requests)).unwrap();
     let request = construct_request(request_messages, &self.config);
     let stream_response = self.config.stream_response;
     self.transactions.push(ChatTransaction::Request(request.clone()));
@@ -320,6 +330,7 @@ pub fn create_openai_client() -> async_openai::Client<OpenAIConfig> {
 pub fn construct_chat_completion_request_message(
   content: &str,
   model: &Model,
+  previous_requests: Option<Vec<ChatCompletionRequestMessage>>,
 ) -> Result<Vec<ChatCompletionRequestMessage>, GPTConnectorError> {
   let chunks = parse_input(content, CHUNK_TOKEN_LIMIT as usize, model.token_limit as usize).unwrap();
 
@@ -327,7 +338,13 @@ pub fn construct_chat_completion_request_message(
     .iter()
     .map(|chunk| ChatCompletionRequestMessage { role: Role::User, content: Some(chunk.clone()), ..Default::default() })
     .collect();
-  Ok(messages)
+  match previous_requests {
+    Some(mut previous_requests) => {
+      previous_requests.append(&mut messages.clone());
+      Ok(previous_requests)
+    },
+    None => Ok(messages),
+  }
 }
 
 pub fn construct_request(
