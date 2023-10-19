@@ -1,0 +1,11 @@
+---
+source: tests/stream_response_test.rs
+expression: "&choice"
+---
+index: 0
+delta:
+  role: ~
+  content: ~
+  function_call: ~
+finish_reason: stop
+

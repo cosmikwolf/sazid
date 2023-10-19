@@ -2,37 +2,57 @@ extern crate lazy_static;
 
 #[cfg(test)]
 mod tests {
-  use async_openai::types::CreateChatCompletionStreamResponse;
-  use sazid::app::types::*;
+  use ntest::timeout;
+  use sazid::action::Action;
+  use sazid::app::types::ChatTransaction;
   use sazid::components::session::*;
+  use tokio::sync::mpsc;
 
-  use std::fs::File;
-  use std::io::Read;
-  use std::path::PathBuf;
-  // a test that reads in the file tests/assets/saved_stream_response.json and parses it
-  // asserting that it is a ChatTransaction::StreamResponse
-  #[test]
-  fn test_stream_response_parsing() {
-    let mut path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    path.push("tests/assets/saved_stream_response.json");
-    let mut file = File::open(path).unwrap();
-    let mut contents = String::new();
-    file.read_to_string(&mut contents).unwrap();
-    let parsed = serde_json::from_str::<CreateChatCompletionStreamResponse>(&contents).unwrap();
-    insta::assert_toml_snapshot!(&parsed);
-    //  match parsed {
-    //    ChatTransaction::StreamResponse(txn) => {},
-    //    _ => {
-    //      panic!("expected ChatTransaction::StreamResponse, got {:?}", parsed)
-    //    },
-    //  }
-    // let mut content = String::new();
-    // let messages = <Vec<RenderedChatMessage>>::from(parsed);
-    // for message in messages {
-    //   content += message.content.clone().as_str();
-    //   print!("{}", content);
-    // }
-  } //
+  #[tokio::test]
+  #[timeout(10000)]
+  pub async fn test_request_response() {
+    let mut enter_processing_action_run = false;
+    let mut process_response_action_run = false;
+    let (tx, mut rx) = mpsc::unbounded_channel::<Action>();
+    let mut session = Session::new();
+    session.request_response("Hello World".to_string(), tx.clone());
+    'outer: loop {
+      while let Some(res) = rx.recv().await {
+        match res {
+          Action::EnterProcessing => {
+            enter_processing_action_run = true;
+          },
+          Action::ProcessResponse(response) => {
+            process_response_action_run = true;
+            session.process_response_handler(tx.clone(), *response.clone());
+            if let ChatTransaction::StreamResponse(message) = *response {
+              insta::assert_yaml_snapshot!(&message, { ".id" => "[id]", ".created"  => "[created]" });
+            } else {
+              panic!("Expected StreamResponse");
+            };
+          },
+          Action::ExitProcessing => {
+            // break;
+            if let Some(ChatTransaction::StreamResponse(combined)) = session.transactions.last() {
+              assert!(process_response_action_run);
+              assert!(enter_processing_action_run);
+              insta::assert_yaml_snapshot!(&combined, { ".id" => "[id]", ".created"  => "[created]" });
+            } else {
+              panic!(
+                "Expected last transaction message to be StreamResponse {:#?}",
+                session.transactions.last_mut().unwrap()
+              );
+            }
+            break 'outer;
+          },
+          Action::Update => {},
+          _ => {
+            panic!("Unexpected action {:#?}", res);
+          },
+        }
+      }
+    }
+  }
 
   #[test]
   fn test_construct_chat_completion_request_message() {

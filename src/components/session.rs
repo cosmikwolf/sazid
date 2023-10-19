@@ -1,10 +1,11 @@
 use async_openai::types::{
-  ChatCompletionRequestMessage, CreateChatCompletionRequest, CreateEmbeddingRequestArgs, CreateEmbeddingResponse, Role,
+  ChatCompletionRequestMessage, ChatCompletionResponseStreamMessage, ChatCompletionStreamResponseDelta,
+  CreateChatCompletionRequest, CreateChatCompletionStreamResponse, CreateEmbeddingRequestArgs, CreateEmbeddingResponse,
+  Role,
 };
 use color_eyre::eyre::Result;
 use crossterm::event::{KeyCode, KeyEvent};
 use futures::StreamExt;
-use insta;
 use ratatui::layout::Rect;
 use ratatui::{prelude::*, widgets::block::*, widgets::*};
 use serde_derive::{Deserialize, Serialize};
@@ -95,9 +96,12 @@ impl Component for Session {
     Ok(())
   }
   fn update(&mut self, action: Action) -> Result<Option<Action>> {
+    let tx = self.action_tx.clone().unwrap();
     match action {
-      Action::SubmitInput(s) => self.request_response(s),
-      Action::ProcessResponse(response) => self.process_response_handler(*response),
+      Action::SubmitInput(s) => self.request_response(s, tx),
+      Action::ProcessResponse(response) => {
+        self.process_response_handler(tx, *response);
+      },
       _ => (),
     }
     Ok(None)
@@ -157,7 +161,7 @@ impl Component for Session {
     let mut text = Vec::new();
     for (_index, transaction) in self.transactions.iter().enumerate() {
       let mut style = Style::default().fg(Color::White);
-      let mut content = String::new() + "test";
+      let mut content = String::new() + "testing testing \n testing";
       let messages = <Vec<RenderedChatMessage>>::from(transaction.clone());
       for message in messages.iter() {
         style = get_style_from_role(message.role.clone());
@@ -190,8 +194,8 @@ impl Session {
     Self::default()
   }
 
-  pub fn request_response(&mut self, input: String) {
-    let tx = self.action_tx.clone().unwrap();
+  pub fn request_response(&mut self, input: String, tx: UnboundedSender<Action>) {
+    //let tx = self.action_tx.clone().unwrap();
     let request_messages = construct_chat_completion_request_message(&input, &self.config.model).unwrap();
     let request = construct_request(request_messages, &self.config);
     let stream_response = self.config.stream_response;
@@ -207,33 +211,38 @@ impl Session {
             match response_result {
               Ok(response) => {
                 let _ = file.write_all(serde_json::to_string(&response).unwrap().as_bytes());
-                tx.send(Action::ProcessResponse(Box::new(ChatTransaction::StreamResponse(response)))).unwrap()
+                tx.send(Action::ProcessResponse(Box::new(ChatTransaction::StreamResponse(response)))).unwrap();
               },
               Err(e) => {
                 trace_dbg!("Error: {}", e);
-                tx.send(Action::Error(format!("Error: {}", e))).unwrap()
+                tx.send(Action::Error(format!("Error: {}", e))).unwrap();
               },
             }
           }
         },
         false => match client.chat().create(request).await {
-          Ok(response) => tx.send(Action::ProcessResponse(Box::new(ChatTransaction::Response(response)))).unwrap(),
+          Ok(response) => {
+            tx.send(Action::ProcessResponse(Box::new(ChatTransaction::Response(response)))).unwrap();
+          },
           Err(e) => {
             trace_dbg!("Error: {}", e);
-            tx.send(Action::Error(format!("Error: {}", e))).unwrap()
+            tx.send(Action::Error(format!("Error: {}", e))).unwrap();
           },
         },
       };
-      file.close().unwrap();
-      tx.send(Action::ExitProcessing).unwrap();
     });
   }
 
-  pub fn process_response_handler(&mut self, transaction: ChatTransaction) {
-    let tx = self.action_tx.clone().unwrap();
-    if let ChatTransaction::StreamResponse(mut t) = transaction {
-      if let Some(ChatTransaction::StreamResponse(r)) = self.transactions.last_mut() {
-        r.choices.append(&mut t.choices);
+  pub fn process_response_handler(&mut self, tx: UnboundedSender<Action>, transaction: ChatTransaction) {
+    if let Some(ChatTransaction::StreamResponse(saved_sr)) = self.transactions.last_mut() {
+      if let ChatTransaction::StreamResponse(mut new_sr) = transaction {
+        while let Some(choice) = new_sr.choices.pop() {
+          //let choice = new_sr.choices[0].clone();
+          saved_sr.choices.push(choice);
+        }
+        if saved_sr.choices.last().unwrap().finish_reason.is_some() {
+          tx.send(Action::ExitProcessing).unwrap();
+        }
       }
     } else {
       self.transactions.push(transaction);
@@ -373,4 +382,53 @@ pub async fn create_embedding_request(
 #[cfg(test)]
 mod tests {
   use super::*;
+  use ntest::timeout;
+  use tokio::sync::mpsc;
+
+  #[tokio::test]
+  #[timeout(3000)]
+  pub async fn test_request_response() {
+    let mut enter_processing_action_run = false;
+    let mut process_response_action_run = false;
+    let mut exit_processing_action_run = false;
+    let mut finish_reason: Option<String> = None;
+    let (tx, mut rx) = mpsc::unbounded_channel::<Action>();
+    let mut session = Session::new();
+    session.request_response("Hello World".to_string(), tx.clone());
+    while finish_reason.is_none() {
+      while let Some(res) = rx.recv().await {
+        match res {
+          Action::EnterProcessing => {
+            enter_processing_action_run = true;
+          },
+          Action::ProcessResponse(response) => {
+            process_response_action_run = true;
+            if let ChatTransaction::StreamResponse(r) = *response.clone() {
+              insta::assert_yaml_snapshot!(&r);
+              for choice in r.choices {
+                if choice.finish_reason.is_some() {
+                  finish_reason = choice.finish_reason;
+                }
+              }
+            } else {
+              panic!("Expected StreamResponse");
+            };
+            session.process_response_handler(tx.clone(), *response);
+          },
+          Action::ExitProcessing => {
+            exit_processing_action_run = true;
+          },
+          _ => panic!("Unexpected action"),
+        }
+      }
+    }
+    if let Some(ChatTransaction::StreamResponse(r)) = session.transactions.last_mut() {
+      insta::assert_yaml_snapshot!(&r);
+    } else {
+      panic!("Expected last transaction message to be StreamResponse");
+    }
+    assert!(enter_processing_action_run);
+    assert!(process_response_action_run);
+    assert!(exit_processing_action_run);
+  }
 }

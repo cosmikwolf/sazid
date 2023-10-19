@@ -1,0 +1,76 @@
+---
+source: tests/stream_response_test.rs
+expression: "&combined"
+---
+id: "[id]"
+object: chat.completion.chunk
+created: "[created]"
+model: gpt-4-0613
+choices:
+  - index: 0
+    delta:
+      role: assistant
+      content: ""
+      function_call: ~
+    finish_reason: ~
+  - index: 0
+    delta:
+      role: ~
+      content: Hello
+      function_call: ~
+    finish_reason: ~
+  - index: 0
+    delta:
+      role: ~
+      content: "!"
+      function_call: ~
+    finish_reason: ~
+  - index: 0
+    delta:
+      role: ~
+      content: " How"
+      function_call: ~
+    finish_reason: ~
+  - index: 0
+    delta:
+      role: ~
+      content: " can"
+      function_call: ~
+    finish_reason: ~
+  - index: 0
+    delta:
+      role: ~
+      content: " I"
+      function_call: ~
+    finish_reason: ~
+  - index: 0
+    delta:
+      role: ~
+      content: " assist"
+      function_call: ~
+    finish_reason: ~
+  - index: 0
+    delta:
+      role: ~
+      content: " you"
+      function_call: ~
+    finish_reason: ~
+  - index: 0
+    delta:
+      role: ~
+      content: " today"
+      function_call: ~
+    finish_reason: ~
+  - index: 0
+    delta:
+      role: ~
+      content: "?"
+      function_call: ~
+    finish_reason: ~
+  - index: 0
+    delta:
+      role: ~
+      content: ~
+      function_call: ~
+    finish_reason: stop
+
