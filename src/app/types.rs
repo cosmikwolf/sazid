@@ -161,9 +161,9 @@ pub struct RenderedChatMessage {
 impl RenderedChatMessage {
   pub fn get_style(&self) -> Style {
     match self.role {
-      Some(Role::User) => Style::default().fg(Color::Yellow),
-      Some(Role::Assistant) => Style::default().fg(Color::Green),
-      Some(Role::System) => Style::default().fg(Color::Blue),
+      Some(Role::User) => Style::default().fg(Color::Magenta),
+      Some(Role::Assistant) => Style::default().fg(Color::Cyan),
+      Some(Role::System) => Style::default().fg(Color::LightBlue),
       Some(Role::Function) => Style::default().fg(Color::Red),
       None => Style::default(),
     }

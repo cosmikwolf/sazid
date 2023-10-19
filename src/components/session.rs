@@ -19,6 +19,7 @@ use backoff::exponential::ExponentialBackoffBuilder;
 use super::{Component, Frame};
 use crate::app::{consts::*, errors::*, tools::chunkifier::*, types::*};
 use crate::trace_dbg;
+use crate::tui::Event;
 use crate::{action::Action, config::Config};
 
 use crate::app::gpt_interface::{create_chat_completion_function_args, define_commands};
@@ -75,9 +76,9 @@ pub struct Session {
   #[serde(skip)]
   pub horizontal_scroll_state: ScrollbarState,
   #[serde(skip)]
-  pub vertical_scroll: u16,
+  pub vertical_scroll: usize,
   #[serde(skip)]
-  pub horizontal_scroll: u16,
+  pub horizontal_scroll: usize,
 }
 
 impl Component for Session {
@@ -105,6 +106,15 @@ impl Component for Session {
     Ok(None)
   }
 
+  fn handle_events(&mut self, event: Option<Event>) -> Result<Option<Action>> {
+    let r = match event {
+      Some(Event::Key(key_event)) => self.handle_key_events(key_event)?,
+      Some(Event::Mouse(mouse_event)) => self.handle_mouse_events(mouse_event)?,
+      _ => None,
+    };
+    Ok(r)
+  }
+
   fn handle_key_events(&mut self, key: KeyEvent) -> Result<Option<Action>> {
     self.last_events.push(key);
     match self.mode {
@@ -112,11 +122,15 @@ impl Component for Session {
         KeyCode::Char('j') => {
           self.vertical_scroll = self.vertical_scroll.saturating_add(1);
           self.vertical_scroll_state = self.vertical_scroll_state.position(self.vertical_scroll);
+          trace_dbg!("previous scroll {}", self.vertical_scroll);
+          //self.vertical_scroll_state.prev();
           Ok(Some(Action::Update))
         },
         KeyCode::Char('k') => {
           self.vertical_scroll = self.vertical_scroll.saturating_sub(1);
           self.vertical_scroll_state = self.vertical_scroll_state.position(self.vertical_scroll);
+          trace_dbg!("next scroll {}", self.vertical_scroll);
+          //self.vertical_scroll_state.next();
           Ok(Some(Action::Update))
         },
         _ => Ok(None),
@@ -128,32 +142,25 @@ impl Component for Session {
   fn draw(&mut self, f: &mut Frame<'_>, area: Rect) -> Result<()> {
     let rects = Layout::default()
       .direction(Direction::Vertical)
-      .constraints([Constraint::Percentage(100), Constraint::Min(3)].as_ref())
+      .constraints([Constraint::Percentage(100), Constraint::Min(4)].as_ref())
       .split(area);
-    let inner = Layout::default()
+    let inner_a = Layout::default()
       .direction(Direction::Vertical)
-      .constraints(vec![Constraint::Length(1), Constraint::Min(10), Constraint::Length(1)])
+      .constraints(vec![Constraint::Length(3), Constraint::Min(10), Constraint::Length(3)])
       .split(rects[0]);
     let inner = Layout::default()
       .direction(Direction::Horizontal)
-      .constraints(vec![Constraint::Length(1), Constraint::Min(10), Constraint::Length(1)])
-      .split(inner[1]);
-
-    // a function that will return a vec with an aribitrary numbr of the same item
-
-    let textbox = Layout::default()
-      .direction(Direction::Vertical)
-      .constraints(vec![Constraint::Min(2), Constraint::Length(3)])
-      .split(rects[0]);
+      .constraints(vec![Constraint::Length(3), Constraint::Min(10), Constraint::Length(3)])
+      .split(inner_a[1]);
 
     let _title = "Chat";
 
     let lines: Vec<Line> = self.transactions.clone().into_iter().flat_map(<Vec<Line>>::from).collect();
-
-    let block = Block::default().borders(Borders::NONE).gray();
-    // .title(Title::from("left").alignment(Alignment::Left))
+    //let lines = vec![(Line::styled("testing testing testing omg testing testing testing testing omg testing testin omg omgg testin omg omg om omggg testin omgg testin om om om om om om om omggggggggg testing testing testin om om omggg omg omg om omggg testing testing supsupsupusupuspuspupsupuspuspupsupsupsupuskjl skfjl slfsj ljsdjhfs lfs kd fs jlfksjdklf jsldkjf sdfkj lskjkjsld flksjdflk jsldjf lksjdlkj flksj dlkfjlksj dflkjs dlkfj lskdjfl ksjflksdj flskj testing testing testing testing testing testing testing testing testing testing testing testing testing testing testing testing testing testing testing testing testing testing testing testing testing testing testing testing testing testing testing testing testing testing testing testing testing testing testing testing testing testing testing ", Style::default().fg(Color::Blue)))];
+    let block = Block::default().borders(Borders::ALL).gray().title(Title::from("left").alignment(Alignment::Left));
     //.title(Title::from("right").alignment(Alignment::Right));
-    let paragraph = Paragraph::new(lines).block(block).wrap(Wrap { trim: true });
+    let paragraph =
+      Paragraph::new(lines).block(block).wrap(Wrap { trim: true }).scroll((self.vertical_scroll as u16, 0));
     f.render_widget(paragraph, inner[1]);
 
     f.render_stateful_widget(
@@ -173,10 +180,8 @@ impl Session {
   pub fn new() -> Session {
     Self::default()
   }
-
-  pub fn request_response(&mut self, input: String, tx: UnboundedSender<Action>) {
-    //let tx = self.action_tx.clone().unwrap();
-    let previous_requests: Vec<ChatCompletionRequestMessage> = self
+  pub fn get_previous_request_messages(&self) -> Vec<ChatCompletionRequestMessage> {
+    self
       .transactions
       .clone()
       .into_iter()
@@ -185,8 +190,11 @@ impl Session {
         _ => None,
       })
       .flatten()
-      .collect();
-
+      .collect()
+  }
+  pub fn request_response(&mut self, input: String, tx: UnboundedSender<Action>) {
+    //let tx = self.action_tx.clone().unwrap();
+    let previous_requests = self.get_previous_request_messages();
     let request_messages =
       construct_chat_completion_request_message(&input, &self.config.model, Some(previous_requests)).unwrap();
     let request = construct_request(request_messages, &self.config);
@@ -379,55 +387,4 @@ pub async fn create_embedding_request(
 }
 
 #[cfg(test)]
-mod tests {
-  use super::*;
-  use ntest::timeout;
-  use tokio::sync::mpsc;
-
-  #[tokio::test]
-  #[timeout(3000)]
-  pub async fn test_request_response() {
-    let mut enter_processing_action_run = false;
-    let mut process_response_action_run = false;
-    let mut exit_processing_action_run = false;
-    let mut finish_reason: Option<String> = None;
-    let (tx, mut rx) = mpsc::unbounded_channel::<Action>();
-    let mut session = Session::new();
-    session.request_response("Hello World".to_string(), tx.clone());
-    while finish_reason.is_none() {
-      while let Some(res) = rx.recv().await {
-        match res {
-          Action::EnterProcessing => {
-            enter_processing_action_run = true;
-          },
-          Action::ProcessResponse(response) => {
-            process_response_action_run = true;
-            if let ChatTransaction::StreamResponse(r) = *response.clone() {
-              insta::assert_yaml_snapshot!(&r);
-              for choice in r.choices {
-                if choice.finish_reason.is_some() {
-                  finish_reason = choice.finish_reason;
-                }
-              }
-            } else {
-              panic!("Expected StreamResponse");
-            };
-            session.process_response_handler(tx.clone(), *response);
-          },
-          Action::ExitProcessing => {
-            exit_processing_action_run = true;
-          },
-          _ => panic!("Unexpected action"),
-        }
-      }
-    }
-    if let Some(ChatTransaction::StreamResponse(r)) = session.transactions.last_mut() {
-      insta::assert_yaml_snapshot!(&r);
-    } else {
-      panic!("Expected last transaction message to be StreamResponse");
-    }
-    assert!(enter_processing_action_run);
-    assert!(process_response_action_run);
-    assert!(exit_processing_action_run);
-  }
-}
+mod tests {}

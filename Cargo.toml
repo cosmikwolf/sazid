@@ -36,7 +36,10 @@ libc = "0.2.148"
 log = "0.4.20"
 lopdf = "0.31.0"
 pretty_assertions = "1.4.0"
-ratatui = { version = "0.23.0", features = ["serde", "macros"] }
+ratatui = { git = "https://github.com/ratatui-org/ratatui.git", tag = "v0.23.1-alpha.6", features = [
+  "serde",
+  "macros",
+] }
 reqwest = "0.11.20"
 serde = { version = "1.0.188", features = ["derive"] }
 serde_derive = "1.0.188"
