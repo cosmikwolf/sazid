@@ -7,6 +7,10 @@ use async_openai::{
   },
 };
 use clap::Parser;
+use ratatui::{
+  style::{Color, Style},
+  text::{Line, Span},
+};
 use serde::{Deserialize, Serialize};
 use std::{collections::BTreeMap, ffi::OsString, path::PathBuf};
 
@@ -99,15 +103,6 @@ pub struct PdfText {
   pub errors: Vec<String>,
 }
 
-// #[derive(Default, Serialize, Deserialize, Clone, Debug, PartialEq)]
-// pub struct ChatMessage {
-//   pub response: Option<ChatCompletionResponseMessage>,
-//   pub response_stream: Option<ChatCompletionResponseStreamMessage>,
-//   pub request: Option<ChatCompletionRequestMessage>,
-//   #[serde(skip)]
-//   pub displayed: bool,
-// }
-
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub enum ChatTransaction {
   Request(CreateChatCompletionRequest),
@@ -163,6 +158,32 @@ pub struct RenderedChatMessage {
   pub finish_reason: Option<String>,
 }
 
+impl RenderedChatMessage {
+  pub fn get_style(&self) -> Style {
+    match self.role {
+      Some(Role::User) => Style::default().fg(Color::Yellow),
+      Some(Role::Assistant) => Style::default().fg(Color::Green),
+      Some(Role::System) => Style::default().fg(Color::Blue),
+      Some(Role::Function) => Style::default().fg(Color::Red),
+      None => Style::default(),
+    }
+  }
+}
+
+impl<'a> From<ChatTransaction> for Vec<Line<'a>> {
+  fn from(transaction: ChatTransaction) -> Self {
+    let messages = <Vec<RenderedChatMessage>>::from(transaction);
+    let strings: Vec<String> = messages.iter().map(|message| message.content.to_string()).collect();
+    strings.join("").lines().map(|line| Line::styled(line.to_string(), messages[0].get_style())).collect()
+  }
+}
+
+impl<'a> From<RenderedChatMessage> for Vec<Span<'a>> {
+  fn from(value: RenderedChatMessage) -> Self {
+    value.content.lines().map(|line| Span::styled(line.to_string(), value.get_style())).collect()
+  }
+}
+
 impl From<FunctionCall> for RenderedFunctionCall {
   fn from(function_call: FunctionCall) -> Self {
     RenderedFunctionCall { name: Some(function_call.name), arguments: Some(function_call.arguments) }
@@ -181,13 +202,13 @@ impl From<ChatTransaction> for Vec<RenderedChatMessage> {
       ChatTransaction::Request(request) => request
         .messages
         .iter()
-        .map(|message| RenderedChatMessage::from(ChatMessage::Request(message.to_owned())))
+        .map(|message| RenderedChatMessage::from(ChatMessage::Request(message.clone())))
         .collect(),
       ChatTransaction::Response(response) => response
         .choices
         .iter()
         .map(|choice| {
-          let mut rendered_response = RenderedChatMessage::from(ChatMessage::Response(choice.to_owned()));
+          let mut rendered_response = RenderedChatMessage::from(ChatMessage::Response(choice.clone()));
           rendered_response.id = Some(response.id.clone());
           rendered_response
         })
@@ -196,40 +217,7 @@ impl From<ChatTransaction> for Vec<RenderedChatMessage> {
         .choices
         .iter()
         .map(|choice| {
-          // let mut content = String::new();
-          // let mut function_call: Option<RenderedFunctionCall> = None;
-          // let mut finish_reason = None;
-          // let mut role = None;
-          // content = content + response_stream.delta.content.clone().unwrap_or_default().as_str();
-          // if let Some(function_call_stream) = response_stream.delta.function_call.clone() {
-          //   function_call = Some(RenderedFunctionCall {
-          //     name: if function_call_stream.name.is_some() {
-          //       Some(format!(
-          //         "{}{}",
-          //         function_call.clone().unwrap().name.unwrap(),
-          //         function_call_stream.name.as_ref().unwrap_or(&String::new())
-          //       ))
-          //     } else {
-          //       None
-          //     },
-          //     arguments: if function_call_stream.arguments.is_some() {
-          //       Some(format!(
-          //         "{}{}",
-          //         function_call.unwrap().arguments.unwrap(),
-          //         function_call_stream.arguments.as_ref().unwrap_or(&String::new())
-          //       ))
-          //     } else {
-          //       None
-          //     },
-          //   })
-          // }
-          // if response_stream.finish_reason.is_some() {
-          //   finish_reason = response_stream.finish_reason.clone();
-          // }
-          // if response_stream.delta.role.is_some() {
-          //   role = response_stream.delta.role.clone();
-          // }
-          let mut rendered_response = RenderedChatMessage::from(ChatMessage::StreamResponse(choice.to_owned()));
+          let mut rendered_response = RenderedChatMessage::from(ChatMessage::StreamResponse(choice.clone()));
           rendered_response.id = Some(response_stream.id.clone());
           rendered_response
         })
@@ -265,103 +253,6 @@ impl From<ChatMessage> for RenderedChatMessage {
     }
   }
 }
-
-//impl Display for ChatMessage {
-//fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-//    match &self.request {
-//      Some(request) => format_chat_request(
-//        f,
-//        request.role.clone(),
-//        request.content.clone().unwrap(),
-//        request.name.clone(),
-//        request.function_call.clone(),
-//      ),
-//      None => match &self.response {
-//        Some(response) => format_chat_response(
-//          f,
-//          Some(response.role.clone()),
-//          response.content.clone().unwrap_or_default(),
-//          response.function_call.clone(),
-//          None,
-//        ),
-//        None => match &self.response_stream {
-//          Some(response_stream) => format_chat_response(
-//            f,
-//            response_stream.delta.role.clone(),
-//            response_stream.delta.content.clone().unwrap_or_default(),
-//            None,
-//            response_stream.delta.function_call.clone(),
-//          ),
-//          None => Ok(()),
-//        },
-//      },
-//    }
-//}
-//}
-// impl From<ChatCompletionRequestMessage> for ChatMessage {
-//   fn from(request: ChatCompletionRequestMessage) -> Self {
-//     ChatMessage { request: Some(request), response: None, response_stream: None, displayed: false }
-//   }
-// }
-// impl From<ChatCompletionResponseMessage> for ChatMessage {
-//   fn from(response: ChatCompletionResponseMessage) -> Self {
-//     ChatMessage { request: None, response: Some(response), response_stream: None, displayed: false }
-//   }
-// }
-// impl From<ChatCompletionResponseStreamMessage> for ChatMessage {
-//   fn from(response_stream: ChatCompletionResponseStreamMessage) -> Self {
-//     ChatMessage { request: None, response: None, response_stream: Some(response_stream), displayed: false }
-//   }
-// }
-//
-// impl TryFrom<ChatMessage> for ChatCompletionRequestMessage {
-//   type Error = &'static str;
-//   fn try_from(message: ChatMessage) -> Result<Self, Self::Error> {
-//     match message.request {
-//       Some(request) => Ok(ChatCompletionRequestMessage {
-//         role: request.role,
-//         content: request.content,
-//         name: request.name,
-//         function_call: request.function_call,
-//       }),
-//       None => Err("Wrong type"),
-//     }
-//   }
-// }
-// impl TryFrom<ChatMessage> for ChatCompletionResponseMessage {
-//   type Error = &'static str;
-//   fn try_from(message: ChatMessage) -> Result<Self, Self::Error> {
-//     match message.response {
-//       Some(response) => Ok(ChatCompletionResponseMessage {
-//         role: response.role,
-//         content: response.content,
-//         function_call: response.function_call,
-//       }),
-//       None => Err("Wrong type"),
-//     }
-//   }
-// }
-
-// impl AsMut<async_openai::types::ChatCompletionRequestMessage> for ChatMessage {
-//     fn as_mut(&mut self) -> &mut async_openai::types::ChatCompletionRequestMessage {
-//         match self {
-//             ChatMessage::ChatCompletionRequestMessage => {
-//                 &mut self.as_mut()
-//             }
-//             _ => panic!("Wrong type"),
-//         }
-//     }
-// }
-// impl AsMut<async_openai::types::ChatCompletionResponseMessage> for ChatMessage {
-//     fn as_mut(&mut self) -> &mut async_openai::types::ChatCompletionResponseMessage {
-//         match self {
-//             ChatMessage::ChatCompletionResponseMessage => {
-//                 &mut self.as_mut()
-//             }
-//             _ => panic!("Wrong type"),
-//         }
-//     }
-// }
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct IngestedData {

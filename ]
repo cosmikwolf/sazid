@@ -1,9 +1,12 @@
 use async_openai::types::{
-  ChatCompletionRequestMessage, CreateChatCompletionRequest, CreateEmbeddingRequestArgs, CreateEmbeddingResponse, Role,
+  ChatCompletionRequestMessage, ChatCompletionResponseStreamMessage, ChatCompletionStreamResponseDelta,
+  CreateChatCompletionRequest, CreateChatCompletionStreamResponse, CreateEmbeddingRequestArgs, CreateEmbeddingResponse,
+  Role,
 };
 use color_eyre::eyre::Result;
 use crossterm::event::{KeyCode, KeyEvent};
 use futures::StreamExt;
+use futures_util::stream;
 use ratatui::layout::Rect;
 use ratatui::{prelude::*, widgets::block::*, widgets::*};
 use serde_derive::{Deserialize, Serialize};
@@ -148,9 +151,11 @@ impl Component for Session {
       .borders(Borders::ALL)
       .gray()
       .title(Span::styled(title, Style::default().add_modifier(Modifier::BOLD)));
-
-    let lines: Vec<Line> = self.transactions.clone().into_iter().flat_map(<Vec<Line>>::from).collect();
-
+    let mut messages = Vec::new();
+    for transaction in self.transactions.clone() {
+      messages.append(<Vec<RenderedChatMessage>>::from(transaction.clone()).as_mut())
+    }
+    let lines: Vec<Line> = messages.into_iter().for_each(|message| message.to_ratatui_lines()).collect();
     let block = Block::default()
       .borders(Borders::TOP)
       .gray()

@@ -2365,6 +2365,7 @@ dependencies = [
  "derive_deref",
  "directories",
  "futures",
+ "futures-util",
  "human-panic",
  "insta",
  "json5",
