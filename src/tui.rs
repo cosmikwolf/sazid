@@ -1,3 +1,4 @@
+use crate::trace_dbg;
 use std::{
   ops::{Deref, DerefMut},
   time::Duration,
@@ -133,9 +134,11 @@ impl Tui {
             }
           },
           _ = tick_delay => {
+                //trace_dbg!("tick_delay");
               _event_tx.send(Event::Tick).unwrap();
           },
           _ = render_delay => {
+                //trace_dbg!("render_delay");
               _event_tx.send(Event::Render).unwrap();
           },
         }

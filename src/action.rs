@@ -1,4 +1,4 @@
-use crate::app::types::ChatTransaction;
+use crate::app::types::{ChatTransaction, Model};
 use serde::{
   de::{self, Deserializer, Visitor},
   Deserialize, Serialize,
@@ -17,6 +17,7 @@ pub enum Action {
   Error(String),
   Help,
   SubmitInput(String),
+  SelectModel(Model),
   ProcessResponse(Box<ChatTransaction>),
   EnterNormal,
   EnterInsert,

@@ -1,4 +1,4 @@
-use std::{collections::HashMap, path::PathBuf};
+use std::{collections::HashMap, env, path::PathBuf};
 
 use color_eyre::eyre::Result;
 
@@ -32,7 +32,7 @@ pub struct Config {
 }
 
 impl Config {
-  pub fn new() -> Result<Self, config::ConfigError> {
+  pub fn new(local_api: bool) -> Result<Self, config::ConfigError> {
     let default_config: Config = json5::from_str(CONFIG).unwrap();
     let data_dir = crate::utils::get_data_dir();
     let config_dir = crate::utils::get_config_dir();
@@ -59,6 +59,14 @@ impl Config {
     }
 
     let mut cfg: Self = builder.build()?.try_deserialize()?;
+
+    cfg.session_config = match local_api {
+      true => SessionConfig::default().with_local_api(),
+      false => {
+        let api_key: String = env::var("OPENAI_API_KEY").expect("OPENAI_API_KEY not set");
+        SessionConfig::default().with_openai_api_key(api_key)
+      },
+    };
 
     for (mode, default_bindings) in default_config.keybindings.iter() {
       let user_bindings = cfg.keybindings.entry(*mode).or_default();
@@ -439,7 +447,7 @@ mod tests {
 
   #[test]
   fn test_config() -> Result<()> {
-    let c = Config::new()?;
+    let c = Config::new(false)?;
     assert_eq!(
       c.keybindings.get(&Mode::Home).unwrap().get(&parse_key_sequence("<q>").unwrap_or_default()).unwrap(),
       &Action::Quit

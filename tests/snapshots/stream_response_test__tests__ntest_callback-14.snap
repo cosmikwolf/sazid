@@ -10,7 +10,7 @@ choices:
   - index: 0
     delta:
       role: ~
-      content: " assist"
+      content: "'m"
       function_call: ~
     finish_reason: ~
 

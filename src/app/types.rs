@@ -1,4 +1,5 @@
-use crate::app::consts::*;
+use crate::{app::consts::*, trace_dbg};
+use ansi_to_tui::IntoText;
 use async_openai::{
   self,
   types::{
@@ -7,10 +8,8 @@ use async_openai::{
   },
 };
 use clap::Parser;
-use ratatui::{
-  style::{Color, Style},
-  text::{Line, Span},
-};
+use nu_ansi_term::Color;
+use ratatui::text::Text;
 use serde::{Deserialize, Serialize};
 use std::{collections::BTreeMap, ffi::OsString, path::PathBuf};
 
@@ -75,32 +74,13 @@ impl GPTSettings {
     }
   }
 }
-#[derive(Debug, Deserialize, Clone)]
-pub struct ModelConfig {
-  pub name: String,
-}
 
-#[derive(Debug, Serialize, Deserialize, Clone, Default)]
-pub struct Model {
-  pub(crate) name: String,
-  pub(crate) endpoint: String,
-  pub token_limit: u32,
-}
-
-pub struct ModelsList {
-  pub default: Model,
-  pub fallback: Model,
-}
-
-pub struct GPTResponse {
-  pub role: Role,
-  pub content: String,
-}
-
-// PDF Parser types
-pub struct PdfText {
-  pub text: BTreeMap<u32, Vec<String>>, // Key is page number
-  pub errors: Vec<String>,
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct Transaction {
+  pub txn_id: String,
+  pub originals: Vec<ChatTransaction>,
+  pub rendered: Option<Vec<RenderedChatTransaction>>,
+  pub completed: bool,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
@@ -108,6 +88,70 @@ pub enum ChatTransaction {
   Request(CreateChatCompletionRequest),
   Response(CreateChatCompletionResponse),
   StreamResponse(CreateChatCompletionStreamResponse),
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+pub enum ChatMessage {
+  Request(ChatCompletionRequestMessage),
+  Response(ChatChoice),
+  StreamResponse(ChatCompletionResponseStreamMessage),
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+pub struct RenderedFunctionCall {
+  pub name: Option<String>,
+  pub arguments: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, Default)]
+pub struct RenderedChatMessage {
+  pub role: Option<Role>,
+  pub content: Option<String>,
+  pub function_call: Option<RenderedFunctionCall>,
+  pub finish_reason: Option<String>,
+}
+
+#[derive(Default, Serialize, Deserialize, Debug, Clone)]
+pub struct RenderedChatTransaction {
+  pub id: Option<String>,
+  pub choices: Vec<RenderedChatMessage>,
+}
+
+impl<'a> From<ChatTransaction> for Text<'a> {
+  fn from(transaction: ChatTransaction) -> Self {
+    let string = <String>::from(transaction);
+    string.bytes().collect::<Vec<u8>>().into_text().unwrap()
+  }
+}
+impl ChatTransaction {
+  pub fn get_rendered_chat_messages(&self) {
+    match self {
+      ChatTransaction::StreamResponse(sr) => {},
+      ChatTransaction::Response(response) => {},
+      ChatTransaction::Request(request) => {},
+    }
+  }
+}
+
+impl From<ChatTransaction> for Vec<RenderedChatMessage> {
+  fn from(transaction: ChatTransaction) -> Self {
+    match transaction {
+      ChatTransaction::Request(request) => vec![request
+        .messages
+        .iter()
+        .map(|message| RenderedChatMessage::from(ChatMessage::Request(message.clone())))
+        .last()
+        .unwrap()],
+      ChatTransaction::Response(response) => {
+        response.choices.iter().map(|choice| RenderedChatMessage::from(ChatMessage::Response(choice.clone()))).collect()
+      },
+      ChatTransaction::StreamResponse(response_stream) => response_stream
+        .choices
+        .iter()
+        .map(|choice| RenderedChatMessage::from(ChatMessage::StreamResponse(choice.clone())))
+        .collect(),
+    }
+  }
 }
 
 impl From<ChatTransaction> for Option<CreateChatCompletionRequest> {
@@ -137,52 +181,154 @@ impl From<ChatTransaction> for Option<CreateChatCompletionStreamResponse> {
   }
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
-pub enum ChatMessage {
-  Request(ChatCompletionRequestMessage),
-  Response(ChatChoice),
-  StreamResponse(ChatCompletionResponseStreamMessage),
-}
+use bat::{assets::HighlightingAssets, config::Config, controller::Controller, Input};
 
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
-pub struct RenderedFunctionCall {
-  pub name: Option<String>,
-  pub arguments: Option<String>,
-}
+impl From<ChatTransaction> for String {
+  fn from(transaction: ChatTransaction) -> Self {
+    let get_content = |messages: Vec<RenderedChatMessage>| {
+      messages
+        .iter()
+        .map(|message| message.content.clone().unwrap().to_string())
+        .collect::<Vec<String>>()
+        .join("")
+        .lines()
+        .map(|line| line.to_string())
+        .collect::<Vec<String>>()
+        .join("\n")
+    };
 
-pub struct RenderedChatMessage {
-  pub id: Option<String>,
-  pub role: Option<Role>,
-  pub content: String,
-  pub function_call: Option<RenderedFunctionCall>,
-  pub finish_reason: Option<String>,
-}
+    let consolidate_stream_fragments = |messages: Vec<RenderedChatMessage>| {
+      let mut consolidated_messages: Vec<RenderedChatMessage> = Vec::new();
+      let mut consolidated_message = RenderedChatMessage::default();
+      let mut consolidated_function_call_names: Vec<Option<String>> = Vec::new();
+      let mut consolidated_function_call_arguments: Vec<Option<String>> = Vec::new();
+      let mut it = messages.iter().peekable();
+      while let Some(message) = it.next() {
+        if message.role.is_some() {
+          consolidated_message.role = message.role.clone();
+        }
+        if message.function_call.is_some() {
+          consolidated_function_call_names.push(message.function_call.as_ref().unwrap().name.clone());
+          consolidated_function_call_arguments.push(message.function_call.as_ref().unwrap().arguments.clone());
+        }
+        match consolidated_message.content {
+          Some(_) => {
+            consolidated_message.content = Some(format!(
+              "{}{}",
+              consolidated_message.content.unwrap(),
+              message.content.clone().unwrap_or("".to_string())
+            ))
+          },
+          None => consolidated_message.content = message.content.clone(),
+        }
+        if message.finish_reason.is_some() || it.peek().is_none() {
+          if !consolidated_function_call_names.is_empty() || !consolidated_function_call_arguments.is_empty() {
+            consolidated_message.function_call = Some(RenderedFunctionCall {
+              name: Some(
+                consolidated_function_call_names.clone().into_iter().flatten().collect::<Vec<String>>().join(" "),
+              ),
+              arguments: Some(
+                consolidated_function_call_arguments.clone().into_iter().flatten().collect::<Vec<String>>().join(" "),
+              ),
+            });
+          }
+          consolidated_function_call_arguments = Vec::new();
+          consolidated_function_call_names = Vec::new();
+          consolidated_message.finish_reason = message.finish_reason.clone();
+          consolidated_messages.push(consolidated_message.clone());
+          consolidated_message = RenderedChatMessage::default();
+        }
+      }
+      consolidated_messages
+    };
 
-impl RenderedChatMessage {
-  pub fn get_style(&self) -> Style {
-    match self.role {
-      Some(Role::User) => Style::default().fg(Color::Magenta),
-      Some(Role::Assistant) => Style::default().fg(Color::Cyan),
-      Some(Role::System) => Style::default().fg(Color::LightBlue),
-      Some(Role::Function) => Style::default().fg(Color::Red),
-      None => Style::default(),
+    match transaction {
+      ChatTransaction::Request(request) => {
+        let content = get_content(vec![request
+          .messages
+          .iter()
+          .map(|message| RenderedChatMessage::from(ChatMessage::Request(message.clone())))
+          .last()
+          .unwrap()]);
+        Color::Magenta.paint(content).to_string()
+      },
+      ChatTransaction::Response(response) => {
+        let content = get_content(
+          response
+            .choices
+            .iter()
+            .map(|choice| RenderedChatMessage::from(ChatMessage::Response(choice.clone())))
+            .collect(),
+        );
+        Color::Cyan.paint(content).to_string()
+      },
+      ChatTransaction::StreamResponse(response_stream) => {
+        let messages = consolidate_stream_fragments(
+          response_stream
+            .choices
+            .iter()
+            .map(|choice| RenderedChatMessage::from(ChatMessage::StreamResponse(choice.clone())))
+            .collect(),
+        );
+        let config = Config { colored_output: true, language: Some("markdown"), ..Default::default() };
+        let assets = HighlightingAssets::from_binary();
+        let controller = Controller::new(&config, &assets);
+        let mut buffer = String::new();
+        for message in messages {
+          let mut text = String::new();
+          if let Some(content) = message.content {
+            text += format!("{}\n", content).as_str()
+          }
+          if let Some(function_call) = message.function_call {
+            text += format!(
+              "executing function: {} {}\n",
+              function_call.name.unwrap_or("none".to_string()),
+              function_call.arguments.unwrap_or("none".to_string())
+            )
+            .as_str()
+          }
+          let input = Input::from_bytes(text.as_bytes());
+          controller.run(vec![input.into()], Some(&mut buffer)).unwrap();
+        }
+        buffer
+      },
     }
   }
 }
 
-impl<'a> From<ChatTransaction> for Vec<Line<'a>> {
-  fn from(transaction: ChatTransaction) -> Self {
-    let messages = <Vec<RenderedChatMessage>>::from(transaction);
-    let strings: Vec<String> = messages.iter().map(|message| message.content.to_string()).collect();
-    strings.join("").lines().map(|line| Line::styled(line.to_string(), messages[0].get_style())).collect()
-  }
+#[derive(Debug, Deserialize, Clone)]
+pub struct ModelConfig {
+  pub name: String,
 }
 
-impl<'a> From<RenderedChatMessage> for Vec<Span<'a>> {
-  fn from(value: RenderedChatMessage) -> Self {
-    value.content.lines().map(|line| Span::styled(line.to_string(), value.get_style())).collect()
-  }
+#[derive(Debug, Serialize, Deserialize, Clone, Default, PartialEq)]
+pub struct Model {
+  pub name: String,
+  pub endpoint: String,
+  pub token_limit: u32,
 }
+
+pub struct ModelsList {
+  pub default: Model,
+  pub fallback: Model,
+}
+
+pub struct GPTResponse {
+  pub role: Role,
+  pub content: String,
+}
+
+// PDF Parser types
+pub struct PdfText {
+  pub text: BTreeMap<u32, Vec<String>>, // Key is page number
+  pub errors: Vec<String>,
+}
+
+// impl<'a> From<RenderedChatMessage> for Vec<Span<'a>> {
+//   fn from(value: RenderedChatMessage) -> Self {
+//     value.content.lines().map(|line| Span::styled(line.to_string(), value.get_style())).collect()
+//   }
+// }
 
 impl From<FunctionCall> for RenderedFunctionCall {
   fn from(function_call: FunctionCall) -> Self {
@@ -196,58 +342,24 @@ impl From<FunctionCallStream> for RenderedFunctionCall {
   }
 }
 
-impl From<ChatTransaction> for Vec<RenderedChatMessage> {
-  fn from(transaction: ChatTransaction) -> Self {
-    match transaction {
-      ChatTransaction::Request(request) => vec![request
-        .messages
-        .iter()
-        .map(|message| RenderedChatMessage::from(ChatMessage::Request(message.clone())))
-        .last()
-        .unwrap()],
-      ChatTransaction::Response(response) => response
-        .choices
-        .iter()
-        .map(|choice| {
-          let mut rendered_response = RenderedChatMessage::from(ChatMessage::Response(choice.clone()));
-          rendered_response.id = Some(response.id.clone());
-          rendered_response
-        })
-        .collect(),
-      ChatTransaction::StreamResponse(response_stream) => response_stream
-        .choices
-        .iter()
-        .map(|choice| {
-          let mut rendered_response = RenderedChatMessage::from(ChatMessage::StreamResponse(choice.clone()));
-          rendered_response.id = Some(response_stream.id.clone());
-          rendered_response
-        })
-        .collect(),
-    }
-  }
-}
-
 impl From<ChatMessage> for RenderedChatMessage {
   fn from(message: ChatMessage) -> Self {
     match message {
       ChatMessage::Request(request) => RenderedChatMessage {
-        id: None,
         role: Some(request.role),
-        content: request.content.unwrap(),
+        content: request.content,
         function_call: request.function_call.map(|function_call| function_call.into()),
         finish_reason: None,
       },
       ChatMessage::Response(response) => RenderedChatMessage {
-        id: None,
         role: Some(response.message.role),
-        content: response.message.content.unwrap(),
+        content: response.message.content,
         function_call: response.message.function_call.map(|function_call| function_call.into()),
         finish_reason: response.finish_reason,
       },
       ChatMessage::StreamResponse(response_streams) => RenderedChatMessage {
-        id: None,
         role: response_streams.delta.role,
-        content: response_streams.delta.content.unwrap_or_default(),
+        content: response_streams.delta.content,
         function_call: response_streams.delta.function_call.map(|function_call| function_call.into()),
         finish_reason: response_streams.finish_reason,
       },

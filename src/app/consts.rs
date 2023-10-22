@@ -20,6 +20,11 @@ lazy_static! {
         endpoint: "https://api.openai.com/v1/completions".to_string(),
         token_limit: 4097,
     };
+    pub static ref WIZARDLM: Model = Model {
+        name: "wizardlm".to_string(),
+        endpoint: "https://localhost:1234/v1/completions".to_string(),
+        token_limit: 2047,
+    };
     pub static ref GPT4: Model = Model {
         name: "gpt-4".to_string(),
         endpoint: "https://api.openai.com/v1/completions".to_string(),

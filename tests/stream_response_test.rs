@@ -46,6 +46,7 @@ mod tests {
             break 'outer;
           },
           Action::Update => {},
+          Action::Render => {},
           _ => {
             panic!("Unexpected action {:#?}", res);
           },

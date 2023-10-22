@@ -1,6 +1,6 @@
 ---
 source: tests/stream_response_test.rs
-expression: "&delta"
+expression: "&message"
 ---
 id: "[id]"
 object: chat.completion.chunk
@@ -10,7 +10,7 @@ choices:
   - index: 0
     delta:
       role: ~
-      content: Hello
+      content: Hi
       function_call: ~
     finish_reason: ~
 

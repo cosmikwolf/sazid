@@ -1,3 +1,4 @@
+use crate::trace_dbg;
 use color_eyre::eyre::Result;
 use crossterm::event::KeyEvent;
 use ratatui::prelude::Rect;
@@ -35,10 +36,10 @@ pub struct App {
 }
 
 impl App {
-  pub fn new(tick_rate: f64, frame_rate: f64) -> Result<Self> {
+  pub fn new(tick_rate: f64, frame_rate: f64, local_api: bool) -> Result<Self> {
     let home = Home::new();
     let session = Session::new();
-    let config = Config::new()?;
+    let config = Config::new(local_api)?;
     let mode = Mode::Home;
     Ok(Self {
       tick_rate,
@@ -119,6 +120,7 @@ impl App {
           Action::Suspend => self.should_suspend = true,
           Action::Resume => self.should_suspend = false,
           Action::Resize(w, h) => {
+            //trace_dbg!("Action::Resize");
             tui.resize(Rect::new(0, 0, w, h))?;
             tui.draw(|f| {
               for component in self.components.iter_mut() {
@@ -130,6 +132,7 @@ impl App {
             })?;
           },
           Action::Render => {
+            //trace_dbg!("Action::Render");
             tui.draw(|f| {
               for component in self.components.iter_mut() {
                 let r = component.draw(f, f.size());

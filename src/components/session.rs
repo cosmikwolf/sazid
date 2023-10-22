@@ -1,5 +1,7 @@
 use async_openai::types::{
-  ChatCompletionRequestMessage, CreateChatCompletionRequest, CreateEmbeddingRequestArgs, CreateEmbeddingResponse, Role,
+  ChatCompletionFunctions, ChatCompletionRequestMessage, ChatCompletionStreamResponseDelta,
+  CreateChatCompletionRequest, CreateEmbeddingRequestArgs, CreateEmbeddingResponse, FunctionCall, FunctionCallStream,
+  Role,
 };
 use color_eyre::eyre::Result;
 use crossterm::event::{KeyCode, KeyEvent};
@@ -9,7 +11,7 @@ use ratatui::{prelude::*, widgets::block::*, widgets::*};
 use serde_derive::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
-use std::{env, fs, io};
+use std::{fs, io};
 use tokio::sync::mpsc::UnboundedSender;
 
 use async_openai::{config::OpenAIConfig, Client};
@@ -25,9 +27,8 @@ use crate::{action::Action, config::Config};
 use crate::app::gpt_interface::{create_chat_completion_function_args, define_commands};
 use crate::app::tools::utils::ensure_directory_exists;
 use crate::components::home::Mode;
-
-use std::fs::File;
-use std::io::prelude::*;
+use std::collections::HashMap;
+use uuid::Uuid;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 
@@ -36,19 +37,34 @@ pub struct SessionConfig {
   pub model: Model,
   pub include_functions: bool,
   pub stream_response: bool,
+  #[serde(skip)]
+  pub openai_config: OpenAIConfig,
 }
 
 impl Default for SessionConfig {
   fn default() -> Self {
     SessionConfig {
       session_id: Self::generate_session_id(),
+      openai_config: OpenAIConfig::default(),
       model: GPT4.clone(),
-      include_functions: false,
+      include_functions: true,
       stream_response: true,
     }
   }
 }
 impl SessionConfig {
+  pub fn with_local_api(mut self) -> Self {
+    log::info!("Using local API");
+    self.openai_config = OpenAIConfig::new().with_api_base("http://localhost:1234/v1".to_string());
+    self
+  }
+
+  pub fn with_openai_api_key<S: Into<String>>(mut self, api_key: S) -> Self {
+    log::info!("Using default OpenAI remote API");
+    self.openai_config = OpenAIConfig::new().with_api_key(api_key);
+    self
+  }
+
   pub fn generate_session_id() -> String {
     // Get the current time since UNIX_EPOCH in seconds.
     let start = SystemTime::now();
@@ -61,9 +77,10 @@ impl SessionConfig {
     since_the_epoch.to_string()
   }
 }
+
 #[derive(Default, Serialize, Deserialize, Debug, Clone)]
 pub struct Session {
-  pub transactions: Vec<ChatTransaction>,
+  pub transactions: Vec<Transaction>,
   pub config: SessionConfig,
   #[serde(skip)]
   pub action_tx: Option<UnboundedSender<Action>>,
@@ -79,10 +96,14 @@ pub struct Session {
   pub vertical_scroll: usize,
   #[serde(skip)]
   pub horizontal_scroll: usize,
+  #[serde(skip)]
+  pub render: bool,
 }
 
 impl Component for Session {
   fn init(&mut self, _area: Rect) -> Result<()> {
+    //let model_preference: Vec<Model> = vec![GPT4.clone(), GPT3_TURBO.clone(), WIZARDLM.clone()];
+    //Session::select_model(model_preference, create_openai_client(self.config.openai_config.clone()));
     Ok(())
   }
   fn register_action_handler(&mut self, tx: UnboundedSender<Action>) -> Result<()> {
@@ -101,8 +122,10 @@ impl Component for Session {
       Action::ProcessResponse(response) => {
         self.process_response_handler(tx, *response);
       },
+      Action::SelectModel(model) => self.config.model = model,
       _ => (),
     }
+    //self.action_tx.clone().unwrap().send(Action::Render).unwrap();
     Ok(None)
   }
 
@@ -140,27 +163,29 @@ impl Component for Session {
   }
 
   fn draw(&mut self, f: &mut Frame<'_>, area: Rect) -> Result<()> {
+    //trace_dbg!("calling draw from session");
     let rects = Layout::default()
       .direction(Direction::Vertical)
       .constraints([Constraint::Percentage(100), Constraint::Min(4)].as_ref())
       .split(area);
     let inner_a = Layout::default()
       .direction(Direction::Vertical)
-      .constraints(vec![Constraint::Length(3), Constraint::Min(10), Constraint::Length(3)])
+      .constraints(vec![Constraint::Length(1), Constraint::Min(10), Constraint::Length(1)])
       .split(rects[0]);
     let inner = Layout::default()
       .direction(Direction::Horizontal)
-      .constraints(vec![Constraint::Length(3), Constraint::Min(10), Constraint::Length(3)])
+      .constraints(vec![Constraint::Length(2), Constraint::Min(10), Constraint::Length(1)])
       .split(inner_a[1]);
 
     let _title = "Chat";
 
-    let lines: Vec<Line> = self.transactions.clone().into_iter().flat_map(<Vec<Line>>::from).collect();
-    //let lines = vec![(Line::styled("testing testing testing omg testing testing testing testing omg testing testin omg omgg testin omg omg om omggg testin omgg testin om om om om om om om omggggggggg testing testing testin om om omggg omg omg om omggg testing testing supsupsupusupuspuspupsupuspuspupsupsupsupuskjl skfjl slfsj ljsdjhfs lfs kd fs jlfksjdklf jsldkjf sdfkj lskjkjsld flksjdflk jsldjf lksjdlkj flksj dlkfjlksj dflkjs dlkfj lskdjfl ksjflksdj flskj testing testing testing testing testing testing testing testing testing testing testing testing testing testing testing testing testing testing testing testing testing testing testing testing testing testing testing testing testing testing testing testing testing testing testing testing testing testing testing testing testing testing testing ", Style::default().fg(Color::Blue)))];
-    let block = Block::default().borders(Borders::ALL).gray().title(Title::from("left").alignment(Alignment::Left));
+    let transaction_texts = concatenate_texts(self.transactions.iter().cloned().map(<Text>::from));
+
+    let block = Block::default().borders(Borders::NONE).gray();
+    // .title(Title::from("left").alignment(Alignment::Left));
     //.title(Title::from("right").alignment(Alignment::Right));
     let paragraph =
-      Paragraph::new(lines).block(block).wrap(Wrap { trim: true }).scroll((self.vertical_scroll as u16, 0));
+      Paragraph::new(transaction_texts).block(block).wrap(Wrap { trim: true }).scroll((self.vertical_scroll as u16, 0));
     f.render_widget(paragraph, inner[1]);
 
     f.render_stateful_widget(
@@ -171,15 +196,115 @@ impl Component for Session {
       inner[1],
       &mut self.vertical_scroll_state,
     );
-
+    //self.render = false;
     Ok(())
   }
 }
 
+fn concatenate_texts<'a, I>(texts: I) -> Text<'a>
+where
+  I: Iterator<Item = Text<'a>>,
+{
+  let mut result = Text::raw("");
+  for mut text in texts {
+    result.lines.append(text.lines.as_mut());
+  }
+  result
+}
 impl Session {
   pub fn new() -> Session {
     Self::default()
   }
+
+  pub fn render_transaction_text(&mut self) {
+    let mut completed_ids: HashMap<String, bool> = HashMap::new();
+    let mut rendered_transactions: Vec<RenderedChatTransaction> = Vec::new();
+    let mut finish_reason: Option<String> = None;
+    for transaction in &self.transactions {
+      for original_transaction in &transaction.originals {
+        if !completed_ids.contains_key(&transaction.txn_id) {
+          if let ChatTransaction::StreamResponse(response) = original_transaction {
+            completed_ids.insert(transaction.txn_id.clone(), true);
+
+            let mut combined_deltas: HashMap<String, ChatCompletionStreamResponseDelta> = HashMap::new();
+
+            for message in &response.choices {
+              let delta = &message.delta;
+              let key = format!("{:?}{:?}", &delta.role, &delta.function_call);
+              if let Some(reason) = message.finish_reason.clone() {
+                finish_reason = Some(reason);
+                transaction.completed = true;
+              }
+              if let Some(existing_delta) = combined_deltas.get_mut(&key) {
+                if let Some(content) = &delta.content {
+                  existing_delta.content = existing_delta.content.clone().map(|c| c + content);
+                }
+
+                if let Some(call) = &delta.function_call {
+                  if let Some(existing_call) = &mut existing_delta.function_call {
+                    existing_call.name = existing_call.name.clone().map(|n| n + &call.name.unwrap_or("".to_string()));
+                    existing_call.arguments =
+                      existing_call.arguments.clone().map(|a| a + &call.arguments.unwrap_or("".to_string()));
+                  } else {
+                    existing_delta.function_call =
+                      Some(FunctionCallStream { name: call.name.clone(), arguments: call.arguments.clone() });
+                  }
+                }
+              } else {
+                combined_deltas.insert(key, delta.clone());
+              }
+            }
+
+            rendered_transactions.push(RenderedChatTransaction {
+              id: Some(transaction.txn_id.clone()),
+              choices: combined_deltas
+                .values()
+                .map(|delta| RenderedChatMessage {
+                  role: delta.role.clone(),
+                  content: delta.content.clone(),
+                  function_call: delta.function_call.as_ref().map(|func_call| RenderedFunctionCall {
+                    name: func_call.name.clone(),
+                    arguments: func_call.arguments.clone(),
+                  }),
+                  finish_reason,
+                })
+                .collect(),
+            });
+            finish_reason = None;
+          }
+        }
+      }
+      if let Some(mut rendered_txns) = transaction.rendered {
+        rendered_txns.append(rendered_transactions.as_mut());
+      } else {
+        transaction.rendered = Some(rendered_transactions)
+      }
+    }
+  }
+
+  pub fn add_transaction(&self, transaction: ChatTransaction) {
+    match transaction {
+      ChatTransaction::Request(request) => {
+        let txn_id = Uuid::new_v4().to_string();
+        let originals = vec![ChatTransaction::Request(request.clone())];
+        let txn = Transaction { txn_id, originals, rendered: None, completed: true };
+        self.transactions.push(txn);
+      },
+      ChatTransaction::Response(response) => {
+        let txn_id = response.id;
+        let originals = vec![ChatTransaction::Response(response.clone())];
+        let txn = Transaction { txn_id, originals, rendered: None, completed: false };
+        self.transactions.push(txn);
+      },
+      ChatTransaction::StreamResponse(response) => {
+        let txn_id = response.id;
+        let originals = vec![ChatTransaction::StreamResponse(response.clone())];
+        let txn = Transaction { txn_id, originals, rendered: None, completed: false };
+        self.transactions.push(txn);
+      },
+    }
+  }
+
   pub fn get_previous_request_messages(&self) -> Vec<ChatCompletionRequestMessage> {
     self
       .transactions
@@ -192,29 +317,37 @@ impl Session {
       .flatten()
       .collect()
   }
+
   pub fn request_response(&mut self, input: String, tx: UnboundedSender<Action>) {
     //let tx = self.action_tx.clone().unwrap();
     let previous_requests = self.get_previous_request_messages();
     let request_messages =
-      construct_chat_completion_request_message(&input, &self.config.model, Some(previous_requests)).unwrap();
-    let request = construct_request(request_messages, &self.config);
+      construct_chat_completion_request_message(&input, Role::User, &self.config.model, Some(previous_requests), None)
+        .unwrap();
+    let functions = match self.config.include_functions {
+      true => Some(create_chat_completion_function_args(define_commands())),
+      false => None,
+    };
+    let request = construct_request(request_messages, &self.config, functions);
     let stream_response = self.config.stream_response;
+    let openai_config = self.config.openai_config.clone();
+    format!("Request: {:#?}", request.clone());
     self.transactions.push(ChatTransaction::Request(request.clone()));
+    tx.send(Action::Render).unwrap();
     tokio::spawn(async move {
       tx.send(Action::EnterProcessing).unwrap();
-      let client = create_openai_client();
-      let mut file = File::create("saved_response.txt").unwrap();
+      let client = create_openai_client(openai_config);
       match stream_response {
         true => {
           let mut stream = client.chat().create_stream(request).await.unwrap();
           while let Some(response_result) = stream.next().await {
             match response_result {
               Ok(response) => {
-                let _ = file.write_all(serde_json::to_string(&response).unwrap().as_bytes());
+                trace_dbg!("Response: {:#?}", response);
                 tx.send(Action::ProcessResponse(Box::new(ChatTransaction::StreamResponse(response)))).unwrap();
               },
               Err(e) => {
-                trace_dbg!("Error: {}", e);
+                trace_dbg!("Error: {:#?} -- check https://status.openai.com/", e);
                 tx.send(Action::Error(format!("Error: {}", e))).unwrap();
               },
             }
@@ -233,20 +366,33 @@ impl Session {
     });
   }
 
+  pub fn consolidate_stream_responses_by_id(&self) {
+    //   if let ChatTransaction::StreamResponse(mut new_sr) = transaction {
+    //     while let Some(choice) = new_sr.choices.pop() {
+    //       //let choice = new_sr.choices[0].clone();
+    //       saved_sr.choices.push(choice);
+    //     }
+    //     if saved_sr.choices.last().unwrap().finish_reason.is_some() {
+    //       tx.send(Action::ExitProcessing).unwrap();
+    //     }
+    //   }
+  }
   pub fn process_response_handler(&mut self, tx: UnboundedSender<Action>, transaction: ChatTransaction) {
-    if let Some(ChatTransaction::StreamResponse(saved_sr)) = self.transactions.last_mut() {
-      if let ChatTransaction::StreamResponse(mut new_sr) = transaction {
-        while let Some(choice) = new_sr.choices.pop() {
-          //let choice = new_sr.choices[0].clone();
-          saved_sr.choices.push(choice);
-        }
-        if saved_sr.choices.last().unwrap().finish_reason.is_some() {
-          tx.send(Action::ExitProcessing).unwrap();
-        }
-      }
-    } else {
-      self.transactions.push(transaction);
-    }
+    self.add_transaction(transaction);
+    // if let Some(ChatTransaction::StreamResponse(saved_sr)) = self.transactions.last_mut() {
+    //   if let ChatTransaction::StreamResponse(mut new_sr) = transaction {
+    //     while let Some(choice) = new_sr.choices.pop() {
+    //       //let choice = new_sr.choices[0].clone();
+    //       saved_sr.choices.push(choice);
+    //     }
+    //     if saved_sr.choices.last().unwrap().finish_reason.is_some() {
+    //       tx.send(Action::ExitProcessing).unwrap();
+    //     }
+    //   }
+    // } else {
+    //   self.transactions.push(transaction);
+    // }
+    trace_dbg!("response handler");
     tx.send(Action::Update).unwrap();
   }
 
@@ -300,35 +446,34 @@ impl Session {
     let last_session_path = Path::new(SESSIONS_DIR).join("last_session.txt");
     fs::write(last_session_path, self.config.session_id.clone()).unwrap();
   }
-}
-
-pub async fn select_model(settings: &GPTSettings, client: Client<OpenAIConfig>) -> Result<Model, GPTConnectorError> {
-  // Retrieve the list of available models
-  let models_response = client.models().list().await;
-  match models_response {
-    Ok(response) => {
-      let model_names: Vec<String> = response.data.iter().map(|model| model.id.clone()).collect();
-      let available_models = ModelsList { default: GPT4.clone(), fallback: GPT3_TURBO.clone() };
-      // Check if the default model is in the list
-      if model_names.contains(&settings.default.name) {
-        Ok(available_models.default)
+  pub fn select_model(model_preference_list: Vec<Model>, client: Client<OpenAIConfig>) {
+    trace_dbg!("select model");
+    tokio::spawn(async move {
+      // Retrieve the list of available models
+      let models_response = client.models().list().await;
+      match models_response {
+        Ok(response) => {
+          let available_models: Vec<String> = response.data.iter().map(|model| model.id.clone()).collect();
+          trace_dbg!("{:?}", available_models);
+          // Check if the default model is in the list
+          if let Some(preferences) = model_preference_list.iter().find(|model| available_models.contains(&model.name)) {
+            Ok(preferences.clone())
+          } else {
+            Err(SessionManagerError::Other("no preferred models available".to_string()))
+          }
+        },
+        Err(e) => {
+          trace_dbg!("Failed to fetch the list of available models. {:#?}", e);
+          Err(SessionManagerError::Other("Failed to fetch the list of available models.".to_string()))
+        },
       }
-      // If not, check if the fallback model is in the list
-      else if model_names.contains(&settings.fallback.name) {
-        Ok(available_models.fallback)
-      }
-      // If neither is available, return an error
-      else {
-        Err(GPTConnectorError::Other("Neither the default nor the fallback model is accessible.".to_string()))
-      }
-    },
-    Err(_) => Err(GPTConnectorError::Other("Failed to fetch the list of available models.".to_string())),
+    });
   }
 }
 
-pub fn create_openai_client() -> async_openai::Client<OpenAIConfig> {
-  let api_key: String = env::var("OPENAI_API_KEY").expect("OPENAI_API_KEY not set");
-  let openai_config = OpenAIConfig::new().with_api_key(api_key);
+pub fn create_openai_client(openai_config: OpenAIConfig) -> async_openai::Client<OpenAIConfig> {
+  // let api_key: String = env::var("OPENAI_API_KEY").expect("OPENAI_API_KEY not set");
+  // let openai_config = OpenAIConfig::new().with_api_key(api_key);
   let backoff = ExponentialBackoffBuilder::new() // Ensure backoff crate is added to Cargo.toml
     .with_max_elapsed_time(Some(std::time::Duration::from_secs(60)))
     .build();
@@ -337,14 +482,21 @@ pub fn create_openai_client() -> async_openai::Client<OpenAIConfig> {
 
 pub fn construct_chat_completion_request_message(
   content: &str,
+  role: Role,
   model: &Model,
   previous_requests: Option<Vec<ChatCompletionRequestMessage>>,
+  function_call: Option<FunctionCall>,
 ) -> Result<Vec<ChatCompletionRequestMessage>, GPTConnectorError> {
   let chunks = parse_input(content, CHUNK_TOKEN_LIMIT as usize, model.token_limit as usize).unwrap();
 
   let messages: Vec<ChatCompletionRequestMessage> = chunks
     .iter()
-    .map(|chunk| ChatCompletionRequestMessage { role: Role::User, content: Some(chunk.clone()), ..Default::default() })
+    .map(|chunk| ChatCompletionRequestMessage {
+      role: role.clone(),
+      content: Some(chunk.clone()),
+      function_call: function_call.clone(),
+      ..Default::default()
+    })
     .collect();
   match previous_requests {
     Some(mut previous_requests) => {
@@ -357,18 +509,15 @@ pub fn construct_chat_completion_request_message(
 
 pub fn construct_request(
   messages: Vec<ChatCompletionRequestMessage>,
-  config: &SessionConfig, // model: Model,
-                          // include_functions: bool,
+  config: &SessionConfig,                          // model: Model,
+  functions: Option<Vec<ChatCompletionFunctions>>, // include_functions: bool,
 ) -> CreateChatCompletionRequest {
-  let functions = match config.include_functions {
-    true => Some(create_chat_completion_function_args(define_commands())),
-    false => None,
-  };
   CreateChatCompletionRequest {
     model: config.model.name.clone(),
     messages,
     functions,
     stream: Some(config.stream_response),
+    max_tokens: Some(1024),
     ..Default::default()
   }
 }
