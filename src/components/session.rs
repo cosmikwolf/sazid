@@ -179,13 +179,13 @@ impl Component for Session {
 
     let _title = "Chat";
 
-    let transaction_texts = concatenate_texts(self.transactions.iter().cloned().map(<Text>::from));
-
     let block = Block::default().borders(Borders::NONE).gray();
     // .title(Title::from("left").alignment(Alignment::Left));
     //.title(Title::from("right").alignment(Alignment::Right));
-    let paragraph =
-      Paragraph::new(transaction_texts).block(block).wrap(Wrap { trim: true }).scroll((self.vertical_scroll as u16, 0));
+    let paragraph = Paragraph::new(Text::<'_>::from(self.get_full_text()))
+      .block(block)
+      .wrap(Wrap { trim: true })
+      .scroll((self.vertical_scroll as u16, 0));
     f.render_widget(paragraph, inner[1]);
 
     f.render_stateful_widget(
@@ -211,113 +211,22 @@ where
   }
   result
 }
+
 impl Session {
   pub fn new() -> Session {
     Self::default()
   }
 
-  pub fn render_transaction_text(&mut self) {
-    let mut completed_ids: HashMap<String, bool> = HashMap::new();
-    let mut rendered_transactions: Vec<RenderedChatTransaction> = Vec::new();
-    let mut finish_reason: Option<String> = None;
-    for transaction in &self.transactions {
-      for original_transaction in &transaction.originals {
-        if !completed_ids.contains_key(&transaction.txn_id) {
-          if let ChatTransaction::StreamResponse(response) = original_transaction {
-            completed_ids.insert(transaction.txn_id.clone(), true);
-
-            let mut combined_deltas: HashMap<String, ChatCompletionStreamResponseDelta> = HashMap::new();
-
-            for message in &response.choices {
-              let delta = &message.delta;
-              let key = format!("{:?}{:?}", &delta.role, &delta.function_call);
-              if let Some(reason) = message.finish_reason.clone() {
-                finish_reason = Some(reason);
-                transaction.completed = true;
-              }
-              if let Some(existing_delta) = combined_deltas.get_mut(&key) {
-                if let Some(content) = &delta.content {
-                  existing_delta.content = existing_delta.content.clone().map(|c| c + content);
-                }
-
-                if let Some(call) = &delta.function_call {
-                  if let Some(existing_call) = &mut existing_delta.function_call {
-                    existing_call.name = existing_call.name.clone().map(|n| n + &call.name.unwrap_or("".to_string()));
-                    existing_call.arguments =
-                      existing_call.arguments.clone().map(|a| a + &call.arguments.unwrap_or("".to_string()));
-                  } else {
-                    existing_delta.function_call =
-                      Some(FunctionCallStream { name: call.name.clone(), arguments: call.arguments.clone() });
-                  }
-                }
-              } else {
-                combined_deltas.insert(key, delta.clone());
-              }
-            }
-
-            rendered_transactions.push(RenderedChatTransaction {
-              id: Some(transaction.txn_id.clone()),
-              choices: combined_deltas
-                .values()
-                .map(|delta| RenderedChatMessage {
-                  role: delta.role.clone(),
-                  content: delta.content.clone(),
-                  function_call: delta.function_call.as_ref().map(|func_call| RenderedFunctionCall {
-                    name: func_call.name.clone(),
-                    arguments: func_call.arguments.clone(),
-                  }),
-                  finish_reason,
-                })
-                .collect(),
-            });
-            finish_reason = None;
-          }
-        }
-      }
-      if let Some(mut rendered_txns) = transaction.rendered {
-        rendered_txns.append(rendered_transactions.as_mut());
-      } else {
-        transaction.rendered = Some(rendered_transactions)
-      }
-    }
+  fn get_previous_request_messages(&self) -> Vec<ChatCompletionRequestMessage> {
+    self.transactions.iter().map(|transaction| transaction.request.messages.clone()).flatten().collect()
+  }
+  pub fn get_full_text(&mut self) -> String {
+    self.transactions.iter().map(|transaction| <String>::from(transaction)).collect::<Vec<String>>().join("\n")
   }
 
-  pub fn add_transaction(&self, transaction: ChatTransaction) {
-    match transaction {
-      ChatTransaction::Request(request) => {
-        let txn_id = Uuid::new_v4().to_string();
-        let originals = vec![ChatTransaction::Request(request.clone())];
-        let txn = Transaction { txn_id, originals, rendered: None, completed: true };
-        self.transactions.push(txn);
-      },
-      ChatTransaction::Response(response) => {
-        let txn_id = response.id;
-        let originals = vec![ChatTransaction::Response(response.clone())];
-        let txn = Transaction { txn_id, originals, rendered: None, completed: false };
-        self.transactions.push(txn);
-      },
-      ChatTransaction::StreamResponse(response) => {
-        let txn_id = response.id;
-        let originals = vec![ChatTransaction::StreamResponse(response.clone())];
-        let txn = Transaction { txn_id, originals, rendered: None, completed: false };
-        self.transactions.push(txn);
-      },
-    }
+  pub fn response_callback(&self, response: ChatResponse) {
+    self.action_tx.clone().unwrap().send(Action::ProcessResponse(Box::new(response))).unwrap();
   }
-
-  pub fn get_previous_request_messages(&self) -> Vec<ChatCompletionRequestMessage> {
-    self
-      .transactions
-      .clone()
-      .into_iter()
-      .filter_map(|t| match t {
-        ChatTransaction::Request(r) => Some(r.messages.clone()),
-        _ => None,
-      })
-      .flatten()
-      .collect()
-  }
-
   pub fn request_response(&mut self, input: String, tx: UnboundedSender<Action>) {
     //let tx = self.action_tx.clone().unwrap();
     let previous_requests = self.get_previous_request_messages();
@@ -332,66 +241,23 @@ impl Session {
     let stream_response = self.config.stream_response;
     let openai_config = self.config.openai_config.clone();
     format!("Request: {:#?}", request.clone());
-    self.transactions.push(ChatTransaction::Request(request.clone()));
-    tx.send(Action::Render).unwrap();
-    tokio::spawn(async move {
-      tx.send(Action::EnterProcessing).unwrap();
-      let client = create_openai_client(openai_config);
-      match stream_response {
-        true => {
-          let mut stream = client.chat().create_stream(request).await.unwrap();
-          while let Some(response_result) = stream.next().await {
-            match response_result {
-              Ok(response) => {
-                trace_dbg!("Response: {:#?}", response);
-                tx.send(Action::ProcessResponse(Box::new(ChatTransaction::StreamResponse(response)))).unwrap();
-              },
-              Err(e) => {
-                trace_dbg!("Error: {:#?} -- check https://status.openai.com/", e);
-                tx.send(Action::Error(format!("Error: {}", e))).unwrap();
-              },
-            }
-          }
-        },
-        false => match client.chat().create(request).await {
-          Ok(response) => {
-            tx.send(Action::ProcessResponse(Box::new(ChatTransaction::Response(response)))).unwrap();
-          },
-          Err(e) => {
-            trace_dbg!("Error: {}", e);
-            tx.send(Action::Error(format!("Error: {}", e))).unwrap();
-          },
-        },
-      };
-    });
+
+    tx.send(Action::EnterProcessing).unwrap();
+    let client = create_openai_client(openai_config);
+    //let response_callback = |response| tx.send(Action::ProcessResponse(Box::new(response))).unwrap();
+    let complete_callback = || tx.send(Action::ExitProcessing).unwrap();
+    let error_callback = |e| tx.send(Action::Error(e)).unwrap();
+    self.transactions.push(Transaction::new(request));
+    self.transactions.last().unwrap().new_request::<_, _, _>(
+      response_callback,
+      complete_callback,
+      error_callback,
+      client,
+      stream_response,
+    );
   }
 
-  pub fn consolidate_stream_responses_by_id(&self) {
-    //   if let ChatTransaction::StreamResponse(mut new_sr) = transaction {
-    //     while let Some(choice) = new_sr.choices.pop() {
-    //       //let choice = new_sr.choices[0].clone();
-    //       saved_sr.choices.push(choice);
-    //     }
-    //     if saved_sr.choices.last().unwrap().finish_reason.is_some() {
-    //       tx.send(Action::ExitProcessing).unwrap();
-    //     }
-    //   }
-  }
-  pub fn process_response_handler(&mut self, tx: UnboundedSender<Action>, transaction: ChatTransaction) {
-    self.add_transaction(transaction);
-    // if let Some(ChatTransaction::StreamResponse(saved_sr)) = self.transactions.last_mut() {
-    //   if let ChatTransaction::StreamResponse(mut new_sr) = transaction {
-    //     while let Some(choice) = new_sr.choices.pop() {
-    //       //let choice = new_sr.choices[0].clone();
-    //       saved_sr.choices.push(choice);
-    //     }
-    //     if saved_sr.choices.last().unwrap().finish_reason.is_some() {
-    //       tx.send(Action::ExitProcessing).unwrap();
-    //     }
-    //   }
-    // } else {
-    //   self.transactions.push(transaction);
-    // }
+  pub fn process_response_handler(&mut self, tx: UnboundedSender<Action>, response: ChatResponse) {
     trace_dbg!("response handler");
     tx.send(Action::Update).unwrap();
   }

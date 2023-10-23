@@ -2,6 +2,17 @@ use async_openai::error::OpenAIError;
 use std::fmt;
 
 #[derive(Debug)]
+pub enum SazidError {
+  OpenAiError(OpenAIError),
+}
+impl fmt::Display for SazidError {
+  fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    match self {
+      SazidError::OpenAiError(err) => write!(f, "OpenAIError: {}", err),
+    }
+  }
+}
+#[derive(Debug)]
 pub enum ChunkifierError {
   IO(std::io::Error),
   Utf8(std::string::FromUtf8Error),

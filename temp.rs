@@ -10,6 +10,21 @@
 // The resulting RenderedChatTransaction should be added to self.rendered_transactions
 // use the following code to help you understand the data structures
 // do not abbreviate and do not use code stubs such as // handle this here and // do this here
+// the originals
+
+#[derive(Default, Serialize, Deserialize, Debug, Clone)]
+pub struct Session {
+  pub transactions: Vec<RenderedTransaction>,
+}
+
+#[derive(Clone, Default)]
+pub struct RenderedChatTransaction {
+  pub id: Option<String>,
+  pub original_transactions: Vec<ChatTransaction>,
+  pub choices: Option<Vec<RenderedChatMessage>>,
+  pub rendered: bool,
+  pub styled: bool,
+}
 
 pub struct Transaction {
   pub id: String,
@@ -68,16 +83,6 @@ pub enum ChatTransaction {
   Request(CreateChatCompletionRequest),
   Response(CreateChatCompletionResponse),
   StreamResponse(CreateChatCompletionStreamResponse),
-}
-#[derive(Clone, Default)]
-pub struct RenderedChatTransaction {
-  pub id: Option<String>,
-  pub choices: Vec<RenderedChatMessage>,
-}
-
-#[derive(Default, Serialize, Deserialize, Debug, Clone)]
-pub struct Session {
-  pub transactions: Vec<Transaction>,
 }
 
 #[derive(Clone, Default)]
