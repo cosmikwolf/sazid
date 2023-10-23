@@ -4,22 +4,15 @@ use async_openai::{
   self,
   config::OpenAIConfig,
   types::{
-    CreateChatCompletionRequest,
-    CreateChatCompletionResponse, CreateChatCompletionStreamResponse, FunctionCall, FunctionCallStream, Role,
+    CreateChatCompletionRequest, CreateChatCompletionResponse, CreateChatCompletionStreamResponse, FunctionCall,
+    FunctionCallStream, Role,
   },
 };
 use clap::Parser;
 
-
+use bat::{assets::HighlightingAssets, config::Config, controller::Controller, Input};
 use serde::{Deserialize, Serialize};
-use std::{
-  collections::{BTreeMap},
-  ffi::OsString,
-  path::PathBuf,
-};
-
-
-
+use std::{collections::BTreeMap, ffi::OsString, path::PathBuf};
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub enum ChatResponse {
@@ -121,7 +114,7 @@ impl Transaction {
 
   pub fn render(&mut self) {
     if !self.completed {
-      self.rendered.push(<RenderedChatMessage>::from(self.request.clone()));
+      let rendered_request = <RenderedChatMessage>::from(self.request.clone());
 
       let choice_count = self
         .responses
@@ -131,9 +124,9 @@ impl Transaction {
           ChatResponse::StreamResponse(response) => response.choices.len(),
         })
         .max()
-        .unwrap();
-      self.rendered = vec![RenderedChatMessage::default(); choice_count];
-      for (index, rendered_message) in self.rendered.iter_mut().enumerate() {
+        .unwrap_or(0);
+      let mut rendered_responses = vec![RenderedChatMessage::default(); choice_count];
+      for (index, rendered_message) in rendered_responses.iter_mut().enumerate() {
         for response in self.responses.clone() {
           match response {
             ChatResponse::Response(response) => {
@@ -143,7 +136,13 @@ impl Transaction {
               }
             },
             ChatResponse::StreamResponse(response) => {
-              rendered_message.content = response.choices[index].delta.content.clone();
+              rendered_message.content = match rendered_message.content.clone() {
+                Some(content) => match response.choices[index].delta.content.clone() {
+                  Some(delta_content) => Some(content + delta_content.as_str()),
+                  None => Some(content),
+                },
+                None => response.choices[index].delta.content.clone(),
+              };
               if let Some(function_call) = response.choices[index].delta.function_call.clone() {
                 match rendered_message.function_call {
                   Some(ref mut rendered_function_call) => {
@@ -157,12 +156,35 @@ impl Transaction {
           }
         }
       }
+      self.rendered.clear();
+      self.rendered.push(rendered_request);
+      self.rendered.append(&mut rendered_responses);
+      self.stylize();
+    }
+  }
+
+  fn stylize(&mut self) {
+    if self.styled {
+      return;
+    }
+    let config = Config { colored_output: true, language: Some("markdown"), ..Default::default() };
+    let assets = HighlightingAssets::from_binary();
+    let controller = Controller::new(&config, &assets);
+    for rendered in self.rendered.iter_mut() {
+      if let Some(content) = &mut rendered.content {
+        let cloned_content = content.clone();
+        let input = Input::from_bytes(cloned_content.as_bytes());
+        content.clear();
+        controller.run(vec![input.into()], Some(content)).unwrap();
+      }
+    }
+    if self.completed {
+      self.styled = true
     }
   }
 }
-
-impl From<&Transaction> for String {
-  fn from(txn: &Transaction) -> Self {
+impl From<Transaction> for String {
+  fn from(txn: Transaction) -> Self {
     txn
       .rendered
       .iter()
@@ -203,9 +225,7 @@ impl From<CreateChatCompletionRequest> for RenderedChatMessage {
     RenderedChatMessage {
       role: Some(request.messages.last().unwrap().role.clone()),
       content: Some(request.messages.last().unwrap().content.clone().unwrap_or("".to_string())),
-      function_call: Some(<RenderedFunctionCall>::from(
-        request.messages.last().unwrap().function_call.clone().unwrap(),
-      )),
+      function_call: request.messages.last().unwrap().function_call.clone().map(|function_call| function_call.into()),
       finish_reason: None,
     }
   }

@@ -1,3 +1,4 @@
+use ansi_to_tui::IntoText;
 use async_openai::types::{
   ChatCompletionFunctions, ChatCompletionRequestMessage, CreateChatCompletionRequest, CreateEmbeddingRequestArgs,
   CreateEmbeddingResponse, FunctionCall, Role,
@@ -8,6 +9,7 @@ use futures::StreamExt;
 use ratatui::layout::Rect;
 use ratatui::{prelude::*, widgets::block::*, widgets::*};
 use serde_derive::{Deserialize, Serialize};
+use std::error::Error;
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 use std::{fs, io};
@@ -182,7 +184,7 @@ impl Component for Session {
     let block = Block::default().borders(Borders::NONE).gray();
     // .title(Title::from("left").alignment(Alignment::Left));
     //.title(Title::from("right").alignment(Alignment::Right));
-    let paragraph = Paragraph::new(Text::<'_>::from(self.get_full_text()))
+    let paragraph = Paragraph::new(self.get_full_text())
       .block(block)
       .wrap(Wrap { trim: true })
       .scroll((self.vertical_scroll as u16, 0));
@@ -209,8 +211,15 @@ impl Session {
   fn get_previous_request_messages(&self) -> Vec<ChatCompletionRequestMessage> {
     self.transactions.iter().flat_map(|transaction| transaction.request.messages.clone()).collect()
   }
-  pub fn get_full_text(&mut self) -> String {
-    self.transactions.iter().map(<String>::from).collect::<Vec<String>>().join("\n")
+  pub fn get_full_text(&self) -> Text<'_> {
+    self
+      .transactions
+      .iter()
+      .map(|txn| <String>::from(txn.clone()))
+      .collect::<Vec<String>>()
+      .join("\n")
+      .into_text()
+      .unwrap()
   }
 
   pub fn request_response(&mut self, input: String, tx: UnboundedSender<Action>) {
@@ -275,6 +284,9 @@ impl Session {
   ) {
     trace_dbg!("response handler");
     self.transactions.iter_mut().find(|txn| txn.id == transaction_id).unwrap().responses.push(response.clone());
+    for txn in self.transactions.iter_mut() {
+      txn.render()
+    }
     tx.send(Action::Update).unwrap();
   }
 
