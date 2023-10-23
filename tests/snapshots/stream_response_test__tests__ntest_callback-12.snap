@@ -1,6 +1,6 @@
 ---
 source: tests/stream_response_test.rs
-expression: "&message"
+expression: "&combined"
 ---
 id: "[id]"
 object: chat.completion.chunk

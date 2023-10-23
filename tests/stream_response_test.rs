@@ -2,9 +2,10 @@ extern crate lazy_static;
 
 #[cfg(test)]
 mod tests {
+  use async_openai::types::Role;
   use ntest::timeout;
   use sazid::action::Action;
-  use sazid::app::types::ChatResponse;
+  use sazid::app::types::{ChatResponse, Transaction};
   use sazid::components::session::*;
   use tokio::sync::mpsc;
 
@@ -22,10 +23,11 @@ mod tests {
           Action::EnterProcessing => {
             enter_processing_action_run = true;
           },
-          Action::ProcessResponse(response) => {
+          Action::ProcessResponse(boxed_id_response) => {
+            let (transaction_id, response) = *boxed_id_response;
             process_response_action_run = true;
-            session.process_response_handler(tx.clone(), *response.clone());
-            if let ChatResponse::StreamResponse(message) = *response {
+            session.process_response_handler(tx.clone(), transaction_id, response.clone());
+            if let ChatResponse::StreamResponse(message) = response {
               insta::assert_yaml_snapshot!(&message, { ".id" => "[id]", ".created"  => "[created]" });
             } else {
               panic!("Expected StreamResponse");
@@ -33,10 +35,12 @@ mod tests {
           },
           Action::ExitProcessing => {
             // break;
-            if let Some(ChatTransaction::StreamResponse(combined)) = session.transactions.last() {
+            if let Some(ChatResponse::StreamResponse(combined)) = session.transactions.last().unwrap().responses.last()
+            {
               assert!(process_response_action_run);
               assert!(enter_processing_action_run);
               insta::assert_yaml_snapshot!(&combined, { ".id" => "[id]", ".created"  => "[created]" });
+              insta::assert_yaml_snapshot!(&session.transactions.last().unwrap(), { ".id" => "[id]", ".created"  => "[created]" });
             } else {
               panic!(
                 "Expected last transaction message to be StreamResponse {:#?}",
@@ -59,7 +63,7 @@ mod tests {
   fn test_construct_chat_completion_request_message() {
     let session = Session::new();
     if let Ok(create_chat_completion_request_message_result) =
-      construct_chat_completion_request_message("testing testing 1 2 3", &session.config.model, None)
+      construct_chat_completion_request_message("testing testing 1 2 3", Role::User, &session.config.model, None, None)
     {
       insta::assert_toml_snapshot!(create_chat_completion_request_message_result);
     } else {

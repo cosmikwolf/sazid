@@ -27,8 +27,6 @@ use crate::{action::Action, config::Config};
 use crate::app::gpt_interface::{create_chat_completion_function_args, define_commands};
 use crate::app::tools::utils::ensure_directory_exists;
 use crate::components::home::Mode;
-use std::collections::HashMap;
-use uuid::Uuid;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 
@@ -118,10 +116,12 @@ impl Component for Session {
   fn update(&mut self, action: Action) -> Result<Option<Action>> {
     let tx = self.action_tx.clone().unwrap();
     match action {
-      Action::SubmitInput(s) => self.request_response(s, tx),
+      Action::SubmitInput(s) => {
+        self.request_response(s, tx);
+      },
       Action::ProcessResponse(boxed_id_response) => {
         let (transaction_id, response) = *boxed_id_response;
-        self.process_response_handler(tx, transaction_id, response)
+        self.process_response_handler(tx, transaction_id, response);
       },
       Action::SelectModel(model) => self.config.model = model,
       _ => (),
