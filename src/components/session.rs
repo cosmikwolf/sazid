@@ -119,8 +119,9 @@ impl Component for Session {
     let tx = self.action_tx.clone().unwrap();
     match action {
       Action::SubmitInput(s) => self.request_response(s, tx),
-      Action::ProcessResponse(response) => {
-        self.process_response_handler(tx, *response);
+      Action::ProcessResponse(boxed_id_response) => {
+        let (transaction_id, response) = *boxed_id_response;
+        self.process_response_handler(tx, transaction_id, response)
       },
       Action::SelectModel(model) => self.config.model = model,
       _ => (),
@@ -224,9 +225,6 @@ impl Session {
     self.transactions.iter().map(|transaction| <String>::from(transaction)).collect::<Vec<String>>().join("\n")
   }
 
-  pub fn response_callback(&self, response: ChatResponse) {
-    self.action_tx.clone().unwrap().send(Action::ProcessResponse(Box::new(response))).unwrap();
-  }
   pub fn request_response(&mut self, input: String, tx: UnboundedSender<Action>) {
     //let tx = self.action_tx.clone().unwrap();
     let previous_requests = self.get_previous_request_messages();
@@ -244,21 +242,51 @@ impl Session {
 
     tx.send(Action::EnterProcessing).unwrap();
     let client = create_openai_client(openai_config);
-    //let response_callback = |response| tx.send(Action::ProcessResponse(Box::new(response))).unwrap();
-    let complete_callback = || tx.send(Action::ExitProcessing).unwrap();
-    let error_callback = |e| tx.send(Action::Error(e)).unwrap();
-    self.transactions.push(Transaction::new(request));
-    self.transactions.last().unwrap().new_request::<_, _, _>(
-      response_callback,
-      complete_callback,
-      error_callback,
-      client,
-      stream_response,
-    );
+    let txn = Transaction::new(request);
+    self.transactions.push(txn.clone());
+    let request = txn.clone().request;
+    let id = txn.clone().id;
+    tokio::spawn(async move {
+      match stream_response {
+        true => {
+          // let mut stream: Pin<Box<dyn StreamExt<Item = Result<CreateChatCompletionStreamResponse, OpenAIError>> + Send>> =
+          let mut stream = client.chat().create_stream(request).await.unwrap();
+          while let Some(response_result) = stream.next().await {
+            match response_result {
+              Ok(response) => {
+                trace_dbg!("Response: {:#?}", response);
+                tx.send(Action::ProcessResponse(Box::new((id.clone(), ChatResponse::StreamResponse(response)))))
+                  .unwrap();
+              },
+              Err(e) => {
+                trace_dbg!("Error: {:#?} -- check https://status.openai.com/", e);
+                tx.send(Action::Error(format!("Error: {:#?} -- check https://status.openai.com/", e))).unwrap();
+              },
+            }
+          }
+        },
+        false => match client.chat().create(request).await {
+          Ok(response) => {
+            tx.send(Action::ProcessResponse(Box::new((id, ChatResponse::Response(response))))).unwrap();
+          },
+          Err(e) => {
+            trace_dbg!("Error: {}", e);
+            tx.send(Action::Error(format!("Error: {:#?} -- check https://status.openai.com/", e))).unwrap();
+          },
+        },
+      };
+      tx.send(Action::ExitProcessing).unwrap();
+    });
   }
 
-  pub fn process_response_handler(&mut self, tx: UnboundedSender<Action>, response: ChatResponse) {
+  pub fn process_response_handler(
+    &mut self,
+    tx: UnboundedSender<Action>,
+    transaction_id: String,
+    response: ChatResponse,
+  ) {
     trace_dbg!("response handler");
+    self.transactions.iter_mut().find(|txn| txn.id == transaction_id).unwrap().responses.push(response.clone());
     tx.send(Action::Update).unwrap();
   }
 

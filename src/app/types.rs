@@ -60,7 +60,7 @@ pub struct RenderedChatMessage {
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct Transaction {
-  pub id: Option<String>,
+  pub id: String,
   pub request: CreateChatCompletionRequest,
   pub responses: Vec<ChatResponse>,
   pub rendered: Vec<RenderedChatMessage>,
@@ -72,7 +72,8 @@ use futures::StreamExt;
 
 impl Transaction {
   pub fn new(request: CreateChatCompletionRequest) -> Self {
-    Transaction { id: None, request, responses: Vec::new(), rendered: Vec::new(), completed: false, styled: false }
+    let id = uuid::Uuid::new_v4().to_string();
+    Transaction { id, request, responses: Vec::new(), rendered: Vec::new(), completed: false, styled: false }
   }
 
   pub fn new_request<R, C, E>(

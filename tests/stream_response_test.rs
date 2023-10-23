@@ -4,7 +4,7 @@ extern crate lazy_static;
 mod tests {
   use ntest::timeout;
   use sazid::action::Action;
-  use sazid::app::types::ChatTransaction;
+  use sazid::app::types::ChatResponse;
   use sazid::components::session::*;
   use tokio::sync::mpsc;
 
@@ -25,7 +25,7 @@ mod tests {
           Action::ProcessResponse(response) => {
             process_response_action_run = true;
             session.process_response_handler(tx.clone(), *response.clone());
-            if let ChatTransaction::StreamResponse(message) = *response {
+            if let ChatResponse::StreamResponse(message) = *response {
               insta::assert_yaml_snapshot!(&message, { ".id" => "[id]", ".created"  => "[created]" });
             } else {
               panic!("Expected StreamResponse");

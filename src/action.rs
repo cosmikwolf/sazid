@@ -18,7 +18,7 @@ pub enum Action {
   Help,
   SubmitInput(String),
   SelectModel(Model),
-  ProcessResponse(Box<ChatResponse>),
+  ProcessResponse(Box<(String, ChatResponse)>),
   EnterNormal,
   EnterInsert,
   EnterProcessing,
