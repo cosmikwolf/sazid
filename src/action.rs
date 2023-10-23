@@ -1,4 +1,4 @@
-use crate::app::types::{ChatResponse, Model, Transaction};
+use crate::app::types::{ChatResponse, Model};
 use serde::{
   de::{self, Deserializer, Visitor},
   Deserialize, Serialize,

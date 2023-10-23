@@ -1,27 +1,25 @@
 use crate::{app::consts::*, trace_dbg};
-use ansi_to_tui::IntoText;
+
 use async_openai::{
   self,
   config::OpenAIConfig,
-  error::OpenAIError,
   types::{
-    ChatChoice, ChatCompletionRequestMessage, ChatCompletionResponseStreamMessage, CreateChatCompletionRequest,
+    CreateChatCompletionRequest,
     CreateChatCompletionResponse, CreateChatCompletionStreamResponse, FunctionCall, FunctionCallStream, Role,
   },
-  Client,
 };
 use clap::Parser;
-use nu_ansi_term::Color;
-use ratatui::text::Text;
+
+
 use serde::{Deserialize, Serialize};
 use std::{
-  collections::{BTreeMap, HashMap},
+  collections::{BTreeMap},
   ffi::OsString,
   path::PathBuf,
 };
-use uuid::Uuid;
 
-use bat::{assets::HighlightingAssets, config::Config, controller::Controller, Input};
+
+
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub enum ChatResponse {

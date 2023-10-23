@@ -1,7 +1,6 @@
 use async_openai::types::{
-  ChatCompletionFunctions, ChatCompletionRequestMessage, ChatCompletionStreamResponseDelta,
-  CreateChatCompletionRequest, CreateEmbeddingRequestArgs, CreateEmbeddingResponse, FunctionCall, FunctionCallStream,
-  Role,
+  ChatCompletionFunctions, ChatCompletionRequestMessage, CreateChatCompletionRequest, CreateEmbeddingRequestArgs,
+  CreateEmbeddingResponse, FunctionCall, Role,
 };
 use color_eyre::eyre::Result;
 use crossterm::event::{KeyCode, KeyEvent};
@@ -202,27 +201,16 @@ impl Component for Session {
   }
 }
 
-fn concatenate_texts<'a, I>(texts: I) -> Text<'a>
-where
-  I: Iterator<Item = Text<'a>>,
-{
-  let mut result = Text::raw("");
-  for mut text in texts {
-    result.lines.append(text.lines.as_mut());
-  }
-  result
-}
-
 impl Session {
   pub fn new() -> Session {
     Self::default()
   }
 
   fn get_previous_request_messages(&self) -> Vec<ChatCompletionRequestMessage> {
-    self.transactions.iter().map(|transaction| transaction.request.messages.clone()).flatten().collect()
+    self.transactions.iter().flat_map(|transaction| transaction.request.messages.clone()).collect()
   }
   pub fn get_full_text(&mut self) -> String {
-    self.transactions.iter().map(|transaction| <String>::from(transaction)).collect::<Vec<String>>().join("\n")
+    self.transactions.iter().map(<String>::from).collect::<Vec<String>>().join("\n")
   }
 
   pub fn request_response(&mut self, input: String, tx: UnboundedSender<Action>) {
