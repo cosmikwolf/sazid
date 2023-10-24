@@ -1,4 +1,5 @@
 use crate::app::types::{ChatResponse, Model};
+use async_openai::types::ChatCompletionRequestMessage;
 use serde::{
   de::{self, Deserializer, Visitor},
   Deserialize, Serialize,
@@ -17,6 +18,8 @@ pub enum Action {
   Error(String),
   Help,
   SubmitInput(String),
+  RequestChatCompletion(Vec<ChatCompletionRequestMessage>),
+  CallFunction(String, String),
   SelectModel(Model),
   ProcessResponse(Box<(String, ChatResponse)>),
   EnterNormal,

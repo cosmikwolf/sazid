@@ -5,7 +5,7 @@ mod tests {
   use async_openai::types::Role;
   use ntest::timeout;
   use sazid::action::Action;
-  use sazid::app::types::{ChatResponse};
+  use sazid::app::types::ChatResponse;
   use sazid::components::session::*;
   use tokio::sync::mpsc;
 
@@ -26,7 +26,7 @@ mod tests {
           Action::ProcessResponse(boxed_id_response) => {
             let (transaction_id, response) = *boxed_id_response;
             process_response_action_run = true;
-            session.process_response_handler(tx.clone(), transaction_id, response.clone());
+            session.response_handler(tx.clone(), transaction_id, response.clone());
             if let ChatResponse::StreamResponse(message) = response {
               insta::assert_yaml_snapshot!(&message, { ".id" => "[id]", ".created"  => "[created]" });
             } else {

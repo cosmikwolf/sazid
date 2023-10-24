@@ -5,8 +5,9 @@ use async_openai::{
   types::{ChatChoice, ChatCompletionFunctions, ChatCompletionRequestMessage, Role},
   Client,
 };
+use tokio::sync::mpsc::UnboundedSender;
 
-use crate::app::types::*;
+use crate::{action::Action, app::types::*};
 
 use std::{
   collections::HashMap,
@@ -217,50 +218,47 @@ pub fn create_chat_completion_function_args(commands: Vec<Command>) -> Vec<ChatC
 }
 
 pub fn handle_chat_response_function_call(
-  response_choices: Vec<ChatChoice>,
+  tx: UnboundedSender<Action>,
+  fn_name: String,
+  fn_args: String,
 ) -> Option<Vec<ChatCompletionRequestMessage>> {
   let mut function_results: Vec<ChatCompletionRequestMessage> = Vec::new();
   // println!("response_choices: {:?}", response_choices);
-  for choice in response_choices {
-    if let Some(function_call) = choice.message.function_call {
-      let function_name = function_call.name;
-      let function_args: serde_json::Value = function_call.arguments.parse().unwrap();
-      let function_call_result: Result<Option<String>, std::io::Error> = match function_name.as_str() {
-        "list_dir" => list_dir(function_args["path"].as_str().unwrap()),
-        "read_lines" => read_file_lines(
-          function_args["path"].as_str().unwrap(),
-          Some(function_args["start_line"].as_u64().unwrap_or_default() as usize),
-          Some(function_args["end_line"].as_u64().unwrap_or_default() as usize),
-        ),
-        "replace_lines" => replace_lines(
-          function_args["path"].as_str().unwrap(),
-          Some(function_args["start_line"].as_u64().unwrap() as usize),
-          Some(function_args["end_line"].as_u64().unwrap() as usize),
-          function_args["replace_text"].as_str().unwrap(),
-        ),
-        "cargo_check" => cargo_check(),
-        _ => Ok(None),
-      };
-      match function_call_result {
-        Ok(Some(output)) => {
-          function_results.push(ChatCompletionRequestMessage {
-            name: Some("Sazid".to_string()),
-            role: Role::Function,
-            content: Some(output),
-            ..Default::default()
-          });
-        },
-        Ok(None) => {},
-        Err(e) => {
-          function_results.push(ChatCompletionRequestMessage {
-            name: Some("Sazid".to_string()),
-            role: Role::Function,
-            content: Some(format!("Error: {:?}", e)),
-            ..Default::default()
-          });
-        },
-      }
-    }
+  let function_args: serde_json::Value = fn_args.parse().unwrap();
+  let function_call_result: Result<Option<String>, std::io::Error> = match fn_name.as_str() {
+    "list_dir" => list_dir(function_args["path"].as_str().unwrap()),
+    "read_lines" => read_file_lines(
+      function_args["path"].as_str().unwrap(),
+      Some(function_args["start_line"].as_u64().unwrap_or_default() as usize),
+      Some(function_args["end_line"].as_u64().unwrap_or_default() as usize),
+    ),
+    "replace_lines" => replace_lines(
+      function_args["path"].as_str().unwrap(),
+      Some(function_args["start_line"].as_u64().unwrap() as usize),
+      Some(function_args["end_line"].as_u64().unwrap() as usize),
+      function_args["replace_text"].as_str().unwrap(),
+    ),
+    "cargo_check" => cargo_check(),
+    _ => Ok(None),
+  };
+  match function_call_result {
+    Ok(Some(output)) => {
+      function_results.push(ChatCompletionRequestMessage {
+        name: Some("Sazid".to_string()),
+        role: Role::Function,
+        content: Some(output),
+        ..Default::default()
+      });
+    },
+    Ok(None) => {},
+    Err(e) => {
+      function_results.push(ChatCompletionRequestMessage {
+        name: Some("Sazid".to_string()),
+        role: Role::Function,
+        content: Some(format!("Error: {:?}", e)),
+        ..Default::default()
+      });
+    },
   }
   if function_results.is_empty() {
     None

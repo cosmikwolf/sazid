@@ -9,7 +9,7 @@ use futures::StreamExt;
 use ratatui::layout::Rect;
 use ratatui::{prelude::*, widgets::block::*, widgets::*};
 use serde_derive::{Deserialize, Serialize};
-use std::error::Error;
+use serde_json::json;
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 use std::{fs, io};
@@ -25,7 +25,9 @@ use crate::trace_dbg;
 use crate::tui::Event;
 use crate::{action::Action, config::Config};
 
-use crate::app::gpt_interface::{create_chat_completion_function_args, define_commands};
+use crate::app::gpt_interface::{
+  cargo_check, create_chat_completion_function_args, define_commands, list_dir, read_file_lines, replace_lines,
+};
 use crate::app::tools::utils::ensure_directory_exists;
 use crate::components::home::Mode;
 
@@ -45,7 +47,8 @@ impl Default for SessionConfig {
     SessionConfig {
       session_id: Self::generate_session_id(),
       openai_config: OpenAIConfig::default(),
-      model: GPT4.clone(),
+      model: GPT3_TURBO_16K.clone(),
+      //model: GPT4.clone(),
       include_functions: true,
       stream_response: true,
     }
@@ -97,6 +100,10 @@ pub struct Session {
   pub horizontal_scroll: usize,
   #[serde(skip)]
   pub render: bool,
+  #[serde(skip)]
+  pub fn_name: Option<String>,
+  #[serde(skip)]
+  pub fn_args: Option<String>,
 }
 
 impl Component for Session {
@@ -120,9 +127,13 @@ impl Component for Session {
       Action::SubmitInput(s) => {
         self.request_response(s, tx);
       },
+      Action::RequestChatCompletion(request_messages) => self.request_chat_completion(request_messages),
       Action::ProcessResponse(boxed_id_response) => {
         let (transaction_id, response) = *boxed_id_response;
-        self.process_response_handler(tx, transaction_id, response);
+        self.response_handler(tx, transaction_id, response);
+      },
+      Action::CallFunction(fn_name, fn_args) => {
+        self.handle_chat_response_function_call(tx, fn_name, fn_args);
       },
       Action::SelectModel(model) => self.config.model = model,
       _ => (),
@@ -211,6 +222,7 @@ impl Session {
   fn get_previous_request_messages(&self) -> Vec<ChatCompletionRequestMessage> {
     self.transactions.iter().flat_map(|transaction| transaction.request.messages.clone()).collect()
   }
+
   pub fn get_full_text(&self) -> Text<'_> {
     self
       .transactions
@@ -223,20 +235,23 @@ impl Session {
   }
 
   pub fn request_response(&mut self, input: String, tx: UnboundedSender<Action>) {
-    //let tx = self.action_tx.clone().unwrap();
     let previous_requests = self.get_previous_request_messages();
     let request_messages =
       construct_chat_completion_request_message(&input, Role::User, &self.config.model, Some(previous_requests), None)
         .unwrap();
+    self.request_chat_completion(request_messages);
+  }
+
+  pub fn request_chat_completion(&mut self, request_messages: Vec<ChatCompletionRequestMessage>) {
+    let tx = self.action_tx.clone().unwrap();
     let functions = match self.config.include_functions {
       true => Some(create_chat_completion_function_args(define_commands())),
       false => None,
     };
     let request = construct_request(request_messages, &self.config, functions);
     let stream_response = self.config.stream_response;
-    let openai_config = self.config.openai_config.clone();
-    format!("Request: {:#?}", request.clone());
 
+    let openai_config = self.config.openai_config.clone();
     tx.send(Action::EnterProcessing).unwrap();
     let client = create_openai_client(openai_config);
     let txn = Transaction::new(request);
@@ -276,18 +291,84 @@ impl Session {
     });
   }
 
-  pub fn process_response_handler(
-    &mut self,
-    tx: UnboundedSender<Action>,
-    transaction_id: String,
-    response: ChatResponse,
-  ) {
+  pub fn response_handler(&mut self, tx: UnboundedSender<Action>, transaction_id: String, response: ChatResponse) {
     trace_dbg!("response handler");
     self.transactions.iter_mut().find(|txn| txn.id == transaction_id).unwrap().responses.push(response.clone());
     for txn in self.transactions.iter_mut() {
       txn.render()
     }
+
+    match response {
+      ChatResponse::StreamResponse(response) => {
+        for chat_choice in response.choices {
+          if let Some(fn_call) = &chat_choice.delta.function_call {
+            if let Some(name) = &fn_call.name {
+              self.fn_name = Some(name.clone());
+            }
+            if let Some(args) = &fn_call.arguments {
+              if let Some(fn_args) = &mut self.fn_args {
+                fn_args.push_str(args.as_str());
+              } else {
+                self.fn_args = Some(args.clone());
+              }
+            }
+          }
+          if let Some(finish_reason) = &chat_choice.finish_reason {
+            if finish_reason == "function_call" && self.fn_args.is_some() && self.fn_name.is_some() {
+              tx.send(Action::CallFunction(self.fn_name.clone().unwrap(), self.fn_args.clone().unwrap())).unwrap();
+            }
+          }
+        }
+      },
+      ChatResponse::Response(_response) => {
+        trace_dbg!("unhandled funtion response");
+      },
+    }
     tx.send(Action::Update).unwrap();
+  }
+
+  pub fn handle_chat_response_function_call(&self, tx: UnboundedSender<Action>, fn_name: String, fn_args: String) {
+    let function_args: serde_json::Value = fn_args.parse().unwrap_or(json!("{}"));
+    let function_call_result: Result<Option<String>, std::io::Error> = match fn_name.as_str() {
+      "list_dir" => list_dir(function_args["path"].as_str().unwrap()),
+      "read_lines" => read_file_lines(
+        function_args["path"].as_str().unwrap_or_default(),
+        Some(function_args["start_line"].as_u64().unwrap_or_default() as usize),
+        Some(function_args["end_line"].as_u64().unwrap_or_default() as usize),
+      ),
+      "replace_lines" => replace_lines(
+        function_args["path"].as_str().unwrap(),
+        Some(function_args["start_line"].as_u64().unwrap() as usize),
+        Some(function_args["end_line"].as_u64().unwrap() as usize),
+        function_args["replace_text"].as_str().unwrap(),
+      ),
+      "cargo_check" => cargo_check(),
+      _ => Ok(None),
+    };
+    let mut request_messages = self.get_previous_request_messages();
+    trace_dbg!("handle function {} {}", fn_name, fn_args);
+    match function_call_result {
+      Ok(Some(output)) => {
+        trace_dbg!("function call result: {}", output);
+
+        request_messages.push(ChatCompletionRequestMessage {
+          name: Some("Sazid".to_string()),
+          role: Role::Function,
+          content: Some(output),
+          ..Default::default()
+        });
+      },
+      Ok(None) => {},
+      Err(e) => {
+        request_messages.push(ChatCompletionRequestMessage {
+          name: Some("Sazid".to_string()),
+          role: Role::Function,
+          content: Some(format!("Error: {:?}", e)),
+          ..Default::default()
+        });
+      },
+    }
+    tx.send(Action::RequestChatCompletion(request_messages)).unwrap();
   }
 
   pub fn load_session_by_id(session_id: String) -> Session {

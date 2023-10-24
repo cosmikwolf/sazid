@@ -2,7 +2,6 @@ use crate::{app::consts::*, trace_dbg};
 
 use async_openai::{
   self,
-  config::OpenAIConfig,
   types::{
     CreateChatCompletionRequest, CreateChatCompletionResponse, CreateChatCompletionStreamResponse, FunctionCall,
     FunctionCallStream, Role,
@@ -10,7 +9,13 @@ use async_openai::{
 };
 use clap::Parser;
 
-use bat::{assets::HighlightingAssets, config::Config, controller::Controller, Input};
+use bat::{
+  assets::HighlightingAssets,
+  config::Config,
+  controller::Controller,
+  style::{StyleComponent, StyleComponents},
+  Input,
+};
 use serde::{Deserialize, Serialize};
 use std::{collections::BTreeMap, ffi::OsString, path::PathBuf};
 
@@ -56,6 +61,7 @@ pub struct Transaction {
   pub responses: Vec<ChatResponse>,
   pub rendered: Vec<RenderedChatMessage>,
   pub completed: bool,
+  pub stylized_lines: usize,
   pub styled: bool,
 }
 
@@ -64,52 +70,15 @@ use futures::StreamExt;
 impl Transaction {
   pub fn new(request: CreateChatCompletionRequest) -> Self {
     let id = uuid::Uuid::new_v4().to_string();
-    Transaction { id, request, responses: Vec::new(), rendered: Vec::new(), completed: false, styled: false }
-  }
-
-  pub fn new_request<R, C, E>(
-    &self,
-    response_callback: R,
-    complete_callback: C,
-    error_callback: E,
-    client: async_openai::Client<OpenAIConfig>,
-    stream_response: bool,
-  ) where
-    R: Fn(ChatResponse) + Send + 'static,
-    C: Fn() + Send + 'static,
-    E: Fn(String) + Send + 'static,
-  {
-    let request = self.request.clone();
-    tokio::spawn(async move {
-      match stream_response {
-        true => {
-          // let mut stream: Pin<Box<dyn StreamExt<Item = Result<CreateChatCompletionStreamResponse, OpenAIError>> + Send>> =
-          let mut stream = client.chat().create_stream(request).await.unwrap();
-          while let Some(response_result) = stream.next().await {
-            match response_result {
-              Ok(response) => {
-                trace_dbg!("Response: {:#?}", response);
-                response_callback(ChatResponse::StreamResponse(response));
-              },
-              Err(e) => {
-                trace_dbg!("Error: {:#?} -- check https://status.openai.com/", e);
-                error_callback(format!("Error: {:#?} -- check https://status.openai.com/", e));
-              },
-            }
-          }
-        },
-        false => match client.chat().create(request).await {
-          Ok(response) => {
-            response_callback(ChatResponse::Response(response));
-          },
-          Err(e) => {
-            trace_dbg!("Error: {}", e);
-            error_callback(format!("Error: {:#?} -- check https://status.openai.com/", e));
-          },
-        },
-      };
-      complete_callback();
-    });
+    Transaction {
+      id,
+      request,
+      responses: Vec::new(),
+      rendered: Vec::new(),
+      completed: false,
+      styled: false,
+      stylized_lines: 0,
+    }
   }
 
   pub fn render(&mut self) {
@@ -159,7 +128,7 @@ impl Transaction {
       self.rendered.clear();
       self.rendered.push(rendered_request);
       self.rendered.append(&mut rendered_responses);
-      self.stylize();
+      //self.stylize();
     }
   }
 
@@ -167,15 +136,35 @@ impl Transaction {
     if self.styled {
       return;
     }
-    let config = Config { colored_output: true, language: Some("markdown"), ..Default::default() };
+    let style_components = StyleComponents::new(&[
+      StyleComponent::Header,
+      StyleComponent::Grid,
+      StyleComponent::LineNumbers,
+      StyleComponent::Changes,
+      StyleComponent::Rule,
+      StyleComponent::Snip,
+      StyleComponent::Plain,
+    ]);
+    let config = Config { colored_output: true, language: Some("markdown"), style_components, ..Default::default() };
     let assets = HighlightingAssets::from_binary();
     let controller = Controller::new(&config, &assets);
     for rendered in self.rendered.iter_mut() {
       if let Some(content) = &mut rendered.content {
-        let cloned_content = content.clone();
-        let input = Input::from_bytes(cloned_content.as_bytes());
-        content.clear();
-        controller.run(vec![input.into()], Some(content)).unwrap();
+        let content_clone = content.clone();
+        if let Some(last_newline) = content_clone.rfind('\n') {
+          let (left, right) = content_clone.split_at(last_newline);
+          let input = Input::from_bytes(right.as_bytes());
+          let mut buffer = String::new();
+          content.clear();
+          controller.run(vec![input.into()], Some(&mut buffer)).unwrap();
+          content.push_str(left);
+          content.push_str(buffer.as_str());
+          self.stylized_lines += 1;
+        } else {
+          let input = Input::from_bytes(content_clone.as_bytes());
+          content.clear();
+          controller.run(vec![input.into()], Some(content)).unwrap();
+        };
       }
     }
     if self.completed {
