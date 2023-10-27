@@ -27,8 +27,7 @@ use crate::tui::Event;
 use crate::{action::Action, config::Config};
 
 use crate::app::gpt_interface::{
-  cargo_check, create_chat_completion_function_args, define_commands, get_accessible_file_paths, list_files,
-  read_file_lines, replace_lines,
+  cargo_check, create_chat_completion_function_args, define_commands, list_files, read_file_lines, replace_lines,
 };
 use crate::app::tools::utils::ensure_directory_exists;
 use crate::components::home::Mode;
@@ -242,7 +241,7 @@ impl Session {
       .unwrap()
   }
 
-  pub fn request_response(&mut self, input: String, tx: UnboundedSender<Action>) {
+  pub fn request_response(&mut self, input: String, _tx: UnboundedSender<Action>) {
     let previous_requests = self.get_previous_request_messages();
     let request_messages = construct_chat_completion_request_message(
       &input,
@@ -347,15 +346,6 @@ impl Session {
     tx.send(Action::Update).unwrap();
   }
 
-  fn json_to_hashmap(json: &str, keys: Vec<&str>) -> Result<HashMap<String, Value>, SazidError> {
-    let mut lookup: HashMap<String, Value> = serde_json::from_str(json).unwrap();
-    let mut map = HashMap::new();
-    for key in keys {
-      let (k, v) = lookup.remove_entry(key).unwrap();
-      map.insert(k, v);
-    }
-    Ok(map)
-  }
   pub fn execute_function_call(&self, fn_name: String, fn_args: String) -> Result<Option<String>, FunctionCallError> {
     let function_args: Result<HashMap<String, Value>, serde_json::Error> = serde_json::from_str(fn_args.as_str());
     match function_args {
@@ -492,7 +482,7 @@ pub fn create_openai_client(openai_config: OpenAIConfig) -> async_openai::Client
 
 pub fn construct_chat_completion_request_message(
   content: &str,
-  name: &str,
+  _name: &str,
   role: Role,
   model: &Model,
   previous_requests: Option<Vec<ChatCompletionRequestMessage>>,

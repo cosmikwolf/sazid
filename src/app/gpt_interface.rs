@@ -23,12 +23,6 @@ pub struct GPTConnector {
   pub model: Model,
 }
 
-fn append_to_path(p: PathBuf, s: &str) -> PathBuf {
-  let mut p = p.into_os_string();
-  p.push(s);
-  p.into()
-}
-
 pub fn get_accessible_file_paths(list_file_paths: Vec<PathBuf>) -> HashMap<String, PathBuf> {
   // Define the base directory you want to start the search from.
   let base_dir = PathBuf::from("./");

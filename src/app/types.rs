@@ -1,4 +1,4 @@
-use crate::{app::consts::*, trace_dbg};
+use crate::app::consts::*;
 
 use async_openai::{
   self,
@@ -130,6 +130,7 @@ impl Transaction {
     }
   }
 
+  #[allow(dead_code)]
   fn stylize(&mut self) {
     if self.styled {
       return;
