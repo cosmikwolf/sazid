@@ -72,30 +72,35 @@ pub fn read_file_lines(
       },
     };
 
-    if let (Some(start), Some(end)) = (start_line, end_line) {
-      // Ensure start and end lines are within bounds.
-      if start > file_contents.len() || end > file_contents.len() || start > end {
-        return Err(FunctionCallError::new("Invalid start or end line numbers."));
+    // individually validate start_line and end_line and make sure that if they are Some(value) that they are within the respective bounds of the file
+
+    if let Some(start_line) = start_line {
+      if start_line > file_contents.len() {
+        return Err(FunctionCallError::new("Invalid start line number."));
       }
-
-      let selected_lines: Vec<String> = file_contents[start - 1..end].to_vec();
-      let output = selected_lines.join("\n");
-
-      let token_count = count_tokens(&output);
-      if token_count > reply_max_tokens {
-        return Ok(Some(format!("Function Token limit exceeded: {} tokens.", token_count)));
-      }
-
-      Ok(Some(format!(
-        "----------\nFile: {}\nSize: {} lines\n{}\n-----------\n{}",
-        file,
-        file_contents.len(),
-        output,
-        token_count
-      )))
-    } else {
-      Ok(Some(format!("File: {}\nSize: {} lines\n{}", file, file_contents.len(), file_contents.join("\n"))))
     }
+
+    if let Some(end_line) = end_line {
+      if end_line > file_contents.len() {
+        return Err(FunctionCallError::new("Invalid end line number."));
+      }
+    }
+    let selected_lines: Vec<String> =
+      file_contents[start_line.unwrap_or(0)..end_line.unwrap_or(file_contents.len())].to_vec();
+    let output = selected_lines.join("\n");
+
+    let token_count = count_tokens(&output);
+    if token_count > reply_max_tokens {
+      return Ok(Some(format!("Function Token limit exceeded: {} tokens.", token_count)));
+    }
+
+    Ok(Some(format!(
+      "----------\nFile: {}\nSize: {} lines\n{}\n-----------\n{}",
+      file,
+      file_contents.len(),
+      output,
+      token_count
+    )))
   } else {
     Err(FunctionCallError::new("File not found or not accessible."))
   }

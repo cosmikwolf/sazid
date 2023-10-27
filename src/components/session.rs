@@ -345,27 +345,31 @@ impl Session {
     }
     tx.send(Action::Update).unwrap();
   }
-
   pub fn execute_function_call(&self, fn_name: String, fn_args: String) -> Result<Option<String>, FunctionCallError> {
     let function_args: Result<HashMap<String, Value>, serde_json::Error> = serde_json::from_str(fn_args.as_str());
     match function_args {
-      Ok(function_args) => match fn_name.as_str() {
-        "list_files" => list_files(self.config.function_result_max_tokens, self.config.list_file_paths.clone()),
-        "read_lines" => read_file_lines(
-          function_args["path"].as_str().unwrap_or_default(),
-          Some(function_args["start_line"].as_u64().unwrap_or_default() as usize),
-          Some(function_args["end_line"].as_u64().unwrap_or_default() as usize),
-          self.config.function_result_max_tokens,
-          self.config.list_file_paths.clone(),
-        ),
-        "replace_lines" => replace_lines(
-          function_args["path"].as_str().unwrap(),
-          Some(function_args["start_line"].as_u64().unwrap() as usize),
-          Some(function_args["end_line"].as_u64().unwrap() as usize),
-          function_args["replace_text"].as_str().unwrap(),
-        ),
-        "cargo_check" => cargo_check(),
-        _ => Ok(None),
+      Ok(function_args) => {
+        let start_line: Option<usize> = function_args.get("start_line").and_then(|s| s.as_u64().map(|u| u as usize));
+        let end_line: Option<usize> = function_args.get("end_line").and_then(|s| s.as_u64().map(|u| u as usize));
+
+        match fn_name.as_str() {
+          "list_files" => list_files(self.config.function_result_max_tokens, self.config.list_file_paths.clone()),
+          "read_lines" => read_file_lines(
+            function_args["path"].as_str().unwrap_or_default(),
+            start_line,
+            end_line,
+            self.config.function_result_max_tokens,
+            self.config.list_file_paths.clone(),
+          ),
+          "replace_lines" => replace_lines(
+            function_args["path"].as_str().unwrap(),
+            Some(function_args["start_line"].as_u64().unwrap() as usize),
+            Some(function_args["end_line"].as_u64().unwrap() as usize),
+            function_args["replace_text"].as_str().unwrap(),
+          ),
+          "cargo_check" => cargo_check(),
+          _ => Ok(None),
+        }
       },
       Err(e) => Err(FunctionCallError::new(format!("Failed to parse function arguments: {}", e).as_str())),
     }
