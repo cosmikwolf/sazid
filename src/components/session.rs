@@ -3,14 +3,15 @@ use async_openai::types::{
   ChatCompletionFunctions, ChatCompletionRequestMessage, CreateChatCompletionRequest, CreateEmbeddingRequestArgs,
   CreateEmbeddingResponse, FunctionCall, Role,
 };
-use color_eyre::eyre::Result;
 use crossterm::event::{KeyCode, KeyEvent};
 use futures::StreamExt;
 use ratatui::layout::Rect;
 use ratatui::{prelude::*, widgets::block::*, widgets::*};
 use serde_derive::{Deserialize, Serialize};
-use serde_json::json;
+use serde_json::Value;
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use std::result::Result;
 use std::time::{SystemTime, UNIX_EPOCH};
 use std::{fs, io};
 use tokio::sync::mpsc::UnboundedSender;
@@ -26,7 +27,8 @@ use crate::tui::Event;
 use crate::{action::Action, config::Config};
 
 use crate::app::gpt_interface::{
-  cargo_check, create_chat_completion_function_args, define_commands, list_dir, read_file_lines, replace_lines,
+  cargo_check, create_chat_completion_function_args, define_commands, get_accessible_file_paths, list_files,
+  read_file_lines, replace_lines,
 };
 use crate::app::tools::utils::ensure_directory_exists;
 use crate::components::home::Mode;
@@ -35,9 +37,12 @@ use crate::components::home::Mode;
 
 pub struct SessionConfig {
   pub session_id: String,
+  pub list_file_paths: Vec<PathBuf>,
   pub model: Model,
+  pub name: String,
   pub include_functions: bool,
   pub stream_response: bool,
+  pub function_result_max_tokens: usize,
   #[serde(skip)]
   pub openai_config: OpenAIConfig,
 }
@@ -47,7 +52,10 @@ impl Default for SessionConfig {
     SessionConfig {
       session_id: Self::generate_session_id(),
       openai_config: OpenAIConfig::default(),
-      model: GPT3_TURBO_16K.clone(),
+      list_file_paths: vec![],
+      model: GPT3_TURBO.clone(),
+      name: "Sazid Test".to_string(),
+      function_result_max_tokens: 1024,
       //model: GPT4.clone(),
       include_functions: true,
       stream_response: true,
@@ -63,7 +71,7 @@ impl SessionConfig {
 
   pub fn with_openai_api_key<S: Into<String>>(mut self, api_key: S) -> Self {
     log::info!("Using default OpenAI remote API");
-    self.openai_config = OpenAIConfig::new().with_api_key(api_key);
+    self.openai_config = OpenAIConfig::new().with_api_key(api_key).with_org_id("org-WagBLu0vLgiuEL12dylmcPFj");
     self
   }
 
@@ -107,21 +115,21 @@ pub struct Session {
 }
 
 impl Component for Session {
-  fn init(&mut self, _area: Rect) -> Result<()> {
+  fn init(&mut self, _area: Rect) -> Result<(), SazidError> {
     //let model_preference: Vec<Model> = vec![GPT4.clone(), GPT3_TURBO.clone(), WIZARDLM.clone()];
     //Session::select_model(model_preference, create_openai_client(self.config.openai_config.clone()));
     Ok(())
   }
-  fn register_action_handler(&mut self, tx: UnboundedSender<Action>) -> Result<()> {
+  fn register_action_handler(&mut self, tx: UnboundedSender<Action>) -> Result<(), SazidError> {
     trace_dbg!("register_session_action_handler");
     self.action_tx = Some(tx);
     Ok(())
   }
-  fn register_config_handler(&mut self, config: Config) -> Result<()> {
+  fn register_config_handler(&mut self, config: Config) -> Result<(), SazidError> {
     self.config = config.session_config;
     Ok(())
   }
-  fn update(&mut self, action: Action) -> Result<Option<Action>> {
+  fn update(&mut self, action: Action) -> Result<Option<Action>, SazidError> {
     let tx = self.action_tx.clone().unwrap();
     match action {
       Action::SubmitInput(s) => {
@@ -142,7 +150,7 @@ impl Component for Session {
     Ok(None)
   }
 
-  fn handle_events(&mut self, event: Option<Event>) -> Result<Option<Action>> {
+  fn handle_events(&mut self, event: Option<Event>) -> Result<Option<Action>, SazidError> {
     let r = match event {
       Some(Event::Key(key_event)) => self.handle_key_events(key_event)?,
       Some(Event::Mouse(mouse_event)) => self.handle_mouse_events(mouse_event)?,
@@ -151,7 +159,7 @@ impl Component for Session {
     Ok(r)
   }
 
-  fn handle_key_events(&mut self, key: KeyEvent) -> Result<Option<Action>> {
+  fn handle_key_events(&mut self, key: KeyEvent) -> Result<Option<Action>, SazidError> {
     self.last_events.push(key);
     match self.mode {
       Mode::Normal => match key.code {
@@ -175,7 +183,7 @@ impl Component for Session {
     }
   }
 
-  fn draw(&mut self, f: &mut Frame<'_>, area: Rect) -> Result<()> {
+  fn draw(&mut self, f: &mut Frame<'_>, area: Rect) -> Result<(), SazidError> {
     //trace_dbg!("calling draw from session");
     let rects = Layout::default()
       .direction(Direction::Vertical)
@@ -236,9 +244,15 @@ impl Session {
 
   pub fn request_response(&mut self, input: String, tx: UnboundedSender<Action>) {
     let previous_requests = self.get_previous_request_messages();
-    let request_messages =
-      construct_chat_completion_request_message(&input, Role::User, &self.config.model, Some(previous_requests), None)
-        .unwrap();
+    let request_messages = construct_chat_completion_request_message(
+      &input,
+      self.config.name.as_str(),
+      Role::User,
+      &self.config.model,
+      Some(previous_requests),
+      None,
+    )
+    .unwrap();
     self.request_chat_completion(request_messages);
   }
 
@@ -257,6 +271,11 @@ impl Session {
     let txn = Transaction::new(request);
     self.transactions.push(txn.clone());
     let request = txn.clone().request;
+    trace_dbg!("request: {:#?}", request.clone().messages[0].content);
+    // let debug = format!("request: {:#?}", request).replace("\\n", "\n");
+    // for line in debug.lines() {
+    //   trace_dbg!(line);
+    // }
     let id = txn.clone().id;
     tokio::spawn(async move {
       match stream_response {
@@ -266,7 +285,7 @@ impl Session {
           while let Some(response_result) = stream.next().await {
             match response_result {
               Ok(response) => {
-                trace_dbg!("Response: {:#?}", response);
+                trace_dbg!("Response: {:#?}", response.clone().choices[0].delta.content);
                 tx.send(Action::ProcessResponse(Box::new((id.clone(), ChatResponse::StreamResponse(response)))))
                   .unwrap();
               },
@@ -292,7 +311,7 @@ impl Session {
   }
 
   pub fn response_handler(&mut self, tx: UnboundedSender<Action>, transaction_id: String, response: ChatResponse) {
-    trace_dbg!("response handler");
+    //trace_dbg!("response handler");
     self.transactions.iter_mut().find(|txn| txn.id == transaction_id).unwrap().responses.push(response.clone());
     for txn in self.transactions.iter_mut() {
       txn.render()
@@ -314,6 +333,7 @@ impl Session {
             }
           }
           if let Some(finish_reason) = &chat_choice.finish_reason {
+            trace_dbg!("calling function: {:#?} {:#?}", self.fn_name, self.fn_args);
             if finish_reason == "function_call" && self.fn_args.is_some() && self.fn_name.is_some() {
               tx.send(Action::CallFunction(self.fn_name.clone().unwrap(), self.fn_args.clone().unwrap())).unwrap();
             }
@@ -327,30 +347,45 @@ impl Session {
     tx.send(Action::Update).unwrap();
   }
 
+  fn json_to_hashmap(json: &str, keys: Vec<&str>) -> Result<HashMap<String, Value>, SazidError> {
+    let mut lookup: HashMap<String, Value> = serde_json::from_str(json).unwrap();
+    let mut map = HashMap::new();
+    for key in keys {
+      let (k, v) = lookup.remove_entry(key).unwrap();
+      map.insert(k, v);
+    }
+    Ok(map)
+  }
+  pub fn execute_function_call(&self, fn_name: String, fn_args: String) -> Result<Option<String>, FunctionCallError> {
+    let function_args: Result<HashMap<String, Value>, serde_json::Error> = serde_json::from_str(fn_args.as_str());
+    match function_args {
+      Ok(function_args) => match fn_name.as_str() {
+        "list_files" => list_files(self.config.function_result_max_tokens, self.config.list_file_paths.clone()),
+        "read_lines" => read_file_lines(
+          function_args["path"].as_str().unwrap_or_default(),
+          Some(function_args["start_line"].as_u64().unwrap_or_default() as usize),
+          Some(function_args["end_line"].as_u64().unwrap_or_default() as usize),
+          self.config.function_result_max_tokens,
+          self.config.list_file_paths.clone(),
+        ),
+        "replace_lines" => replace_lines(
+          function_args["path"].as_str().unwrap(),
+          Some(function_args["start_line"].as_u64().unwrap() as usize),
+          Some(function_args["end_line"].as_u64().unwrap() as usize),
+          function_args["replace_text"].as_str().unwrap(),
+        ),
+        "cargo_check" => cargo_check(),
+        _ => Ok(None),
+      },
+      Err(e) => Err(FunctionCallError::new(format!("Failed to parse function arguments: {}", e).as_str())),
+    }
+  }
+
   pub fn handle_chat_response_function_call(&self, tx: UnboundedSender<Action>, fn_name: String, fn_args: String) {
-    let function_args: serde_json::Value = fn_args.parse().unwrap_or(json!("{}"));
-    let function_call_result: Result<Option<String>, std::io::Error> = match fn_name.as_str() {
-      "list_dir" => list_dir(function_args["path"].as_str().unwrap()),
-      "read_lines" => read_file_lines(
-        function_args["path"].as_str().unwrap_or_default(),
-        Some(function_args["start_line"].as_u64().unwrap_or_default() as usize),
-        Some(function_args["end_line"].as_u64().unwrap_or_default() as usize),
-      ),
-      "replace_lines" => replace_lines(
-        function_args["path"].as_str().unwrap(),
-        Some(function_args["start_line"].as_u64().unwrap() as usize),
-        Some(function_args["end_line"].as_u64().unwrap() as usize),
-        function_args["replace_text"].as_str().unwrap(),
-      ),
-      "cargo_check" => cargo_check(),
-      _ => Ok(None),
-    };
     let mut request_messages = self.get_previous_request_messages();
     trace_dbg!("handle function {} {}", fn_name, fn_args);
-    match function_call_result {
+    match self.execute_function_call(fn_name, fn_args) {
       Ok(Some(output)) => {
-        trace_dbg!("function call result: {}", output);
-
         request_messages.push(ChatCompletionRequestMessage {
           name: Some("Sazid".to_string()),
           role: Role::Function,
@@ -457,6 +492,7 @@ pub fn create_openai_client(openai_config: OpenAIConfig) -> async_openai::Client
 
 pub fn construct_chat_completion_request_message(
   content: &str,
+  name: &str,
   role: Role,
   model: &Model,
   previous_requests: Option<Vec<ChatCompletionRequestMessage>>,
@@ -468,6 +504,7 @@ pub fn construct_chat_completion_request_message(
     .iter()
     .map(|chunk| ChatCompletionRequestMessage {
       role: role.clone(),
+      //name: Some(name.to_string()),
       content: Some(chunk.clone()),
       function_call: function_call.clone(),
       ..Default::default()

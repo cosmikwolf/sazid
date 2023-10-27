@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use super::{Component, Frame};
-use crate::{action::Action, components::session::Session, config::Config, trace_dbg};
+use crate::{action::Action, app::errors::SazidError, components::session::Session, config::Config, trace_dbg};
 
 use color_eyre::eyre::Result;
 use crossterm::event::{KeyCode, KeyEvent};
@@ -43,17 +43,17 @@ impl Home {
 }
 
 impl Component for Home {
-  fn register_action_handler(&mut self, tx: UnboundedSender<Action>) -> Result<()> {
+  fn register_action_handler(&mut self, tx: UnboundedSender<Action>) -> Result<(), SazidError> {
     self.action_tx = Some(tx);
     Ok(())
   }
 
-  fn register_config_handler(&mut self, config: Config) -> Result<()> {
+  fn register_config_handler(&mut self, config: Config) -> Result<(), SazidError> {
     self.config = config;
     Ok(())
   }
 
-  fn update(&mut self, action: Action) -> Result<Option<Action>> {
+  fn update(&mut self, action: Action) -> Result<Option<Action>, SazidError> {
     match action {
       Action::Tick => self.tick(),
       // Action::Render => self.render_tick(),
@@ -86,7 +86,7 @@ impl Component for Home {
     Ok(None)
   }
 
-  fn handle_key_events(&mut self, key: KeyEvent) -> Result<Option<Action>> {
+  fn handle_key_events(&mut self, key: KeyEvent) -> Result<Option<Action>, SazidError> {
     self.last_events.push(key);
     let action = match self.mode {
       Mode::Normal | Mode::Processing => return Ok(None),
@@ -112,7 +112,7 @@ impl Component for Home {
     Ok(Some(action))
   }
 
-  fn draw(&mut self, f: &mut Frame<'_>, area: Rect) -> Result<()> {
+  fn draw(&mut self, f: &mut Frame<'_>, area: Rect) -> Result<(), SazidError> {
     let rects = Layout::default().constraints([Constraint::Percentage(100), Constraint::Min(3)].as_ref()).split(area);
     // let text: Vec<Line> = self.text.clone().iter().map(|l| Line::from(l.clone())).collect();
     let title_text = Line::from(vec![

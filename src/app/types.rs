@@ -65,8 +65,6 @@ pub struct Transaction {
   pub styled: bool,
 }
 
-use futures::StreamExt;
-
 impl Transaction {
   pub fn new(request: CreateChatCompletionRequest) -> Self {
     let id = uuid::Uuid::new_v4().to_string();

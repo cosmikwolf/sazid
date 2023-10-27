@@ -6,5 +6,8 @@
       "<Ctrl-c>": "Quit", // Yet another way to quit
       "<Ctrl-z>": "Suspend" // Suspend the application
     },
-  }
+  },
+  "list_file_paths": [
+    "src", "Cargo.toml"
+  ]
 }

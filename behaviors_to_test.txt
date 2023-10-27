@@ -1,0 +1,5 @@
+
+
+
+- when calling a function, if an error is reached, the app should go back to input mode
+

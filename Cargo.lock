@@ -2762,6 +2762,7 @@ dependencies = [
  "tracing-subscriber",
  "tui-input",
  "uuid",
+ "walkdir",
 ]
 
 [[package]]

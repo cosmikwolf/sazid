@@ -29,6 +29,8 @@ pub struct Config {
   pub keybindings: KeyBindings,
   #[serde(default)]
   pub styles: Styles,
+  #[serde(default)]
+  pub list_file_paths: Vec<PathBuf>,
 }
 
 impl Config {
@@ -67,7 +69,7 @@ impl Config {
         SessionConfig::default().with_openai_api_key(api_key)
       },
     };
-
+    cfg.session_config.list_file_paths = cfg.list_file_paths.clone();
     for (mode, default_bindings) in default_config.keybindings.iter() {
       let user_bindings = cfg.keybindings.entry(*mode).or_default();
       for (key, cmd) in default_bindings.iter() {

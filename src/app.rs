@@ -1,5 +1,3 @@
-
-use color_eyre::eyre::Result;
 use crossterm::event::KeyEvent;
 use ratatui::prelude::Rect;
 use serde::{Deserialize, Serialize};
@@ -17,6 +15,8 @@ use crate::{
   config::Config,
   tui,
 };
+
+use self::errors::SazidError;
 
 #[derive(Default, Debug, Copy, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum Mode {
@@ -36,10 +36,10 @@ pub struct App {
 }
 
 impl App {
-  pub fn new(tick_rate: f64, frame_rate: f64, local_api: bool) -> Result<Self> {
+  pub fn new(tick_rate: f64, frame_rate: f64, local_api: bool) -> Result<Self, SazidError> {
     let home = Home::new();
     let session = Session::new();
-    let config = Config::new(local_api)?;
+    let config = Config::new(local_api).unwrap();
     let mode = Mode::Home;
     Ok(Self {
       tick_rate,
@@ -53,39 +53,39 @@ impl App {
     })
   }
 
-  pub async fn run(&mut self) -> Result<()> {
+  pub async fn run(&mut self) -> Result<(), SazidError> {
     let (action_tx, mut action_rx) = mpsc::unbounded_channel();
 
-    let mut tui = tui::Tui::new()?;
+    let mut tui = tui::Tui::new().unwrap();
     tui.tick_rate(self.tick_rate);
     tui.frame_rate(self.frame_rate);
     // tui.mouse(true);
-    tui.enter()?;
+    tui.enter().unwrap();
 
     for component in self.components.iter_mut() {
-      component.register_action_handler(action_tx.clone())?;
+      component.register_action_handler(action_tx.clone()).unwrap();
     }
 
     for component in self.components.iter_mut() {
-      component.register_config_handler(self.config.clone())?;
+      component.register_config_handler(self.config.clone()).unwrap();
     }
 
     for component in self.components.iter_mut() {
-      component.init(tui.size()?)?;
+      component.init(tui.size().unwrap()).unwrap();
     }
 
     loop {
       if let Some(e) = tui.next().await {
         match e {
-          tui::Event::Quit => action_tx.send(Action::Quit)?,
-          tui::Event::Tick => action_tx.send(Action::Tick)?,
-          tui::Event::Render => action_tx.send(Action::Render)?,
-          tui::Event::Resize(x, y) => action_tx.send(Action::Resize(x, y))?,
+          tui::Event::Quit => action_tx.send(Action::Quit).unwrap(),
+          tui::Event::Tick => action_tx.send(Action::Tick).unwrap(),
+          tui::Event::Render => action_tx.send(Action::Render).unwrap(),
+          tui::Event::Resize(x, y) => action_tx.send(Action::Resize(x, y)).unwrap(),
           tui::Event::Key(key) => {
             if let Some(keymap) = self.config.keybindings.get(&self.mode) {
               if let Some(action) = keymap.get(&vec![key]) {
                 log::info!("Got action: {action:?}");
-                action_tx.send(action.clone())?;
+                action_tx.send(action.clone()).unwrap();
               } else {
                 // If the key was not handled as a single key action,
                 // then consider it for multi-key combinations.
@@ -94,7 +94,7 @@ impl App {
                 // Check for multi-key combinations
                 if let Some(action) = keymap.get(&self.last_tick_key_events) {
                   log::info!("Got action: {action:?}");
-                  action_tx.send(action.clone())?;
+                  action_tx.send(action.clone()).unwrap();
                 }
               }
             };
@@ -102,15 +102,15 @@ impl App {
           _ => {},
         }
         for component in self.components.iter_mut() {
-          if let Some(action) = component.handle_events(Some(e.clone()))? {
-            action_tx.send(action)?;
+          if let Some(action) = component.handle_events(Some(e.clone())).unwrap() {
+            action_tx.send(action).unwrap();
           }
         }
       }
 
       while let Ok(action) = action_rx.try_recv() {
         if action != Action::Tick && action != Action::Render {
-          log::debug!("{action:?}");
+          //          log::debug!("{action:.unwrap()}");
         }
         match action {
           Action::Tick => {
@@ -121,49 +121,53 @@ impl App {
           Action::Resume => self.should_suspend = false,
           Action::Resize(w, h) => {
             //trace_dbg!("Action::Resize");
-            tui.resize(Rect::new(0, 0, w, h))?;
-            tui.draw(|f| {
-              for component in self.components.iter_mut() {
-                let r = component.draw(f, f.size());
-                if let Err(e) = r {
-                  action_tx.send(Action::Error(format!("Failed to draw: {:?}", e))).unwrap();
+            tui.resize(Rect::new(0, 0, w, h)).unwrap();
+            tui
+              .draw(|f| {
+                for component in self.components.iter_mut() {
+                  let r = component.draw(f, f.size());
+                  if let Err(e) = r {
+                    action_tx.send(Action::Error(format!("Failed to draw: {:?}", e))).unwrap();
+                  }
                 }
-              }
-            })?;
+              })
+              .unwrap();
           },
           Action::Render => {
             //trace_dbg!("Action::Render");
-            tui.draw(|f| {
-              for component in self.components.iter_mut() {
-                let r = component.draw(f, f.size());
-                if let Err(e) = r {
-                  action_tx.send(Action::Error(format!("Failed to draw: {:?}", e))).unwrap();
+            tui
+              .draw(|f| {
+                for component in self.components.iter_mut() {
+                  let r = component.draw(f, f.size());
+                  if let Err(e) = r {
+                    action_tx.send(Action::Error(format!("Failed to draw: {:?}", e))).unwrap();
+                  }
                 }
-              }
-            })?;
+              })
+              .unwrap();
           },
           _ => {},
         }
         for component in self.components.iter_mut() {
-          if let Some(action) = component.update(action.clone())? {
-            action_tx.send(action)?
+          if let Some(action) = component.update(action.clone()).unwrap() {
+            action_tx.send(action).unwrap()
           };
         }
       }
       if self.should_suspend {
-        tui.suspend()?;
-        action_tx.send(Action::Resume)?;
-        tui = tui::Tui::new()?;
+        tui.suspend().unwrap();
+        action_tx.send(Action::Resume).unwrap();
+        tui = tui::Tui::new().unwrap();
         tui.tick_rate(self.tick_rate);
         tui.frame_rate(self.frame_rate);
         // tui.mouse(true);
-        tui.enter()?;
+        tui.enter().unwrap();
       } else if self.should_quit {
-        tui.stop()?;
+        tui.stop().unwrap();
         break;
       }
     }
-    tui.exit()?;
+    tui.exit().unwrap();
     Ok(())
   }
 }

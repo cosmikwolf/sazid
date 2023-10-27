@@ -62,9 +62,14 @@ mod tests {
   #[test]
   fn test_construct_chat_completion_request_message() {
     let session = Session::new();
-    if let Ok(create_chat_completion_request_message_result) =
-      construct_chat_completion_request_message("testing testing 1 2 3", Role::User, &session.config.model, None, None)
-    {
+    if let Ok(create_chat_completion_request_message_result) = construct_chat_completion_request_message(
+      "testing testing 1 2 3",
+      "testing",
+      Role::User,
+      &session.config.model,
+      None,
+      None,
+    ) {
       insta::assert_toml_snapshot!(create_chat_completion_request_message_result);
     } else {
       panic!("construct_chat_completion_request_message failed")

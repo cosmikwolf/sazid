@@ -129,8 +129,11 @@ pub fn initialize_logging() -> Result<()> {
 #[macro_export]
 macro_rules! trace_dbg {
     (target: $target:expr, level: $level:expr, $ex:expr) => {{
+        //let value = $ex;
+        //let formatted = format!("{:?}", value).replace("\\n", "\n");
         match $ex {
             value => {
+                //tracing::event!(target: $target, $level, ?value, ?formatted);
                 tracing::event!(target: $target, $level, ?value, stringify!($ex));
                 value
             }
@@ -147,6 +150,8 @@ macro_rules! trace_dbg {
     };
     // make trace_dbg compatible with formatted text
     ($($arg:tt)*) => {
+        //let value = $($arg)*;
+        //let res = format!(value);
         let res = format!($($arg)*);
         trace_dbg!(level: tracing::Level::DEBUG, res)
     }
