@@ -43,27 +43,51 @@ pub fn get_accessible_file_paths(list_file_paths: Vec<PathBuf>) -> HashMap<Strin
   file_paths
 }
 
+fn count_lines_and_format_search_results(
+  path: &str,
+  column_width: usize,
+  result_score: Option<&f32>,
+) -> Option<String> {
+  if !Path::new(path).is_file() {
+    return None;
+  }
+  match File::open(path) {
+    Ok(file) => {
+      trace_dbg!(path);
+      let reader = BufReader::new(file);
+      let linecount = reader.lines().count();
+      trace_dbg!("debug 3");
+      // format line that is below, but truncates s.1 to 2 decimal places
+      match result_score {
+        Some(score) => Some(format!("{:column_width$}\t{:<10}\t{} lines", path, score, linecount)),
+        None => Some(format!("{:column_width$}\t{} lines", path, linecount)),
+      }
+    },
+    Err(e) => Some(format!("error opening file path {} error: {}", path, e)),
+  }
+}
+
+fn get_column_width(strings: Vec<&str>) -> usize {
+  strings.iter().map(|s| s.len()).max().unwrap_or(0) + 2
+}
+
 pub fn file_search(
   reply_max_tokens: usize,
   list_file_paths: Vec<PathBuf>,
   search_term: Option<&str>,
 ) -> Result<Option<String>, FunctionCallError> {
   let paths = get_accessible_file_paths(list_file_paths);
-  let accessible_paths = paths.keys().map(|path| path.to_string()).collect::<Vec<String>>();
-  if accessible_paths.is_empty() {
-    return Ok(Some("no files are accessible. User must add files to the search path configuration".to_string()));
-  }
+  let accessible_paths = paths.keys().map(|path| path.as_str()).collect::<Vec<&str>>();
+  // find the length of the longest string in accessible_paths
   let search_results = if let Some(search) = search_term {
     trace_dbg!("searching with term: {}", search);
-    let fuzzy_search_result = rust_fuzzy_search::fuzzy_search_best_n(
-      search,
-      &accessible_paths.iter().map(String::as_ref).collect::<Vec<&str>>(),
-      3,
-    )
-    .iter()
-    .filter(|s| s.1 > 0.1)
-    .map(|s| format!("{} - {}", s.0, s.1))
-    .collect::<Vec<String>>();
+    let fuzzy_search_result = rust_fuzzy_search::fuzzy_search_threshold(search, &accessible_paths, 0.1);
+    let column_width = get_column_width(fuzzy_search_result.iter().map(|(s, _)| *s).collect());
+    let fuzzy_search_result = fuzzy_search_result
+      .iter()
+      .filter(|(_, result_score)| result_score > &0.1)
+      .filter_map(|(path, result_score)| count_lines_and_format_search_results(path, column_width, Some(result_score)))
+      .collect::<Vec<String>>();
     if fuzzy_search_result.is_empty() {
       return Ok(Some("no files matching search term found".to_string()));
     } else {
@@ -71,7 +95,16 @@ pub fn file_search(
     }
   } else {
     trace_dbg!("searching without a search term");
-    accessible_paths.join("\n")
+    if accessible_paths.is_empty() {
+      return Ok(Some("no files are accessible. User must add files to the search path configuration".to_string()));
+    } else {
+      let column_width = get_column_width(accessible_paths.clone());
+      accessible_paths
+        .iter()
+        .filter_map(|s| count_lines_and_format_search_results(s, column_width, None))
+        .collect::<Vec<String>>()
+        .join("\n")
+    }
   };
   let token_count = count_tokens(&search_results);
   if token_count > reply_max_tokens {
@@ -161,9 +194,36 @@ pub fn define_commands() -> Vec<Command> {
   //   }),
   // };
   let command = Command {
+    name: "create_file".to_string(),
+    description: Some("create a text file".to_string()),
+    parameters: Some(CommandParameters {
+      param_type: "object".to_string(),
+      required: vec![],
+      properties: HashMap::from([
+        (
+          "path".to_string(),
+          CommandProperty {
+            property_type: "string".to_string(),
+            description: Some("path to create file. all file paths must start with ./".to_string()),
+            enum_values: None,
+          },
+        ),
+        (
+          "text".to_string(),
+          CommandProperty {
+            property_type: "string".to_string(),
+            description: Some("text to enter into file".to_string()),
+            enum_values: None,
+          },
+        ),
+      ]),
+    }),
+  };
+  commands.push(command);
+  let command = Command {
     name: "file_search".to_string(),
     description: Some(
-      "search accessible file paths. file_search without arguments returns all accessible file paths".to_string(),
+      "search accessible file paths. file_search without arguments returns all accessible file paths. results include file line count".to_string(),
     ),
     parameters: Some(CommandParameters {
       param_type: "object".to_string(),
@@ -173,7 +233,7 @@ pub fn define_commands() -> Vec<Command> {
         CommandProperty {
           property_type: "string".to_string(),
           description: Some(
-            "fuzzy search for files by name or path. search results contain a match score.".to_string(),
+            "fuzzy search for files by name or path. search results contain a match score and line count.".to_string(),
           ),
           enum_values: None,
         },
@@ -217,11 +277,11 @@ pub fn define_commands() -> Vec<Command> {
   };
   commands.push(command);
   let command = Command {
-    name: "replace_lines".to_string(),
-    description: Some("replace lines in a text file".to_string()),
+    name: "modify_file".to_string(),
+    description: Some("modify a file by adding, removing, or replacing lines of text".to_string()),
     parameters: Some(CommandParameters {
       param_type: "object".to_string(),
-      required: vec!["path".to_string(), "start_line".to_string(), "end_line".to_string(), "replace_text".to_string()],
+      required: vec!["path".to_string(), "start_line".to_string()],
       properties: HashMap::from([
         (
           "path".to_string(),
@@ -235,7 +295,7 @@ pub fn define_commands() -> Vec<Command> {
           "start_line".to_string(),
           CommandProperty {
             property_type: "number".to_string(),
-            description: Some("line to start replace".to_string()),
+            description: Some("line number to begin add and remove".to_string()),
             enum_values: None,
           },
         ),
@@ -243,15 +303,15 @@ pub fn define_commands() -> Vec<Command> {
           "end_line".to_string(),
           CommandProperty {
             property_type: "number".to_string(),
-            description: Some("line to end replace".to_string()),
+            description: Some("last line to remove, starting at start_line. Omit end_line to insert text at starting line without removal".to_string()),
             enum_values: None,
           },
         ),
         (
-          "replace_text".to_string(),
+          "insert_text".to_string(),
           CommandProperty {
             property_type: "string".to_string(),
-            description: Some("replacement text".to_string()),
+            description: Some("text to insert at start_line, after optional removal".to_string()),
             enum_values: None,
           },
         ),
@@ -267,33 +327,51 @@ pub fn define_commands() -> Vec<Command> {
   // commands.push(command);
   commands
 }
-pub fn replace_lines(
-  path: &str,
-  start_line: Option<usize>,
-  end_line: Option<usize>,
-  replace_text: &str,
-) -> Result<Option<String>, FunctionCallError> {
-  let mut file_contents = String::new();
-  let end_line = match end_line {
-    Some(end_line) => end_line,
-    None => {
-      let file = std::fs::File::open(path)?;
-      let reader = std::io::BufReader::new(file);
-      reader.lines().count()
+pub fn create_file(path: &str, text: &str) -> Result<Option<String>, FunctionCallError> {
+  match File::create(path) {
+    Ok(mut file) => match file.write_all(text.as_bytes()) {
+      Ok(_) => Ok(Some("file created".to_string())),
+      Err(e) => Ok(Some(format!("error writing file: {}", e))),
     },
-  };
-  let start_line = start_line.unwrap_or(0);
-  let file = std::fs::File::open(path)?;
-  let reader = std::io::BufReader::new(file);
-  for (index, line) in reader.lines().enumerate() {
-    if index >= start_line && index <= end_line {
-      file_contents.push_str(&line?);
-      file_contents.push('\n');
-    }
+    Err(e) => Ok(Some(format!("error creating file at {}, error: {}", path, e))),
   }
-  let mut file = std::fs::File::create(path)?;
-  file.write_all(replace_text.as_bytes())?;
-  Ok(None)
+}
+
+pub fn modify_file(
+  path: &str,
+  start_line: usize,
+  end_line: Option<usize>,
+  insert_text: Option<&str>,
+) -> Result<Option<String>, FunctionCallError> {
+  match File::open(path) {
+    Ok(mut file) => {
+      let reader = std::io::BufReader::new(&file);
+      let mut new_lines: Vec<String> = reader.lines().map(|line| line.unwrap_or_default().to_string()).collect();
+      let file_line_count = new_lines.len();
+      if let Some(end_line) = end_line {
+        if end_line > file_line_count {
+          return Ok(Some("start_line + remove_line_count exceeds file length".to_string()));
+        } else {
+          // remove lines
+          new_lines = new_lines
+            .iter()
+            .enumerate()
+            .filter(|&(i, _)| i + 1 < start_line || i + 1 > end_line)
+            .map(|(_, line)| line.to_string())
+            .collect::<Vec<String>>();
+        }
+      }
+      if let Some(insert_text) = insert_text {
+        new_lines.insert(start_line - 1, insert_text.to_string());
+      }
+
+      match file.write_all(new_lines.join("\n").as_bytes()) {
+        Ok(_) => Ok(Some("file modified".to_string())),
+        Err(e) => Ok(Some(format!("error writing file modifications: {}", e))),
+      }
+    },
+    Err(e) => Ok(Some(format!("error opening file at {}, error: {}", path, e))),
+  }
 }
 
 pub fn cargo_check() -> Result<Option<String>, FunctionCallError> {

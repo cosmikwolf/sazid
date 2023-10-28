@@ -8,6 +8,6 @@
     },
   },
   "list_file_paths": [
-    "src", "Cargo.toml", "tmp/testfile"
+    "src", "Cargo.toml", ".data/session_files"
   ]
 }

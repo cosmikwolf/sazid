@@ -28,7 +28,8 @@ use crate::tui::Event;
 use crate::{action::Action, config::Config};
 
 use crate::app::gpt_interface::{
-  cargo_check, create_chat_completion_function_args, define_commands, file_search, read_file_lines, replace_lines,
+  cargo_check, create_chat_completion_function_args, create_file, define_commands, file_search, modify_file,
+  read_file_lines,
 };
 use crate::app::tools::utils::ensure_directory_exists;
 use crate::components::home::Mode;
@@ -357,6 +358,9 @@ impl Session {
         let search_term: Option<&str> = function_args.get("search_term").and_then(|s| s.as_str());
 
         match fn_name.as_str() {
+          "create_file" => {
+            create_file(function_args["path"].as_str().unwrap(), function_args["text"].as_str().unwrap())
+          },
           "file_search" => {
             file_search(self.config.function_result_max_tokens, self.config.list_file_paths.clone(), search_term)
           },
@@ -367,11 +371,11 @@ impl Session {
             self.config.function_result_max_tokens,
             self.config.list_file_paths.clone(),
           ),
-          "replace_lines" => replace_lines(
+          "modify_file" => modify_file(
             function_args["path"].as_str().unwrap(),
-            Some(function_args["start_line"].as_u64().unwrap() as usize),
-            Some(function_args["end_line"].as_u64().unwrap() as usize),
-            function_args["replace_text"].as_str().unwrap(),
+            start_line.unwrap_or(0),
+            end_line,
+            function_args["insert_text"].as_str(),
           ),
           "cargo_check" => cargo_check(),
           _ => Ok(None),
