@@ -28,7 +28,7 @@ use crate::tui::Event;
 use crate::{action::Action, config::Config};
 
 use crate::app::gpt_interface::{
-  cargo_check, create_chat_completion_function_args, define_commands, list_files, read_file_lines, replace_lines,
+  cargo_check, create_chat_completion_function_args, define_commands, file_search, read_file_lines, replace_lines,
 };
 use crate::app::tools::utils::ensure_directory_exists;
 use crate::components::home::Mode;
@@ -166,14 +166,14 @@ impl Component for Session {
         KeyCode::Char('j') => {
           self.vertical_scroll = self.vertical_scroll.saturating_add(1);
           self.vertical_scroll_state = self.vertical_scroll_state.position(self.vertical_scroll);
-          trace_dbg!("previous scroll {}", self.vertical_scroll);
+          //trace_dbg!("previous scroll {}", self.vertical_scroll);
           //self.vertical_scroll_state.prev();
           Ok(Some(Action::Update))
         },
         KeyCode::Char('k') => {
           self.vertical_scroll = self.vertical_scroll.saturating_sub(1);
           self.vertical_scroll_state = self.vertical_scroll_state.position(self.vertical_scroll);
-          trace_dbg!("next scroll {}", self.vertical_scroll);
+          //trace_dbg!("next scroll {}", self.vertical_scroll);
           //self.vertical_scroll_state.next();
           Ok(Some(Action::Update))
         },
@@ -271,7 +271,7 @@ impl Session {
     let txn = Transaction::new(request);
     self.transactions.push(txn.clone());
     let request = txn.clone().request;
-    trace_dbg!("request: {:#?}", request.clone().messages[0].content);
+    trace_dbg!("request: {:?}", request.clone().messages[0].content);
     // let debug = format!("request: {:#?}", request).replace("\\n", "\n");
     // for line in debug.lines() {
     //   trace_dbg!(line);
@@ -285,13 +285,13 @@ impl Session {
           while let Some(response_result) = stream.next().await {
             match response_result {
               Ok(response) => {
-                trace_dbg!("Response: {:#?}", response.clone().choices[0].delta.content);
+                trace_dbg!("Response: {:?}", response.clone());
                 tx.send(Action::ProcessResponse(Box::new((id.clone(), ChatResponse::StreamResponse(response)))))
                   .unwrap();
               },
               Err(e) => {
-                trace_dbg!("Error: {:#?} -- check https://status.openai.com/", e);
-                tx.send(Action::Error(format!("Error: {:#?} -- check https://status.openai.com/", e))).unwrap();
+                trace_dbg!("Error: {:?} -- check https://status.openai.com/", e);
+                tx.send(Action::Error(format!("Error: {:?} -- check https://status.openai.com/", e))).unwrap();
               },
             }
           }
@@ -333,9 +333,11 @@ impl Session {
             }
           }
           if let Some(finish_reason) = &chat_choice.finish_reason {
-            trace_dbg!("calling function: {:#?} {:#?}", self.fn_name, self.fn_args);
+            trace_dbg!("calling function:\nname:{:#?}\nargs:{:#?}", self.fn_name, self.fn_args);
             if finish_reason == "function_call" && self.fn_args.is_some() && self.fn_name.is_some() {
               tx.send(Action::CallFunction(self.fn_name.clone().unwrap(), self.fn_args.clone().unwrap())).unwrap();
+              self.fn_name = None;
+              self.fn_args = None;
             }
           }
         }
@@ -352,11 +354,11 @@ impl Session {
       Ok(function_args) => {
         let start_line: Option<usize> = function_args.get("start_line").and_then(|s| s.as_u64().map(|u| u as usize));
         let end_line: Option<usize> = function_args.get("end_line").and_then(|s| s.as_u64().map(|u| u as usize));
-        let search_term: Option<&str> = function_args.get("end_line").and_then(|s| s.as_str());
+        let search_term: Option<&str> = function_args.get("search_term").and_then(|s| s.as_str());
 
         match fn_name.as_str() {
-          "list_files" => {
-            list_files(self.config.function_result_max_tokens, self.config.list_file_paths.clone(), search_term)
+          "file_search" => {
+            file_search(self.config.function_result_max_tokens, self.config.list_file_paths.clone(), search_term)
           },
           "read_lines" => read_file_lines(
             function_args["path"].as_str().unwrap_or_default(),
@@ -376,7 +378,8 @@ impl Session {
         }
       },
       Err(e) => Err(FunctionCallError::new(
-        format!("Failed to parse function arguments: {:?} {:?} {}", fn_name, fn_args, e).as_str(),
+        format!("Failed to parse function arguments:\nfunction:{:?}\nargs:{:?}\nerror:{:?}", fn_name, fn_args, e)
+          .as_str(),
       )),
     }
   }

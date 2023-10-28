@@ -43,28 +43,41 @@ pub fn get_accessible_file_paths(list_file_paths: Vec<PathBuf>) -> HashMap<Strin
   file_paths
 }
 
-pub fn list_files(
+pub fn file_search(
   reply_max_tokens: usize,
   list_file_paths: Vec<PathBuf>,
   search_term: Option<&str>,
 ) -> Result<Option<String>, FunctionCallError> {
   let paths = get_accessible_file_paths(list_file_paths);
-  trace_dbg!("path count: {}", paths.len());
-  let path_list = paths.keys().map(|path| path.to_string()).collect::<Vec<String>>();
-  let concatenated_paths = if let Some(search) = search_term {
-    rust_fuzzy_search::fuzzy_search(search, &path_list.iter().map(String::as_ref).collect::<Vec<&str>>())
-      .iter()
-      .map(|s| format!("{} - {}", s.0, s.1))
-      .collect::<Vec<String>>()
-      .join("\n")
+  let accessible_paths = paths.keys().map(|path| path.to_string()).collect::<Vec<String>>();
+  if accessible_paths.is_empty() {
+    return Ok(Some("no files are accessible. User must add files to the search path configuration".to_string()));
+  }
+  let search_results = if let Some(search) = search_term {
+    trace_dbg!("searching with term: {}", search);
+    let fuzzy_search_result = rust_fuzzy_search::fuzzy_search_best_n(
+      search,
+      &accessible_paths.iter().map(String::as_ref).collect::<Vec<&str>>(),
+      3,
+    )
+    .iter()
+    .filter(|s| s.1 > 0.1)
+    .map(|s| format!("{} - {}", s.0, s.1))
+    .collect::<Vec<String>>();
+    if fuzzy_search_result.is_empty() {
+      return Ok(Some("no files matching search term found".to_string()));
+    } else {
+      fuzzy_search_result.join("\n")
+    }
   } else {
-    path_list.join("\n")
+    trace_dbg!("searching without a search term");
+    accessible_paths.join("\n")
   };
-  let token_count = count_tokens(&concatenated_paths);
+  let token_count = count_tokens(&search_results);
   if token_count > reply_max_tokens {
     return Ok(Some(format!("Function Token limit exceeded: {} tokens.", token_count)));
   }
-  Ok(Some(concatenated_paths))
+  Ok(Some(search_results))
 }
 
 pub fn read_file_lines(
@@ -148,18 +161,20 @@ pub fn define_commands() -> Vec<Command> {
   //   }),
   // };
   let command = Command {
-    name: "list_files".to_string(),
+    name: "file_search".to_string(),
     description: Some(
-      "List all files that are accessible to this session, or fuzzy search for a file path".to_string(),
+      "search accessible file paths. file_search without arguments returns all accessible file paths".to_string(),
     ),
     parameters: Some(CommandParameters {
       param_type: "object".to_string(),
-      required: vec!["path".to_string()],
+      required: vec![],
       properties: HashMap::from([(
-        "path".to_string(),
+        "search_term".to_string(),
         CommandProperty {
           property_type: "string".to_string(),
-          description: Some("fuzzy search term - returns file with match score".to_string()),
+          description: Some(
+            "fuzzy search for files by name or path. search results contain a match score.".to_string(),
+          ),
           enum_values: None,
         },
       )]),
@@ -168,7 +183,7 @@ pub fn define_commands() -> Vec<Command> {
   commands.push(command);
   let command = Command {
     name: "read_lines".to_string(),
-    description: Some("read lines from a file, with optional start and end lines".to_string()),
+    description: Some("read lines from an accessible file path".to_string()),
     parameters: Some(CommandParameters {
       param_type: "object".to_string(),
       required: vec!["path".to_string()],
@@ -185,7 +200,7 @@ pub fn define_commands() -> Vec<Command> {
           "start_line".to_string(),
           CommandProperty {
             property_type: "number".to_string(),
-            description: Some("line to start read".to_string()),
+            description: Some("line to start read - omit to read file from beginning".to_string()),
             enum_values: None,
           },
         ),
@@ -193,7 +208,7 @@ pub fn define_commands() -> Vec<Command> {
           "end_line".to_string(),
           CommandProperty {
             property_type: "number".to_string(),
-            description: Some("line to end read".to_string()),
+            description: Some("line to end read - omit to read file to EOF".to_string()),
             enum_values: None,
           },
         ),
@@ -236,7 +251,7 @@ pub fn define_commands() -> Vec<Command> {
           "replace_text".to_string(),
           CommandProperty {
             property_type: "string".to_string(),
-            description: Some("text to replace removed lines".to_string()),
+            description: Some("replacement text".to_string()),
             enum_values: None,
           },
         ),
@@ -312,7 +327,7 @@ mod test {
 
   #[test]
   fn test_list_dir() {
-    let dir_contents = super::list_files(1024, vec![PathBuf::from("src".to_string())], None);
+    let dir_contents = super::file_search(1024, vec![PathBuf::from("src".to_string())], None);
     assert!(dir_contents.is_ok());
   }
 
