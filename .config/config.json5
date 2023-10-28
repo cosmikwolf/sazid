@@ -8,6 +8,6 @@
     },
   },
   "list_file_paths": [
-    "src", "Cargo.toml"
+    "src", "Cargo.toml", "tmp/testfile"
   ]
 }

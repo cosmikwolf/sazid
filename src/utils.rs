@@ -6,7 +6,9 @@ use lazy_static::lazy_static;
 use tracing::error;
 
 use tracing_error::ErrorLayer;
-use tracing_subscriber::{self, prelude::__tracing_subscriber_SubscriberExt, util::SubscriberInitExt, Layer};
+use tracing_subscriber::{
+  self, fmt::format, prelude::__tracing_subscriber_SubscriberExt, util::SubscriberInitExt, Layer,
+};
 
 lazy_static! {
   pub static ref PROJECT_NAME: String = env!("CARGO_CRATE_NAME").to_uppercase().to_string();
@@ -111,7 +113,10 @@ pub fn initialize_logging() -> Result<()> {
     .with_line_number(true)
     .with_writer(log_file)
     .with_target(false)
-    .with_ansi(false)
+    .pretty()
+    .fmt_fields(format::PrettyFields::new())
+    .with_ansi(true)
+    .without_time()
     .with_filter(tracing_subscriber::filter::EnvFilter::from_default_env());
   // a filter that removes the trace level
   //  .with_filter(filter::filter_fn(|metadata| {
@@ -134,7 +139,8 @@ macro_rules! trace_dbg {
         match $ex {
             value => {
                 //tracing::event!(target: $target, $level, ?value, ?formatted);
-                tracing::event!(target: $target, $level, ?value, stringify!($ex));
+                tracing::event!(target: $target, $level, %value, stringify!($ex));
+                //tracing::event!(target: $target, $level, ?value, stringify!($ex));
                 value
             }
         }

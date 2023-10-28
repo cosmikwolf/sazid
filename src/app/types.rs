@@ -114,7 +114,7 @@ impl Transaction {
                 match rendered_message.function_call {
                   Some(ref mut rendered_function_call) => {
                     rendered_function_call.name += function_call.name.unwrap_or("".to_string()).as_str();
-                    rendered_function_call.arguments += function_call.arguments.unwrap_or("".to_string()).as_str();
+                    rendered_function_call.arguments += function_call.arguments.unwrap_or("-*-".to_string()).as_str();
                   },
                   None => rendered_message.function_call = Some(function_call.into()),
                 }

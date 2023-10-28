@@ -3,6 +3,7 @@ use async_openai::types::{
   ChatCompletionFunctions, ChatCompletionRequestMessage, CreateChatCompletionRequest, CreateEmbeddingRequestArgs,
   CreateEmbeddingResponse, FunctionCall, Role,
 };
+
 use crossterm::event::{KeyCode, KeyEvent};
 use futures::StreamExt;
 use ratatui::layout::Rect;
@@ -351,9 +352,12 @@ impl Session {
       Ok(function_args) => {
         let start_line: Option<usize> = function_args.get("start_line").and_then(|s| s.as_u64().map(|u| u as usize));
         let end_line: Option<usize> = function_args.get("end_line").and_then(|s| s.as_u64().map(|u| u as usize));
+        let search_term: Option<&str> = function_args.get("end_line").and_then(|s| s.as_str());
 
         match fn_name.as_str() {
-          "list_files" => list_files(self.config.function_result_max_tokens, self.config.list_file_paths.clone()),
+          "list_files" => {
+            list_files(self.config.function_result_max_tokens, self.config.list_file_paths.clone(), search_term)
+          },
           "read_lines" => read_file_lines(
             function_args["path"].as_str().unwrap_or_default(),
             start_line,
@@ -371,13 +375,18 @@ impl Session {
           _ => Ok(None),
         }
       },
-      Err(e) => Err(FunctionCallError::new(format!("Failed to parse function arguments: {}", e).as_str())),
+      Err(e) => Err(FunctionCallError::new(
+        format!("Failed to parse function arguments: {:?} {:?} {}", fn_name, fn_args, e).as_str(),
+      )),
     }
   }
 
   pub fn handle_chat_response_function_call(&self, tx: UnboundedSender<Action>, fn_name: String, fn_args: String) {
     let mut request_messages = self.get_previous_request_messages();
-    trace_dbg!("handle function {} {}", fn_name, fn_args);
+    trace_dbg!("handle function name:");
+    trace_dbg!(&fn_name);
+    trace_dbg!(&fn_args);
+
     match self.execute_function_call(fn_name, fn_args) {
       Ok(Some(output)) => {
         request_messages.push(ChatCompletionRequestMessage {

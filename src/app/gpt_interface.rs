@@ -1,5 +1,3 @@
-use color_eyre::eyre::Result;
-
 use async_openai::{config::OpenAIConfig, types::ChatCompletionFunctions, Client};
 use tiktoken_rs::cl100k_base;
 
@@ -14,6 +12,7 @@ use std::{
 };
 
 use super::errors::FunctionCallError;
+use rust_fuzzy_search;
 
 #[derive(Clone)]
 pub struct GPTConnector {
@@ -44,10 +43,23 @@ pub fn get_accessible_file_paths(list_file_paths: Vec<PathBuf>) -> HashMap<Strin
   file_paths
 }
 
-pub fn list_files(reply_max_tokens: usize, list_file_paths: Vec<PathBuf>) -> Result<Option<String>, FunctionCallError> {
+pub fn list_files(
+  reply_max_tokens: usize,
+  list_file_paths: Vec<PathBuf>,
+  search_term: Option<&str>,
+) -> Result<Option<String>, FunctionCallError> {
   let paths = get_accessible_file_paths(list_file_paths);
   trace_dbg!("path count: {}", paths.len());
-  let concatenated_paths: String = paths.keys().map(|path| path.to_string()).collect::<Vec<String>>().join("\n");
+  let path_list = paths.keys().map(|path| path.to_string()).collect::<Vec<String>>();
+  let concatenated_paths = if let Some(search) = search_term {
+    rust_fuzzy_search::fuzzy_search(search, &path_list.iter().map(String::as_ref).collect::<Vec<&str>>())
+      .iter()
+      .map(|s| format!("{} - {}", s.0, s.1))
+      .collect::<Vec<String>>()
+      .join("\n")
+  } else {
+    path_list.join("\n")
+  };
   let token_count = count_tokens(&concatenated_paths);
   if token_count > reply_max_tokens {
     return Ok(Some(format!("Function Token limit exceeded: {} tokens.", token_count)));
@@ -137,8 +149,21 @@ pub fn define_commands() -> Vec<Command> {
   // };
   let command = Command {
     name: "list_files".to_string(),
-    description: Some("List files that are accessible to this session".to_string()),
-    parameters: None,
+    description: Some(
+      "List all files that are accessible to this session, or fuzzy search for a file path".to_string(),
+    ),
+    parameters: Some(CommandParameters {
+      param_type: "object".to_string(),
+      required: vec!["path".to_string()],
+      properties: HashMap::from([(
+        "path".to_string(),
+        CommandProperty {
+          property_type: "string".to_string(),
+          description: Some("fuzzy search term - returns file with match score".to_string()),
+          enum_values: None,
+        },
+      )]),
+    }),
   };
   commands.push(command);
   let command = Command {
@@ -287,7 +312,7 @@ mod test {
 
   #[test]
   fn test_list_dir() {
-    let dir_contents = super::list_files(1024, vec![PathBuf::from("src".to_string())]);
+    let dir_contents = super::list_files(1024, vec![PathBuf::from("src".to_string())], None);
     assert!(dir_contents.is_ok());
   }
 
