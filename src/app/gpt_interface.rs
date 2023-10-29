@@ -6,7 +6,7 @@ use walkdir::WalkDir;
 
 use std::{
   collections::HashMap,
-  fs::File,
+  fs::{File, OpenOptions},
   io::{BufRead, BufReader, Write},
   path::{Path, PathBuf},
 };
@@ -59,7 +59,7 @@ fn count_lines_and_format_search_results(
       trace_dbg!("debug 3");
       // format line that is below, but truncates s.1 to 2 decimal places
       match result_score {
-        Some(score) => Some(format!("{:column_width$}\t{:<10}\t{} lines", path, score, linecount)),
+        Some(score) => Some(format!("{:column_width$}\t{:<15.2}\t{} lines", path, score, linecount)),
         None => Some(format!("{:column_width$}\t{} lines", path, linecount)),
       }
     },
@@ -126,7 +126,9 @@ pub fn read_file_lines(
     let file_contents = match read_lines(file_path) {
       Ok(contents) => contents,
       Err(error) => {
-        return Err(FunctionCallError::new(format!("Error reading file: {}", error).as_str()));
+        return Err(FunctionCallError::new(
+          format!("Error reading file: {}\nare you sure a file exists at the path you are accessing?", error).as_str(),
+        ));
       },
     };
 
@@ -160,7 +162,9 @@ pub fn read_file_lines(
       token_count
     )))
   } else {
-    Err(FunctionCallError::new("File not found or not accessible."))
+    Err(FunctionCallError::new(
+      "File not found or not accessible.\nare you sure a file exists at the path you are accessing?",
+    ))
   }
 }
 
@@ -344,7 +348,7 @@ pub fn modify_file(
   insert_text: Option<&str>,
 ) -> Result<Option<String>, FunctionCallError> {
   match File::open(path) {
-    Ok(mut file) => {
+    Ok(file) => {
       let reader = std::io::BufReader::new(&file);
       let mut new_lines: Vec<String> = reader.lines().map(|line| line.unwrap_or_default().to_string()).collect();
       let file_line_count = new_lines.len();
@@ -362,12 +366,30 @@ pub fn modify_file(
         }
       }
       if let Some(insert_text) = insert_text {
-        new_lines.insert(start_line - 1, insert_text.to_string());
+        new_lines.insert(start_line, insert_text.to_string());
       }
-
-      match file.write_all(new_lines.join("\n").as_bytes()) {
-        Ok(_) => Ok(Some("file modified".to_string())),
-        Err(e) => Ok(Some(format!("error writing file modifications: {}", e))),
+      match OpenOptions::new().write(true).truncate(true).open(path) {
+        Ok(mut file) => match file.write_all(new_lines.join("\n").as_bytes()) {
+          Ok(_) => {
+            let removed_string = if let Some(end_line) = end_line {
+              format!("{} lines removed ", end_line - start_line)
+            } else {
+              "".to_string()
+            };
+            let added_string = if let Some(insert_text) = insert_text {
+              format!("{} lines added ", insert_text.lines().count())
+            } else {
+              "".to_string()
+            };
+            Ok(Some(format!("success! {}{}at {}", removed_string, added_string, path)))
+          },
+          Err(e) => {
+            let message = format!("error writing file modifications: {}", e);
+            trace_dbg!("{}", message);
+            Ok(Some(message))
+          },
+        },
+        Err(e) => Ok(Some(format!("error opening file at {}, error: {}", path, e))),
       }
     },
     Err(e) => Ok(Some(format!("error opening file at {}, error: {}", path, e))),
@@ -384,14 +406,14 @@ pub fn cargo_check() -> Result<Option<String>, FunctionCallError> {
 
 pub fn create_chat_completion_function_args(commands: Vec<Command>) -> Vec<ChatCompletionFunctions> {
   let mut chat_completion_functions: Vec<ChatCompletionFunctions> = Vec::new();
-  let string = "{\"type\": \"object\", \"properties\": {}}";
+  let empty_parameters = "{\"type\": \"object\", \"properties\": {}}";
   for command in commands {
     let chat_completion_function = ChatCompletionFunctions {
       name: command.name,
       description: command.description,
       parameters: match command.parameters {
         Some(parameters) => Some(serde_json::to_value(parameters).unwrap()),
-        None => Some(serde_json::from_str(string).unwrap()),
+        None => Some(serde_json::from_str(empty_parameters).unwrap()),
       },
     };
     chat_completion_functions.push(chat_completion_function);

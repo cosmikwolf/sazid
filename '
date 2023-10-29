@@ -29,8 +29,8 @@ use crate::tui::Event;
 use crate::{action::Action, config::Config};
 
 use crate::app::gpt_interface::{
-  cargo_check, create_chat_completion_function_args, create_file, define_commands, file_search,
-  get_accessible_file_paths, modify_file, read_file_lines,
+  cargo_check, create_chat_completion_function_args, create_file, define_commands, file_search, modify_file,
+  read_file_lines,
 };
 use crate::app::tools::utils::ensure_directory_exists;
 use crate::components::home::Mode;
@@ -121,19 +121,19 @@ impl Component for Session {
     //let model_preference: Vec<Model> = vec![GPT4.clone(), GPT3_TURBO.clone(), WIZARDLM.clone()];
     //Session::select_model(model_preference, create_openai_client(self.config.openai_config.clone()));
     let file_paths =
-      self.config.list_file_paths.iter().map(|p| p.to_str().unwrap_or_default()).collect::<Vec<&str>>().join(", ");
-    self.transactions.push(
+      &session.config.list_file_paths.iter().map(|p| p.to_str().unwrap_or_default()).collect::<Vec<&str>>().join(", ");
+    session.transactions.push(
       Transaction::new(construct_request(
       construct_chat_completion_request_message(
-        format!("You are Sazid, a programming architecture and implementation expert, that specializes in the Rust programming language. You ensure that you have the correct file path before you attempt to modify or create a file" ).as_str(),
+        format!("You are Sazid, a programming architecture and implementation expert, that specializes in the Rust programming language. You can only access files in the following directories: {}, accessing files outside of these paths will result in an error", file_paths).as_str(),
         "sazid",
-        Role::User,
-        &self.config.model,
+        Role::System,
+        &session.config.model,
         None,
         None,
       )
       .unwrap()
-      , &self.config, None))
+      , &session.config, None))
     );
 
     Ok(())
@@ -372,13 +372,14 @@ impl Session {
       Ok(function_args) => {
         if let Some(v) = function_args.get("path") {
           if let Some(pathstr) = v.as_str() {
-            let accesible_paths = get_accessible_file_paths(self.config.list_file_paths.clone());
-            if !accesible_paths.contains_key(Path::new(pathstr).to_str().unwrap()) {
-              return Err(FunctionCallError::new(
-                format!("File path is not accessible: {:?}. Suggest using file_search command", pathstr).as_str(),
-              ));
-            } else {
-              trace_dbg!("path: {:?} exists", pathstr);
+            let p = Path::new(pathstr.to_string());
+            match p {
+              Ok(p) => {
+                if !p.exists() {
+                  return Err(FunctionCallError::new(format!("Path does not exist: {:?}", p)));
+                }
+              },
+              Err(p) => return Err(FunctionCallError::new(format!("Failed to parse path: {:?}", p))),
             }
           }
         }

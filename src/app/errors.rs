@@ -1,6 +1,8 @@
 use async_openai::error::OpenAIError;
 use std::{error::Error, fmt, io};
 
+use crate::trace_dbg;
+
 #[derive(Debug)]
 pub enum SazidError {
   OpenAiError(OpenAIError),
@@ -59,6 +61,7 @@ pub struct FunctionCallError {
 
 impl FunctionCallError {
   pub fn new(message: &str) -> Self {
+    trace_dbg!("FunctionCallError: {}", message);
     FunctionCallError { message: message.to_string(), source: None }
   }
 }
