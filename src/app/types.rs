@@ -3,7 +3,7 @@ use crate::app::consts::*;
 use async_openai::{
   self,
   types::{
-    ChatChoice, ChatCompletionRequestMessage, CreateChatCompletionRequest, CreateChatCompletionResponse,
+    ChatChoice, ChatCompletionRequestMessage, ChatCompletionResponseStreamMessage, CreateChatCompletionResponse,
     CreateChatCompletionStreamResponse, FunctionCall, FunctionCallStream, Role,
   },
 };
@@ -18,12 +18,6 @@ use bat::{
 };
 use serde::{Deserialize, Serialize};
 use std::{collections::BTreeMap, ffi::OsString, path::PathBuf};
-
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
-pub enum ChatResponse {
-  Response(CreateChatCompletionResponse),
-  StreamResponse(CreateChatCompletionStreamResponse),
-}
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct RenderedFunctionCall {
@@ -55,28 +49,135 @@ pub struct RenderedChatMessage {
   pub finish_reason: Option<String>,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
-pub enum ChatMessage {
-  ChatCompletionRequestMessage(ChatCompletionRequestMessage),
-  ChatCompletionResponseMessage(ChatChoice),
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+pub enum ChatResponse {
+  Response(CreateChatCompletionResponse),
+  StreamResponse(CreateChatCompletionStreamResponse),
 }
 
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+pub enum ChatResponseSingleMessage {
+  Response(ChatChoice),
+  StreamResponse(Vec<ChatCompletionResponseStreamMessage>),
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+pub enum ChatMessage {
+  PromptMessage(ChatCompletionRequestMessage),
+  ChatCompletionRequestMessage(ChatCompletionRequestMessage),
+  ChatCompletionResponseMessage(ChatResponseSingleMessage),
+}
+
+impl From<&ChatMessage> for ChatCompletionRequestMessage {
+  fn from(message: &ChatMessage) -> Self {
+    match message {
+      ChatMessage::PromptMessage(request) => request.clone(),
+      ChatMessage::ChatCompletionRequestMessage(request) => request.clone(),
+      ChatMessage::ChatCompletionResponseMessage(ChatResponseSingleMessage::StreamResponse(srvec)) => {
+        let content = srvec.iter().fold(Some(String::new()), |acc, stream_message| {
+          acc.and_then(|mut result| {
+            stream_message.delta.clone().content.map(|s| {
+              result.push_str(&s);
+              result
+            })
+          })
+        });
+        let function_call = srvec.iter().fold(
+          Some(FunctionCall { name: "".to_string(), arguments: "".to_string() }),
+          |acc, stream_message| {
+            acc.and_then(|mut result| {
+              stream_message.delta.clone().function_call.map(|fc| {
+                if let Some(name) = fc.name {
+                  result.name.push_str(name.as_str());
+                }
+                if let Some(arguments) = fc.arguments {
+                  result.arguments.clone().push_str(arguments.as_str());
+                }
+                result
+              })
+            })
+          },
+        );
+        ChatCompletionRequestMessage { role: Role::Assistant, content, function_call, name: None }
+      },
+      ChatMessage::ChatCompletionResponseMessage(ChatResponseSingleMessage::Response(response)) => {
+        ChatCompletionRequestMessage {
+          role: Role::Assistant,
+          content: response.message.content.clone(),
+          function_call: None,
+          name: None,
+        }
+      },
+    }
+  }
+}
 impl From<&ChatMessage> for RenderedChatMessage {
   fn from(message: &ChatMessage) -> Self {
     match message {
-      ChatMessage::ChatCompletionRequestMessage(request) => RenderedChatMessage {
-        role: Some(request.role),
-        content: request.content,
+      ChatMessage::PromptMessage(request) => RenderedChatMessage {
+        role: Some(request.role.clone()),
+        content: Some(format!("Prompt: {}", request.content.clone().unwrap_or("no prompt".to_string()))),
         rendered_content: None,
-        function_call: request.function_call.map(|function_call| function_call.into()),
+        function_call: None,
         finish_reason: None,
       },
-      ChatMessage::ChatCompletionResponseMessage(response) => RenderedChatMessage {
-        role: Some(Role::Assistant),
-        content: response.message.content,
+      ChatMessage::ChatCompletionRequestMessage(request) => RenderedChatMessage {
+        role: Some(request.role.clone()),
+        content: request.content.clone(),
         rendered_content: None,
-        function_call: response.message.function_call.map(|function_call| function_call.into()),
-        finish_reason: response.finish_reason,
+        function_call: request.function_call.clone().map(|function_call| function_call.into()),
+        finish_reason: None,
+      },
+      ChatMessage::ChatCompletionResponseMessage(ChatResponseSingleMessage::Response(response)) => {
+        RenderedChatMessage {
+          role: Some(Role::Assistant),
+          content: response.message.content.clone(),
+          rendered_content: None,
+          function_call: response.message.function_call.clone().map(|function_call| function_call.into()),
+          finish_reason: response.finish_reason.clone(),
+        }
+      },
+
+      ChatMessage::ChatCompletionResponseMessage(ChatResponseSingleMessage::StreamResponse(srvec)) => {
+        let finish_reason = srvec.iter().fold(Some(String::new()), |acc, stream_message| {
+          acc.and_then(|mut result| {
+            stream_message.finish_reason.clone().map(|s| {
+              result.push_str(&s);
+              result
+            })
+          })
+        });
+        let content = srvec.iter().fold(Some(String::new()), |acc, stream_message| {
+          acc.and_then(|mut result| {
+            stream_message.delta.content.clone().map(|s| {
+              result.push_str(&s);
+              result
+            })
+          })
+        });
+        let function_call = srvec.iter().fold(
+          Some(FunctionCall { name: "".to_string(), arguments: "".to_string() }),
+          |acc, stream_message| {
+            acc.and_then(|mut result| {
+              stream_message.delta.function_call.clone().map(|fc| {
+                if let Some(name) = fc.name {
+                  result.name.push_str(name.as_str());
+                }
+                if let Some(arguments) = fc.arguments {
+                  result.arguments.push_str(arguments.as_str());
+                }
+                result
+              })
+            })
+          },
+        );
+        RenderedChatMessage {
+          role: Some(Role::Assistant),
+          content,
+          rendered_content: None,
+          function_call: function_call.map(|function_call| function_call.into()),
+          finish_reason,
+        }
       },
     }
   }
@@ -84,11 +185,16 @@ impl From<&ChatMessage> for RenderedChatMessage {
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct SessionData {
-  pub prompt: String,
   pub messages: Vec<ChatMessage>,
   pub rendered_messages: Vec<RenderedChatMessage>,
+  pub stylized_text: Vec<String>,
 }
 
+impl Default for SessionData {
+  fn default() -> Self {
+    SessionData { messages: Vec::new(), rendered_messages: Vec::new(), stylized_text: Vec::new() }
+  }
+}
 impl From<SessionData> for String {
   fn from(session_data: SessionData) -> String {
     session_data.rendered_messages.iter().map(|m| m.into()).collect::<Vec<String>>().join("\n---\n")
@@ -114,76 +220,16 @@ impl SessionData {
     let config = Config { colored_output: true, language: Some("markdown"), style_components, ..Default::default() };
     let assets = HighlightingAssets::from_binary();
     let controller = Controller::new(&config, &assets);
-    &self.rendered_messages.iter().map(|message| {
+    &self.rendered_messages.iter().map(|mut message| {
       if message.rendered_content.is_none() || message.finish_reason.is_none() {
         let mut buffer = String::new();
-        let mut message_text = Vec::new();
-        if let Some(content) = message.content {
-          message_text.push(content)
-        }
-        if let Some(function_call) = &message.function_call {
-          message_text.push(format!(
-            "function call: {} {}",
-            function_call.name.as_str(),
-            function_call.arguments.as_str()
-          ));
-        }
         if message.rendered_content.is_none() {
-          let input = Input::from_bytes(message_text.join("\n").as_bytes());
+          let input = Input::from_bytes(String::from(message).as_bytes());
           controller.run(vec![input.into()], Some(&mut buffer)).unwrap();
         }
         message.rendered_content = Some(buffer);
       }
     });
-  }
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
-pub struct Transaction {
-  pub id: String,
-  pub request: CreateChatCompletionRequest,
-  pub responses: Vec<ChatResponse>,
-  pub rendered: Vec<RenderedChatMessage>,
-  pub completed: bool,
-  pub stylized_lines: usize,
-  pub styled: bool,
-}
-
-impl Transaction {
-  pub fn new(request: CreateChatCompletionRequest) -> Self {
-    let id = uuid::Uuid::new_v4().to_string();
-    Transaction {
-      id,
-      request,
-      responses: Vec::new(),
-      rendered: Vec::new(),
-      completed: false,
-      styled: false,
-      stylized_lines: 0,
-    }
-  }
-}
-impl From<Transaction> for String {
-  fn from(txn: Transaction) -> Self {
-    txn
-      .rendered
-      .iter()
-      .map(|m| {
-        let mut string_vec: Vec<String> = Vec::new();
-        if let Some(content) = m.content.clone() {
-          string_vec.push(content);
-        }
-        if let Some(function_call) = m.function_call.clone() {
-          string_vec.push(format!(
-            "function call: {} {}",
-            function_call.name.as_str(),
-            function_call.arguments.as_str()
-          ));
-        }
-        string_vec.join("\n")
-      })
-      .collect::<Vec<String>>()
-      .join("\n")
   }
 }
 
@@ -213,16 +259,6 @@ impl From<RenderedChatMessage> for String {
   }
 }
 
-impl From<CreateChatCompletionRequest> for RenderedChatMessage {
-  fn from(request: CreateChatCompletionRequest) -> Self {
-    RenderedChatMessage {
-      role: Some(request.messages.last().unwrap().role.clone()),
-      content: Some(request.messages.last().unwrap().content.clone().unwrap_or("".to_string())),
-      function_call: request.messages.last().unwrap().function_call.clone().map(|function_call| function_call.into()),
-      finish_reason: None,
-    }
-  }
-}
 // --------------------------------------
 // --------------------------------------
 // --------------------------------------

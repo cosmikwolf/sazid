@@ -1,7 +1,7 @@
 use ansi_to_tui::IntoText;
 use async_openai::types::{
-  ChatCompletionFunctions, ChatCompletionRequestMessage, CreateChatCompletionRequest, CreateEmbeddingRequestArgs,
-  CreateEmbeddingResponse, FunctionCall, Role,
+  ChatCompletionRequestMessage, CreateChatCompletionRequest, CreateEmbeddingRequestArgs, CreateEmbeddingResponse,
+  FunctionCall, Role,
 };
 
 use crossterm::event::{KeyCode, KeyEvent};
@@ -10,7 +10,6 @@ use ratatui::layout::Rect;
 use ratatui::{prelude::*, widgets::block::*, widgets::*};
 use serde_derive::{Deserialize, Serialize};
 use serde_json::Value;
-use serde_json_path::JsonPath;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::result::Result;
@@ -38,6 +37,7 @@ use crate::components::home::Mode;
 #[derive(Serialize, Deserialize, Debug, Clone)]
 
 pub struct SessionConfig {
+  pub prompt: String,
   pub session_id: String,
   pub list_file_paths: Vec<PathBuf>,
   pub model: Model,
@@ -45,6 +45,7 @@ pub struct SessionConfig {
   pub include_functions: bool,
   pub stream_response: bool,
   pub function_result_max_tokens: usize,
+  pub response_max_tokens: usize,
   #[serde(skip)]
   pub openai_config: OpenAIConfig,
 }
@@ -52,13 +53,14 @@ pub struct SessionConfig {
 impl Default for SessionConfig {
   fn default() -> Self {
     SessionConfig {
+      prompt: String::new(),
       session_id: Self::generate_session_id(),
       openai_config: OpenAIConfig::default(),
       list_file_paths: vec![],
       model: GPT3_TURBO.clone(),
       name: "Sazid Test".to_string(),
       function_result_max_tokens: 1024,
-      //model: GPT4.clone(),
+      response_max_tokens: 1024,
       include_functions: true,
       stream_response: true,
     }
@@ -77,6 +79,15 @@ impl SessionConfig {
     self
   }
 
+  pub fn prompt_message(&self) -> ChatCompletionRequestMessage {
+    ChatCompletionRequestMessage {
+      content: Some(self.prompt.clone()),
+      name: None,
+      function_call: None,
+      role: Role::User,
+    }
+  }
+
   pub fn generate_session_id() -> String {
     // Get the current time since UNIX_EPOCH in seconds.
     let start = SystemTime::now();
@@ -92,7 +103,7 @@ impl SessionConfig {
 
 #[derive(Default, Serialize, Deserialize, Debug, Clone)]
 pub struct Session {
-  pub transactions: Vec<Transaction>,
+  pub data: SessionData,
   pub config: SessionConfig,
   #[serde(skip)]
   pub action_tx: Option<UnboundedSender<Action>>,
@@ -121,24 +132,13 @@ impl Component for Session {
     //let model_preference: Vec<Model> = vec![GPT4.clone(), GPT3_TURBO.clone(), WIZARDLM.clone()];
     //Session::select_model(model_preference, create_openai_client(self.config.openai_config.clone()));
     trace_dbg!("init session");
-    self.transactions.push(
-      Transaction::new(construct_request(
-      construct_chat_completion_request_message(
-        format!("act as a programming architecture and implementation expert, that specializes in the Rust.
-            Use the functions available to assist with the user inquiry.
-            Do not try and execute arbitrary python code.
-            Do not try to infer a path to a file, if you have not been provided a path with the root ./, use the file_search function to verify the file path before you execute a function call."
-            ).as_str(),
-        "sazid",
-        Role::User,
-        &self.config.model,
-        None,
-        None,
-      )
-      .unwrap()
-      , &self.config, None))
+    self.config.prompt = format!(
+        "act as a programming architecture and implementation expert, that specializes in the Rust.
+        Use the functions available to assist with the user inquiry.
+        Do not try and execute arbitrary python code.
+        Do not try to infer a path to a file, if you have not been provided a path with the root ./, use the file_search function to verify the file path before you execute a function call."
     );
-
+    self.data.messages.push(ChatMessage::PromptMessage(self.config.prompt_message()));
     Ok(())
   }
   fn register_action_handler(&mut self, tx: UnboundedSender<Action>) -> Result<(), SazidError> {
@@ -156,10 +156,9 @@ impl Component for Session {
       Action::SubmitInput(s) => {
         self.request_response(s, tx);
       },
-      Action::RequestChatCompletion(request_messages) => self.request_chat_completion(request_messages),
-      Action::ProcessResponse(boxed_id_response) => {
-        let (transaction_id, response) = *boxed_id_response;
-        self.response_handler(tx, transaction_id, response);
+      Action::RequestChatCompletion() => self.request_chat_completion(),
+      Action::ProcessResponse(response) => {
+        self.response_handler(tx, response);
       },
       Action::CallFunction(fn_name, fn_args) => {
         self.handle_chat_response_function_call(tx, fn_name, fn_args);
@@ -224,7 +223,7 @@ impl Component for Session {
     let block = Block::default().borders(Borders::NONE).gray();
     // .title(Title::from("left").alignment(Alignment::Left));
     //.title(Title::from("right").alignment(Alignment::Right));
-    let paragraph = Paragraph::new(self.get_full_text())
+    let paragraph = Paragraph::new(self.data.stylized_text.join("\n").into_text().unwrap_or_default())
       .block(block)
       .wrap(Wrap { trim: true })
       .scroll((self.vertical_scroll as u16, 0));
@@ -248,57 +247,86 @@ impl Session {
     Self::default()
   }
 
-  fn get_previous_request_messages(&self) -> Vec<ChatCompletionRequestMessage> {
-    self.transactions.iter().flat_map(|transaction| transaction.request.messages.clone()).collect()
+  pub fn add_chunked_chat_completion_request_messages(
+    &mut self,
+    content: &str,
+    _name: &str,
+    role: Role,
+    model: &Model,
+    function_call: Option<FunctionCall>,
+  ) {
+    parse_input(content, CHUNK_TOKEN_LIMIT as usize, model.token_limit as usize).unwrap().iter().map(|chunk| {
+      self.data.messages.push(ChatMessage::ChatCompletionRequestMessage(ChatCompletionRequestMessage {
+        role: role.clone(),
+        //name: Some(name.to_string()),
+        content: Some(chunk.clone()),
+        function_call: function_call.clone(),
+        ..Default::default()
+      }))
+    });
   }
-
-  pub fn get_full_text(&self) -> Text<'_> {
-    self
-      .transactions
-      .iter()
-      .map(|txn| <String>::from(txn.clone()))
-      .collect::<Vec<String>>()
-      .join("\n")
-      .into_text()
-      .unwrap()
-  }
-
-  pub fn request_response(&mut self, input: String, _tx: UnboundedSender<Action>) {
-    let previous_requests = self.get_previous_request_messages();
-    let request_messages = construct_chat_completion_request_message(
-      &input,
-      self.config.name.as_str(),
-      Role::User,
-      &self.config.model,
-      Some(previous_requests),
-      None,
-    )
-    .unwrap();
-    self.request_chat_completion(request_messages);
-  }
-
-  pub fn request_chat_completion(&mut self, request_messages: Vec<ChatCompletionRequestMessage>) {
-    let tx = self.action_tx.clone().unwrap();
+  pub fn construct_request(&self) -> CreateChatCompletionRequest {
     let functions = match self.config.include_functions {
       true => Some(create_chat_completion_function_args(define_commands())),
       false => None,
     };
-    let request = construct_request(request_messages, &self.config, functions);
+    CreateChatCompletionRequest {
+      model: self.config.model.name.clone(),
+      messages: self.data.messages.iter().map(|m| m.into()).collect::<Vec<ChatCompletionRequestMessage>>(),
+      functions,
+      stream: Some(self.config.stream_response),
+      max_tokens: Some(self.config.response_max_tokens as u16),
+      ..Default::default()
+    }
+  }
+
+  pub fn request_response(&mut self, input: String, tx: UnboundedSender<Action>) {
+    let config = self.config.clone();
+    &self.add_chunked_chat_completion_request_messages(&input, config.name.as_str(), Role::User, &config.model, None);
+    tx.send(Action::RequestChatCompletion()).unwrap();
+  }
+
+  pub fn handle_chat_response_function_call(&mut self, tx: UnboundedSender<Action>, fn_name: String, fn_args: String) {
+    trace_dbg!("handle function name:");
+    trace_dbg!(&fn_name);
+    trace_dbg!(&fn_args);
+
+    match self.execute_function_call(fn_name, fn_args) {
+      Ok(Some(output)) => {
+        self.data.messages.push(ChatMessage::ChatCompletionRequestMessage(ChatCompletionRequestMessage {
+          name: Some("Sazid".to_string()),
+          role: Role::Function,
+          content: Some(output),
+          ..Default::default()
+        }));
+      },
+      Ok(None) => {},
+      Err(e) => {
+        self.data.messages.push(ChatMessage::ChatCompletionRequestMessage(ChatCompletionRequestMessage {
+          name: Some("Sazid".to_string()),
+          role: Role::Function,
+          content: Some(format!("Error: {:?}", e)),
+          ..Default::default()
+        }));
+      },
+    }
+    tx.send(Action::RequestChatCompletion()).unwrap();
+  }
+
+  pub fn request_chat_completion(&mut self) {
+    let tx = self.action_tx.clone().unwrap();
+    let request = self.construct_request();
     let stream_response = self.config.stream_response;
 
     let openai_config = self.config.openai_config.clone();
     tx.send(Action::EnterProcessing).unwrap();
     let client = create_openai_client(openai_config);
-    let txn = Transaction::new(request);
-    self.transactions.push(txn.clone());
-    let request = txn.clone().request;
-    trace_dbg!("Full Request:\n{:?}", request.clone());
-    trace_dbg!("Sending Request:\n{:?}", request.clone().messages.last().unwrap().content);
+    trace_dbg!("Full Request:\n{:?}", &request);
+    trace_dbg!("Sending Request:\n{:?}", &request.messages.last().unwrap().content);
     // let debug = format!("request: {:#?}", request).replace("\\n", "\n");
     // for line in debug.lines() {
     //   trace_dbg!(line);
     // }
-    let id = txn.clone().id;
     tokio::spawn(async move {
       match stream_response {
         true => {
@@ -308,8 +336,7 @@ impl Session {
             match response_result {
               Ok(response) => {
                 trace_dbg!("Response: {:?}", response.clone());
-                tx.send(Action::ProcessResponse(Box::new((id.clone(), ChatResponse::StreamResponse(response)))))
-                  .unwrap();
+                tx.send(Action::ProcessResponse(ChatResponse::StreamResponse(response))).unwrap();
               },
               Err(e) => {
                 trace_dbg!("Error: {:?} -- check https://status.openai.com/", e);
@@ -321,7 +348,7 @@ impl Session {
         },
         false => match client.chat().create(request).await {
           Ok(response) => {
-            tx.send(Action::ProcessResponse(Box::new((id, ChatResponse::Response(response))))).unwrap();
+            tx.send(Action::ProcessResponse(ChatResponse::Response(response))).unwrap();
           },
           Err(e) => {
             trace_dbg!("Error: {}", e);
@@ -333,15 +360,22 @@ impl Session {
     });
   }
 
-  pub fn response_handler(&mut self, tx: UnboundedSender<Action>, transaction_id: String, response: ChatResponse) {
-    //trace_dbg!("response handler");
-    self.transactions.iter_mut().find(|txn| txn.id == transaction_id).unwrap().responses.push(response.clone());
-    for txn in self.transactions.iter_mut() {
-      txn.render()
-    }
-
+  pub fn response_handler(&mut self, tx: UnboundedSender<Action>, response: ChatResponse) {
     match response {
       ChatResponse::StreamResponse(response) => {
+        for (choice_index, chat_choice) in response.choices.iter().enumerate() {
+          for message in self.data.messages.iter_mut().rev() {
+            match message {
+              ChatMessage::ChatCompletionResponseMessage(ChatResponseSingleMessage::StreamResponse(chat_response)) => {
+                if chat_response[0].index == choice_index as u32 {
+                  chat_response.push(chat_choice.clone());
+                  break;
+                }
+              },
+              _ => break,
+            }
+          }
+        }
         for chat_choice in response.choices {
           if let Some(fn_call) = &chat_choice.delta.function_call {
             if let Some(name) = &fn_call.name {
@@ -421,34 +455,6 @@ impl Session {
           .as_str(),
       )),
     }
-  }
-
-  pub fn handle_chat_response_function_call(&self, tx: UnboundedSender<Action>, fn_name: String, fn_args: String) {
-    let mut request_messages = self.get_previous_request_messages();
-    trace_dbg!("handle function name:");
-    trace_dbg!(&fn_name);
-    trace_dbg!(&fn_args);
-
-    match self.execute_function_call(fn_name, fn_args) {
-      Ok(Some(output)) => {
-        request_messages.push(ChatCompletionRequestMessage {
-          name: Some("Sazid".to_string()),
-          role: Role::Function,
-          content: Some(output),
-          ..Default::default()
-        });
-      },
-      Ok(None) => {},
-      Err(e) => {
-        request_messages.push(ChatCompletionRequestMessage {
-          name: Some("Sazid".to_string()),
-          role: Role::Function,
-          content: Some(format!("Error: {:?}", e)),
-          ..Default::default()
-        });
-      },
-    }
-    tx.send(Action::RequestChatCompletion(request_messages)).unwrap();
   }
 
   pub fn load_session_by_id(session_id: String) -> Session {
@@ -533,50 +539,6 @@ pub fn create_openai_client(openai_config: OpenAIConfig) -> async_openai::Client
     .with_max_elapsed_time(Some(std::time::Duration::from_secs(60)))
     .build();
   Client::with_config(openai_config).with_backoff(backoff)
-}
-
-pub fn construct_chat_completion_request_message(
-  content: &str,
-  _name: &str,
-  role: Role,
-  model: &Model,
-  previous_requests: Option<Vec<ChatCompletionRequestMessage>>,
-  function_call: Option<FunctionCall>,
-) -> Result<Vec<ChatCompletionRequestMessage>, GPTConnectorError> {
-  let chunks = parse_input(content, CHUNK_TOKEN_LIMIT as usize, model.token_limit as usize).unwrap();
-
-  let messages: Vec<ChatCompletionRequestMessage> = chunks
-    .iter()
-    .map(|chunk| ChatCompletionRequestMessage {
-      role: role.clone(),
-      //name: Some(name.to_string()),
-      content: Some(chunk.clone()),
-      function_call: function_call.clone(),
-      ..Default::default()
-    })
-    .collect();
-  match previous_requests {
-    Some(mut previous_requests) => {
-      previous_requests.append(&mut messages.clone());
-      Ok(previous_requests)
-    },
-    None => Ok(messages),
-  }
-}
-
-pub fn construct_request(
-  messages: Vec<ChatCompletionRequestMessage>,
-  config: &SessionConfig,                          // model: Model,
-  functions: Option<Vec<ChatCompletionFunctions>>, // include_functions: bool,
-) -> CreateChatCompletionRequest {
-  CreateChatCompletionRequest {
-    model: config.model.name.clone(),
-    messages,
-    functions,
-    stream: Some(config.stream_response),
-    max_tokens: Some(1024),
-    ..Default::default()
-  }
 }
 
 pub async fn create_embedding_request(
