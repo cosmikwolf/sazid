@@ -120,12 +120,15 @@ impl Component for Session {
   fn init(&mut self, _area: Rect) -> Result<(), SazidError> {
     //let model_preference: Vec<Model> = vec![GPT4.clone(), GPT3_TURBO.clone(), WIZARDLM.clone()];
     //Session::select_model(model_preference, create_openai_client(self.config.openai_config.clone()));
-    let file_paths =
-      self.config.list_file_paths.iter().map(|p| p.to_str().unwrap_or_default()).collect::<Vec<&str>>().join(", ");
+    trace_dbg!("init session");
     self.transactions.push(
       Transaction::new(construct_request(
       construct_chat_completion_request_message(
-        format!("You are Sazid, a programming architecture and implementation expert, that specializes in the Rust programming language. You ensure that you have the correct file path before you attempt to modify or create a file" ).as_str(),
+        format!("act as a programming architecture and implementation expert, that specializes in the Rust.
+            Use the functions available to assist with the user inquiry.
+            Do not try and execute arbitrary python code.
+            Do not try to infer a path to a file, if you have not been provided a path with the root ./, use the file_search function to verify the file path before you execute a function call."
+            ).as_str(),
         "sazid",
         Role::User,
         &self.config.model,
@@ -289,7 +292,8 @@ impl Session {
     let txn = Transaction::new(request);
     self.transactions.push(txn.clone());
     let request = txn.clone().request;
-    trace_dbg!("request: {:?}", request.clone().messages[0].content);
+    trace_dbg!("Full Request:\n{:?}", request.clone());
+    trace_dbg!("Sending Request:\n{:?}", request.clone().messages.last().unwrap().content);
     // let debug = format!("request: {:#?}", request).replace("\\n", "\n");
     // for line in debug.lines() {
     //   trace_dbg!(line);
@@ -299,7 +303,7 @@ impl Session {
       match stream_response {
         true => {
           // let mut stream: Pin<Box<dyn StreamExt<Item = Result<CreateChatCompletionStreamResponse, OpenAIError>> + Send>> =
-          let mut stream = client.chat().create_stream(request).await.unwrap();
+          let mut stream = client.chat().create_stream(request.clone()).await.unwrap();
           while let Some(response_result) = stream.next().await {
             match response_result {
               Ok(response) => {
@@ -309,6 +313,7 @@ impl Session {
               },
               Err(e) => {
                 trace_dbg!("Error: {:?} -- check https://status.openai.com/", e);
+                trace_dbg!("Request: \n{:?}", request.clone());
                 tx.send(Action::Error(format!("Error: {:?} -- check https://status.openai.com/", e))).unwrap();
               },
             }
