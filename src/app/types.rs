@@ -3,8 +3,8 @@ use crate::app::consts::*;
 use async_openai::{
   self,
   types::{
-    CreateChatCompletionRequest, CreateChatCompletionResponse, CreateChatCompletionStreamResponse, FunctionCall,
-    FunctionCallStream, Role,
+    ChatChoice, ChatCompletionRequestMessage, CreateChatCompletionRequest, CreateChatCompletionResponse,
+    CreateChatCompletionStreamResponse, FunctionCall, FunctionCallStream, Role,
   },
 };
 use clap::Parser;
@@ -52,6 +52,44 @@ pub struct RenderedChatMessage {
   pub content: Option<String>,
   pub function_call: Option<RenderedFunctionCall>,
   pub finish_reason: Option<String>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+pub enum ChatTranscriptItem {
+  ChatCompletionRequestMessage(ChatCompletionRequestMessage),
+  ChatCompletionResponseMessage(ChatChoice),
+}
+
+impl From<ChatTranscriptItem> for RenderedChatMessage {
+  fn from(message: ChatTranscriptItem) -> Self {
+    match message {
+      ChatTranscriptItem::ChatCompletionRequestMessage(request) => RenderedChatMessage {
+        role: Some(request.role),
+        content: request.content,
+        function_call: request.function_call.map(|function_call| function_call.into()),
+        finish_reason: None,
+      },
+      ChatTranscriptItem::ChatCompletionResponseMessage(response) => RenderedChatMessage {
+        role: Some(Role::Assistant),
+        content: response.message.content,
+        function_call: response.message.function_call.map(|function_call| function_call.into()),
+        finish_reason: response.finish_reason,
+      },
+    }
+  }
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+pub struct SessionData {
+  pub prompt: String,
+  pub messages: Vec<ChatTranscriptItem>,
+  pub rendered_messages: Vec<RenderedChatMessage>,
+}
+
+impl From<SessionData> for String {
+  fn from(session_data: SessionData) -> String {
+    session_data.rendered_messages.iter().map(|m| m.into()).collect::<Vec<String>>().join("\n---\n")
+  }
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
@@ -192,6 +230,19 @@ impl From<Transaction> for String {
       })
       .collect::<Vec<String>>()
       .join("\n")
+  }
+}
+
+impl From<&RenderedChatMessage> for String {
+  fn from(message: &RenderedChatMessage) -> Self {
+    let mut string_vec: Vec<String> = Vec::new();
+    if let Some(content) = &message.content {
+      string_vec.push(content.to_string());
+    }
+    if let Some(function_call) = &message.function_call {
+      string_vec.push(format!("function call: {} {}", function_call.name.as_str(), function_call.arguments.as_str()));
+    }
+    string_vec.join("\n")
   }
 }
 
