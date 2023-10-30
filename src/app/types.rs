@@ -50,28 +50,31 @@ impl From<FunctionCall> for RenderedFunctionCall {
 pub struct RenderedChatMessage {
   pub role: Option<Role>,
   pub content: Option<String>,
+  pub rendered_content: Option<String>,
   pub function_call: Option<RenderedFunctionCall>,
   pub finish_reason: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
-pub enum ChatTranscriptItem {
+pub enum ChatMessage {
   ChatCompletionRequestMessage(ChatCompletionRequestMessage),
   ChatCompletionResponseMessage(ChatChoice),
 }
 
-impl From<ChatTranscriptItem> for RenderedChatMessage {
-  fn from(message: ChatTranscriptItem) -> Self {
+impl From<&ChatMessage> for RenderedChatMessage {
+  fn from(message: &ChatMessage) -> Self {
     match message {
-      ChatTranscriptItem::ChatCompletionRequestMessage(request) => RenderedChatMessage {
+      ChatMessage::ChatCompletionRequestMessage(request) => RenderedChatMessage {
         role: Some(request.role),
         content: request.content,
+        rendered_content: None,
         function_call: request.function_call.map(|function_call| function_call.into()),
         finish_reason: None,
       },
-      ChatTranscriptItem::ChatCompletionResponseMessage(response) => RenderedChatMessage {
+      ChatMessage::ChatCompletionResponseMessage(response) => RenderedChatMessage {
         role: Some(Role::Assistant),
         content: response.message.content,
+        rendered_content: None,
         function_call: response.message.function_call.map(|function_call| function_call.into()),
         finish_reason: response.finish_reason,
       },
@@ -82,13 +85,56 @@ impl From<ChatTranscriptItem> for RenderedChatMessage {
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct SessionData {
   pub prompt: String,
-  pub messages: Vec<ChatTranscriptItem>,
+  pub messages: Vec<ChatMessage>,
   pub rendered_messages: Vec<RenderedChatMessage>,
 }
 
 impl From<SessionData> for String {
   fn from(session_data: SessionData) -> String {
     session_data.rendered_messages.iter().map(|m| m.into()).collect::<Vec<String>>().join("\n---\n")
+  }
+}
+impl SessionData {
+  pub fn render_new_messages(&mut self) {
+    for trans_item in self.messages.iter().skip(self.rendered_messages.len()) {
+      self.rendered_messages.push(RenderedChatMessage::from(trans_item));
+    }
+  }
+
+  fn stylize_new_messages(&mut self) {
+    let style_components = StyleComponents::new(&[
+      StyleComponent::Header,
+      StyleComponent::Grid,
+      StyleComponent::LineNumbers,
+      StyleComponent::Changes,
+      StyleComponent::Rule,
+      StyleComponent::Snip,
+      StyleComponent::Plain,
+    ]);
+    let config = Config { colored_output: true, language: Some("markdown"), style_components, ..Default::default() };
+    let assets = HighlightingAssets::from_binary();
+    let controller = Controller::new(&config, &assets);
+    &self.rendered_messages.iter().map(|message| {
+      if message.rendered_content.is_none() || message.finish_reason.is_none() {
+        let mut buffer = String::new();
+        let mut message_text = Vec::new();
+        if let Some(content) = message.content {
+          message_text.push(content)
+        }
+        if let Some(function_call) = &message.function_call {
+          message_text.push(format!(
+            "function call: {} {}",
+            function_call.name.as_str(),
+            function_call.arguments.as_str()
+          ));
+        }
+        if message.rendered_content.is_none() {
+          let input = Input::from_bytes(message_text.join("\n").as_bytes());
+          controller.run(vec![input.into()], Some(&mut buffer)).unwrap();
+        }
+        message.rendered_content = Some(buffer);
+      }
+    });
   }
 }
 
@@ -114,98 +160,6 @@ impl Transaction {
       completed: false,
       styled: false,
       stylized_lines: 0,
-    }
-  }
-
-  pub fn render(&mut self) {
-    if !self.completed {
-      let rendered_request = <RenderedChatMessage>::from(self.request.clone());
-
-      let choice_count = self
-        .responses
-        .iter()
-        .map(|r| match r {
-          ChatResponse::Response(response) => response.choices.len(),
-          ChatResponse::StreamResponse(response) => response.choices.len(),
-        })
-        .max()
-        .unwrap_or(0);
-      let mut rendered_responses = vec![RenderedChatMessage::default(); choice_count];
-      for (index, rendered_message) in rendered_responses.iter_mut().enumerate() {
-        for response in self.responses.clone() {
-          match response {
-            ChatResponse::Response(response) => {
-              rendered_message.content = response.choices[index].message.content.clone();
-              if let Some(function_call) = response.choices[index].message.function_call.clone() {
-                rendered_message.function_call = Some(function_call.into())
-              }
-            },
-            ChatResponse::StreamResponse(response) => {
-              rendered_message.content = match rendered_message.content.clone() {
-                Some(content) => match response.choices[index].delta.content.clone() {
-                  Some(delta_content) => Some(content + delta_content.as_str()),
-                  None => Some(content),
-                },
-                None => response.choices[index].delta.content.clone(),
-              };
-              if let Some(function_call) = response.choices[index].delta.function_call.clone() {
-                match rendered_message.function_call {
-                  Some(ref mut rendered_function_call) => {
-                    rendered_function_call.name += function_call.name.unwrap_or("".to_string()).as_str();
-                    rendered_function_call.arguments += function_call.arguments.unwrap_or("-*-".to_string()).as_str();
-                  },
-                  None => rendered_message.function_call = Some(function_call.into()),
-                }
-              }
-            },
-          }
-        }
-      }
-      self.rendered.clear();
-      self.rendered.push(rendered_request);
-      self.rendered.append(&mut rendered_responses);
-      //self.stylize();
-    }
-  }
-
-  #[allow(dead_code)]
-  fn stylize(&mut self) {
-    if self.styled {
-      return;
-    }
-    let style_components = StyleComponents::new(&[
-      StyleComponent::Header,
-      StyleComponent::Grid,
-      StyleComponent::LineNumbers,
-      StyleComponent::Changes,
-      StyleComponent::Rule,
-      StyleComponent::Snip,
-      StyleComponent::Plain,
-    ]);
-    let config = Config { colored_output: true, language: Some("markdown"), style_components, ..Default::default() };
-    let assets = HighlightingAssets::from_binary();
-    let controller = Controller::new(&config, &assets);
-    for rendered in self.rendered.iter_mut() {
-      if let Some(content) = &mut rendered.content {
-        let content_clone = content.clone();
-        if let Some(last_newline) = content_clone.rfind('\n') {
-          let (left, right) = content_clone.split_at(last_newline);
-          let input = Input::from_bytes(right.as_bytes());
-          let mut buffer = String::new();
-          content.clear();
-          controller.run(vec![input.into()], Some(&mut buffer)).unwrap();
-          content.push_str(left);
-          content.push_str(buffer.as_str());
-          self.stylized_lines += 1;
-        } else {
-          let input = Input::from_bytes(content_clone.as_bytes());
-          content.clear();
-          controller.run(vec![input.into()], Some(content)).unwrap();
-        };
-      }
-    }
-    if self.completed {
-      self.styled = true
     }
   }
 }
