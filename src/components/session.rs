@@ -132,13 +132,12 @@ impl Component for Session {
     //let model_preference: Vec<Model> = vec![GPT4.clone(), GPT3_TURBO.clone(), WIZARDLM.clone()];
     //Session::select_model(model_preference, create_openai_client(self.config.openai_config.clone()));
     trace_dbg!("init session");
-    self.config.prompt = format!(
+    self.config.prompt =
         "act as a programming architecture and implementation expert, that specializes in the Rust.
         Use the functions available to assist with the user inquiry.
         Do not try and execute arbitrary python code.
-        Do not try to infer a path to a file, if you have not been provided a path with the root ./, use the file_search function to verify the file path before you execute a function call."
-    );
-    self.data.messages.push(ChatMessage::PromptMessage(self.config.prompt_message()));
+        Do not try to infer a path to a file, if you have not been provided a path with the root ./, use the file_search function to verify the file path before you execute a function call.".to_string();
+    self.data.add_message(ChatMessage::PromptMessage(self.config.prompt_message()));
     Ok(())
   }
   fn register_action_handler(&mut self, tx: UnboundedSender<Action>) -> Result<(), SazidError> {
@@ -254,16 +253,22 @@ impl Session {
     role: Role,
     model: &Model,
     function_call: Option<FunctionCall>,
-  ) {
-    parse_input(content, CHUNK_TOKEN_LIMIT as usize, model.token_limit as usize).unwrap().iter().map(|chunk| {
-      self.data.messages.push(ChatMessage::ChatCompletionRequestMessage(ChatCompletionRequestMessage {
-        role: role.clone(),
-        //name: Some(name.to_string()),
-        content: Some(chunk.clone()),
-        function_call: function_call.clone(),
-        ..Default::default()
-      }))
-    });
+  ) -> Result<(), ChunkifierError> {
+    match parse_input(content, CHUNK_TOKEN_LIMIT as usize, model.token_limit as usize) {
+      Ok(chunks) => {
+        chunks.iter().for_each(|chunk| {
+          self.data.add_message(ChatMessage::ChatCompletionRequestMessage(ChatCompletionRequestMessage {
+            role: role.clone(),
+            //name: Some(name.to_string()),
+            content: Some(chunk.clone()),
+            function_call: function_call.clone(),
+            ..Default::default()
+          }))
+        });
+        Ok(())
+      },
+      Err(e) => Err(e),
+    }
   }
   pub fn construct_request(&self) -> CreateChatCompletionRequest {
     let functions = match self.config.include_functions {
@@ -282,8 +287,20 @@ impl Session {
 
   pub fn request_response(&mut self, input: String, tx: UnboundedSender<Action>) {
     let config = self.config.clone();
-    &self.add_chunked_chat_completion_request_messages(&input, config.name.as_str(), Role::User, &config.model, None);
-    tx.send(Action::RequestChatCompletion()).unwrap();
+    match self.add_chunked_chat_completion_request_messages(
+      &input,
+      config.name.as_str(),
+      Role::User,
+      &config.model,
+      None,
+    ) {
+      Ok(_) => {
+        tx.send(Action::RequestChatCompletion()).unwrap();
+      },
+      Err(e) => {
+        tx.send(Action::Error(format!("Error: {:?}", e))).unwrap();
+      },
+    }
   }
 
   pub fn handle_chat_response_function_call(&mut self, tx: UnboundedSender<Action>, fn_name: String, fn_args: String) {
@@ -293,7 +310,7 @@ impl Session {
 
     match self.execute_function_call(fn_name, fn_args) {
       Ok(Some(output)) => {
-        self.data.messages.push(ChatMessage::ChatCompletionRequestMessage(ChatCompletionRequestMessage {
+        self.data.add_message(ChatMessage::ChatCompletionRequestMessage(ChatCompletionRequestMessage {
           name: Some("Sazid".to_string()),
           role: Role::Function,
           content: Some(output),
@@ -302,7 +319,7 @@ impl Session {
       },
       Ok(None) => {},
       Err(e) => {
-        self.data.messages.push(ChatMessage::ChatCompletionRequestMessage(ChatCompletionRequestMessage {
+        self.data.add_message(ChatMessage::ChatCompletionRequestMessage(ChatCompletionRequestMessage {
           name: Some("Sazid".to_string()),
           role: Role::Function,
           content: Some(format!("Error: {:?}", e)),
@@ -361,47 +378,8 @@ impl Session {
   }
 
   pub fn response_handler(&mut self, tx: UnboundedSender<Action>, response: ChatResponse) {
-    match response {
-      ChatResponse::StreamResponse(response) => {
-        for (choice_index, chat_choice) in response.choices.iter().enumerate() {
-          for message in self.data.messages.iter_mut().rev() {
-            match message {
-              ChatMessage::ChatCompletionResponseMessage(ChatResponseSingleMessage::StreamResponse(chat_response)) => {
-                if chat_response[0].index == choice_index as u32 {
-                  chat_response.push(chat_choice.clone());
-                  break;
-                }
-              },
-              _ => break,
-            }
-          }
-        }
-        for chat_choice in response.choices {
-          if let Some(fn_call) = &chat_choice.delta.function_call {
-            if let Some(name) = &fn_call.name {
-              self.fn_name = Some(name.clone());
-            }
-            if let Some(args) = &fn_call.arguments {
-              if let Some(fn_args) = &mut self.fn_args {
-                fn_args.push_str(args.as_str());
-              } else {
-                self.fn_args = Some(args.clone());
-              }
-            }
-          }
-          if let Some(finish_reason) = &chat_choice.finish_reason {
-            trace_dbg!("calling function:\nname:{:#?}\nargs:{:#?}", self.fn_name, self.fn_args);
-            if finish_reason == "function_call" && self.fn_args.is_some() && self.fn_name.is_some() {
-              tx.send(Action::CallFunction(self.fn_name.clone().unwrap(), self.fn_args.clone().unwrap())).unwrap();
-              self.fn_name = None;
-              self.fn_args = None;
-            }
-          }
-        }
-      },
-      ChatResponse::Response(_response) => {
-        trace_dbg!("unhandled funtion response");
-      },
+    for choice in <Vec<ChatMessage>>::from(response) {
+      self.data.add_message(choice);
     }
     tx.send(Action::Update).unwrap();
   }

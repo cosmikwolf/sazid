@@ -5,6 +5,7 @@ use crate::trace_dbg;
 
 #[derive(Debug)]
 pub enum SazidError {
+  ParseError(ParseError),
   OpenAiError(OpenAIError),
   FunctionCallError(FunctionCallError),
   ConfigError(config::ConfigError),
@@ -15,6 +16,7 @@ pub enum SazidError {
 impl fmt::Display for SazidError {
   fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
     match self {
+      SazidError::ParseError(err) => write!(f, "ParseError: {}", err),
       SazidError::ConfigError(err) => write!(f, "ConfigError: {}", err),
       SazidError::OpenAiError(err) => write!(f, "OpenAIError: {}", err),
       SazidError::FunctionCallError(err) => write!(f, "FunctionCallError: {}", err),
@@ -50,6 +52,17 @@ impl TryFrom<Result<(), io::Error>> for SazidError {
 impl From<String> for SazidError {
   fn from(message: String) -> Self {
     SazidError::Other(message)
+  }
+}
+
+#[derive(Debug)]
+pub struct ParseError {
+  message: String,
+  source: Option<Box<dyn Error>>,
+}
+impl fmt::Display for ParseError {
+  fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    write!(f, "ParseError: {}", self.message)
   }
 }
 
