@@ -155,7 +155,7 @@ impl Component for Session {
       Action::SubmitInput(s) => {
         self.request_response(s, tx);
       },
-      Action::RequestChatCompletion() => self.request_chat_completion(),
+      Action::RequestChatCompletion() => self.request_chat_completion(tx.clone()),
       Action::ProcessResponse(response) => {
         self.response_handler(tx, response);
       },
@@ -222,7 +222,7 @@ impl Component for Session {
     let block = Block::default().borders(Borders::NONE).gray();
     // .title(Title::from("left").alignment(Alignment::Left));
     //.title(Title::from("right").alignment(Alignment::Right));
-    let paragraph = Paragraph::new(self.data.stylized_text.join("\n").into_text().unwrap_or_default())
+    let paragraph = Paragraph::new(self.data.stylized_text().into_text().unwrap())
       .block(block)
       .wrap(Wrap { trim: true })
       .scroll((self.vertical_scroll as u16, 0));
@@ -253,7 +253,7 @@ impl Session {
     role: Role,
     model: &Model,
     function_call: Option<FunctionCall>,
-  ) -> Result<(), ChunkifierError> {
+  ) -> Result<(), SazidError> {
     match parse_input(content, CHUNK_TOKEN_LIMIT as usize, model.token_limit as usize) {
       Ok(chunks) => {
         chunks.iter().for_each(|chunk| {
@@ -267,7 +267,7 @@ impl Session {
         });
         Ok(())
       },
-      Err(e) => Err(e),
+      Err(e) => Err(SazidError::ChunkifierError(e)),
     }
   }
   pub fn construct_request(&self) -> CreateChatCompletionRequest {
@@ -277,7 +277,12 @@ impl Session {
     };
     CreateChatCompletionRequest {
       model: self.config.model.name.clone(),
-      messages: self.data.messages.iter().map(|m| m.into()).collect::<Vec<ChatCompletionRequestMessage>>(),
+      messages: self
+        .data
+        .messages
+        .iter()
+        .map(|m| m.message.as_ref().into())
+        .collect::<Vec<ChatCompletionRequestMessage>>(),
       functions,
       stream: Some(self.config.stream_response),
       max_tokens: Some(self.config.response_max_tokens as u16),
@@ -330,8 +335,7 @@ impl Session {
     tx.send(Action::RequestChatCompletion()).unwrap();
   }
 
-  pub fn request_chat_completion(&mut self) {
-    let tx = self.action_tx.clone().unwrap();
+  pub fn request_chat_completion(&mut self, tx: UnboundedSender<Action>) {
     let request = self.construct_request();
     let stream_response = self.config.stream_response;
 
@@ -340,6 +344,9 @@ impl Session {
     let client = create_openai_client(openai_config);
     trace_dbg!("Full Request:\n{:?}", &request);
     trace_dbg!("Sending Request:\n{:?}", &request.messages.last().unwrap().content);
+    for message in request.messages.iter() {
+      trace_dbg!("msg: {:?}", message.content);
+    }
     // let debug = format!("request: {:#?}", request).replace("\\n", "\n");
     // for line in debug.lines() {
     //   trace_dbg!(line);
@@ -383,6 +390,7 @@ impl Session {
     }
     tx.send(Action::Update).unwrap();
   }
+
   pub fn execute_function_call(&self, fn_name: String, fn_args: String) -> Result<Option<String>, FunctionCallError> {
     let function_args: Result<HashMap<String, Value>, serde_json::Error> = serde_json::from_str(fn_args.as_str());
     match function_args {
@@ -533,4 +541,150 @@ pub async fn create_embedding_request(
 }
 
 #[cfg(test)]
-mod tests {}
+mod tests {
+  use super::*;
+  use crate::action;
+  use async_openai::types::{
+    ChatChoice, ChatCompletionResponseMessage, ChatCompletionResponseStreamMessage, ChatCompletionStreamResponseDelta,
+    CreateChatCompletionResponse, CreateChatCompletionStreamResponse,
+  };
+  use ntest::timeout;
+  use tokio::sync::mpsc;
+  // write a test for Session::add_message
+  #[tokio::test]
+  #[timeout(10000)]
+  pub async fn test_add_message() {
+    let mut session = Session::new();
+    let (tx, _rx) = mpsc::unbounded_channel::<action::Action>();
+    session.data.add_message(ChatMessage::PromptMessage(session.config.prompt_message()));
+    assert_eq!(session.data.messages.len(), 1);
+    assert_eq!(session.data.messages[0].message, ChatMessage::PromptMessage(session.config.prompt_message()));
+    // Create a mock response from OpenAI
+    let response = CreateChatCompletionResponse {
+      id: "cmpl-3fZzT7q5Y3zJ5Jp9Dq3qX8s0".to_string(),
+      object: "text_completion".to_string(),
+      usage: None,
+      created: 1613908771,
+      model: "davinci:2020-05-03".to_string(),
+      choices: vec![ChatChoice {
+        index: 0,
+        message: ChatCompletionResponseMessage {
+          role: Role::User,
+          content: Some("test response data".to_string()),
+          function_call: None,
+        },
+        finish_reason: Some("STOP".to_string()),
+      }],
+    };
+    let stream_responses = vec![
+      CreateChatCompletionStreamResponse {
+        id: "cmpl-3fZzT7q5Y3zJ5Jp9Dq3qX8s0".to_string(),
+        object: "text_completion".to_string(),
+        created: 1613908771,
+        model: "davinci:2020-05-03".to_string(),
+        choices: vec![ChatCompletionResponseStreamMessage {
+          index: 0,
+          delta: ChatCompletionStreamResponseDelta { role: Some(Role::Assistant), content: None, function_call: None },
+          finish_reason: None,
+        }],
+      },
+      CreateChatCompletionStreamResponse {
+        id: "cmpl-3fZzT7q5Y3zJ5Jp9Dq3qX8s0".to_string(),
+        object: "text_completion".to_string(),
+        created: 1613908772,
+        model: "davinci:2020-05-03".to_string(),
+        choices: vec![ChatCompletionResponseStreamMessage {
+          index: 0,
+          delta: ChatCompletionStreamResponseDelta {
+            role: None,
+            content: Some("two".to_string()),
+            function_call: None,
+          },
+          finish_reason: None,
+        }],
+      },
+      CreateChatCompletionStreamResponse {
+        id: "cmpl-3fZzT7q5Y3zJ5Jp9Dq3qX8s0".to_string(),
+        object: "text_completion".to_string(),
+        created: 1613908772,
+        model: "davinci:2020-05-03".to_string(),
+        choices: vec![ChatCompletionResponseStreamMessage {
+          index: 0,
+          delta: ChatCompletionStreamResponseDelta {
+            role: None,
+            content: Some("three".to_string()),
+            function_call: None,
+          },
+          finish_reason: None,
+        }],
+      },
+      CreateChatCompletionStreamResponse {
+        id: "cmpl-3fZzT7q5Y3zJ5Jp9Dq3qX8s0".to_string(),
+        object: "text_completion".to_string(),
+        created: 1613908773,
+        model: "davinci:2020-05-03".to_string(),
+        choices: vec![ChatCompletionResponseStreamMessage {
+          index: 0,
+          delta: ChatCompletionStreamResponseDelta { role: None, content: None, function_call: None },
+          finish_reason: Some("stop".to_string()),
+        }],
+      },
+    ];
+    session.response_handler(tx.clone(), ChatResponse::Response(response));
+    assert_eq!(session.data.messages.len(), 2);
+    session.response_handler(tx.clone(), ChatResponse::StreamResponse(stream_responses[0].clone()));
+    assert_eq!(session.data.messages.len(), 3);
+    if let ChatMessage::ChatCompletionResponseMessage(ChatResponseSingleMessage::StreamResponse(msg)) =
+      &session.data.messages[2].message
+    {
+      assert_eq!(msg[0].delta.role, Some(Role::Assistant));
+      assert_eq!(msg.len(), 1);
+      assert_eq!(msg[0].delta.content, None);
+      assert_eq!(msg[0].finish_reason, None);
+    } else {
+      panic!("Expected ChatMessage::ChatCompletionResponseMessage(ChatResponseSingleMessage::StreamResponse(msg))");
+    }
+    session.response_handler(tx.clone(), ChatResponse::StreamResponse(stream_responses[1].clone()));
+    assert_eq!(session.data.messages.len(), 3);
+    if let ChatMessage::ChatCompletionResponseMessage(ChatResponseSingleMessage::StreamResponse(msg)) =
+      &session.data.messages[2].message
+    {
+      assert_eq!(msg[0].delta.role, Some(Role::Assistant));
+      assert_eq!(msg[0].delta.content, Some("two".to_string()));
+      assert_eq!(msg[0].finish_reason, None);
+    } else {
+      panic!("Expected ChatMessage::ChatCompletionResponseMessage(ChatResponseSingleMessage::StreamResponse(msg))");
+    }
+    session.response_handler(tx.clone(), ChatResponse::StreamResponse(stream_responses[2].clone()));
+    assert_eq!(session.data.messages.len(), 3);
+    if let ChatMessage::ChatCompletionResponseMessage(ChatResponseSingleMessage::StreamResponse(msg)) =
+      &session.data.messages[2].message
+    {
+      assert_eq!(msg[0].delta.role, Some(Role::Assistant));
+      assert_eq!(msg[0].delta.content, Some("twothree".to_string()));
+      assert_eq!(msg[0].finish_reason, None);
+    } else {
+      panic!("Expected ChatMessage::ChatCompletionResponseMessage(ChatResponseSingleMessage::StreamResponse(msg))");
+    }
+    session.response_handler(tx.clone(), ChatResponse::StreamResponse(stream_responses[3].clone()));
+    assert_eq!(session.data.messages.len(), 3);
+    if let ChatMessage::ChatCompletionResponseMessage(ChatResponseSingleMessage::StreamResponse(msg)) =
+      &session.data.messages[2].message
+    {
+      assert_eq!(msg[0].delta.role, Some(Role::Assistant));
+      assert_eq!(msg[0].delta.content, Some("twothree".to_string()));
+      assert_eq!(msg[0].finish_reason, Some("stop".to_string()));
+    } else {
+      panic!("Expected ChatMessage::ChatCompletionRequestMessage(ChatResponseSingleMessage::StreamResponse(msg))");
+    }
+    insta::assert_yaml_snapshot!(&session.data);
+    insta::assert_yaml_snapshot!(&session.data.stylized_text());
+  }
+
+  // write a test for Session::add_chunked_chat_completion_request_messages
+  // write a test for Session::construct_request
+  // write a test for Session::request_response
+  // write a test for Session::request_chat_completion
+  // write a test for Session::response_handler
+  // write a test for Session::execute_function_call
+}

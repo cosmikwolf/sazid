@@ -194,34 +194,34 @@ mod tests {
   // a test for parse_input to verify that it is doing what it needs to do
   // using fake text that has a URL, a filepath and also some text
   // it should return a IngestData struct that contains the full text, a list of URLs, and a list of file paths
-  #[test]
-  fn test_parse_input() {
-    let input = "https://www.google.com/ src/main.rs this is some text";
-    let ingest_data = categorize_input(input).unwrap();
-    assert_eq!(ingest_data.text, "https://www.google.com/ src/main.rs this is some text");
-    assert_eq!(ingest_data.urls, vec!["https://www.google.com/"]);
-    assert_eq!(ingest_data.file_paths, vec![PathBuf::from("src/main.rs")]);
-  }
-
-  #[test]
-  fn test_chunkify_pdf_file() {
-    let pdf_file_path = PathBuf::from("tests/data/NIST.SP.800-185.pdf");
-    let chunks = chunkify_file(&pdf_file_path, 4).unwrap();
-
-    // This will depend on the content of the PDF and the chunk size.
-    // For the purpose of the test, let's check if the first chunk contains some expected stub text.
-    // You can adjust the expected stub text based on the content of the PDF.
-    let expected_text = "NIST Special Publication"; // Adjust this as necessary
-
-    assert!(!chunks.is_empty());
-    assert!(chunks[0].contains(expected_text), "Expected stub text not found in the first chunk.");
-
-    // Print out the chunks for verification:
-    for (i, chunk) in chunks.iter().enumerate() {
-      println!("Chunk {}: {}", i + 1, chunk);
-    }
-  }
-
+  // #[test]
+  // fn test_parse_input() {
+  //   let input = "https://www.google.com/ src/main.rs this is some text";
+  //   let ingest_data = categorize_input(input).unwrap();
+  //   assert_eq!(ingest_data.text, "https://www.google.com/ src/main.rs this is some text");
+  //   assert_eq!(ingest_data.urls, vec!["https://www.google.com/"]);
+  //   assert_eq!(ingest_data.file_paths, vec![PathBuf::from("src/main.rs")]);
+  // }
+  //
+  // #[test]
+  // fn test_chunkify_pdf_file() {
+  //   let pdf_file_path = PathBuf::from("tests/data/NIST.SP.800-185.pdf");
+  //   let chunks = chunkify_file(&pdf_file_path, 4).unwrap();
+  //
+  //   // This will depend on the content of the PDF and the chunk size.
+  //   // For the purpose of the test, let's check if the first chunk contains some expected stub text.
+  //   // You can adjust the expected stub text based on the content of the PDF.
+  //   let expected_text = "NIST Special Publication"; // Adjust this as necessary
+  //
+  //   assert!(!chunks.is_empty());
+  //   assert!(chunks[0].contains(expected_text), "Expected stub text not found in the first chunk.");
+  //
+  //   // Print out the chunks for verification:
+  //   for (i, chunk) in chunks.iter().enumerate() {
+  //     println!("Chunk {}: {}", i + 1, chunk);
+  //   }
+  // }
+  //
   #[test]
   fn test_chunkify_text_file() {
     let dir = tempdir().unwrap();

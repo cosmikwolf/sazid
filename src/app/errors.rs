@@ -11,11 +11,13 @@ pub enum SazidError {
   ConfigError(config::ConfigError),
   IoError(io::Error),
   Other(String),
+  ChunkifierError(ChunkifierError),
 }
 
 impl fmt::Display for SazidError {
   fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
     match self {
+      SazidError::ChunkifierError(err) => write!(f, "ChunkifierError: {}", err),
       SazidError::ParseError(err) => write!(f, "ParseError: {}", err),
       SazidError::ConfigError(err) => write!(f, "ConfigError: {}", err),
       SazidError::OpenAiError(err) => write!(f, "OpenAIError: {}", err),
@@ -58,8 +60,8 @@ impl From<String> for SazidError {
 #[derive(Debug)]
 pub struct ParseError {
   message: String,
-  source: Option<Box<dyn Error>>,
 }
+
 impl fmt::Display for ParseError {
   fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
     write!(f, "ParseError: {}", self.message)

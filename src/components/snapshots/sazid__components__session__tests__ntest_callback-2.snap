@@ -1,0 +1,6 @@
+---
+source: src/components/session.rs
+expression: "&session.data.stylized_text()"
+---
+"Prompt: ---\ntest response data---\ntwothree---\n"
+

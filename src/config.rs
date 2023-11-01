@@ -451,7 +451,7 @@ mod tests {
   fn test_config() -> Result<()> {
     let c = Config::new(false)?;
     assert_eq!(
-      c.keybindings.get(&Mode::Home).unwrap().get(&parse_key_sequence("<q>").unwrap_or_default()).unwrap(),
+      c.keybindings.get(&Mode::Home).unwrap().get(&parse_key_sequence("<Ctrl-c>").unwrap_or_default()).unwrap(),
       &Action::Quit
     );
     Ok(())

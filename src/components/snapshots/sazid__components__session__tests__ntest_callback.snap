@@ -1,0 +1,34 @@
+---
+source: src/components/session.rs
+expression: "&session.data"
+---
+messages:
+  - message:
+      PromptMessage:
+        role: user
+        content: ""
+    stylized: "Prompt: ---\n"
+    finished: false
+  - message:
+      ChatCompletionResponseMessage:
+        Response:
+          index: 0
+          message:
+            role: user
+            content: test response data
+            function_call: ~
+          finish_reason: STOP
+    stylized: "test response data---\n"
+    finished: false
+  - message:
+      ChatCompletionResponseMessage:
+        StreamResponse:
+          - index: 0
+            delta:
+              role: assistant
+              content: twothree
+              function_call: ~
+            finish_reason: stop
+    stylized: "twothree---\n"
+    finished: false
+

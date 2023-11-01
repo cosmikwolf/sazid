@@ -1,0 +1,6 @@
+---
+source: tests/stream_response_test.rs
+expression: "&session.data.stylized_text()"
+---
+"Hello World---\nHello! How can I assist you today?---\n"
+

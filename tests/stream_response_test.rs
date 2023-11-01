@@ -5,7 +5,7 @@ mod tests {
   use async_openai::types::Role;
   use ntest::timeout;
   use sazid::action::Action;
-  use sazid::app::types::{ChatMessage, ChatResponse, ChatResponseSingleMessage};
+  use sazid::app::types::{ChatMessage, ChatResponse, ChatResponseSingleMessage, MessageContainer};
   use sazid::components::session::*;
   use tokio::sync::mpsc;
 
@@ -34,14 +34,19 @@ mod tests {
           },
           Action::ExitProcessing => {
             // break;
-            if let Some(ChatMessage::ChatCompletionResponseMessage(ChatResponseSingleMessage::StreamResponse(
-              combined,
-            ))) = session.data.messages.last()
+            if let Some(MessageContainer {
+              message: ChatMessage::ChatCompletionResponseMessage(ChatResponseSingleMessage::StreamResponse(combined)),
+              stylized: _,
+              finished: _,
+            }) = session.data.messages.last()
             {
               assert!(process_response_action_run);
               assert!(enter_processing_action_run);
               insta::assert_yaml_snapshot!(&combined, { ".id" => "[id]", ".created"  => "[created]" });
               insta::assert_yaml_snapshot!(&session.data.messages.last().unwrap(), { ".id" => "[id]", ".created"  => "[created]" });
+              insta::assert_yaml_snapshot!(&session.data.messages, { ".id" => "[id]", ".created"  => "[created]" });
+              insta::assert_yaml_snapshot!(&session.data);
+              insta::assert_yaml_snapshot!(&session.data.stylized_text());
             } else {
               panic!(
                 "Expected last transaction message to be StreamResponse {:#?}",
@@ -50,9 +55,13 @@ mod tests {
             }
             break 'outer;
           },
+          Action::RequestChatCompletion() => {
+            session.request_chat_completion(tx.clone());
+          },
           Action::Update => {},
           Action::Render => {},
           _ => {
+            print!("Unexpected action {:#?}", res);
             panic!("Unexpected action {:#?}", res);
           },
         }
@@ -63,16 +72,21 @@ mod tests {
   #[test]
   fn test_construct_chat_completion_request_message() {
     let mut session = Session::new();
-    if let Ok(create_chat_completion_request_message_result) = session.add_chunked_chat_completion_request_messages(
+    match session.add_chunked_chat_completion_request_messages(
       "testing testing 1 2 3",
       "sazid testing",
       Role::User,
       session.config.model.clone().as_ref(),
       None,
     ) {
-      insta::assert_toml_snapshot!(create_chat_completion_request_message_result);
-    } else {
-      panic!("construct_chat_completion_request_message failed")
+      Ok(_) => {
+        print!("{:?}", session.data);
+        insta::assert_yaml_snapshot!(&session.data);
+      },
+      Err(e) => {
+        print!("Error: {:#?}", e);
+        panic!("Error: {:#?}", e);
+      },
     };
   }
 }

@@ -2,15 +2,10 @@
 source: tests/stream_response_test.rs
 expression: "&combined"
 ---
-id: "[id]"
-object: chat.completion.chunk
-created: "[created]"
-model: gpt-4-0613
-choices:
-  - index: 0
-    delta:
-      role: ~
-      content: ~
-      function_call: ~
-    finish_reason: stop
+- index: 0
+  delta:
+    role: assistant
+    content: Hello! How can I assist you today?
+    function_call: ~
+  finish_reason: stop
 

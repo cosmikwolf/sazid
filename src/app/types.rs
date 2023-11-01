@@ -3,8 +3,8 @@ use crate::{app::consts::*, trace_dbg};
 use async_openai::{
   self,
   types::{
-    ChatChoice, ChatCompletionRequestMessage, ChatCompletionResponseStreamMessage, CreateChatCompletionResponse,
-    CreateChatCompletionStreamResponse, FunctionCall, FunctionCallStream, Role,
+    ChatChoice, ChatCompletionRequestMessage, ChatCompletionResponseStreamMessage, ChatCompletionStreamResponseDelta,
+    CreateChatCompletionResponse, CreateChatCompletionStreamResponse, FunctionCall, FunctionCallStream, Role,
   },
 };
 use clap::Parser;
@@ -18,8 +18,7 @@ use bat::{
 };
 use serde::{Deserialize, Serialize};
 use std::{collections::BTreeMap, ffi::OsString, path::PathBuf};
-
-use super::errors::ParseError;
+use tracing::Level;
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct RenderedFunctionCall {
@@ -74,6 +73,24 @@ pub enum ChatMessage {
 pub struct MessageContainer {
   pub message: ChatMessage,
   pub stylized: Option<String>,
+  pub finished: bool,
+}
+
+impl From<MessageContainer> for ChatMessage {
+  fn from(message_container: MessageContainer) -> Self {
+    message_container.message
+  }
+}
+
+impl From<&MessageContainer> for ChatMessage {
+  fn from(message_container: &MessageContainer) -> Self {
+    message_container.message.clone()
+  }
+}
+impl From<ChatMessage> for MessageContainer {
+  fn from(message: ChatMessage) -> Self {
+    MessageContainer { message, stylized: None, finished: false }
+  }
 }
 
 impl From<ChatResponse> for Vec<ChatMessage> {
@@ -96,34 +113,19 @@ impl From<&ChatMessage> for ChatCompletionRequestMessage {
       ChatMessage::PromptMessage(request) => request.clone(),
       ChatMessage::ChatCompletionRequestMessage(request) => request.clone(),
       ChatMessage::ChatCompletionResponseMessage(ChatResponseSingleMessage::StreamResponse(srvec)) => {
-        let content = Some(
-          srvec
-            .iter()
-            .try_fold(String::new(), |mut acc, stream_message| {
-              if let Some(content) = &stream_message.delta.content {
-                acc.push_str(content);
-              }
-              Ok::<String, ParseError>(acc)
-            })
-            .unwrap(),
-        );
-        let function_call = Some(
-          srvec
-            .iter()
-            .try_fold(FunctionCall { name: "".to_string(), arguments: "".to_string() }, |mut acc, stream_message| {
-              if let Some(function_call) = &stream_message.delta.function_call {
-                if let Some(name) = &function_call.name {
-                  acc.name.push_str(name.as_str());
-                };
-                if let Some(arguments) = &function_call.arguments {
-                  acc.arguments.push_str(arguments.as_str());
-                };
-              }
-              Ok::<FunctionCall, ParseError>(acc)
-            })
-            .unwrap(),
-        );
-        ChatCompletionRequestMessage { role: Role::Assistant, content, function_call, name: None }
+        let mut message = srvec[0].clone();
+        srvec.iter().skip(1).for_each(|sr| {
+          message = concatenate_stream_response_messages(&message, sr);
+        });
+        ChatCompletionRequestMessage {
+          role: Role::Assistant,
+          content: message.delta.content,
+          function_call: Some(FunctionCall {
+            name: message.delta.function_call.clone().and_then(|fc| fc.name).unwrap_or("".to_string()),
+            arguments: message.delta.function_call.clone().and_then(|fc| fc.arguments).unwrap_or("".to_string()),
+          }),
+          name: None,
+        }
       },
       ChatMessage::ChatCompletionResponseMessage(ChatResponseSingleMessage::Response(response)) => {
         ChatCompletionRequestMessage {
@@ -134,6 +136,12 @@ impl From<&ChatMessage> for ChatCompletionRequestMessage {
         }
       },
     }
+  }
+}
+
+impl AsRef<ChatMessage> for ChatMessage {
+  fn as_ref(&self) -> &ChatMessage {
+    self
   }
 }
 impl From<&ChatMessage> for RenderedChatMessage {
@@ -162,52 +170,17 @@ impl From<&ChatMessage> for RenderedChatMessage {
           finish_reason: response.finish_reason.clone(),
         }
       },
-
       ChatMessage::ChatCompletionResponseMessage(ChatResponseSingleMessage::StreamResponse(srvec)) => {
-        let finish_reason = Some(
-          srvec
-            .iter()
-            .try_fold(String::new(), |mut acc, stream_message| {
-              if let Some(reason) = &stream_message.finish_reason {
-                acc.push_str(reason);
-              }
-              Ok::<String, ParseError>(acc)
-            })
-            .unwrap(),
-        );
-        let content = Some(
-          srvec
-            .iter()
-            .try_fold(String::new(), |mut acc, stream_message| {
-              if let Some(content) = &stream_message.delta.content {
-                acc.push_str(content);
-              }
-              Ok::<String, ParseError>(acc)
-            })
-            .unwrap(),
-        );
-        let function_call = Some(RenderedFunctionCall::from(
-          srvec
-            .iter()
-            .try_fold(FunctionCall { name: "".to_string(), arguments: "".to_string() }, |mut acc, stream_message| {
-              if let Some(function_call) = &stream_message.delta.function_call {
-                if let Some(name) = &function_call.name {
-                  acc.name.push_str(name.as_str());
-                };
-                if let Some(arguments) = &function_call.arguments {
-                  acc.arguments.push_str(arguments.as_str());
-                };
-              }
-              Ok::<FunctionCall, ParseError>(acc)
-            })
-            .unwrap(),
-        ));
+        let mut message = srvec[0].clone();
+        srvec.iter().skip(1).for_each(|sr| {
+          message = concatenate_stream_response_messages(&message, sr);
+        });
         RenderedChatMessage {
           role: Some(Role::Assistant),
-          content,
+          content: message.delta.content,
           rendered_content: None,
-          function_call,
-          finish_reason,
+          function_call: message.delta.function_call.map(|function_call| function_call.into()),
+          finish_reason: message.finish_reason,
         }
       },
     }
@@ -216,14 +189,17 @@ impl From<&ChatMessage> for RenderedChatMessage {
 
 #[derive(Default, Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct SessionData {
-  pub messages: Vec<ChatMessage>,
-  pub rendered_messages: Vec<RenderedChatMessage>,
-  pub stylized_text: Vec<String>,
+  pub messages: Vec<MessageContainer>,
 }
 
 impl From<SessionData> for String {
   fn from(session_data: SessionData) -> String {
-    session_data.rendered_messages.iter().map(|m| m.into()).collect::<Vec<String>>().join("\n---\n")
+    session_data
+      .messages
+      .iter()
+      .map(|m| String::from(RenderedChatMessage::from(m.message.as_ref())))
+      .collect::<Vec<String>>()
+      .join("\n")
   }
 }
 
@@ -253,45 +229,73 @@ fn concatenate_function_call_streams(
   }
 }
 
+fn concatenate_stream_delta(
+  delta1: ChatCompletionStreamResponseDelta,
+  delta2: ChatCompletionStreamResponseDelta,
+) -> ChatCompletionStreamResponseDelta {
+  ChatCompletionStreamResponseDelta {
+    role: delta1.role,
+    content: concatenate_option_strings(delta1.content, delta2.content),
+    function_call: concatenate_function_call_streams(delta1.function_call, delta2.function_call),
+  }
+}
+
+fn concatenate_stream_response_messages(
+  sr1: &ChatCompletionResponseStreamMessage,
+  sr2: &ChatCompletionResponseStreamMessage,
+) -> ChatCompletionResponseStreamMessage {
+  ChatCompletionResponseStreamMessage {
+    index: sr1.index,
+    delta: concatenate_stream_delta(sr1.delta.clone(), sr2.delta.clone()),
+    finish_reason: concatenate_option_strings(sr1.finish_reason.clone(), sr2.finish_reason.clone()),
+  }
+}
+
+fn collate_stream_response_vec(
+  new_srvec: Vec<ChatCompletionResponseStreamMessage>,
+  existing_srvec: &mut Vec<ChatCompletionResponseStreamMessage>,
+) {
+  trace_dbg!("add_message: supplimental delta \n{:?}\n{:?}", new_srvec, existing_srvec);
+  new_srvec.iter().for_each(|new_sr| {
+    if !existing_srvec.iter_mut().any(|existing_sr| {
+      if existing_sr.index == new_sr.index {
+        *existing_sr = concatenate_stream_response_messages(existing_sr, new_sr);
+        true
+      } else {
+        false
+      }
+    }) {
+      existing_srvec.push(new_sr.clone());
+    }
+  });
+}
 impl SessionData {
   pub fn add_message(&mut self, message: ChatMessage) {
     match message {
-      ChatMessage::ChatCompletionResponseMessage(ChatResponseSingleMessage::StreamResponse(new_sr_messages)) => {
-        trace_dbg!("add_message: new_sr_messages: {:?}", new_sr_messages);
-
-        if let Some(ChatMessage::ChatCompletionResponseMessage(ChatResponseSingleMessage::StreamResponse(
-          existing_sr_messages,
-        ))) = self.messages.last_mut()
-        {
-          // if there is an existing StreamResponse, then iterate through the Vec new_sr_messages and push any ChatCompletionResponseMessage that has the same index to it
-          for new_sr_message in new_sr_messages {
-            if let Some(existing_sr_message) = existing_sr_messages
-              .iter_mut()
-              .find(|existing_sr_message| existing_sr_message.index == new_sr_message.index)
-            {
-              existing_sr_message.delta.content = concatenate_option_strings(
-                existing_sr_message.delta.content.clone(),
-                new_sr_message.delta.content.clone(),
-              );
-              existing_sr_message.delta.function_call = concatenate_function_call_streams(
-                existing_sr_message.delta.function_call.clone(),
-                new_sr_message.delta.function_call.clone(),
-              );
-            } else {
-              existing_sr_messages.push(new_sr_message.clone());
-            }
+      ChatMessage::ChatCompletionResponseMessage(ChatResponseSingleMessage::StreamResponse(new_srvec)) => {
+        if let Some(mc) = self.messages.last_mut() {
+          if let ChatMessage::ChatCompletionResponseMessage(ChatResponseSingleMessage::StreamResponse(existing_srvec)) =
+            &mut mc.message
+          {
+            collate_stream_response_vec(new_srvec, existing_srvec);
+            self.render_new_messages();
+          } else {
+            trace_dbg!("add_message: new delta {:?}", new_srvec);
+            // No existing StreamResponse, just push the message.
+            self.messages.push(
+              ChatMessage::ChatCompletionResponseMessage(ChatResponseSingleMessage::StreamResponse(new_srvec)).into(),
+            );
+            self.render_new_messages();
           }
-          self.render_new_messages();
         } else {
-          // No existing StreamResponse, just push the message.
-          self.messages.push(ChatMessage::ChatCompletionResponseMessage(ChatResponseSingleMessage::StreamResponse(
-            new_sr_messages,
-          )));
+          self.messages.push(
+            ChatMessage::ChatCompletionResponseMessage(ChatResponseSingleMessage::StreamResponse(new_srvec)).into(),
+          );
           self.render_new_messages();
         }
       },
       _ => {
-        self.messages.push(message.clone());
+        self.messages.push(message.clone().into());
         self.render_new_messages();
       },
     }
@@ -310,34 +314,45 @@ impl SessionData {
     let config = Config { colored_output: true, language: Some("markdown"), style_components, ..Default::default() };
     let assets = HighlightingAssets::from_binary();
     let controller = Controller::new(&config, &assets);
-    self.messages.iter().for_each(|message| {
-      let message = RenderedChatMessage::from(message);
-      trace_dbg!("render_new_messages: message: {:?}", message.content);
+    self.messages.iter_mut().for_each(|message| {
+      let rendered_message = RenderedChatMessage::from(&ChatMessage::from(message.clone()));
       let mut buffer = String::new();
-      if message.finish_reason.is_none() {
-        let message_as_bytes = String::from(message);
-        let input = Input::from_bytes(message_as_bytes.as_bytes());
+      if !message.finished {
+        let mut message_content = String::from(rendered_message);
+        message_content.push_str("---\n");
+        let input = Input::from_bytes(message_content.as_bytes());
         controller.run(vec![input.into()], Some(&mut buffer)).unwrap();
-        self.stylized_text.pop();
+        //message.stylized = Some(buffer.clone());
+        trace_dbg!("rendering \ncontent: {:?}\nstylized:{:?}", message_content, message.stylized);
+        message.stylized = Some(message_content);
       }
-      self.stylized_text.push(buffer)
     });
   }
-}
 
-impl From<&RenderedChatMessage> for String {
-  fn from(message: &RenderedChatMessage) -> Self {
-    let mut string_vec: Vec<String> = Vec::new();
-    if let Some(content) = &message.content {
-      string_vec.push(content.to_string());
-    }
-    if let Some(function_call) = &message.function_call {
-      string_vec.push(format!("function call: {} {}", function_call.name.as_str(), function_call.arguments.as_str()));
-    }
-    string_vec.join("\n")
+  pub fn stylized_text(&self) -> String {
+    self.messages.iter().flat_map(|m| m.stylized.clone()).collect::<Vec<String>>().join("")
+    // self
+    //   .messages
+    //   .iter()
+    //   .flat_map(|m| Some(String::from(RenderedChatMessage::from(&ChatMessage::from(m)))))
+    //   .collect::<Vec<String>>()
+    //   .join("")
   }
 }
 
+// impl From<&RenderedChatMessage> for String {
+//   fn from(message: &RenderedChatMessage) -> Self {
+//     let mut string_vec: Vec<String> = Vec::new();
+//     if let Some(content) = &message.content {
+//       string_vec.push(content.to_string());
+//     }
+//     if let Some(function_call) = &message.function_call {
+//       string_vec.push(format!("function call: {} {}", function_call.name.as_str(), function_call.arguments.as_str()));
+//     }
+//     string_vec.join("\n")
+//   }
+// }
+//
 impl From<RenderedChatMessage> for String {
   fn from(message: RenderedChatMessage) -> Self {
     let mut string_vec: Vec<String> = Vec::new();
@@ -347,7 +362,7 @@ impl From<RenderedChatMessage> for String {
     if let Some(function_call) = message.function_call {
       string_vec.push(format!("function call: {} {}", function_call.name.as_str(), function_call.arguments.as_str()));
     }
-    string_vec.join("\n")
+    string_vec.join("-\n")
   }
 }
 
@@ -541,5 +556,98 @@ fn format_chat_message(f: &mut std::fmt::Formatter<'_>, role: Role, message: Str
     Role::User => write!(f, "You: {}\n\r", message),
     Role::Assistant => write!(f, "GPT: {}\n\r", message),
     _ => Ok(()),
+  }
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+  // Concatenate Function implementations (concatenate_option_strings, concatenate_function_call_streams, etc.)
+
+  #[test]
+  fn test_concatenate_option_strings() {
+    assert_eq!(
+      concatenate_option_strings(Some("Hello".to_string()), Some(" world!".to_string())),
+      Some("Hello world!".to_string())
+    );
+    assert_eq!(concatenate_option_strings(Some("Hello".to_string()), None), Some("Hello".to_string()));
+    assert_eq!(concatenate_option_strings(None, Some("world!".to_string())), Some("world!".to_string()));
+    assert_eq!(concatenate_option_strings(None::<String>, None::<String>), None);
+  }
+
+  #[test]
+  fn test_concatenate_function_call_streams() {
+    let fc1 = FunctionCallStream { name: Some("func1".to_string()), arguments: Some("arg1".to_string()) };
+    let fc2 = FunctionCallStream { name: Some("func2".to_string()), arguments: Some("arg2".to_string()) };
+    assert_eq!(
+      concatenate_function_call_streams(Some(fc1.clone()), Some(fc2.clone())),
+      Some(FunctionCallStream { name: Some("func1func2".to_string()), arguments: Some("arg1arg2".to_string()) })
+    );
+    assert_eq!(concatenate_function_call_streams(Some(fc1.clone()), None), Some(fc1.clone()));
+    assert_eq!(concatenate_function_call_streams(None, Some(fc2.clone())), Some(fc2.clone()));
+    assert_eq!(concatenate_function_call_streams(None::<FunctionCallStream>, None::<FunctionCallStream>), None);
+  }
+
+  #[test]
+  fn test_concatenate_stream_delta() {
+    let delta1 = ChatCompletionStreamResponseDelta {
+      role: Some(Role::User),
+      content: Some("hello".to_string()),
+      function_call: Some(FunctionCallStream { name: Some("greet".to_string()), arguments: Some("".to_string()) }),
+    };
+    let delta2 = ChatCompletionStreamResponseDelta {
+      role: Some(Role::Assistant),
+      content: Some(" world".to_string()),
+      function_call: Some(FunctionCallStream { name: Some("response".to_string()), arguments: Some("".to_string()) }),
+    };
+    assert_eq!(
+      concatenate_stream_delta(delta1, delta2),
+      ChatCompletionStreamResponseDelta {
+        role: Some(Role::User), // The role is taken from the first delta
+        content: Some("hello world".to_string()),
+        function_call: Some(FunctionCallStream {
+          name: Some("greetresponse".to_string()),
+          arguments: Some("".to_string())
+        }),
+      }
+    );
+  }
+
+  #[test]
+  fn test_concatenate_stream_response_messages() {
+    let sr1 = ChatCompletionResponseStreamMessage {
+      index: 1,
+      delta: ChatCompletionStreamResponseDelta {
+        role: Some(Role::User),
+        content: Some("hello".to_string()),
+        function_call: Some(FunctionCallStream { name: Some("greet".to_string()), arguments: Some("".to_string()) }),
+      },
+      finish_reason: None,
+    };
+    let sr2 = ChatCompletionResponseStreamMessage {
+      index: 2, // Index is different, but concatenate_stream_response_messages uses sr1's index
+      delta: ChatCompletionStreamResponseDelta {
+        role: Some(Role::Assistant),
+        content: Some(" world".to_string()),
+        function_call: Some(FunctionCallStream { name: Some("response".to_string()), arguments: Some("".to_string()) }),
+      },
+      finish_reason: Some("stop".to_string()), // This is ignored in concatenate_stream_response_messages
+    };
+    assert_eq!(
+      concatenate_stream_response_messages(&sr1, &sr2),
+      ChatCompletionResponseStreamMessage {
+        index: 1, // The index from sr1 is used
+        delta: ChatCompletionStreamResponseDelta {
+          role: Some(Role::User),
+          content: Some("hello world".to_string()),
+          function_call: Some(FunctionCallStream {
+            name: Some("greetresponse".to_string()),
+            arguments: Some("".to_string())
+          }),
+        },
+        finish_reason: Some("stop".to_string()), // The finish_reason from sr1 is used
+      }
+    );
   }
 }

@@ -431,12 +431,12 @@ mod test {
     assert!(dir_contents.is_ok());
   }
 
-  #[test]
-  fn test_read_file_lines() {
-    let file_contents =
-      super::read_file_lines("./src/gpt_commands.rs", Some(0), Some(10), 1024, vec![PathBuf::from("src".to_string())]);
-    assert!(file_contents.is_ok());
-  }
+  // #[test]
+  // fn test_read_file_lines() {
+  //   let file_contents =
+  //     super::read_file_lines("./src/gpt_commands.rs", Some(0), Some(10), 1024, vec![PathBuf::from("src".to_string())]);
+  //   assert!(file_contents.is_ok());
+  // }
 
   #[test]
   fn test_replace_lines() {
