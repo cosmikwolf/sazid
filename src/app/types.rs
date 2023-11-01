@@ -132,7 +132,7 @@ impl From<&ChatMessage> for ChatCompletionRequestMessage {
         });
         ChatCompletionRequestMessage {
           role: Role::Assistant,
-          content: message.delta.content,
+          content: Some(message.delta.content.unwrap_or("".to_string())),
           function_call: None,
           // function_call: Some(FunctionCall {
           //   name: message.delta.function_call.clone().and_then(|fc| fc.name).unwrap_or("".to_string()),
@@ -281,7 +281,7 @@ fn collate_stream_response_vec(
   new_srvec: Vec<ChatCompletionResponseStreamMessage>,
   existing_srvec: &mut Vec<ChatCompletionResponseStreamMessage>,
 ) {
-  trace_dbg!("add_message_and_get_function_call: supplimental delta \n{:?}\n{:?}", new_srvec, existing_srvec);
+  // trace_dbg!("add_message: supplimental delta \n{:?}\n{:?}", new_srvec, existing_srvec);
   new_srvec.iter().for_each(|new_sr| {
     if !existing_srvec.iter_mut().any(|existing_sr| {
       if existing_sr.index == new_sr.index {
@@ -296,16 +296,21 @@ fn collate_stream_response_vec(
   });
 }
 impl SessionData {
-  pub fn add_message_and_get_function_call(&mut self, message: ChatMessage) -> Vec<RenderedFunctionCall> {
+  pub fn add_message(&mut self, message: ChatMessage) {
     match message {
       ChatMessage::ChatCompletionResponseMessage(ChatResponseSingleMessage::StreamResponse(new_srvec)) => {
         if let Some(mc) = self.messages.last_mut() {
-          if let ChatMessage::ChatCompletionResponseMessage(ChatResponseSingleMessage::StreamResponse(existing_srvec)) =
-            &mut mc.message
+          if mc.finished {
+            self.messages.push(
+              ChatMessage::ChatCompletionResponseMessage(ChatResponseSingleMessage::StreamResponse(new_srvec)).into(),
+            );
+          } else if let ChatMessage::ChatCompletionResponseMessage(ChatResponseSingleMessage::StreamResponse(
+            existing_srvec,
+          )) = &mut mc.message
           {
             collate_stream_response_vec(new_srvec, existing_srvec);
           } else {
-            trace_dbg!("add_message_and_get_function_call: new delta {:?}", new_srvec);
+            trace_dbg!("add_message: new delta {:?}", new_srvec);
             // No existing StreamResponse, just push the message.
             self.messages.push(
               ChatMessage::ChatCompletionResponseMessage(ChatResponseSingleMessage::StreamResponse(new_srvec)).into(),
@@ -324,24 +329,23 @@ impl SessionData {
     // return a vec of any functions that need to be called
     self.post_process_new_messages()
   }
+  pub fn post_process_new_messages(&mut self) {
+    for message in self.messages.iter_mut().filter(|m| !m.finished) {
+      SessionData::render_message(message);
+      let rendered_message = RenderedChatMessage::from(&message.message);
+      if rendered_message.finish_reason.is_some() {
+        message.finished = true;
+        trace_dbg!("post_process_new_messages: finished message {:#?}", message);
+      }
+    }
+  }
 
-  pub fn post_process_new_messages(&mut self) -> Vec<RenderedFunctionCall> {
+  pub fn get_functions_that_need_calling(&self) -> Vec<RenderedFunctionCall> {
     self
       .messages
-      .iter_mut()
-      .filter_map(|m| {
-        if m.finished {
-          None
-        } else {
-          SessionData::render_message(m);
-          let rendered_message = RenderedChatMessage::from(&m.message);
-          if rendered_message.finish_reason.is_some() {
-            m.finished = true;
-          }
-          Some(rendered_message.function_call)
-        }
-      })
-      .flatten()
+      .iter()
+      .filter(|m| m.finished)
+      .filter_map(|m| RenderedChatMessage::from(&m.message).function_call)
       .collect()
   }
 

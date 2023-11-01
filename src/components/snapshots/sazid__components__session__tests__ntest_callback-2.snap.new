@@ -1,0 +1,7 @@
+---
+source: src/components/session.rs
+assertion_line: 795
+expression: "&session.data.stylized_text()"
+---
+"\u001b[38;5;238m\u001b[0m\n\u001b[38;5;231mPrompt: \u001b[0m\n\u001b[38;5;238m\u001b[0m\n\n\u001b[38;5;238m\u001b[0m\n\u001b[38;5;231mtest response data\u001b[0m\n\u001b[38;5;238m\u001b[0m\n\n\u001b[38;5;238m\u001b[0m\n\u001b[38;5;231mtwothree\u001b[0m\n\u001b[38;5;238m\u001b[0m\n\n\u001b[38;5;238m\u001b[0m\n\u001b[38;5;231mfunction call: file_search { src }\u001b[0m\n\u001b[38;5;238m\u001b[0m\n"
+

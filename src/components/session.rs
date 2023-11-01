@@ -137,7 +137,7 @@ impl Component for Session {
         Use the functions available to assist with the user inquiry.
         Do not try and execute arbitrary python code.
         Do not try to infer a path to a file, if you have not been provided a path with the root ./, use the file_search function to verify the file path before you execute a function call.".to_string();
-    self.data.add_message_and_get_function_call(ChatMessage::PromptMessage(self.config.prompt_message()));
+    self.data.add_message(ChatMessage::PromptMessage(self.config.prompt_message()));
     Ok(())
   }
   fn register_action_handler(&mut self, tx: UnboundedSender<Action>) -> Result<(), SazidError> {
@@ -257,15 +257,13 @@ impl Session {
     match parse_input(content, CHUNK_TOKEN_LIMIT as usize, model.token_limit as usize) {
       Ok(chunks) => {
         chunks.iter().for_each(|chunk| {
-          self.data.add_message_and_get_function_call(ChatMessage::ChatCompletionRequestMessage(
-            ChatCompletionRequestMessage {
-              role: role.clone(),
-              name: None,
-              //name: Some(name.to_string()),
-              content: Some(chunk.clone()),
-              function_call: function_call.clone(),
-            },
-          ));
+          self.data.add_message(ChatMessage::ChatCompletionRequestMessage(ChatCompletionRequestMessage {
+            role: role.clone(),
+            name: None,
+            //name: Some(name.to_string()),
+            content: Some(chunk.clone()),
+            function_call: function_call.clone(),
+          }));
         });
         Ok(())
       },
@@ -313,14 +311,11 @@ impl Session {
   pub fn handle_chat_response_function_call(&mut self, tx: UnboundedSender<Action>, fn_name: String, fn_args: String) {
     match self.execute_function_call(fn_name.clone(), fn_args) {
       Ok(Some(output)) => {
-        self.data.add_message_and_get_function_call(ChatMessage::FunctionResult(FunctionResult {
-          name: fn_name,
-          response: output,
-        }));
+        self.data.add_message(ChatMessage::FunctionResult(FunctionResult { name: fn_name, response: output }));
       },
       Ok(None) => {},
       Err(e) => {
-        self.data.add_message_and_get_function_call(ChatMessage::FunctionResult(FunctionResult {
+        self.data.add_message(ChatMessage::FunctionResult(FunctionResult {
           name: fn_name,
           response: format!("Error: {:?}", e),
         }));
@@ -337,9 +332,9 @@ impl Session {
     tx.send(Action::EnterProcessing).unwrap();
     let client = create_openai_client(openai_config);
     trace_dbg!("Sending Request:\n{:?}", &request.messages.last().unwrap().content);
-    for message in request.messages.iter() {
-      trace_dbg!("msg: {:?}", message.content);
-    }
+    //for message in request.messages.iter() {
+    //trace_dbg!("msg: {:?}", message.content);
+    //}
     // let debug = format!("request: {:#?}", request).replace("\\n", "\n");
     // for line in debug.lines() {
     //   trace_dbg!(line);
@@ -352,7 +347,7 @@ impl Session {
           while let Some(response_result) = stream.next().await {
             match response_result {
               Ok(response) => {
-                trace_dbg!("Response: {:?}", response.clone());
+                //trace_dbg!("Response: {:?}", response.clone());
                 tx.send(Action::ProcessResponse(ChatResponse::StreamResponse(response))).unwrap();
               },
               Err(e) => {
@@ -381,8 +376,8 @@ impl Session {
 
   pub fn response_handler(&mut self, tx: UnboundedSender<Action>, response: ChatResponse) {
     for choice in <Vec<ChatMessage>>::from(response) {
-      let functions_need_calling = self.data.add_message_and_get_function_call(choice);
-      for function_call in functions_need_calling {
+      self.data.add_message(choice);
+      for function_call in self.data.get_functions_that_need_calling() {
         tx.send(Action::CallFunction(function_call.name, function_call.arguments)).unwrap();
       }
     }
@@ -544,17 +539,17 @@ mod tests {
   use crate::action;
   use async_openai::types::{
     ChatChoice, ChatCompletionResponseMessage, ChatCompletionResponseStreamMessage, ChatCompletionStreamResponseDelta,
-    CreateChatCompletionResponse, CreateChatCompletionStreamResponse,
+    CreateChatCompletionResponse, CreateChatCompletionStreamResponse, FunctionCallStream,
   };
   use ntest::timeout;
   use tokio::sync::mpsc;
-  // write a test for Session::add_message_and_get_function_call
+  // write a test for Session::add_message
   #[tokio::test]
   #[timeout(10000)]
-  pub async fn test_add_message_and_get_function_call() {
+  pub async fn test_add_message() {
     let mut session = Session::new();
     let (tx, _rx) = mpsc::unbounded_channel::<action::Action>();
-    session.data.add_message_and_get_function_call(ChatMessage::PromptMessage(session.config.prompt_message()));
+    session.data.add_message(ChatMessage::PromptMessage(session.config.prompt_message()));
     assert_eq!(session.data.messages.len(), 1);
     assert_eq!(session.data.messages[0].message, ChatMessage::PromptMessage(session.config.prompt_message()));
     // Create a mock response from OpenAI
@@ -628,6 +623,65 @@ mod tests {
         }],
       },
     ];
+
+    let stream_responses_with_function_calls = vec![
+      CreateChatCompletionStreamResponse {
+        id: "cmpl-3fZzT7q5Y3zJ5Jp9Dq3qX8s0".to_string(),
+        object: "text_completion".to_string(),
+        created: 1613908771,
+        model: "gpt-3.5-turbo".to_string(),
+        choices: vec![ChatCompletionResponseStreamMessage {
+          index: 0,
+          delta: ChatCompletionStreamResponseDelta {
+            role: Some(Role::Assistant),
+            content: None,
+            function_call: Some(FunctionCallStream { name: Some("file_search".to_string()), arguments: None }),
+          },
+          finish_reason: None,
+        }],
+      },
+      CreateChatCompletionStreamResponse {
+        id: "cmpl-3fZzT7q5Y3zJ5Jp9Dq3qX8s0".to_string(),
+        object: "text_completion".to_string(),
+        created: 1613908772,
+        model: "gpt-3.5-turbo".to_string(),
+        choices: vec![ChatCompletionResponseStreamMessage {
+          index: 0,
+          delta: ChatCompletionStreamResponseDelta {
+            role: None,
+            content: None,
+            function_call: Some(FunctionCallStream { name: None, arguments: Some("{ ".to_string()) }),
+          },
+          finish_reason: None,
+        }],
+      },
+      CreateChatCompletionStreamResponse {
+        id: "cmpl-3fZzT7q5Y3zJ5Jp9Dq3qX8s0".to_string(),
+        object: "text_completion".to_string(),
+        created: 1613908772,
+        model: "gpt-3.5-turbo".to_string(),
+        choices: vec![ChatCompletionResponseStreamMessage {
+          index: 0,
+          delta: ChatCompletionStreamResponseDelta {
+            role: None,
+            content: None,
+            function_call: Some(FunctionCallStream { name: None, arguments: Some("src }".to_string()) }),
+          },
+          finish_reason: None,
+        }],
+      },
+      CreateChatCompletionStreamResponse {
+        id: "cmpl-3fZzT7q5Y3zJ5Jp9Dq3qX8s0".to_string(),
+        object: "text_completion".to_string(),
+        created: 1613908773,
+        model: "davinci:2020-05-03".to_string(),
+        choices: vec![ChatCompletionResponseStreamMessage {
+          index: 0,
+          delta: ChatCompletionStreamResponseDelta { role: None, content: None, function_call: None },
+          finish_reason: Some("function_call".to_string()),
+        }],
+      },
+    ];
     session.response_handler(tx.clone(), ChatResponse::Response(response));
     assert_eq!(session.data.messages.len(), 2);
     session.response_handler(tx.clone(), ChatResponse::StreamResponse(stream_responses[0].clone()));
@@ -675,6 +729,68 @@ mod tests {
     } else {
       panic!("Expected ChatMessage::ChatCompletionRequestMessage(ChatResponseSingleMessage::StreamResponse(msg))");
     }
+    assert!(session.data.messages[1].finished);
+    session.response_handler(tx.clone(), ChatResponse::StreamResponse(stream_responses_with_function_calls[0].clone()));
+    assert_eq!(session.data.messages.len(), 4);
+    if let ChatMessage::ChatCompletionResponseMessage(ChatResponseSingleMessage::StreamResponse(msg)) =
+      &session.data.messages[3].message
+    {
+      assert_eq!(msg[0].delta.role, Some(Role::Assistant));
+      assert_eq!(msg[0].delta.content, None);
+      assert_eq!(msg[0].finish_reason, None);
+      assert_eq!(
+        msg[0].delta.function_call,
+        Some(FunctionCallStream { name: Some("file_search".to_string()), arguments: None })
+      );
+    } else {
+      panic!("Expected ChatMessage::ChatCompletionRequestMessage(ChatResponseSingleMessage::StreamResponse(msg))");
+    }
+    session.response_handler(tx.clone(), ChatResponse::StreamResponse(stream_responses_with_function_calls[1].clone()));
+    assert_eq!(session.data.messages.len(), 4);
+    if let ChatMessage::ChatCompletionResponseMessage(ChatResponseSingleMessage::StreamResponse(msg)) =
+      &session.data.messages[3].message
+    {
+      assert_eq!(msg[0].delta.role, Some(Role::Assistant));
+      assert_eq!(msg[0].delta.content, None);
+      assert_eq!(msg[0].finish_reason, None);
+      assert_eq!(
+        msg[0].delta.function_call,
+        Some(FunctionCallStream { name: Some("file_search".to_string()), arguments: Some("{ ".to_string()) })
+      );
+    } else {
+      panic!("Expected ChatMessage::ChatCompletionRequestMessage(ChatResponseSingleMessage::StreamResponse(msg))");
+    }
+    session.response_handler(tx.clone(), ChatResponse::StreamResponse(stream_responses_with_function_calls[2].clone()));
+    assert_eq!(session.data.messages.len(), 4);
+    if let ChatMessage::ChatCompletionResponseMessage(ChatResponseSingleMessage::StreamResponse(msg)) =
+      &session.data.messages[3].message
+    {
+      assert_eq!(msg[0].delta.role, Some(Role::Assistant));
+      assert_eq!(msg[0].delta.content, None);
+      assert_eq!(msg[0].finish_reason, None);
+      assert_eq!(
+        msg[0].delta.function_call,
+        Some(FunctionCallStream { name: Some("file_search".to_string()), arguments: Some("{ src }".to_string()) })
+      );
+    } else {
+      panic!("Expected ChatMessage::ChatCompletionRequestMessage(ChatResponseSingleMessage::StreamResponse(msg))");
+    }
+    session.response_handler(tx.clone(), ChatResponse::StreamResponse(stream_responses_with_function_calls[3].clone()));
+    assert_eq!(session.data.messages.len(), 4);
+    if let ChatMessage::ChatCompletionResponseMessage(ChatResponseSingleMessage::StreamResponse(msg)) =
+      &session.data.messages[3].message
+    {
+      assert_eq!(msg[0].delta.role, Some(Role::Assistant));
+      assert_eq!(msg[0].delta.content, None);
+      assert_eq!(msg[0].finish_reason, Some("function_call".to_string()));
+      assert_eq!(
+        msg[0].delta.function_call,
+        Some(FunctionCallStream { name: Some("file_search".to_string()), arguments: Some("{ src }".to_string()) })
+      );
+    } else {
+      panic!("Expected ChatMessage::ChatCompletionRequestMessage(ChatResponseSingleMessage::StreamResponse(msg))");
+    }
+
     insta::assert_yaml_snapshot!(&session.data);
     insta::assert_yaml_snapshot!(&session.data.stylized_text());
   }
