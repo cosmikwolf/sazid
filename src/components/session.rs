@@ -137,7 +137,7 @@ impl Component for Session {
         Use the functions available to assist with the user inquiry.
         Do not try and execute arbitrary python code.
         Do not try to infer a path to a file, if you have not been provided a path with the root ./, use the file_search function to verify the file path before you execute a function call.".to_string();
-    self.data.add_message(ChatMessage::PromptMessage(self.config.prompt_message()));
+    self.data.add_message_and_get_function_call(ChatMessage::PromptMessage(self.config.prompt_message()));
     Ok(())
   }
   fn register_action_handler(&mut self, tx: UnboundedSender<Action>) -> Result<(), SazidError> {
@@ -153,7 +153,7 @@ impl Component for Session {
     let tx = self.action_tx.clone().unwrap();
     match action {
       Action::SubmitInput(s) => {
-        self.request_response(s, tx);
+        self.submit_chat_completion_request(s, tx);
       },
       Action::RequestChatCompletion() => self.request_chat_completion(tx.clone()),
       Action::ProcessResponse(response) => {
@@ -257,13 +257,15 @@ impl Session {
     match parse_input(content, CHUNK_TOKEN_LIMIT as usize, model.token_limit as usize) {
       Ok(chunks) => {
         chunks.iter().for_each(|chunk| {
-          self.data.add_message(ChatMessage::ChatCompletionRequestMessage(ChatCompletionRequestMessage {
-            role: role.clone(),
-            //name: Some(name.to_string()),
-            content: Some(chunk.clone()),
-            function_call: function_call.clone(),
-            ..Default::default()
-          }))
+          self.data.add_message_and_get_function_call(ChatMessage::ChatCompletionRequestMessage(
+            ChatCompletionRequestMessage {
+              role: role.clone(),
+              name: None,
+              //name: Some(name.to_string()),
+              content: Some(chunk.clone()),
+              function_call: function_call.clone(),
+            },
+          ));
         });
         Ok(())
       },
@@ -290,7 +292,7 @@ impl Session {
     }
   }
 
-  pub fn request_response(&mut self, input: String, tx: UnboundedSender<Action>) {
+  pub fn submit_chat_completion_request(&mut self, input: String, tx: UnboundedSender<Action>) {
     let config = self.config.clone();
     match self.add_chunked_chat_completion_request_messages(
       &input,
@@ -309,26 +311,18 @@ impl Session {
   }
 
   pub fn handle_chat_response_function_call(&mut self, tx: UnboundedSender<Action>, fn_name: String, fn_args: String) {
-    trace_dbg!("handle function name:");
-    trace_dbg!(&fn_name);
-    trace_dbg!(&fn_args);
-
-    match self.execute_function_call(fn_name, fn_args) {
+    match self.execute_function_call(fn_name.clone(), fn_args) {
       Ok(Some(output)) => {
-        self.data.add_message(ChatMessage::ChatCompletionRequestMessage(ChatCompletionRequestMessage {
-          name: Some("Sazid".to_string()),
-          role: Role::Function,
-          content: Some(output),
-          ..Default::default()
+        self.data.add_message_and_get_function_call(ChatMessage::FunctionResult(FunctionResult {
+          name: fn_name,
+          response: output,
         }));
       },
       Ok(None) => {},
       Err(e) => {
-        self.data.add_message(ChatMessage::ChatCompletionRequestMessage(ChatCompletionRequestMessage {
-          name: Some("Sazid".to_string()),
-          role: Role::Function,
-          content: Some(format!("Error: {:?}", e)),
-          ..Default::default()
+        self.data.add_message_and_get_function_call(ChatMessage::FunctionResult(FunctionResult {
+          name: fn_name,
+          response: format!("Error: {:?}", e),
         }));
       },
     }
@@ -342,7 +336,6 @@ impl Session {
     let openai_config = self.config.openai_config.clone();
     tx.send(Action::EnterProcessing).unwrap();
     let client = create_openai_client(openai_config);
-    trace_dbg!("Full Request:\n{:?}", &request);
     trace_dbg!("Sending Request:\n{:?}", &request.messages.last().unwrap().content);
     for message in request.messages.iter() {
       trace_dbg!("msg: {:?}", message.content);
@@ -364,7 +357,9 @@ impl Session {
               },
               Err(e) => {
                 trace_dbg!("Error: {:?} -- check https://status.openai.com/", e);
-                trace_dbg!("Request: \n{:?}", request.clone());
+                let reqtext = format!("Request: \n{:#?}", request.clone()).replace("\\n", "\n");
+                trace_dbg!(reqtext);
+
                 tx.send(Action::Error(format!("Error: {:?} -- check https://status.openai.com/", e))).unwrap();
               },
             }
@@ -386,7 +381,10 @@ impl Session {
 
   pub fn response_handler(&mut self, tx: UnboundedSender<Action>, response: ChatResponse) {
     for choice in <Vec<ChatMessage>>::from(response) {
-      self.data.add_message(choice);
+      let functions_need_calling = self.data.add_message_and_get_function_call(choice);
+      for function_call in functions_need_calling {
+        tx.send(Action::CallFunction(function_call.name, function_call.arguments)).unwrap();
+      }
     }
     tx.send(Action::Update).unwrap();
   }
@@ -550,13 +548,13 @@ mod tests {
   };
   use ntest::timeout;
   use tokio::sync::mpsc;
-  // write a test for Session::add_message
+  // write a test for Session::add_message_and_get_function_call
   #[tokio::test]
   #[timeout(10000)]
-  pub async fn test_add_message() {
+  pub async fn test_add_message_and_get_function_call() {
     let mut session = Session::new();
     let (tx, _rx) = mpsc::unbounded_channel::<action::Action>();
-    session.data.add_message(ChatMessage::PromptMessage(session.config.prompt_message()));
+    session.data.add_message_and_get_function_call(ChatMessage::PromptMessage(session.config.prompt_message()));
     assert_eq!(session.data.messages.len(), 1);
     assert_eq!(session.data.messages[0].message, ChatMessage::PromptMessage(session.config.prompt_message()));
     // Create a mock response from OpenAI
@@ -683,7 +681,7 @@ mod tests {
 
   // write a test for Session::add_chunked_chat_completion_request_messages
   // write a test for Session::construct_request
-  // write a test for Session::request_response
+  // write a test for Session::submit_chat_completion_request
   // write a test for Session::request_chat_completion
   // write a test for Session::response_handler
   // write a test for Session::execute_function_call

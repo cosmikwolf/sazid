@@ -18,7 +18,6 @@ use bat::{
 };
 use serde::{Deserialize, Serialize};
 use std::{collections::BTreeMap, ffi::OsString, path::PathBuf};
-use tracing::Level;
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct RenderedFunctionCall {
@@ -47,6 +46,7 @@ pub struct RenderedChatMessage {
   pub content: Option<String>,
   pub rendered_content: Option<String>,
   pub function_call: Option<RenderedFunctionCall>,
+  pub name: Option<String>,
   pub finish_reason: Option<String>,
 }
 
@@ -63,7 +63,14 @@ pub enum ChatResponseSingleMessage {
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+pub struct FunctionResult {
+  pub name: String,
+  pub response: String,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub enum ChatMessage {
+  FunctionResult(FunctionResult),
   PromptMessage(ChatCompletionRequestMessage),
   ChatCompletionRequestMessage(ChatCompletionRequestMessage),
   ChatCompletionResponseMessage(ChatResponseSingleMessage),
@@ -110,6 +117,12 @@ impl From<ChatResponse> for Vec<ChatMessage> {
 impl From<&ChatMessage> for ChatCompletionRequestMessage {
   fn from(message: &ChatMessage) -> Self {
     match message {
+      ChatMessage::FunctionResult(result) => ChatCompletionRequestMessage {
+        role: Role::Function,
+        content: Some(result.response.clone()),
+        function_call: None,
+        name: Some(result.name.clone()),
+      },
       ChatMessage::PromptMessage(request) => request.clone(),
       ChatMessage::ChatCompletionRequestMessage(request) => request.clone(),
       ChatMessage::ChatCompletionResponseMessage(ChatResponseSingleMessage::StreamResponse(srvec)) => {
@@ -120,10 +133,11 @@ impl From<&ChatMessage> for ChatCompletionRequestMessage {
         ChatCompletionRequestMessage {
           role: Role::Assistant,
           content: message.delta.content,
-          function_call: Some(FunctionCall {
-            name: message.delta.function_call.clone().and_then(|fc| fc.name).unwrap_or("".to_string()),
-            arguments: message.delta.function_call.clone().and_then(|fc| fc.arguments).unwrap_or("".to_string()),
-          }),
+          function_call: None,
+          // function_call: Some(FunctionCall {
+          //   name: message.delta.function_call.clone().and_then(|fc| fc.name).unwrap_or("".to_string()),
+          //   arguments: message.delta.function_call.clone().and_then(|fc| fc.arguments).unwrap_or("".to_string()),
+          // }),
           name: None,
         }
       },
@@ -147,7 +161,16 @@ impl AsRef<ChatMessage> for ChatMessage {
 impl From<&ChatMessage> for RenderedChatMessage {
   fn from(message: &ChatMessage) -> Self {
     match message {
+      ChatMessage::FunctionResult(result) => RenderedChatMessage {
+        name: Some(result.name.clone()),
+        role: Some(Role::Function),
+        content: Some(result.response.clone()),
+        rendered_content: None,
+        function_call: None,
+        finish_reason: None,
+      },
       ChatMessage::PromptMessage(request) => RenderedChatMessage {
+        name: None,
         role: Some(request.role.clone()),
         content: Some(format!("Prompt: {}", request.content.clone().unwrap_or("no prompt".to_string()))),
         rendered_content: None,
@@ -155,6 +178,7 @@ impl From<&ChatMessage> for RenderedChatMessage {
         finish_reason: None,
       },
       ChatMessage::ChatCompletionRequestMessage(request) => RenderedChatMessage {
+        name: None,
         role: Some(request.role.clone()),
         content: request.content.clone(),
         rendered_content: None,
@@ -163,6 +187,7 @@ impl From<&ChatMessage> for RenderedChatMessage {
       },
       ChatMessage::ChatCompletionResponseMessage(ChatResponseSingleMessage::Response(response)) => {
         RenderedChatMessage {
+          name: None,
           role: Some(Role::Assistant),
           content: response.message.content.clone(),
           rendered_content: None,
@@ -176,6 +201,7 @@ impl From<&ChatMessage> for RenderedChatMessage {
           message = concatenate_stream_response_messages(&message, sr);
         });
         RenderedChatMessage {
+          name: None,
           role: Some(Role::Assistant),
           content: message.delta.content,
           rendered_content: None,
@@ -255,7 +281,7 @@ fn collate_stream_response_vec(
   new_srvec: Vec<ChatCompletionResponseStreamMessage>,
   existing_srvec: &mut Vec<ChatCompletionResponseStreamMessage>,
 ) {
-  trace_dbg!("add_message: supplimental delta \n{:?}\n{:?}", new_srvec, existing_srvec);
+  trace_dbg!("add_message_and_get_function_call: supplimental delta \n{:?}\n{:?}", new_srvec, existing_srvec);
   new_srvec.iter().for_each(|new_sr| {
     if !existing_srvec.iter_mut().any(|existing_sr| {
       if existing_sr.index == new_sr.index {
@@ -270,7 +296,7 @@ fn collate_stream_response_vec(
   });
 }
 impl SessionData {
-  pub fn add_message(&mut self, message: ChatMessage) {
+  pub fn add_message_and_get_function_call(&mut self, message: ChatMessage) -> Vec<RenderedFunctionCall> {
     match message {
       ChatMessage::ChatCompletionResponseMessage(ChatResponseSingleMessage::StreamResponse(new_srvec)) => {
         if let Some(mc) = self.messages.last_mut() {
@@ -278,30 +304,48 @@ impl SessionData {
             &mut mc.message
           {
             collate_stream_response_vec(new_srvec, existing_srvec);
-            self.render_new_messages();
           } else {
-            trace_dbg!("add_message: new delta {:?}", new_srvec);
+            trace_dbg!("add_message_and_get_function_call: new delta {:?}", new_srvec);
             // No existing StreamResponse, just push the message.
             self.messages.push(
               ChatMessage::ChatCompletionResponseMessage(ChatResponseSingleMessage::StreamResponse(new_srvec)).into(),
             );
-            self.render_new_messages();
           }
         } else {
           self.messages.push(
             ChatMessage::ChatCompletionResponseMessage(ChatResponseSingleMessage::StreamResponse(new_srvec)).into(),
           );
-          self.render_new_messages();
         }
       },
       _ => {
         self.messages.push(message.clone().into());
-        self.render_new_messages();
       },
-    }
+    };
+    // return a vec of any functions that need to be called
+    self.post_process_new_messages()
   }
 
-  pub fn render_new_messages(&mut self) {
+  pub fn post_process_new_messages(&mut self) -> Vec<RenderedFunctionCall> {
+    self
+      .messages
+      .iter_mut()
+      .filter_map(|m| {
+        if m.finished {
+          None
+        } else {
+          SessionData::render_message(m);
+          let rendered_message = RenderedChatMessage::from(&m.message);
+          if rendered_message.finish_reason.is_some() {
+            m.finished = true;
+          }
+          Some(rendered_message.function_call)
+        }
+      })
+      .flatten()
+      .collect()
+  }
+
+  fn render_message(message: &mut MessageContainer) {
     let style_components = StyleComponents::new(&[
       StyleComponent::Header,
       StyleComponent::Grid,
@@ -314,29 +358,16 @@ impl SessionData {
     let config = Config { colored_output: true, language: Some("markdown"), style_components, ..Default::default() };
     let assets = HighlightingAssets::from_binary();
     let controller = Controller::new(&config, &assets);
-    self.messages.iter_mut().for_each(|message| {
-      let rendered_message = RenderedChatMessage::from(&ChatMessage::from(message.clone()));
-      let mut buffer = String::new();
-      if !message.finished {
-        let mut message_content = String::from(rendered_message);
-        message_content.push_str("---\n");
-        let input = Input::from_bytes(message_content.as_bytes());
-        controller.run(vec![input.into()], Some(&mut buffer)).unwrap();
-        //message.stylized = Some(buffer.clone());
-        trace_dbg!("rendering \ncontent: {:?}\nstylized:{:?}", message_content, message.stylized);
-        message.stylized = Some(message_content);
-      }
-    });
+    let rendered_message = RenderedChatMessage::from(&ChatMessage::from(message.clone()));
+    let mut buffer = String::new();
+    let message_content = String::from(rendered_message);
+    let input = Input::from_bytes(message_content.as_bytes());
+    controller.run(vec![input.into()], Some(&mut buffer)).unwrap();
+    message.stylized = Some(buffer.clone());
   }
 
   pub fn stylized_text(&self) -> String {
-    self.messages.iter().flat_map(|m| m.stylized.clone()).collect::<Vec<String>>().join("")
-    // self
-    //   .messages
-    //   .iter()
-    //   .flat_map(|m| Some(String::from(RenderedChatMessage::from(&ChatMessage::from(m)))))
-    //   .collect::<Vec<String>>()
-    //   .join("")
+    self.messages.iter().flat_map(|m| m.stylized.clone()).collect::<Vec<String>>().join("\n")
   }
 }
 

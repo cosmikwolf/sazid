@@ -11,12 +11,12 @@ mod tests {
 
   #[tokio::test]
   #[timeout(10000)]
-  pub async fn test_request_response() {
+  pub async fn test_submit_chat_completion_request() {
     let mut enter_processing_action_run = false;
     let mut process_response_action_run = false;
     let (tx, mut rx) = mpsc::unbounded_channel::<Action>();
     let mut session = Session::new();
-    session.request_response("Hello World".to_string(), tx.clone());
+    session.submit_chat_completion_request("Hello World".to_string(), tx.clone());
     'outer: loop {
       while let Some(res) = rx.recv().await {
         match res {

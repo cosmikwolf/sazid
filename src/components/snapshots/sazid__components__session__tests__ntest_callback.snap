@@ -7,7 +7,7 @@ messages:
       PromptMessage:
         role: user
         content: ""
-    stylized: "Prompt: ---\n"
+    stylized: "\u001b[38;5;238m\u001b[0m\n\u001b[38;5;231mPrompt: \u001b[0m\n\u001b[38;5;238m\u001b[0m\n"
     finished: false
   - message:
       ChatCompletionResponseMessage:
@@ -18,8 +18,8 @@ messages:
             content: test response data
             function_call: ~
           finish_reason: STOP
-    stylized: "test response data---\n"
-    finished: false
+    stylized: "\u001b[38;5;238m\u001b[0m\n\u001b[38;5;231mtest response data\u001b[0m\n\u001b[38;5;238m\u001b[0m\n"
+    finished: true
   - message:
       ChatCompletionResponseMessage:
         StreamResponse:
@@ -29,6 +29,6 @@ messages:
               content: twothree
               function_call: ~
             finish_reason: stop
-    stylized: "twothree---\n"
-    finished: false
+    stylized: "\u001b[38;5;238m\u001b[0m\n\u001b[38;5;231mtwothree\u001b[0m\n\u001b[38;5;238m\u001b[0m\n"
+    finished: true
 
