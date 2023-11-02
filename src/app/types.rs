@@ -70,6 +70,7 @@ pub struct FunctionResult {
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub enum ChatMessage {
+  SazidSystemMessage(String),
   FunctionResult(FunctionResult),
   PromptMessage(ChatCompletionRequestMessage),
   ChatCompletionRequestMessage(ChatCompletionRequestMessage),
@@ -81,6 +82,19 @@ pub struct MessageContainer {
   pub message: ChatMessage,
   pub stylized: Option<String>,
   pub finished: bool,
+  pub function_called: bool,
+  pub response_count: usize,
+}
+
+impl MessageContainer {
+  pub fn get_token_count(&self) -> Option<usize> {
+    if let Some(content) = &self.stylized {
+      let bpe = tiktoken_rs::cl100k_base().unwrap();
+      Some(bpe.encode_with_special_tokens(content.as_str()).len())
+    } else {
+      None
+    }
+  }
 }
 
 impl From<MessageContainer> for ChatMessage {
@@ -96,7 +110,7 @@ impl From<&MessageContainer> for ChatMessage {
 }
 impl From<ChatMessage> for MessageContainer {
   fn from(message: ChatMessage) -> Self {
-    MessageContainer { message, stylized: None, finished: false }
+    MessageContainer { message, stylized: None, finished: false, function_called: false, response_count: 0 }
   }
 }
 
@@ -114,41 +128,39 @@ impl From<ChatResponse> for Vec<ChatMessage> {
   }
 }
 
-impl From<&ChatMessage> for ChatCompletionRequestMessage {
+impl From<&ChatMessage> for Option<ChatCompletionRequestMessage> {
   fn from(message: &ChatMessage) -> Self {
     match message {
-      ChatMessage::FunctionResult(result) => ChatCompletionRequestMessage {
+      ChatMessage::SazidSystemMessage(_) => None,
+      ChatMessage::FunctionResult(result) => Some(ChatCompletionRequestMessage {
         role: Role::Function,
         content: Some(result.response.clone()),
         function_call: None,
         name: Some(result.name.clone()),
-      },
-      ChatMessage::PromptMessage(request) => request.clone(),
-      ChatMessage::ChatCompletionRequestMessage(request) => request.clone(),
-      ChatMessage::ChatCompletionResponseMessage(ChatResponseSingleMessage::StreamResponse(srvec)) => {
+      }),
+      ChatMessage::PromptMessage(request) => Some(request.clone()),
+      ChatMessage::ChatCompletionRequestMessage(request) => Some(request.clone()),
+      ChatMessage::ChatCompletionResponseMessage(ChatResponseSingleMessage::StreamResponse(srvec)) => Some({
         let mut message = srvec[0].clone();
         srvec.iter().skip(1).for_each(|sr| {
           message = concatenate_stream_response_messages(&message, sr);
         });
         ChatCompletionRequestMessage {
           role: Role::Assistant,
+          // todo: this might be a problem...
           content: Some(message.delta.content.unwrap_or("".to_string())),
           function_call: None,
-          // function_call: Some(FunctionCall {
-          //   name: message.delta.function_call.clone().and_then(|fc| fc.name).unwrap_or("".to_string()),
-          //   arguments: message.delta.function_call.clone().and_then(|fc| fc.arguments).unwrap_or("".to_string()),
-          // }),
           name: None,
         }
-      },
-      ChatMessage::ChatCompletionResponseMessage(ChatResponseSingleMessage::Response(response)) => {
+      }),
+      ChatMessage::ChatCompletionResponseMessage(ChatResponseSingleMessage::Response(response)) => Some({
         ChatCompletionRequestMessage {
           role: Role::Assistant,
           content: response.message.content.clone(),
           function_call: None,
           name: None,
         }
-      },
+      }),
     }
   }
 }
@@ -161,6 +173,14 @@ impl AsRef<ChatMessage> for ChatMessage {
 impl From<&ChatMessage> for RenderedChatMessage {
   fn from(message: &ChatMessage) -> Self {
     match message {
+      ChatMessage::SazidSystemMessage(content) => RenderedChatMessage {
+        name: None,
+        role: None,
+        content: Some(content.clone()),
+        rendered_content: None,
+        function_call: None,
+        finish_reason: None,
+      },
       ChatMessage::FunctionResult(result) => RenderedChatMessage {
         name: Some(result.name.clone()),
         role: Some(Role::Function),
@@ -340,12 +360,15 @@ impl SessionData {
     }
   }
 
-  pub fn get_functions_that_need_calling(&self) -> Vec<RenderedFunctionCall> {
+  pub fn get_functions_that_need_calling(&mut self) -> Vec<RenderedFunctionCall> {
     self
       .messages
-      .iter()
-      .filter(|m| m.finished)
-      .filter_map(|m| RenderedChatMessage::from(&m.message).function_call)
+      .iter_mut()
+      .filter(|m| m.finished && !m.function_called)
+      .filter_map(|m| {
+        m.function_called = true;
+        RenderedChatMessage::from(&m.message).function_call
+      })
       .collect()
   }
 
@@ -363,31 +386,23 @@ impl SessionData {
     let assets = HighlightingAssets::from_binary();
     let controller = Controller::new(&config, &assets);
     let rendered_message = RenderedChatMessage::from(&ChatMessage::from(message.clone()));
-    let mut buffer = String::new();
+    let stylize_option = false;
     let message_content = String::from(rendered_message);
-    let input = Input::from_bytes(message_content.as_bytes());
-    controller.run(vec![input.into()], Some(&mut buffer)).unwrap();
-    message.stylized = Some(buffer.clone());
+    message.stylized = if stylize_option {
+      let mut buffer = String::new();
+      let input = Input::from_bytes(message_content.as_bytes());
+      controller.run(vec![input.into()], Some(&mut buffer)).unwrap();
+      Some(buffer)
+    } else {
+      Some(message_content)
+    }
   }
 
   pub fn stylized_text(&self) -> String {
-    self.messages.iter().flat_map(|m| m.stylized.clone()).collect::<Vec<String>>().join("\n")
+    self.messages.iter().flat_map(|m| m.stylized.clone()).collect::<Vec<String>>().join("\n\n")
   }
 }
 
-// impl From<&RenderedChatMessage> for String {
-//   fn from(message: &RenderedChatMessage) -> Self {
-//     let mut string_vec: Vec<String> = Vec::new();
-//     if let Some(content) = &message.content {
-//       string_vec.push(content.to_string());
-//     }
-//     if let Some(function_call) = &message.function_call {
-//       string_vec.push(format!("function call: {} {}", function_call.name.as_str(), function_call.arguments.as_str()));
-//     }
-//     string_vec.join("\n")
-//   }
-// }
-//
 impl From<RenderedChatMessage> for String {
   fn from(message: RenderedChatMessage) -> Self {
     let mut string_vec: Vec<String> = Vec::new();
@@ -400,30 +415,6 @@ impl From<RenderedChatMessage> for String {
     string_vec.join("-\n")
   }
 }
-
-// --------------------------------------
-// --------------------------------------
-// --------------------------------------
-// --------------------------------------
-// --------------------------------------
-// --------------------------------------
-// --------------------------------------
-// --------------------------------------
-
-// ---------------------------------------------------
-// ---------------------------------------------------
-// ---------------------------------------------------
-// ---------------------------------------------------
-// ---------------------------------------------------
-// ---------------------------------------------------
-// ---------------------------------------------------
-// ---------------------------------------------------
-// ---------------------------------------------------
-// ---------------------------------------------------
-// ---------------------------------------------------
-// ---------------------------------------------------
-// ---------------------------------------------------
-// ---------------------------------------------------
 
 // options
 #[derive(Parser, Clone, Default, Debug)]

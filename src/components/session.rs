@@ -260,7 +260,6 @@ impl Session {
           self.data.add_message(ChatMessage::ChatCompletionRequestMessage(ChatCompletionRequestMessage {
             role: role.clone(),
             name: None,
-            //name: Some(name.to_string()),
             content: Some(chunk.clone()),
             function_call: function_call.clone(),
           }));
@@ -270,24 +269,29 @@ impl Session {
       Err(e) => Err(SazidError::ChunkifierError(e)),
     }
   }
-  pub fn construct_request(&self) -> CreateChatCompletionRequest {
+  pub fn construct_request(&self) -> (CreateChatCompletionRequest, usize) {
     let functions = match self.config.include_functions {
       true => Some(create_chat_completion_function_args(define_commands())),
       false => None,
     };
-    CreateChatCompletionRequest {
+    let mut token_count = 0;
+    let request = CreateChatCompletionRequest {
       model: self.config.model.name.clone(),
       messages: self
         .data
         .messages
         .iter()
-        .map(|m| m.message.as_ref().into())
+        .flat_map(|m| {
+          token_count += m.get_token_count().unwrap_or(0);
+          <Option<ChatCompletionRequestMessage>>::from(m.message.as_ref())
+        })
         .collect::<Vec<ChatCompletionRequestMessage>>(),
       functions,
       stream: Some(self.config.stream_response),
       max_tokens: Some(self.config.response_max_tokens as u16),
       ..Default::default()
-    }
+    };
+    (request, token_count)
   }
 
   pub fn submit_chat_completion_request(&mut self, input: String, tx: UnboundedSender<Action>) {
@@ -325,29 +329,21 @@ impl Session {
   }
 
   pub fn request_chat_completion(&mut self, tx: UnboundedSender<Action>) {
-    let request = self.construct_request();
+    let (request, token_count) = self.construct_request();
     let stream_response = self.config.stream_response;
 
     let openai_config = self.config.openai_config.clone();
     tx.send(Action::EnterProcessing).unwrap();
     let client = create_openai_client(openai_config);
+    self.data.add_message(ChatMessage::SazidSystemMessage(format!("Request Token Count: {}", token_count)));
     trace_dbg!("Sending Request:\n{:?}", &request.messages.last().unwrap().content);
-    //for message in request.messages.iter() {
-    //trace_dbg!("msg: {:?}", message.content);
-    //}
-    // let debug = format!("request: {:#?}", request).replace("\\n", "\n");
-    // for line in debug.lines() {
-    //   trace_dbg!(line);
-    // }
     tokio::spawn(async move {
       match stream_response {
         true => {
-          // let mut stream: Pin<Box<dyn StreamExt<Item = Result<CreateChatCompletionStreamResponse, OpenAIError>> + Send>> =
           let mut stream = client.chat().create_stream(request.clone()).await.unwrap();
           while let Some(response_result) = stream.next().await {
             match response_result {
               Ok(response) => {
-                //trace_dbg!("Response: {:?}", response.clone());
                 tx.send(Action::ProcessResponse(ChatResponse::StreamResponse(response))).unwrap();
               },
               Err(e) => {
@@ -377,7 +373,7 @@ impl Session {
   pub fn response_handler(&mut self, tx: UnboundedSender<Action>, response: ChatResponse) {
     for choice in <Vec<ChatMessage>>::from(response) {
       self.data.add_message(choice);
-      for function_call in self.data.get_functions_that_need_calling() {
+      for function_call in self.data.get_functions_that_need_calling().drain(..) {
         tx.send(Action::CallFunction(function_call.name, function_call.arguments)).unwrap();
       }
     }

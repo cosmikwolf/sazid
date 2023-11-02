@@ -7,8 +7,10 @@ messages:
       PromptMessage:
         role: user
         content: ""
-    stylized: "\u001b[38;5;238m\u001b[0m\n\u001b[38;5;231mPrompt: \u001b[0m\n\u001b[38;5;238m\u001b[0m\n"
+    stylized: "Prompt: "
     finished: false
+    function_called: false
+    response_count: 0
   - message:
       ChatCompletionResponseMessage:
         Response:
@@ -18,8 +20,10 @@ messages:
             content: test response data
             function_call: ~
           finish_reason: STOP
-    stylized: "\u001b[38;5;238m\u001b[0m\n\u001b[38;5;231mtest response data\u001b[0m\n\u001b[38;5;238m\u001b[0m\n"
+    stylized: test response data
     finished: true
+    function_called: true
+    response_count: 0
   - message:
       ChatCompletionResponseMessage:
         StreamResponse:
@@ -29,6 +33,23 @@ messages:
               content: twothree
               function_call: ~
             finish_reason: stop
-    stylized: "\u001b[38;5;238m\u001b[0m\n\u001b[38;5;231mtwothree\u001b[0m\n\u001b[38;5;238m\u001b[0m\n"
+    stylized: twothree
     finished: true
+    function_called: true
+    response_count: 0
+  - message:
+      ChatCompletionResponseMessage:
+        StreamResponse:
+          - index: 0
+            delta:
+              role: assistant
+              content: ~
+              function_call:
+                name: file_search
+                arguments: "{ src }"
+            finish_reason: function_call
+    stylized: "function call: file_search { src }"
+    finished: true
+    function_called: true
+    response_count: 0
 

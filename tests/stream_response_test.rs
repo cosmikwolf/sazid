@@ -36,8 +36,7 @@ mod tests {
             // break;
             if let Some(MessageContainer {
               message: ChatMessage::ChatCompletionResponseMessage(ChatResponseSingleMessage::StreamResponse(combined)),
-              stylized: _,
-              finished: _,
+              ..
             }) = session.data.messages.last()
             {
               assert!(process_response_action_run);

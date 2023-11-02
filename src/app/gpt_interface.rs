@@ -53,10 +53,8 @@ fn count_lines_and_format_search_results(
   }
   match File::open(path) {
     Ok(file) => {
-      trace_dbg!(path);
       let reader = BufReader::new(file);
       let linecount = reader.lines().count();
-      trace_dbg!("debug 3");
       // format line that is below, but truncates s.1 to 2 decimal places
       match result_score {
         Some(score) => Some(format!("{:column_width$}\t{:<15.2}\t{} lines", path, score, linecount)),
@@ -80,7 +78,6 @@ pub fn file_search(
   let accessible_paths = paths.keys().map(|path| path.as_str()).collect::<Vec<&str>>();
   // find the length of the longest string in accessible_paths
   let search_results = if let Some(search) = search_term {
-    trace_dbg!("searching with term: {}", search);
     let fuzzy_search_result = rust_fuzzy_search::fuzzy_search_threshold(search, &accessible_paths, 0.1);
     let column_width = get_column_width(fuzzy_search_result.iter().map(|(s, _)| *s).collect());
     let fuzzy_search_result = fuzzy_search_result
@@ -93,18 +90,15 @@ pub fn file_search(
     } else {
       fuzzy_search_result.join("\n")
     }
+  } else if accessible_paths.is_empty() {
+    return Ok(Some("no files are accessible. User must add files to the search path configuration".to_string()));
   } else {
-    trace_dbg!("searching without a search term");
-    if accessible_paths.is_empty() {
-      return Ok(Some("no files are accessible. User must add files to the search path configuration".to_string()));
-    } else {
-      let column_width = get_column_width(accessible_paths.clone());
-      accessible_paths
-        .iter()
-        .filter_map(|s| count_lines_and_format_search_results(s, column_width, None))
-        .collect::<Vec<String>>()
-        .join("\n")
-    }
+    let column_width = get_column_width(accessible_paths.clone());
+    accessible_paths
+      .iter()
+      .filter_map(|s| count_lines_and_format_search_results(s, column_width, None))
+      .collect::<Vec<String>>()
+      .join("\n")
   };
   let token_count = count_tokens(&search_results);
   if token_count > reply_max_tokens {
@@ -120,8 +114,8 @@ pub fn read_file_lines(
   reply_max_tokens: usize,
   list_file_paths: Vec<PathBuf>,
 ) -> Result<Option<String>, FunctionCallError> {
-  trace_dbg!("list_file_paths: {:?}", list_file_paths);
-  trace_dbg!("file: {:?} {:#?}", get_accessible_file_paths(list_file_paths.clone()).get(file), file);
+  // trace_dbg!("list_file_paths: {:?}", list_file_paths);
+  // trace_dbg!("file: {:?} {:#?}", get_accessible_file_paths(list_file_paths.clone()).get(file), file);
   if let Some(file_path) = get_accessible_file_paths(list_file_paths).get(file) {
     let file_contents = match read_lines(file_path) {
       Ok(contents) => contents,
