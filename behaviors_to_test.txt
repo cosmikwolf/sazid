@@ -1,5 +1,18 @@
 
 
+## IDEAS
 
+- Summarize Project Files:
+  - get a list of all the files in the Project
+  - for each file:
+      - if it is short enough to fit in half of a context
+      - get properties:
+        - List of function signatures
+        -
+
+
+
+## Problems
+- App seems to freeze for a second after submitting input, before going into processing mode
 - when calling a function, if an error is reached, the app should go back to input mode
-
+-

@@ -1,0 +1,61 @@
+---
+source: src/components/session.rs
+assertion_line: 835
+expression: "&session.data"
+---
+messages:
+  - message:
+      PromptMessage:
+        role: user
+        content: ""
+    stylized: "Prompt: "
+    finished: false
+    function_called: false
+    response_count: 0
+  - message:
+      ChatCompletionResponseMessage:
+        Response:
+          index: 0
+          message:
+            role: user
+            content: test response data
+            function_call: ~
+          finish_reason: STOP
+    stylized: test response data
+    finished: true
+    function_called: true
+    response_count: 0
+  - message:
+      ChatCompletionResponseMessage:
+        StreamResponse:
+          - index: 0
+            delta:
+              role: assistant
+              content: twothree
+              function_call: ~
+            finish_reason: stop
+    stylized: twothree
+    finished: true
+    function_called: true
+    response_count: 0
+  - message:
+      ChatCompletionResponseMessage:
+        StreamResponse:
+          - index: 0
+            delta:
+              role: assistant
+              content: ~
+              function_call:
+                name: file_search
+                arguments: "{ src }"
+            finish_reason: function_call
+    stylized: "function call: file_search { src }"
+    finished: true
+    function_called: true
+    response_count: 0
+stylized_lines:
+  - "Prompt: "
+  - test response data
+  - twothree
+  - "function call: file_search { src }"
+

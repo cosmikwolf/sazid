@@ -16,6 +16,7 @@ use std::result::Result;
 use std::time::{SystemTime, UNIX_EPOCH};
 use std::{fs, io};
 use tokio::sync::mpsc::UnboundedSender;
+use tui_textarea::{CursorMove, TextArea};
 
 use async_openai::{config::OpenAIConfig, Client};
 
@@ -102,7 +103,7 @@ impl SessionConfig {
 }
 
 #[derive(Default, Serialize, Deserialize, Debug, Clone)]
-pub struct Session {
+pub struct Session<'a> {
   pub data: SessionData,
   pub config: SessionConfig,
   #[serde(skip)]
@@ -112,6 +113,8 @@ pub struct Session {
   #[serde(skip)]
   pub last_events: Vec<KeyEvent>,
   #[serde(skip)]
+  pub text_area: TextArea<'a>,
+  #[serde(skip)]
   pub vertical_scroll_state: ScrollbarState,
   #[serde(skip)]
   pub horizontal_scroll_state: ScrollbarState,
@@ -120,6 +123,10 @@ pub struct Session {
   #[serde(skip)]
   pub horizontal_scroll: usize,
   #[serde(skip)]
+  pub vertical_content_height: usize,
+  #[serde(skip)]
+  pub vertical_viewport_height: usize,
+  #[serde(skip)]
   pub render: bool,
   #[serde(skip)]
   pub fn_name: Option<String>,
@@ -127,7 +134,7 @@ pub struct Session {
   pub fn_args: Option<String>,
 }
 
-impl Component for Session {
+impl Component for Session<'static> {
   fn init(&mut self, _area: Rect) -> Result<(), SazidError> {
     //let model_preference: Vec<Model> = vec![GPT4.clone(), GPT3_TURBO.clone(), WIZARDLM.clone()];
     //Session::select_model(model_preference, create_openai_client(self.config.openai_config.clone()));
@@ -183,17 +190,29 @@ impl Component for Session {
     match self.mode {
       Mode::Normal => match key.code {
         KeyCode::Char('j') => {
-          self.vertical_scroll = self.vertical_scroll.saturating_add(1);
+          self.vertical_scroll = std::cmp::min(
+            self.vertical_scroll.saturating_add(1),
+            self.vertical_content_height.saturating_sub(self.vertical_viewport_height) + 1,
+          );
           self.vertical_scroll_state = self.vertical_scroll_state.position(self.vertical_scroll);
-          //trace_dbg!("previous scroll {}", self.vertical_scroll);
+          trace_dbg!(
+            "previous scroll {} content height: {} vertical_viewport_height: {}",
+            self.vertical_scroll,
+            self.vertical_content_height,
+            self.vertical_viewport_height
+          );
           //self.vertical_scroll_state.prev();
           Ok(Some(Action::Update))
         },
         KeyCode::Char('k') => {
           self.vertical_scroll = self.vertical_scroll.saturating_sub(1);
-          self.vertical_scroll_state = self.vertical_scroll_state.position(self.vertical_scroll);
-          //trace_dbg!("next scroll {}", self.vertical_scroll);
-          //self.vertical_scroll_state.next();
+          trace_dbg!(
+            "next scroll {} content height: {} vertical_viewport_height: {}",
+            self.vertical_scroll,
+            self.vertical_content_height,
+            self.vertical_viewport_height
+          );
+          self.vertical_scroll_state.next();
           Ok(Some(Action::Update))
         },
         _ => Ok(None),
@@ -210,11 +229,11 @@ impl Component for Session {
       .split(area);
     let inner_a = Layout::default()
       .direction(Direction::Vertical)
-      .constraints(vec![Constraint::Length(1), Constraint::Min(10), Constraint::Length(1)])
+      .constraints(vec![Constraint::Length(0), Constraint::Min(10), Constraint::Length(0)])
       .split(rects[0]);
     let inner = Layout::default()
       .direction(Direction::Horizontal)
-      .constraints(vec![Constraint::Length(2), Constraint::Min(10), Constraint::Length(1)])
+      .constraints(vec![Constraint::Length(3), Constraint::Min(10), Constraint::Length(3)])
       .split(inner_a[1]);
 
     let _title = "Chat";
@@ -222,28 +241,67 @@ impl Component for Session {
     let block = Block::default().borders(Borders::NONE).gray();
     // .title(Title::from("left").alignment(Alignment::Left));
     //.title(Title::from("right").alignment(Alignment::Right));
-    let paragraph = Paragraph::new(self.data.stylized_text().into_text().unwrap())
-      .block(block)
-      .wrap(Wrap { trim: true })
-      .scroll((self.vertical_scroll as u16, 0));
-    f.render_widget(paragraph, inner[1]);
 
-    f.render_stateful_widget(
-      Scrollbar::default()
+    let use_text_area = false;
+
+    if use_text_area {
+      if self.text_area.lines().len() < self.data.stylized_lines.len() {
+        self.text_area.move_cursor(CursorMove::End);
+        self.text_area.move_cursor(CursorMove::Bottom);
+        self.data.stylized_lines.iter().skip(self.text_area.lines().len()).for_each(|line| {
+          self.text_area.insert_newline();
+          self.text_area.insert_str(line);
+        });
+      }
+
+      self.text_area.set_block(block);
+      f.render_widget(self.text_area.widget(), inner[1]);
+    } else {
+      let mut text = String::with_capacity(inner[1].height as usize + 1);
+      text.push_str(&self.data.stylized_lines.join("\n"));
+      self.vertical_content_height = calculate_wrapped_lines(&text, inner[1].width as usize);
+      text =
+        create_empty_lines((inner[1].height as usize).saturating_sub(self.vertical_content_height).saturating_sub(1))
+          + &text;
+      self.vertical_content_height = calculate_wrapped_lines(&text, inner[1].width as usize);
+      self.vertical_viewport_height = inner[1].height as usize;
+      self.vertical_scroll_state = self.vertical_scroll_state.content_length(self.vertical_content_height);
+      let texts = text.into_text().unwrap();
+      let paragraph =
+        Paragraph::new(texts).block(block).wrap(Wrap { trim: true }).scroll((self.vertical_scroll as u16, 0));
+      let scrollbar = Scrollbar::default()
         .orientation(ScrollbarOrientation::VerticalRight)
         .begin_symbol(Some("↑"))
-        .end_symbol(Some("↓")),
-      inner[1],
-      &mut self.vertical_scroll_state,
-    );
+        .end_symbol(Some("↓"));
+      f.render_widget(paragraph, inner[1]);
+      f.render_stateful_widget(scrollbar, inner[1], &mut self.vertical_scroll_state);
+      self.auto_set_scroll_to_end();
+    }
     //self.render = false;
     Ok(())
   }
 }
 
-impl Session {
-  pub fn new() -> Session {
+fn create_empty_lines(n: usize) -> String {
+  let mut s = String::with_capacity(n + 1);
+  for _ in 0..n {
+    s.push('\n');
+  }
+  s
+}
+fn calculate_wrapped_lines(text: &str, width: usize) -> usize {
+  bwrap::wrap!(text, width).chars().filter(|c| *c == '\n').count()
+}
+
+impl Session<'static> {
+  pub fn new() -> Session<'static> {
     Self::default()
+  }
+
+  pub fn auto_set_scroll_to_end(&mut self) {
+    if self.vertical_scroll > self.vertical_content_height.saturating_sub(self.vertical_viewport_height) {
+      self.vertical_scroll_state.last();
+    }
   }
 
   pub fn add_chunked_chat_completion_request_messages(
@@ -289,6 +347,7 @@ impl Session {
       functions,
       stream: Some(self.config.stream_response),
       max_tokens: Some(self.config.response_max_tokens as u16),
+      user: Some("testing testing".to_string()),
       ..Default::default()
     };
     (request, token_count)
@@ -432,7 +491,7 @@ impl Session {
     }
   }
 
-  pub fn load_session_by_id(session_id: String) -> Session {
+  pub fn load_session_by_id(session_id: String) -> Session<'static> {
     Self::get_session_filepath(session_id.clone());
     let load_result = fs::read_to_string(Self::get_session_filepath(session_id.clone()));
     match load_result {
@@ -462,7 +521,7 @@ impl Session {
     }
   }
 
-  pub fn load_last_session() -> Session {
+  pub fn load_last_session() -> Session<'static> {
     let last_session_path = Path::new(SESSIONS_DIR).join("last_session.txt");
     let last_session_id = fs::read_to_string(last_session_path).unwrap();
     Self::load_session_by_id(last_session_id)
@@ -791,6 +850,58 @@ mod tests {
     insta::assert_yaml_snapshot!(&session.data.stylized_text());
   }
 
+  #[test]
+  fn test_zero_width() {
+    assert_eq!(calculate_wrapped_lines("test", 0), 0);
+  }
+
+  #[test]
+  fn test_word_longer_than_width() {
+    assert_eq!(calculate_wrapped_lines("hello", 3), 1); // "hello" is longer than width 3
+  }
+
+  #[test]
+  fn test_single_word() {
+    assert_eq!(calculate_wrapped_lines("word", 5), 1); // Single word should be a single line
+  }
+
+  #[test]
+  fn test_multiple_words() {
+    let text = "this is a test";
+    assert_eq!(calculate_wrapped_lines(text, 7), 2); // "this is\na test"
+  }
+
+  #[test]
+  fn test_exact_fit() {
+    assert_eq!(calculate_wrapped_lines("1234", 4), 1); // "1234" fits exactly in width 4
+  }
+
+  #[test]
+  fn test_empty_string() {
+    assert_eq!(calculate_wrapped_lines("", 10), 0); // Empty string should result in 0 lines
+  }
+
+  #[test]
+  fn test_space_handling() {
+    let text = "word1 word2";
+    assert_eq!(calculate_wrapped_lines(text, 6), 2); // "word1\nword2"
+  }
+
+  #[test]
+  fn test_multiple_lines() {
+    let text = "one two three four";
+    assert_eq!(calculate_wrapped_lines(text, 8), 3); // "one two\nthree\nfour"
+  }
+
+  #[test]
+  fn test_long_text_wrapping() {
+    let text = "Rust is a multi-paradigm, general-purpose programming language designed for performance and safety, especially safe concurrency.";
+    let width = 20;
+    // The expected line count is calculated manually by counting how the text
+    // would wrap at a width of 20 characters.
+    let expected_line_count = 7;
+    assert_eq!(calculate_wrapped_lines(text, width), expected_line_count);
+  }
   // write a test for Session::add_chunked_chat_completion_request_messages
   // write a test for Session::construct_request
   // write a test for Session::submit_chat_completion_request

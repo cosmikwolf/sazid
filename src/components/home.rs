@@ -28,7 +28,7 @@ pub struct Home {
   pub text: Vec<String>,
   pub last_events: Vec<KeyEvent>,
   pub config: Config,
-  pub session: Session,
+  pub session: Session<'static>,
 }
 
 impl Home {
@@ -73,6 +73,7 @@ impl Component for Home {
         self.session.mode = Mode::Insert;
       },
       Action::EnterProcessing => {
+        self.input.reset();
         self.mode = Mode::Processing;
         self.session.mode = Mode::Processing;
       },

@@ -236,6 +236,7 @@ impl From<&ChatMessage> for RenderedChatMessage {
 #[derive(Default, Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct SessionData {
   pub messages: Vec<MessageContainer>,
+  pub stylized_lines: Vec<String>,
 }
 
 impl From<SessionData> for String {
@@ -358,6 +359,7 @@ impl SessionData {
         trace_dbg!("post_process_new_messages: finished message {:#?}", message);
       }
     }
+    self.stylized_lines = self.stylized_text();
   }
 
   pub fn get_functions_that_need_calling(&mut self) -> Vec<RenderedFunctionCall> {
@@ -398,8 +400,16 @@ impl SessionData {
     }
   }
 
-  pub fn stylized_text(&self) -> String {
-    self.messages.iter().flat_map(|m| m.stylized.clone()).collect::<Vec<String>>().join("\n\n")
+  pub fn stylized_text(&self) -> Vec<String> {
+    self
+      .messages
+      .iter()
+      .flat_map(|m| m.stylized.clone())
+      .collect::<Vec<String>>()
+      .join("\n")
+      .lines()
+      .map(|l| l.to_string())
+      .collect()
   }
 }
 
@@ -412,7 +422,7 @@ impl From<RenderedChatMessage> for String {
     if let Some(function_call) = message.function_call {
       string_vec.push(format!("function call: {} {}", function_call.name.as_str(), function_call.arguments.as_str()));
     }
-    string_vec.join("-\n")
+    string_vec.join("\n")
   }
 }
 
