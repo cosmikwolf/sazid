@@ -1,4 +1,4 @@
-use crate::app::types::{ChatResponse, Model};
+use crate::app::types::{ChatMessage, Model};
 use serde::{
   de::{self, Deserializer, Visitor},
   Deserialize, Serialize,
@@ -18,9 +18,9 @@ pub enum Action {
   Help,
   SubmitInput(String),
   RequestChatCompletion(),
-  CallFunction(String, String),
+  AddMessage(ChatMessage),
+  CallFunctions,
   SelectModel(Model),
-  ProcessResponse(ChatResponse),
   EnterNormal,
   EnterInsert,
   EnterProcessing,

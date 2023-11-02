@@ -4,7 +4,8 @@ use async_openai::{
   self,
   types::{
     ChatChoice, ChatCompletionRequestMessage, ChatCompletionResponseStreamMessage, ChatCompletionStreamResponseDelta,
-    CreateChatCompletionResponse, CreateChatCompletionStreamResponse, FunctionCall, FunctionCallStream, Role,
+    CreateChatCompletionResponse, CreateChatCompletionStreamResponse, FinishReason, FunctionCall, FunctionCallStream,
+    Role,
   },
 };
 use clap::Parser;
@@ -18,6 +19,8 @@ use bat::{
 };
 use serde::{Deserialize, Serialize};
 use std::{collections::BTreeMap, ffi::OsString, path::PathBuf};
+
+use super::errors::ParseError;
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct RenderedFunctionCall {
@@ -47,7 +50,7 @@ pub struct RenderedChatMessage {
   pub rendered_content: Option<String>,
   pub function_call: Option<RenderedFunctionCall>,
   pub name: Option<String>,
-  pub finish_reason: Option<String>,
+  pub finish_reason: Option<FinishReason>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
@@ -191,7 +194,7 @@ impl From<&ChatMessage> for RenderedChatMessage {
       },
       ChatMessage::PromptMessage(request) => RenderedChatMessage {
         name: None,
-        role: Some(request.role.clone()),
+        role: Some(request.role),
         content: Some(format!("Prompt: {}", request.content.clone().unwrap_or("no prompt".to_string()))),
         rendered_content: None,
         function_call: None,
@@ -199,7 +202,7 @@ impl From<&ChatMessage> for RenderedChatMessage {
       },
       ChatMessage::ChatCompletionRequestMessage(request) => RenderedChatMessage {
         name: None,
-        role: Some(request.role.clone()),
+        role: Some(request.role),
         content: request.content.clone(),
         rendered_content: None,
         function_call: request.function_call.clone().map(|function_call| function_call.into()),
@@ -212,7 +215,7 @@ impl From<&ChatMessage> for RenderedChatMessage {
           content: response.message.content.clone(),
           rendered_content: None,
           function_call: response.message.function_call.clone().map(|function_call| function_call.into()),
-          finish_reason: response.finish_reason.clone(),
+          finish_reason: response.finish_reason,
         }
       },
       ChatMessage::ChatCompletionResponseMessage(ChatResponseSingleMessage::StreamResponse(srvec)) => {
@@ -286,7 +289,17 @@ fn concatenate_stream_delta(
     function_call: concatenate_function_call_streams(delta1.function_call, delta2.function_call),
   }
 }
-
+fn concatenate_finish_reason(
+  finish_reason1: Option<FinishReason>,
+  finish_reason2: Option<FinishReason>,
+) -> Result<Option<FinishReason>, ParseError> {
+  match (finish_reason1, finish_reason2) {
+    (Some(_), Some(_)) => Err(ParseError::new("Cannot concatenate two finish reasons")),
+    (Some(fr), None) => Ok(Some(fr)),
+    (None, Some(fr)) => Ok(Some(fr)),
+    (None, None) => Ok(None), // todo: handle this case
+  }
+}
 fn concatenate_stream_response_messages(
   sr1: &ChatCompletionResponseStreamMessage,
   sr2: &ChatCompletionResponseStreamMessage,
@@ -294,7 +307,7 @@ fn concatenate_stream_response_messages(
   ChatCompletionResponseStreamMessage {
     index: sr1.index,
     delta: concatenate_stream_delta(sr1.delta.clone(), sr2.delta.clone()),
-    finish_reason: concatenate_option_strings(sr1.finish_reason.clone(), sr2.finish_reason.clone()),
+    finish_reason: concatenate_finish_reason(sr1.finish_reason, sr2.finish_reason).unwrap(),
   }
 }
 
@@ -583,7 +596,7 @@ pub struct Commands {
 // a display function for Message
 impl std::fmt::Display for Message {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-    format_chat_message(f, self.role.clone(), self.content.clone())
+    format_chat_message(f, self.role, self.content.clone())
   }
 }
 
@@ -668,7 +681,7 @@ mod tests {
         content: Some(" world".to_string()),
         function_call: Some(FunctionCallStream { name: Some("response".to_string()), arguments: Some("".to_string()) }),
       },
-      finish_reason: Some("stop".to_string()), // This is ignored in concatenate_stream_response_messages
+      finish_reason: Some(FinishReason::Stop), // This is ignored in concatenate_stream_response_messages
     };
     assert_eq!(
       concatenate_stream_response_messages(&sr1, &sr2),
@@ -682,7 +695,7 @@ mod tests {
             arguments: Some("".to_string())
           }),
         },
-        finish_reason: Some("stop".to_string()), // The finish_reason from sr1 is used
+        finish_reason: Some(FinishReason::Stop), // The finish_reason from sr1 is used
       }
     );
   }

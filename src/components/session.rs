@@ -159,15 +159,22 @@ impl Component for Session<'static> {
   fn update(&mut self, action: Action) -> Result<Option<Action>, SazidError> {
     let tx = self.action_tx.clone().unwrap();
     match action {
+      Action::AddMessage(chat_message) => {
+        self.data.add_message(chat_message);
+      },
       Action::SubmitInput(s) => {
         self.submit_chat_completion_request(s, tx);
       },
       Action::RequestChatCompletion() => self.request_chat_completion(tx.clone()),
-      Action::ProcessResponse(response) => {
-        self.response_handler(tx, response);
-      },
-      Action::CallFunction(fn_name, fn_args) => {
-        self.handle_chat_response_function_call(tx, fn_name, fn_args);
+      Action::CallFunctions => {
+        for function_call in self.data.get_functions_that_need_calling().drain(..) {
+          Self::handle_chat_response_function_call(
+            tx.clone(),
+            function_call.name,
+            function_call.arguments,
+            self.config.clone(),
+          );
+        }
       },
       Action::SelectModel(model) => self.config.model = model,
       _ => (),
@@ -316,7 +323,7 @@ impl Session<'static> {
       Ok(chunks) => {
         chunks.iter().for_each(|chunk| {
           self.data.add_message(ChatMessage::ChatCompletionRequestMessage(ChatCompletionRequestMessage {
-            role: role.clone(),
+            role,
             name: None,
             content: Some(chunk.clone()),
             function_call: function_call.clone(),
@@ -327,6 +334,7 @@ impl Session<'static> {
       Err(e) => Err(SazidError::ChunkifierError(e)),
     }
   }
+
   pub fn construct_request(&self) -> (CreateChatCompletionRequest, usize) {
     let functions = match self.config.include_functions {
       true => Some(create_chat_completion_function_args(define_commands())),
@@ -371,20 +379,34 @@ impl Session<'static> {
     }
   }
 
-  pub fn handle_chat_response_function_call(&mut self, tx: UnboundedSender<Action>, fn_name: String, fn_args: String) {
-    match self.execute_function_call(fn_name.clone(), fn_args) {
-      Ok(Some(output)) => {
-        self.data.add_message(ChatMessage::FunctionResult(FunctionResult { name: fn_name, response: output }));
-      },
-      Ok(None) => {},
-      Err(e) => {
-        self.data.add_message(ChatMessage::FunctionResult(FunctionResult {
-          name: fn_name,
-          response: format!("Error: {:?}", e),
-        }));
-      },
-    }
-    tx.send(Action::RequestChatCompletion()).unwrap();
+  fn handle_chat_response_function_call(
+    tx: UnboundedSender<Action>,
+    fn_name: String,
+    fn_args: String,
+    session_config: SessionConfig,
+  ) {
+    tokio::spawn(async move {
+      match Self::execute_function_call(fn_name.clone(), fn_args, session_config).await {
+        Ok(Some(output)) => {
+          //self.data.add_message(ChatMessage::FunctionResult(FunctionResult { name: fn_name, response: output }));
+          tx.send(Action::AddMessage(ChatMessage::FunctionResult(FunctionResult { name: fn_name, response: output })))
+            .unwrap();
+        },
+        Ok(None) => {},
+        Err(e) => {
+          // self.data.add_message(ChatMessage::FunctionResult(FunctionResult {
+          //   name: fn_name,
+          //   response: format!("Error: {:?}", e),
+          // }));
+          tx.send(Action::AddMessage(ChatMessage::FunctionResult(FunctionResult {
+            name: fn_name,
+            response: format!("Error: {:?}", e),
+          })))
+          .unwrap();
+        },
+      }
+      tx.send(Action::RequestChatCompletion()).unwrap();
+    });
   }
 
   pub fn request_chat_completion(&mut self, tx: UnboundedSender<Action>) {
@@ -403,7 +425,7 @@ impl Session<'static> {
           while let Some(response_result) = stream.next().await {
             match response_result {
               Ok(response) => {
-                tx.send(Action::ProcessResponse(ChatResponse::StreamResponse(response))).unwrap();
+                Self::response_handler(tx.clone(), ChatResponse::StreamResponse(response)).await;
               },
               Err(e) => {
                 trace_dbg!("Error: {:?} -- check https://status.openai.com/", e);
@@ -417,7 +439,7 @@ impl Session<'static> {
         },
         false => match client.chat().create(request).await {
           Ok(response) => {
-            tx.send(Action::ProcessResponse(ChatResponse::Response(response))).unwrap();
+            Self::response_handler(tx.clone(), ChatResponse::Response(response)).await;
           },
           Err(e) => {
             trace_dbg!("Error: {}", e);
@@ -429,23 +451,24 @@ impl Session<'static> {
     });
   }
 
-  pub fn response_handler(&mut self, tx: UnboundedSender<Action>, response: ChatResponse) {
+  async fn response_handler(tx: UnboundedSender<Action>, response: ChatResponse) {
     for choice in <Vec<ChatMessage>>::from(response) {
-      self.data.add_message(choice);
-      for function_call in self.data.get_functions_that_need_calling().drain(..) {
-        tx.send(Action::CallFunction(function_call.name, function_call.arguments)).unwrap();
-      }
+      tx.send(Action::AddMessage(choice)).unwrap();
     }
     tx.send(Action::Update).unwrap();
   }
 
-  pub fn execute_function_call(&self, fn_name: String, fn_args: String) -> Result<Option<String>, FunctionCallError> {
+  async fn execute_function_call(
+    fn_name: String,
+    fn_args: String,
+    config: SessionConfig,
+  ) -> Result<Option<String>, FunctionCallError> {
     let function_args: Result<HashMap<String, Value>, serde_json::Error> = serde_json::from_str(fn_args.as_str());
     match function_args {
       Ok(function_args) => {
         if let Some(v) = function_args.get("path") {
           if let Some(pathstr) = v.as_str() {
-            let accesible_paths = get_accessible_file_paths(self.config.list_file_paths.clone());
+            let accesible_paths = get_accessible_file_paths(config.list_file_paths.clone());
             if !accesible_paths.contains_key(Path::new(pathstr).to_str().unwrap()) {
               return Err(FunctionCallError::new(
                 format!("File path is not accessible: {:?}. Suggest using file_search command", pathstr).as_str(),
@@ -464,15 +487,13 @@ impl Session<'static> {
             function_args["path"].as_str().unwrap_or_default(),
             function_args["text"].as_str().unwrap_or_default(),
           ),
-          "file_search" => {
-            file_search(self.config.function_result_max_tokens, self.config.list_file_paths.clone(), search_term)
-          },
+          "file_search" => file_search(config.function_result_max_tokens, config.list_file_paths.clone(), search_term),
           "read_lines" => read_file_lines(
             function_args["path"].as_str().unwrap_or_default(),
             start_line,
             end_line,
-            self.config.function_result_max_tokens,
-            self.config.list_file_paths.clone(),
+            config.function_result_max_tokens,
+            config.list_file_paths.clone(),
           ),
           "modify_file" => modify_file(
             function_args["path"].as_str().unwrap(),
@@ -594,7 +615,7 @@ mod tests {
   use crate::action;
   use async_openai::types::{
     ChatChoice, ChatCompletionResponseMessage, ChatCompletionResponseStreamMessage, ChatCompletionStreamResponseDelta,
-    CreateChatCompletionResponse, CreateChatCompletionStreamResponse, FunctionCallStream,
+    CreateChatCompletionResponse, CreateChatCompletionStreamResponse, FinishReason, FunctionCallStream,
   };
   use ntest::timeout;
   use tokio::sync::mpsc;
@@ -621,7 +642,7 @@ mod tests {
           content: Some("test response data".to_string()),
           function_call: None,
         },
-        finish_reason: Some("STOP".to_string()),
+        finish_reason: Some(FinishReason::Stop),
       }],
     };
     let stream_responses = vec![
@@ -674,7 +695,7 @@ mod tests {
         choices: vec![ChatCompletionResponseStreamMessage {
           index: 0,
           delta: ChatCompletionStreamResponseDelta { role: None, content: None, function_call: None },
-          finish_reason: Some("stop".to_string()),
+          finish_reason: Some(FinishReason::Stop),
         }],
       },
     ];
@@ -733,13 +754,13 @@ mod tests {
         choices: vec![ChatCompletionResponseStreamMessage {
           index: 0,
           delta: ChatCompletionStreamResponseDelta { role: None, content: None, function_call: None },
-          finish_reason: Some("function_call".to_string()),
+          finish_reason: Some(FinishReason::FunctionCall),
         }],
       },
     ];
-    session.response_handler(tx.clone(), ChatResponse::Response(response));
+    Session::response_handler(tx.clone(), ChatResponse::Response(response)).await;
     assert_eq!(session.data.messages.len(), 2);
-    session.response_handler(tx.clone(), ChatResponse::StreamResponse(stream_responses[0].clone()));
+    Session::response_handler(tx.clone(), ChatResponse::StreamResponse(stream_responses[0].clone())).await;
     assert_eq!(session.data.messages.len(), 3);
     if let ChatMessage::ChatCompletionResponseMessage(ChatResponseSingleMessage::StreamResponse(msg)) =
       &session.data.messages[2].message
@@ -751,7 +772,7 @@ mod tests {
     } else {
       panic!("Expected ChatMessage::ChatCompletionResponseMessage(ChatResponseSingleMessage::StreamResponse(msg))");
     }
-    session.response_handler(tx.clone(), ChatResponse::StreamResponse(stream_responses[1].clone()));
+    Session::response_handler(tx.clone(), ChatResponse::StreamResponse(stream_responses[1].clone())).await;
     assert_eq!(session.data.messages.len(), 3);
     if let ChatMessage::ChatCompletionResponseMessage(ChatResponseSingleMessage::StreamResponse(msg)) =
       &session.data.messages[2].message
@@ -762,7 +783,7 @@ mod tests {
     } else {
       panic!("Expected ChatMessage::ChatCompletionResponseMessage(ChatResponseSingleMessage::StreamResponse(msg))");
     }
-    session.response_handler(tx.clone(), ChatResponse::StreamResponse(stream_responses[2].clone()));
+    Session::response_handler(tx.clone(), ChatResponse::StreamResponse(stream_responses[2].clone())).await;
     assert_eq!(session.data.messages.len(), 3);
     if let ChatMessage::ChatCompletionResponseMessage(ChatResponseSingleMessage::StreamResponse(msg)) =
       &session.data.messages[2].message
@@ -773,19 +794,23 @@ mod tests {
     } else {
       panic!("Expected ChatMessage::ChatCompletionResponseMessage(ChatResponseSingleMessage::StreamResponse(msg))");
     }
-    session.response_handler(tx.clone(), ChatResponse::StreamResponse(stream_responses[3].clone()));
+    Session::response_handler(tx.clone(), ChatResponse::StreamResponse(stream_responses[3].clone())).await;
     assert_eq!(session.data.messages.len(), 3);
     if let ChatMessage::ChatCompletionResponseMessage(ChatResponseSingleMessage::StreamResponse(msg)) =
       &session.data.messages[2].message
     {
       assert_eq!(msg[0].delta.role, Some(Role::Assistant));
       assert_eq!(msg[0].delta.content, Some("twothree".to_string()));
-      assert_eq!(msg[0].finish_reason, Some("stop".to_string()));
+      assert_eq!(msg[0].finish_reason, Some(FinishReason::Stop));
     } else {
       panic!("Expected ChatMessage::ChatCompletionRequestMessage(ChatResponseSingleMessage::StreamResponse(msg))");
     }
     assert!(session.data.messages[1].finished);
-    session.response_handler(tx.clone(), ChatResponse::StreamResponse(stream_responses_with_function_calls[0].clone()));
+    Session::response_handler(
+      tx.clone(),
+      ChatResponse::StreamResponse(stream_responses_with_function_calls[0].clone()),
+    )
+    .await;
     assert_eq!(session.data.messages.len(), 4);
     if let ChatMessage::ChatCompletionResponseMessage(ChatResponseSingleMessage::StreamResponse(msg)) =
       &session.data.messages[3].message
@@ -800,7 +825,11 @@ mod tests {
     } else {
       panic!("Expected ChatMessage::ChatCompletionRequestMessage(ChatResponseSingleMessage::StreamResponse(msg))");
     }
-    session.response_handler(tx.clone(), ChatResponse::StreamResponse(stream_responses_with_function_calls[1].clone()));
+    Session::response_handler(
+      tx.clone(),
+      ChatResponse::StreamResponse(stream_responses_with_function_calls[1].clone()),
+    )
+    .await;
     assert_eq!(session.data.messages.len(), 4);
     if let ChatMessage::ChatCompletionResponseMessage(ChatResponseSingleMessage::StreamResponse(msg)) =
       &session.data.messages[3].message
@@ -815,7 +844,11 @@ mod tests {
     } else {
       panic!("Expected ChatMessage::ChatCompletionRequestMessage(ChatResponseSingleMessage::StreamResponse(msg))");
     }
-    session.response_handler(tx.clone(), ChatResponse::StreamResponse(stream_responses_with_function_calls[2].clone()));
+    Session::response_handler(
+      tx.clone(),
+      ChatResponse::StreamResponse(stream_responses_with_function_calls[2].clone()),
+    )
+    .await;
     assert_eq!(session.data.messages.len(), 4);
     if let ChatMessage::ChatCompletionResponseMessage(ChatResponseSingleMessage::StreamResponse(msg)) =
       &session.data.messages[3].message
@@ -830,14 +863,18 @@ mod tests {
     } else {
       panic!("Expected ChatMessage::ChatCompletionRequestMessage(ChatResponseSingleMessage::StreamResponse(msg))");
     }
-    session.response_handler(tx.clone(), ChatResponse::StreamResponse(stream_responses_with_function_calls[3].clone()));
+    Session::response_handler(
+      tx.clone(),
+      ChatResponse::StreamResponse(stream_responses_with_function_calls[3].clone()),
+    )
+    .await;
     assert_eq!(session.data.messages.len(), 4);
     if let ChatMessage::ChatCompletionResponseMessage(ChatResponseSingleMessage::StreamResponse(msg)) =
       &session.data.messages[3].message
     {
       assert_eq!(msg[0].delta.role, Some(Role::Assistant));
       assert_eq!(msg[0].delta.content, None);
-      assert_eq!(msg[0].finish_reason, Some("function_call".to_string()));
+      assert_eq!(msg[0].finish_reason, Some(FinishReason::FunctionCall));
       assert_eq!(
         msg[0].delta.function_call,
         Some(FunctionCallStream { name: Some("file_search".to_string()), arguments: Some("{ src }".to_string()) })

@@ -62,6 +62,13 @@ pub struct ParseError {
   message: String,
 }
 
+impl ParseError {
+  pub fn new(message: &str) -> Self {
+    trace_dbg!("ParseError: {}", message);
+    ParseError { message: message.to_string() }
+  }
+}
+
 impl fmt::Display for ParseError {
   fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
     write!(f, "ParseError: {}", self.message)

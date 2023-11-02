@@ -73,7 +73,7 @@ dependencies = [
 [[package]]
 name = "ansi-to-tui"
 version = "3.1.0"
-source = "git+https://github.com/cosmikwolf/ansi-to-tui#cc377fcae5787c530f5d2077ed8806531e35c455"
+source = "git+https://github.com/cosmikwolf/ansi-to-tui?branch=update#1dc761d83280bf7342658314c3deeb1cafa6979b"
 dependencies = [
  "nom",
  "ratatui 0.24.0",
@@ -166,6 +166,30 @@ dependencies = [
  "rand",
  "reqwest",
  "reqwest-eventsource",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "tokio",
+ "tokio-stream",
+ "tokio-util",
+ "tracing",
+]
+
+[[package]]
+name = "async-openai"
+version = "0.15.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "716fd3fa452e27f7c820daab6f1d010cf3359f3ad6fad275d228505529f72199"
+dependencies = [
+ "async-convert",
+ "backoff",
+ "base64 0.21.5",
+ "derive_builder",
+ "futures",
+ "rand",
+ "reqwest",
+ "reqwest-eventsource",
+ "secrecy",
  "serde",
  "serde_json",
  "thiserror",
@@ -2723,7 +2747,7 @@ name = "sazid"
 version = "0.1.0"
 dependencies = [
  "ansi-to-tui",
- "async-openai",
+ "async-openai 0.15.0",
  "async-recursion",
  "backoff",
  "bat",
@@ -2795,6 +2819,16 @@ checksum = "da046153aa2352493d6cb7da4b6e5c0c057d8a1d0a9aa8560baffdd945acd414"
 dependencies = [
  "ring",
  "untrusted",
+]
+
+[[package]]
+name = "secrecy"
+version = "0.8.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9bd1c54ea06cfd2f6b63219704de0b9b4f72dcc2b8fdef820be6cd799780e91e"
+dependencies = [
+ "serde",
+ "zeroize",
 ]
 
 [[package]]
@@ -3251,7 +3285,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a1e520ded49607c6b80a4ab517f564c05e2b34f2c549dbd7b6a528caa2009dda"
 dependencies = [
  "anyhow",
- "async-openai",
+ "async-openai 0.14.3",
  "base64 0.21.5",
  "bstr",
  "fancy-regex",
@@ -4132,3 +4166,9 @@ dependencies = [
  "quote",
  "syn 2.0.38",
 ]
+
+[[package]]
+name = "zeroize"
+version = "1.6.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2a0956f1ba7c7909bfb66c2e9e4124ab6f6482560f6628b5aaeba39207c9aad9"

@@ -1,4 +1,5 @@
 use core::result::Result;
+// This is a sample comment
 use crossterm::event::{KeyEvent, MouseEvent};
 use ratatui::layout::Rect;
 use tokio::sync::mpsc::UnboundedSender;
