@@ -6,6 +6,7 @@ use tokio::sync::mpsc;
 pub mod consts;
 pub mod errors;
 pub mod gpt_interface;
+pub mod markdown;
 pub mod tools;
 pub mod types;
 

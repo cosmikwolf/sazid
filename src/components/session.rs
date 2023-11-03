@@ -160,14 +160,11 @@ impl Component for Session<'static> {
     let tx = self.action_tx.clone().unwrap();
     match action {
       Action::AddMessage(chat_message) => {
+        trace_dbg!(level: tracing::Level::INFO, "adding message to session");
         self.data.add_message(chat_message);
-      },
-      Action::SubmitInput(s) => {
-        self.submit_chat_completion_request(s, tx);
-      },
-      Action::RequestChatCompletion() => self.request_chat_completion(tx.clone()),
-      Action::CallFunctions => {
         for function_call in self.data.get_functions_that_need_calling().drain(..) {
+          let debug_text = format!("calling function: {:?}", function_call);
+          trace_dbg!(level: tracing::Level::INFO, debug_text);
           Self::handle_chat_response_function_call(
             tx.clone(),
             function_call.name,
@@ -175,6 +172,13 @@ impl Component for Session<'static> {
             self.config.clone(),
           );
         }
+      },
+      Action::SubmitInput(s) => {
+        self.submit_chat_completion_request(s, tx);
+      },
+      Action::RequestChatCompletion() => {
+        trace_dbg!(level: tracing::Level::INFO, "requesting chat completion");
+        self.request_chat_completion(tx.clone())
       },
       Action::SelectModel(model) => self.config.model = model,
       _ => (),
@@ -229,49 +233,46 @@ impl Component for Session<'static> {
   }
 
   fn draw(&mut self, f: &mut Frame<'_>, area: Rect) -> Result<(), SazidError> {
-    //trace_dbg!("calling draw from session");
     let rects = Layout::default()
       .direction(Direction::Vertical)
       .constraints([Constraint::Percentage(100), Constraint::Min(4)].as_ref())
       .split(area);
     let inner_a = Layout::default()
       .direction(Direction::Vertical)
-      .constraints(vec![Constraint::Length(0), Constraint::Min(10), Constraint::Length(0)])
+      .constraints(vec![Constraint::Length(1), Constraint::Min(10), Constraint::Length(0)])
       .split(rects[0]);
     let inner = Layout::default()
       .direction(Direction::Horizontal)
       .constraints(vec![Constraint::Length(3), Constraint::Min(10), Constraint::Length(3)])
       .split(inner_a[1]);
 
-    let _title = "Chat";
-
     let block = Block::default().borders(Borders::NONE).gray();
-    // .title(Title::from("left").alignment(Alignment::Left));
-    //.title(Title::from("right").alignment(Alignment::Right));
 
     let use_text_area = false;
 
-    if use_text_area {
-      if self.text_area.lines().len() < self.data.stylized_lines.len() {
-        self.text_area.move_cursor(CursorMove::End);
-        self.text_area.move_cursor(CursorMove::Bottom);
-        self.data.stylized_lines.iter().skip(self.text_area.lines().len()).for_each(|line| {
-          self.text_area.insert_newline();
-          self.text_area.insert_str(line);
-        });
-      }
+    let mut text = String::with_capacity(inner[1].width as usize * inner[1].height as usize + 1);
+    text.push_str(&self.data.stylized_lines.join("\n"));
+    self.vertical_content_height = calculate_wrapped_lines(&text, inner[1].width as usize);
+    self.vertical_viewport_height = inner[1].height as usize;
+    // pad the text with empty lines so that the text appears to come from the bottom up
+    text =
+      create_empty_lines((inner[1].height as usize).saturating_sub(self.vertical_content_height).saturating_sub(1))
+        + &text;
 
+    if use_text_area {
+      self.text_area.move_cursor(CursorMove::End);
+      self.text_area.move_cursor(CursorMove::Bottom);
+      bwrap::wrap!(&self.data.stylized_text, inner[1].width as usize)
+        .lines()
+        .skip(self.text_area.lines().len())
+        .for_each(|line| {
+          self.text_area.insert_str(line);
+          self.text_area.insert_newline();
+        });
       self.text_area.set_block(block);
       f.render_widget(self.text_area.widget(), inner[1]);
     } else {
-      let mut text = String::with_capacity(inner[1].height as usize + 1);
-      text.push_str(&self.data.stylized_lines.join("\n"));
       self.vertical_content_height = calculate_wrapped_lines(&text, inner[1].width as usize);
-      text =
-        create_empty_lines((inner[1].height as usize).saturating_sub(self.vertical_content_height).saturating_sub(1))
-          + &text;
-      self.vertical_content_height = calculate_wrapped_lines(&text, inner[1].width as usize);
-      self.vertical_viewport_height = inner[1].height as usize;
       self.vertical_scroll_state = self.vertical_scroll_state.content_length(self.vertical_content_height);
       let texts = text.into_text().unwrap();
       let paragraph =
@@ -428,7 +429,7 @@ impl Session<'static> {
                 Self::response_handler(tx.clone(), ChatResponse::StreamResponse(response)).await;
               },
               Err(e) => {
-                trace_dbg!("Error: {:?} -- check https://status.openai.com/", e);
+                trace_dbg!("Error: {:?} -- check https://status.openai.com/se", e);
                 let reqtext = format!("Request: \n{:#?}", request.clone()).replace("\\n", "\n");
                 trace_dbg!(reqtext);
 

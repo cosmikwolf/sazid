@@ -19,7 +19,6 @@ pub enum Action {
   SubmitInput(String),
   RequestChatCompletion(),
   AddMessage(ChatMessage),
-  CallFunctions,
   SelectModel(Model),
   EnterNormal,
   EnterInsert,

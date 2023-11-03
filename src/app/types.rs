@@ -17,10 +17,11 @@ use bat::{
   style::{StyleComponent, StyleComponents},
   Input,
 };
+use color_eyre::owo_colors::OwoColorize;
 use serde::{Deserialize, Serialize};
 use std::{collections::BTreeMap, ffi::OsString, path::PathBuf};
 
-use super::errors::ParseError;
+use super::{errors::ParseError, markdown::render_markdown_to_string};
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct RenderedFunctionCall {
@@ -195,7 +196,7 @@ impl From<&ChatMessage> for RenderedChatMessage {
       ChatMessage::PromptMessage(request) => RenderedChatMessage {
         name: None,
         role: Some(request.role),
-        content: Some(format!("Prompt: {}", request.content.clone().unwrap_or("no prompt".to_string()))),
+        content: Some(format!("# Prompt\n\n*{}*", request.content.clone().unwrap_or("no prompt".to_string()))),
         rendered_content: None,
         function_call: None,
         finish_reason: None,
@@ -240,6 +241,8 @@ impl From<&ChatMessage> for RenderedChatMessage {
 pub struct SessionData {
   pub messages: Vec<MessageContainer>,
   pub stylized_lines: Vec<String>,
+  pub stylized_text: String,
+  pub unrendered_text: String,
 }
 
 impl From<SessionData> for String {
@@ -365,7 +368,7 @@ impl SessionData {
   }
   pub fn post_process_new_messages(&mut self) {
     for message in self.messages.iter_mut().filter(|m| !m.finished) {
-      SessionData::render_message(message);
+      SessionData::render_message_pulldown_cmark(message);
       let rendered_message = RenderedChatMessage::from(&message.message);
       if rendered_message.finish_reason.is_some() {
         message.finished = true;
@@ -373,6 +376,9 @@ impl SessionData {
       }
     }
     self.stylized_lines = self.stylized_text();
+    let stylized_text_char_len = self.stylized_lines.iter().map(|l| l.chars().count()).sum::<usize>();
+    self.stylized_text = self.stylized_lines.join("\n");
+    //self.unrendered_text = self.stylized_text[stylized_text_char_len..].to_string();
   }
 
   pub fn get_functions_that_need_calling(&mut self) -> Vec<RenderedFunctionCall> {
@@ -385,6 +391,11 @@ impl SessionData {
         RenderedChatMessage::from(&m.message).function_call
       })
       .collect()
+  }
+
+  fn render_message_pulldown_cmark(message: &mut MessageContainer) {
+    let rendered_message = String::from(RenderedChatMessage::from(&ChatMessage::from(message.clone())));
+    message.stylized = Some(render_markdown_to_string(rendered_message))
   }
 
   fn render_message(message: &mut MessageContainer) {
@@ -430,7 +441,12 @@ impl From<RenderedChatMessage> for String {
   fn from(message: RenderedChatMessage) -> Self {
     let mut string_vec: Vec<String> = Vec::new();
     if let Some(content) = message.content {
-      string_vec.push(content);
+      match message.role {
+        Some(Role::User) => string_vec.push(format!("***You:*** {}", content)),
+        Some(Role::Assistant) => string_vec.push(format!("***Bot:*** {}", content).bright_red().to_string()),
+        Some(Role::Function) => string_vec.push(format!("{}: {}", message.name.unwrap_or("".to_string()), content)),
+        _ => string_vec.push(content),
+      }
     }
     if let Some(function_call) = message.function_call {
       string_vec.push(format!("function call: {} {}", function_call.name.as_str(), function_call.arguments.as_str()));
