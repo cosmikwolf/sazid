@@ -368,7 +368,7 @@ impl SessionData {
   }
   pub fn post_process_new_messages(&mut self) {
     for message in self.messages.iter_mut().filter(|m| !m.finished) {
-      SessionData::render_message_pulldown_cmark(message);
+      SessionData::render_message_pulldown_cmark(message, true);
       let rendered_message = RenderedChatMessage::from(&message.message);
       if rendered_message.finish_reason.is_some() {
         message.finished = true;
@@ -393,9 +393,17 @@ impl SessionData {
       .collect()
   }
 
-  fn render_message_pulldown_cmark(message: &mut MessageContainer) {
+  fn render_message_pulldown_cmark(message: &mut MessageContainer, format_responses_only: bool) {
     let rendered_message = String::from(RenderedChatMessage::from(&ChatMessage::from(message.clone())));
-    message.stylized = Some(render_markdown_to_string(rendered_message))
+    if format_responses_only {
+      if matches!(message.message, ChatMessage::ChatCompletionResponseMessage(_)) {
+        message.stylized = Some(render_markdown_to_string(rendered_message))
+      } else {
+        message.stylized = Some(rendered_message)
+      }
+    } else {
+      message.stylized = Some(render_markdown_to_string(rendered_message))
+    }
   }
 
   fn render_message(message: &mut MessageContainer) {

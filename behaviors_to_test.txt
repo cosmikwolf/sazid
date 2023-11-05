@@ -15,4 +15,30 @@
 ## Problems
 - App seems to freeze for a second after submitting input, before going into processing mode
 - when calling a function, if an error is reached, the app should go back to input mode
--
+
+## To Do List:
+
+- Create Grep Function
+- Create "worker session"  functions
+  - that use pre-configured prompts and functions to execute complex, repetetive tasks
+  - including:
+    - Summarize Project
+      - Find All custom datatypes in a Project
+        - Create a directory for each datatype
+        - List all instantiations of custom dataype
+        - List all methods described for that filetype
+          - Summarize each method
+          - List places where that method was called
+          - The file and line number for each method
+        - List all datatypes that are used by Custom datatype
+        - A list of all other datatypes that are associated
+      - a list of all variables that may be accessed from outside of the function they are used in
+      - Evaluate implementation
+        - Evaluate architectural separations
+      - Create a C4 diagram of the component
+        - Generate mermaid.js diagram based on code
+    - Research Library
+      - Retrieve source code for Library
+      - list all publically accessible functions, methods, dataypes, enums, constants
+    - Validate and Evaluate Code
+      -

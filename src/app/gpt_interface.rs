@@ -4,15 +4,22 @@ use tiktoken_rs::cl100k_base;
 use crate::{app::types::*, trace_dbg};
 use walkdir::WalkDir;
 
+use super::errors::FunctionCallError;
+use grep::{
+  cli,
+  printer::{ColorSpecs, StandardBuilder},
+  regex::RegexMatcher,
+  searcher::{BinaryDetection, SearcherBuilder},
+};
+use rust_fuzzy_search;
 use std::{
   collections::HashMap,
   fs::{File, OpenOptions},
   io::{BufRead, BufReader, Write},
   path::{Path, PathBuf},
 };
-
-use super::errors::FunctionCallError;
-use rust_fuzzy_search;
+use std::{error::Error, ffi::OsString, io::IsTerminal};
+use termcolor::ColorChoice;
 
 #[derive(Clone)]
 pub struct GPTConnector {
@@ -69,6 +76,35 @@ fn get_column_width(strings: Vec<&str>) -> usize {
   strings.iter().map(|s| s.len()).max().unwrap_or(0) + 2
 }
 
+pub fn grep(pattern: &str, paths: Vec<PathBuf>) -> Result<Option<String>, FunctionCallError> {
+  let matcher = RegexMatcher::new_line_matcher(pattern).unwrap();
+  let mut searcher = SearcherBuilder::new().binary_detection(BinaryDetection::quit(b'\x00')).line_number(false).build();
+  let mut printer = StandardBuilder::new()
+    .color_specs(ColorSpecs::default_with_color())
+    .build(cli::stdout(if std::io::stdout().is_terminal() { ColorChoice::Auto } else { ColorChoice::Never }));
+  let grep_result = String::new();
+  for path in paths {
+    for result in WalkDir::new(path) {
+      let dent = match result {
+        Ok(dent) => dent,
+        Err(err) => {
+          grep_result.push_str(&format!("{}\n", err));
+          continue;
+        },
+      };
+      if !dent.file_type().is_file() {
+        continue;
+      }
+      let result = searcher.search_path(&grep_result, dent.path(), printer.sink_with_path(&grep_result, dent.path()));
+      if let Err(err) = result {
+        grep_result.push_str(&format!("{}: {}", dent.path().display(), err));
+      }
+    }
+  }
+  matcher.finish(&mut searcher, printer.sink(&grep_result));
+  Ok(())
+}
+
 pub fn file_search(
   reply_max_tokens: usize,
   list_file_paths: Vec<PathBuf>,
@@ -90,15 +126,17 @@ pub fn file_search(
     } else {
       fuzzy_search_result.join("\n")
     }
-  } else if accessible_paths.is_empty() {
-    return Ok(Some("no files are accessible. User must add files to the search path configuration".to_string()));
   } else {
-    let column_width = get_column_width(accessible_paths.clone());
-    accessible_paths
-      .iter()
-      .filter_map(|s| count_lines_and_format_search_results(s, column_width, None))
-      .collect::<Vec<String>>()
-      .join("\n")
+    if accessible_paths.is_empty() {
+      return Ok(Some("no files are accessible. User must add files to the search path configuration".to_string()));
+    } else {
+      let column_width = get_column_width(accessible_paths.clone());
+      accessible_paths
+        .iter()
+        .filter_map(|s| count_lines_and_format_search_results(s, column_width, None))
+        .collect::<Vec<String>>()
+        .join("\n")
+    }
   };
   let token_count = count_tokens(&search_results);
   if token_count > reply_max_tokens {

@@ -411,15 +411,15 @@ impl Session<'static> {
   }
 
   pub fn request_chat_completion(&mut self, tx: UnboundedSender<Action>) {
-    let (request, token_count) = self.construct_request();
     let stream_response = self.config.stream_response;
-
     let openai_config = self.config.openai_config.clone();
-    tx.send(Action::EnterProcessing).unwrap();
-    let client = create_openai_client(openai_config);
-    self.data.add_message(ChatMessage::SazidSystemMessage(format!("Request Token Count: {}", token_count)));
+    let (request, token_count) = self.construct_request();
     trace_dbg!("Sending Request:\n{:?}", &request.messages.last().unwrap().content);
     tokio::spawn(async move {
+      tx.send(Action::EnterProcessing).unwrap();
+      let client = create_openai_client(openai_config);
+      tx.send(Action::AddMessage(ChatMessage::SazidSystemMessage(format!("Request Token Count: {}", token_count))))
+        .unwrap();
       match stream_response {
         true => {
           let mut stream = client.chat().create_stream(request.clone()).await.unwrap();
@@ -487,6 +487,10 @@ impl Session<'static> {
           "create_file" => create_file(
             function_args["path"].as_str().unwrap_or_default(),
             function_args["text"].as_str().unwrap_or_default(),
+          ),
+          "grep" => crate::app::gpt_interface::grep(
+            function_args["pattern"].as_str().unwrap_or_default(),
+            function_args["paths"].as_str().unwrap_or_default(),
           ),
           "file_search" => file_search(config.function_result_max_tokens, config.list_file_paths.clone(), search_term),
           "read_lines" => read_file_lines(
