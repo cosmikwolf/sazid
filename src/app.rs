@@ -8,6 +8,7 @@ pub mod errors;
 pub mod gpt_interface;
 pub mod llm_functions;
 pub mod markdown;
+pub mod request_validation;
 pub mod session_config;
 pub mod tools;
 pub mod types;
