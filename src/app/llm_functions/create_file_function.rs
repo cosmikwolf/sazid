@@ -1,12 +1,14 @@
 use std::{collections::HashMap, fs::File, io::Write};
 
 use crate::app::session_config::SessionConfig;
+use serde_derive::{Deserialize, Serialize};
 
 use super::{
   types::{Command, CommandParameters, CommandProperty},
   FunctionCall, FunctionCallError,
 };
 
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct CreateFileFunction {
   name: String,
   description: String,

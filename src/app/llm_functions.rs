@@ -1,5 +1,6 @@
 use crate::{action::Action, trace_dbg};
 use grep;
+use serde_derive::{Deserialize, Serialize};
 use std::{collections::HashMap, error::Error, fmt, io, path::PathBuf};
 use tokio::sync::mpsc::UnboundedSender;
 use walkdir::WalkDir;
@@ -7,7 +8,7 @@ use walkdir::WalkDir;
 use self::{
   cargo_check_function::CargoCheckFunction, create_file_function::CreateFileFunction,
   file_search_function::FileSearchFunction, grep_function::GrepFunction, modify_file_function::ModifyFileFunction,
-  read_file_lines_function::ReadFileLinesFunction, types::Command,
+  patch_files_function::PatchFilesFunction, read_file_lines_function::ReadFileLinesFunction, types::Command,
 };
 
 use super::{
@@ -30,12 +31,38 @@ pub struct FunctionCallError {
   source: Option<Box<dyn Error>>,
 }
 
-pub enum Functions {
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub enum CallableFunction {
   FileSearchFunction(FileSearchFunction),
   GrepFunction(GrepFunction),
   ReadFileLinesFunction(ReadFileLinesFunction),
   ModifyFileFunction(ModifyFileFunction),
   CreateFileFunction(CreateFileFunction),
+  PatchFilesFunction(PatchFilesFunction),
+}
+
+impl From<&CallableFunction> for Command {
+  fn from(callable_function: &CallableFunction) -> Self {
+    match callable_function {
+      CallableFunction::FileSearchFunction(f) => f.command_definition(),
+      CallableFunction::GrepFunction(f) => f.command_definition(),
+      CallableFunction::ReadFileLinesFunction(f) => f.command_definition(),
+      CallableFunction::ModifyFileFunction(f) => f.command_definition(),
+      CallableFunction::CreateFileFunction(f) => f.command_definition(),
+      CallableFunction::PatchFilesFunction(f) => f.command_definition(),
+    }
+  }
+}
+
+pub fn all_functions() -> Vec<CallableFunction> {
+  vec![
+    CallableFunction::PatchFilesFunction(PatchFilesFunction::init()),
+    CallableFunction::FileSearchFunction(FileSearchFunction::init()),
+    CallableFunction::GrepFunction(GrepFunction::init()),
+    CallableFunction::ReadFileLinesFunction(ReadFileLinesFunction::init()),
+    CallableFunction::ModifyFileFunction(ModifyFileFunction::init()),
+    CallableFunction::CreateFileFunction(CreateFileFunction::init()),
+  ]
 }
 
 impl FunctionCallError {
@@ -121,146 +148,6 @@ pub fn get_accessible_file_paths(list_file_paths: Vec<PathBuf>) -> HashMap<Strin
 pub fn count_tokens(text: &str) -> usize {
   let bpe = tiktoken_rs::cl100k_base().unwrap();
   bpe.encode_with_special_tokens(text).len()
-}
-
-pub fn define_commands() -> Vec<Command> {
-  let mut commands: Vec<Command> = Vec::new();
-  let file_search_function = FileSearchFunction::init();
-  commands.push(file_search_function.command_definition());
-  commands
-  // let command = Command {
-  //   name: "create_file".to_string(),
-  //   description: Some("create a text file".to_string()),
-  //   parameters: Some(CommandParameters {
-  //     param_type: "object".to_string(),
-  //     required: vec![],
-  //     properties: HashMap::from([
-  //       (
-  //         "path".to_string(),
-  //         CommandProperty {
-  //           property_type: "string".to_string(),
-  //           description: Some("path to create file. all file paths must start with ./".to_string()),
-  //           enum_values: None,
-  //         },
-  //       ),
-  //       (
-  //         "text".to_string(),
-  //         CommandProperty {
-  //           property_type: "string".to_string(),
-  //           description: Some("text to enter into file".to_string()),
-  //           enum_values: None,
-  //         },
-  //       ),
-  //     ]),
-  //   }),
-  // };
-  // commands.push(command);
-  // let command = Command {
-  //   name: "file_search".to_string(),
-  //   description: Some(
-  //     "search accessible file paths. file_search without arguments returns all accessible file paths. results include file line count".to_string(),
-  //   ),
-  //   parameters: Some(CommandParameters {
-  //     param_type: "object".to_string(),
-  //     required: vec![],
-  //     properties: HashMap::from([(
-  //       "search_term".to_string(),
-  //       CommandProperty {
-  //         property_type: "string".to_string(),
-  //         description: Some(
-  //           "fuzzy search for files by name or path. search results contain a match score and line count.".to_string(),
-  //         ),
-  //         enum_values: None,
-  //       },
-  //     )]),
-  //   }),
-  // };
-  // commands.push(command);
-  // let command = Command {
-  //   name: "read_lines".to_string(),
-  //   description: Some("read lines from an accessible file path".to_string()),
-  //   parameters: Some(CommandParameters {
-  //     param_type: "object".to_string(),
-  //     required: vec!["path".to_string()],
-  //     properties: HashMap::from([
-  //       (
-  //         "path".to_string(),
-  //         CommandProperty {
-  //           property_type: "string".to_string(),
-  //           description: Some("path to file".to_string()),
-  //           enum_values: None,
-  //         },
-  //       ),
-  //       (
-  //         "start_line".to_string(),
-  //         CommandProperty {
-  //           property_type: "number".to_string(),
-  //           description: Some("line to start read - omit to read file from beginning".to_string()),
-  //           enum_values: None,
-  //         },
-  //       ),
-  //       (
-  //         "end_line".to_string(),
-  //         CommandProperty {
-  //           property_type: "number".to_string(),
-  //           description: Some("line to end read - omit to read file to EOF".to_string()),
-  //           enum_values: None,
-  //         },
-  //       ),
-  //     ]),
-  //   }),
-  // };
-  // commands.push(command);
-  // let command = Command {
-  //   name: "modify_file".to_string(),
-  //   description: Some("modify a file by adding, removing, or replacing lines of text".to_string()),
-  //   parameters: Some(CommandParameters {
-  //     param_type: "object".to_string(),
-  //     required: vec!["path".to_string(), "start_line".to_string()],
-  //     properties: HashMap::from([
-  //       (
-  //         "path".to_string(),
-  //         CommandProperty {
-  //           property_type: "string".to_string(),
-  //           description: Some("path to file".to_string()),
-  //           enum_values: None,
-  //         },
-  //       ),
-  //       (
-  //         "start_line".to_string(),
-  //         CommandProperty {
-  //           property_type: "number".to_string(),
-  //           description: Some("line number to begin add and remove".to_string()),
-  //           enum_values: None,
-  //         },
-  //       ),
-  //       (
-  //         "end_line".to_string(),
-  //         CommandProperty {
-  //           property_type: "number".to_string(),
-  //           description: Some("last line to remove, starting at start_line. Omit end_line to insert text at starting line without removal".to_string()),
-  //           enum_values: None,
-  //         },
-  //       ),
-  //       (
-  //         "insert_text".to_string(),
-  //         CommandProperty {
-  //           property_type: "string".to_string(),
-  //           description: Some("text to insert at start_line, after optional removal".to_string()),
-  //           enum_values: None,
-  //         },
-  //       ),
-  //     ]),
-  //   }),
-  // };
-  // commands.push(command);
-  // // let command = Command {
-  // //     name: "cargo check".to_string(),
-  // //     description: Some("run cargo check to discover any compilation errors".to_string()),
-  // //     parameters: None,
-  // // };
-  // // commands.push(command);
-  // commands
 }
 
 pub fn handle_chat_response_function_call(

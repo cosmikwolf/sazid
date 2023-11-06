@@ -5,10 +5,12 @@ use std::path::{Path, PathBuf};
 
 use crate::app::session_config::SessionConfig;
 use crate::trace_dbg;
+use serde_derive::{Deserialize, Serialize};
 
 use super::types::{Command, CommandParameters, CommandProperty};
 use super::{count_tokens, get_accessible_file_paths, FunctionCall, FunctionCallError};
 
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct ReadFileLinesFunction {
   pub name: String,
   pub description: String,

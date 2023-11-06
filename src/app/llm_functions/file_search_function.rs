@@ -3,6 +3,8 @@ use std::fs::File;
 use std::io::{BufReader, Read};
 use std::path::{Path, PathBuf};
 
+use serde_derive::{Deserialize, Serialize};
+
 use crate::app::llm_functions::types::{Command, CommandProperty};
 use crate::app::session_config::SessionConfig;
 use crate::trace_dbg;
@@ -10,6 +12,7 @@ use crate::trace_dbg;
 use super::types::CommandParameters;
 use super::{count_tokens, get_accessible_file_paths, FunctionCall, FunctionCallError};
 
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct FileSearchFunction {
   pub name: String,
   pub description: String,

@@ -20,8 +20,7 @@ use async_openai::{config::OpenAIConfig, Client};
 use backoff::exponential::ExponentialBackoffBuilder;
 
 use super::{Component, Frame};
-use crate::app::llm_functions::types::Command;
-use crate::app::llm_functions::{define_commands, handle_chat_response_function_call};
+use crate::app::llm_functions::{all_functions, handle_chat_response_function_call};
 use crate::app::session_config::SessionConfig;
 use crate::app::{consts::*, errors::*, tools::chunkifier::*, types::*};
 use crate::trace_dbg;
@@ -75,6 +74,7 @@ impl Component for Session<'static> {
         Do not try and execute arbitrary python code.
         Do not try to infer a path to a file, if you have not been provided a path with the root ./, use the file_search function to verify the file path before you execute a function call.".to_string();
     self.data.add_message(ChatMessage::PromptMessage(self.config.prompt_message()));
+    self.config.available_functions = all_functions();
     Ok(())
   }
   fn register_action_handler(&mut self, tx: UnboundedSender<Action>) -> Result<(), SazidError> {
@@ -267,10 +267,12 @@ impl Session<'static> {
     }
   }
 
-  pub fn construct_request(&self, commands: Vec<Command>) -> (CreateChatCompletionRequest, usize) {
-    let functions = match commands.is_empty() {
+  pub fn construct_request(&self) -> (CreateChatCompletionRequest, usize) {
+    let functions = match self.config.available_functions.is_empty() {
       true => None,
-      false => Some(create_chat_completion_function_args(commands)),
+      false => {
+        Some(create_chat_completion_function_args(self.config.available_functions.iter().map(|f| f.into()).collect()))
+      },
     };
     let mut token_count = 0;
     let request = CreateChatCompletionRequest {
@@ -407,8 +409,7 @@ impl Session<'static> {
   pub fn request_chat_completion(&mut self, tx: UnboundedSender<Action>) {
     let stream_response = self.config.stream_response;
     let openai_config = self.config.openai_config.clone();
-    let commands = define_commands();
-    let (request, token_count) = self.construct_request(commands);
+    let (request, token_count) = self.construct_request();
     trace_dbg!("Sending Request:\n{:?}", &request.messages.last().unwrap().content);
     tokio::spawn(async move {
       tx.send(Action::EnterProcessing).unwrap();

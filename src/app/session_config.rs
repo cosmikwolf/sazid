@@ -9,13 +9,14 @@ use async_openai::{
 };
 use serde_derive::{Deserialize, Serialize};
 
-use super::{consts::GPT3_TURBO, types::Model};
+use super::{consts::GPT3_TURBO, llm_functions::CallableFunction, types::Model};
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct SessionConfig {
   pub prompt: String,
   pub session_id: String,
   pub session_dir: PathBuf,
+  pub available_functions: Vec<CallableFunction>,
   pub list_file_paths: Vec<PathBuf>,
   pub model: Model,
   pub name: String,
@@ -33,6 +34,7 @@ impl Default for SessionConfig {
       prompt: String::new(),
       session_id: Self::generate_session_id(),
       session_dir: PathBuf::new(),
+      available_functions: vec![],
       openai_config: OpenAIConfig::default(),
       list_file_paths: vec![],
       model: GPT3_TURBO.clone(),

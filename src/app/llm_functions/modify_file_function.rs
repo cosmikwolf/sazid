@@ -9,7 +9,9 @@ use super::{
   types::{Command, CommandParameters, CommandProperty},
   FunctionCall, FunctionCallError,
 };
+use serde_derive::{Deserialize, Serialize};
 
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct ModifyFileFunction {
   name: String,
   description: String,

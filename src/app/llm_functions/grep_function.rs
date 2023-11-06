@@ -3,6 +3,7 @@ use grep::{
   regex::RegexMatcher,
   searcher::{BinaryDetection, SearcherBuilder},
 };
+use serde_derive::{Deserialize, Serialize};
 
 use std::{collections::HashMap, io::Write};
 use std::{
@@ -19,6 +20,7 @@ use super::{
   FunctionCall, FunctionCallError,
 };
 
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct GrepFunction {
   pub name: String,
   pub description: String,
