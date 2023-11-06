@@ -377,7 +377,6 @@ impl SessionData {
       }
     }
     self.stylized_lines = self.stylized_text();
-    let stylized_text_char_len = self.stylized_lines.iter().map(|l| l.chars().count()).sum::<usize>();
     self.stylized_text = self.stylized_lines.join("\n");
     //self.unrendered_text = self.stylized_text[stylized_text_char_len..].to_string();
   }
@@ -407,7 +406,7 @@ impl SessionData {
     }
   }
 
-  fn render_message(message: &mut MessageContainer) {
+  fn _render_message(message: &mut MessageContainer) {
     let style_components = StyleComponents::new(&[
       StyleComponent::Header,
       StyleComponent::Grid,
@@ -605,33 +604,13 @@ fn format_chat_message(f: &mut std::fmt::Formatter<'_>, role: Role, message: Str
 
 #[cfg(test)]
 mod tests {
-  use crate::app::llm_functions::types::{CommandParameters, CommandProperty};
+  use crate::app::llm_functions::types::CommandProperty;
 
   use super::*;
-  use serde_json::{from_str, to_string};
+  use serde_json::to_string;
 
   #[test]
   fn test_serialization_command_properties() {
-    let json_data = r#"
-            {
-                "type": "object",
-                "required": ["location"],
-                "properties": {
-                    "location": {
-                        "type": "string",
-                        "description": "The city and state, e.g. San Francisco, CA"
-                    },
-                    "unit": {
-                        "type": "string",
-                        "enum": ["celsius", "fahrenheit"]
-                    }
-                }
-            }
-        "#;
-
-    // Deserialize the JSON string into `CommandParameters`
-    let command_parameters: CommandParameters = from_str(json_data).expect("Failed to deserialize JSON");
-
     // Manually construct the expected `CommandProperty` vector
     let location_property = CommandProperty {
       name: "location".to_owned(),

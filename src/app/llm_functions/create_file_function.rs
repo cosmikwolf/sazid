@@ -42,7 +42,7 @@ impl FunctionCall for CreateFileFunction {
   fn call(
     &self,
     function_args: HashMap<String, serde_json::Value>,
-    session_config: SessionConfig,
+    _session_config: SessionConfig,
   ) -> Result<Option<String>, FunctionCallError> {
     let path: Option<&str> = function_args.get("path").and_then(|s| s.as_str());
     let text: Option<&str> = function_args.get("text").and_then(|s| s.as_str());

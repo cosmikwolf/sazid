@@ -60,7 +60,7 @@ impl FunctionCall for ModifyFileFunction {
   fn call(
     &self,
     function_args: HashMap<String, serde_json::Value>,
-    session_config: SessionConfig,
+    _session_config: SessionConfig,
   ) -> Result<Option<String>, FunctionCallError> {
     let path: Option<&str> = function_args.get("path").and_then(|s| s.as_str());
     let start_line = match function_args.get("start_line").and_then(|s| s.as_u64().map(|u| u as usize)) {

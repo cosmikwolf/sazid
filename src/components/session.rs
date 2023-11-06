@@ -9,8 +9,6 @@ use futures::StreamExt;
 use ratatui::layout::Rect;
 use ratatui::{prelude::*, widgets::block::*, widgets::*};
 use serde_derive::{Deserialize, Serialize};
-use serde_json::Value;
-use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::result::Result;
 use std::{fs, io};
@@ -23,9 +21,7 @@ use backoff::exponential::ExponentialBackoffBuilder;
 
 use super::{Component, Frame};
 use crate::app::llm_functions::types::Command;
-use crate::app::llm_functions::{
-  define_commands, get_accessible_file_paths, handle_chat_response_function_call, FunctionCallError,
-};
+use crate::app::llm_functions::{define_commands, handle_chat_response_function_call};
 use crate::app::session_config::SessionConfig;
 use crate::app::{consts::*, errors::*, tools::chunkifier::*, types::*};
 use crate::trace_dbg;
@@ -272,10 +268,6 @@ impl Session<'static> {
   }
 
   pub fn construct_request(&self, commands: Vec<Command>) -> (CreateChatCompletionRequest, usize) {
-    let functions = match self.config.include_functions {
-      true => Some(create_chat_completion_function_args(define_commands())),
-      false => None,
-    };
     let functions = match commands.is_empty() {
       true => None,
       false => Some(create_chat_completion_function_args(commands)),

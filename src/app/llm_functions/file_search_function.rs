@@ -52,8 +52,6 @@ impl FunctionCall for FileSearchFunction {
         }
       }
     }
-    let start_line: Option<usize> = function_args.get("start_line").and_then(|s| s.as_u64().map(|u| u as usize));
-    let end_line: Option<usize> = function_args.get("end_line").and_then(|s| s.as_u64().map(|u| u as usize));
     let search_term: Option<&str> = function_args.get("search_term").and_then(|s| s.as_str());
 
     file_search(session_config.function_result_max_tokens, session_config.list_file_paths.clone(), search_term)

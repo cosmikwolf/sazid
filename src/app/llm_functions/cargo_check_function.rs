@@ -25,8 +25,8 @@ impl FunctionCall for CargoCheckFunction {
   }
   fn call(
     &self,
-    function_args: HashMap<String, serde_json::Value>,
-    session_config: SessionConfig,
+    _function_args: HashMap<String, serde_json::Value>,
+    _session_config: SessionConfig,
   ) -> Result<Option<String>, FunctionCallError> {
     cargo_check()
   }

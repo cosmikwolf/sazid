@@ -181,7 +181,7 @@ mod tests {
     assert!(result.is_ok());
     let output = result.unwrap().unwrap();
     assert!(output.contains("1\n2\n3"));
-    assert!(output.ends_with("3"));
+    assert!(output.ends_with('3'));
   }
 
   #[test]

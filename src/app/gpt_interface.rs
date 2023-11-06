@@ -1,13 +1,8 @@
 use async_openai::{config::OpenAIConfig, types::ChatCompletionFunctions, Client};
 
-use crate::{app::types::*, trace_dbg};
+use crate::app::types::*;
 
-use std::{
-  fs::{File, OpenOptions},
-  io::{BufRead, Write},
-};
-
-use super::llm_functions::{types::Command, FunctionCallError};
+use super::llm_functions::types::Command;
 
 #[derive(Clone)]
 pub struct GPTConnector {

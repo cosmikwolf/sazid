@@ -4,14 +4,14 @@ use grep::{
   searcher::{BinaryDetection, SearcherBuilder},
 };
 
-use std::path::{Path, PathBuf};
+use std::{collections::HashMap, io::Write};
 use std::{
-  collections::HashMap,
-  io::{Cursor, Write},
+  io::BufWriter,
+  path::{Path, PathBuf},
 };
 use walkdir::WalkDir;
 
-use crate::{app::session_config::SessionConfig, trace_dbg};
+use crate::app::session_config::SessionConfig;
 
 use super::{
   get_accessible_file_paths,
@@ -74,9 +74,9 @@ impl FunctionCall for GrepFunction {
       None => return Err(FunctionCallError::new("paths argument is required")),
     };
 
-    let pattern: Option<&str> = function_args.get("pattern").and_then(|s| s.as_str()).map(|u| u);
+    let pattern: Option<&str> = function_args.get("pattern").and_then(|s| s.as_str());
 
-    let multi_line: Option<bool> = function_args.get("multi_line").and_then(|s| s.as_bool().map(|u| u));
+    let _multi_line: Option<bool> = function_args.get("multi_line").and_then(|s| s.as_bool());
     match pattern {
       Some(pattern) => grep(pattern, paths),
       None => Err(FunctionCallError::new("pattern argument is required")),
@@ -128,7 +128,9 @@ pub fn validate_and_extract_paths_from_argument(
 }
 
 pub fn grep(pattern: &str, paths: Vec<PathBuf>) -> Result<Option<String>, FunctionCallError> {
-  let mut buffer = Cursor::new(Vec::new());
+  //let mut buffer = Cursor::new(Vec::new());
+  let buffer: BufWriter<Vec<u8>> = BufWriter::new(Vec::new());
+  let mut error_buffer: BufWriter<Vec<u8>> = BufWriter::new(Vec::new());
   match RegexMatcher::new(pattern) {
     Ok(matcher) => {
       let mut searcher =
@@ -140,7 +142,7 @@ pub fn grep(pattern: &str, paths: Vec<PathBuf>) -> Result<Option<String>, Functi
           let dent = match result {
             Ok(dent) => dent,
             Err(err) => {
-              buffer.write(&format!("{}\n", err).as_bytes());
+              error_buffer.write_all(format!("{}\n", err).as_bytes()).unwrap();
               continue;
             },
           };
@@ -149,16 +151,30 @@ pub fn grep(pattern: &str, paths: Vec<PathBuf>) -> Result<Option<String>, Functi
           }
           let result = searcher.search_path(&matcher, dent.path(), printer.sink_with_path(&matcher, dent.path()));
           if let Err(err) = result {
-            buffer.write(&format!("{}: {}", dent.path().display(), err).as_bytes());
+            error_buffer.write_all(format!("{}: {}", dent.path().display(), err).as_bytes()).unwrap();
           }
         }
       }
+      match printer.into_inner().into_inner().into_inner() {
+        Ok(matches) => {
+          if matches.is_empty() {
+            error_buffer.write_all(format!("No matches found for pattern: {}", pattern).as_bytes()).unwrap();
+          }
 
-      Ok(Some(String::from_utf8(buffer.into_inner()).unwrap_or_else(|_| "Error parsing grep output text".to_string())))
+          Ok(Some(
+            String::from_utf8(matches).unwrap_or_else(|_| "Error parsing grep output text".to_string())
+              + String::from_utf8(error_buffer.into_inner().unwrap())
+                .unwrap_or_else(|_| "Error parsing grep output text".to_string())
+                .as_str(),
+          ))
+        },
+        Err(err) => {
+          error_buffer.write_all(format!("Error parsing grep output text: {:?}", err).as_bytes()).unwrap();
+          Ok(Some(String::from_utf8(error_buffer.into_inner().unwrap()).unwrap()))
+        },
+      }
     },
-    Err(err) => {
-      return Err(err.into());
-    },
+    Err(err) => Ok(Some(format!("Error parsing grep pattern: {:?}", err))),
   }
 }
 
@@ -185,7 +201,7 @@ mod tests {
     write_to_file(&file_path, "Hello\nRust\nWorld")?;
 
     let pattern = "Rust";
-    let paths = vec![file_path.into()];
+    let paths = vec![file_path];
     let result = grep(pattern, paths)?;
 
     assert!(result.is_some());
@@ -200,7 +216,7 @@ mod tests {
     write_to_file(&file_path, "Hello\nRust Language\nWorld\nRust Programming")?;
 
     let pattern = "Rust.*";
-    let paths = vec![file_path.into()];
+    let paths = vec![file_path];
     let result = grep(pattern, paths)?;
 
     assert!(result.is_some());
@@ -217,16 +233,14 @@ mod tests {
     write_to_file(&file_path, "Hello\nRust\nWorld")?;
 
     let pattern = "Nonexistent";
-    let paths = vec![file_path.into()];
+    let paths = vec![file_path];
     let result = grep(pattern, paths)?;
 
-    // Depending on the expected behavior, adjust the assertion here
-    // If the function should return `None` when no match is found:
-    assert!(result.is_none());
-    // Or if the function should return an empty string:
-    // assert!(result.unwrap().is_empty());
+    assert!(result.is_some());
+    assert!(result.unwrap().contains("No matches found for pattern: Nonexistent"));
     Ok(())
   }
+
   #[test]
   fn test_grep_invalid_pattern() -> Result<(), Box<dyn Error>> {
     let dir = tempdir()?;
@@ -234,17 +248,11 @@ mod tests {
     write_to_file(&file_path, "Hello\nRust\nWorld")?;
 
     let pattern = "[Unclosed bracket";
-    let paths = vec![file_path.into()];
-    let result = grep(pattern, paths);
+    let paths = vec![file_path];
+    let result = grep(pattern, paths)?;
 
-    assert!(result.is_err());
-    if let Err(FunctionCallError { .. }) = result.into() {
-      // Correct behavior for an invalid regex pattern
-      assert!(true);
-    } else {
-      // The error was not a regex error when it should have been
-      assert!(false);
-    }
+    assert!(result.is_some());
+    assert!(result.unwrap().contains("Error parsing grep pattern:"));
     Ok(())
   }
 
@@ -256,10 +264,11 @@ mod tests {
     file.write_all(&[0, 159, 146, 150])?; // Some arbitrary non-text bytes
 
     let pattern = ".*";
-    let paths = vec![file_path.into()];
+    let paths = vec![file_path];
     let result = grep(pattern, paths)?;
 
-    assert!(result.is_none());
+    assert!(result.is_some());
+    assert!(result.unwrap().contains("No matches found for pattern: .*"));
     Ok(())
   }
 }
