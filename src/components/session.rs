@@ -13,7 +13,6 @@ use serde_json::Value;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::result::Result;
-use std::time::{SystemTime, UNIX_EPOCH};
 use std::{fs, io};
 use tokio::sync::mpsc::UnboundedSender;
 use tui_textarea::{CursorMove, TextArea};
@@ -23,84 +22,19 @@ use async_openai::{config::OpenAIConfig, Client};
 use backoff::exponential::ExponentialBackoffBuilder;
 
 use super::{Component, Frame};
+use crate::app::llm_functions::types::Command;
+use crate::app::llm_functions::{
+  define_commands, get_accessible_file_paths, handle_chat_response_function_call, FunctionCallError,
+};
+use crate::app::session_config::SessionConfig;
 use crate::app::{consts::*, errors::*, tools::chunkifier::*, types::*};
 use crate::trace_dbg;
 use crate::tui::Event;
 use crate::{action::Action, config::Config};
 
-use crate::app::gpt_interface::{
-  cargo_check, create_chat_completion_function_args, create_file, define_commands, file_search,
-  get_accessible_file_paths, modify_file, read_file_lines,
-};
+use crate::app::gpt_interface::create_chat_completion_function_args;
 use crate::app::tools::utils::ensure_directory_exists;
 use crate::components::home::Mode;
-
-#[derive(Serialize, Deserialize, Debug, Clone)]
-
-pub struct SessionConfig {
-  pub prompt: String,
-  pub session_id: String,
-  pub list_file_paths: Vec<PathBuf>,
-  pub model: Model,
-  pub name: String,
-  pub include_functions: bool,
-  pub stream_response: bool,
-  pub function_result_max_tokens: usize,
-  pub response_max_tokens: usize,
-  #[serde(skip)]
-  pub openai_config: OpenAIConfig,
-}
-
-impl Default for SessionConfig {
-  fn default() -> Self {
-    SessionConfig {
-      prompt: String::new(),
-      session_id: Self::generate_session_id(),
-      openai_config: OpenAIConfig::default(),
-      list_file_paths: vec![],
-      model: GPT3_TURBO.clone(),
-      name: "Sazid Test".to_string(),
-      function_result_max_tokens: 1024,
-      response_max_tokens: 1024,
-      include_functions: true,
-      stream_response: true,
-    }
-  }
-}
-impl SessionConfig {
-  pub fn with_local_api(mut self) -> Self {
-    log::info!("Using local API");
-    self.openai_config = OpenAIConfig::new().with_api_base("http://localhost:1234/v1".to_string());
-    self
-  }
-
-  pub fn with_openai_api_key<S: Into<String>>(mut self, api_key: S) -> Self {
-    log::info!("Using default OpenAI remote API");
-    self.openai_config = OpenAIConfig::new().with_api_key(api_key).with_org_id("org-WagBLu0vLgiuEL12dylmcPFj");
-    self
-  }
-
-  pub fn prompt_message(&self) -> ChatCompletionRequestMessage {
-    ChatCompletionRequestMessage {
-      content: Some(self.prompt.clone()),
-      name: None,
-      function_call: None,
-      role: Role::User,
-    }
-  }
-
-  pub fn generate_session_id() -> String {
-    // Get the current time since UNIX_EPOCH in seconds.
-    let start = SystemTime::now();
-    let since_the_epoch = start.duration_since(UNIX_EPOCH).expect("Time went backwards").as_secs();
-
-    // Introduce a delay of 1 second to ensure unique session IDs even if called rapidly.
-    std::thread::sleep(std::time::Duration::from_secs(1));
-
-    // Convert the duration to a String and return.
-    since_the_epoch.to_string()
-  }
-}
 
 #[derive(Default, Serialize, Deserialize, Debug, Clone)]
 pub struct Session<'a> {
@@ -165,7 +99,7 @@ impl Component for Session<'static> {
         for function_call in self.data.get_functions_that_need_calling().drain(..) {
           let debug_text = format!("calling function: {:?}", function_call);
           trace_dbg!(level: tracing::Level::INFO, debug_text);
-          Self::handle_chat_response_function_call(
+          handle_chat_response_function_call(
             tx.clone(),
             function_call.name,
             function_call.arguments,
@@ -297,6 +231,7 @@ fn create_empty_lines(n: usize) -> String {
   }
   s
 }
+
 fn calculate_wrapped_lines(text: &str, width: usize) -> usize {
   bwrap::wrap!(text, width).chars().filter(|c| *c == '\n').count()
 }
@@ -336,10 +271,14 @@ impl Session<'static> {
     }
   }
 
-  pub fn construct_request(&self) -> (CreateChatCompletionRequest, usize) {
+  pub fn construct_request(&self, commands: Vec<Command>) -> (CreateChatCompletionRequest, usize) {
     let functions = match self.config.include_functions {
       true => Some(create_chat_completion_function_args(define_commands())),
       false => None,
+    };
+    let functions = match commands.is_empty() {
+      true => None,
+      false => Some(create_chat_completion_function_args(commands)),
     };
     let mut token_count = 0;
     let request = CreateChatCompletionRequest {
@@ -380,40 +319,104 @@ impl Session<'static> {
     }
   }
 
-  fn handle_chat_response_function_call(
-    tx: UnboundedSender<Action>,
-    fn_name: String,
-    fn_args: String,
-    session_config: SessionConfig,
-  ) {
-    tokio::spawn(async move {
-      match Self::execute_function_call(fn_name.clone(), fn_args, session_config).await {
-        Ok(Some(output)) => {
-          //self.data.add_message(ChatMessage::FunctionResult(FunctionResult { name: fn_name, response: output }));
-          tx.send(Action::AddMessage(ChatMessage::FunctionResult(FunctionResult { name: fn_name, response: output })))
-            .unwrap();
-        },
-        Ok(None) => {},
-        Err(e) => {
-          // self.data.add_message(ChatMessage::FunctionResult(FunctionResult {
-          //   name: fn_name,
-          //   response: format!("Error: {:?}", e),
-          // }));
-          tx.send(Action::AddMessage(ChatMessage::FunctionResult(FunctionResult {
-            name: fn_name,
-            response: format!("Error: {:?}", e),
-          })))
-          .unwrap();
-        },
-      }
-      tx.send(Action::RequestChatCompletion()).unwrap();
-    });
-  }
+  // fn handle_chat_response_function_call(
+  //   tx: UnboundedSender<Action>,
+  //   fn_name: String,
+  //   fn_args: String,
+  //   session_config: SessionConfig,
+  // ) {
+  //   tokio::spawn(async move {
+  //     match {
+  //       let fn_name = fn_name.clone();
+  //       let fn_args = fn_args;
+  //       async move {
+  //         let function_args: Result<HashMap<String, Value>, serde_json::Error> = serde_json::from_str(fn_args.as_str());
+  //         match function_args {
+  //           Ok(function_args) => {
+  //             if let Some(v) = function_args.get("path") {
+  //               if let Some(pathstr) = v.as_str() {
+  //                 let accesible_paths = get_accessible_file_paths(session_config.list_file_paths.clone());
+  //                 if !accesible_paths.contains_key(Path::new(pathstr).to_str().unwrap()) {
+  //                   return Err(FunctionCallError::new(
+  //                     format!("File path is not accessible: {:?}. Suggest using file_search command", pathstr).as_str(),
+  //                   ));
+  //                 } else {
+  //                   trace_dbg!("path: {:?} exists", pathstr);
+  //                 }
+  //               }
+  //             }
+  //             let start_line: Option<usize> =
+  //               function_args.get("start_line").and_then(|s| s.as_u64().map(|u| u as usize));
+  //             let end_line: Option<usize> = function_args.get("end_line").and_then(|s| s.as_u64().map(|u| u as usize));
+  //             let search_term: Option<&str> = function_args.get("search_term").and_then(|s| s.as_str());
+  //
+  //             match fn_name.as_str() {
+  //               "create_file" => create_file(
+  //                 function_args["path"].as_str().unwrap_or_default(),
+  //                 function_args["text"].as_str().unwrap_or_default(),
+  //               ),
+  //               "grep" => crate::app::gpt_interface::grep(
+  //                 function_args["pattern"].as_str().unwrap_or_default(),
+  //                 function_args["paths"].as_str().unwrap_or_default(),
+  //               ),
+  //               "file_search" => file_search(
+  //                 session_config.function_result_max_tokens,
+  //                 session_config.list_file_paths.clone(),
+  //                 search_term,
+  //               ),
+  //               "read_lines" => read_file_lines(
+  //                 function_args["path"].as_str().unwrap_or_default(),
+  //                 start_line,
+  //                 end_line,
+  //                 session_config.function_result_max_tokens,
+  //                 session_config.list_file_paths.clone(),
+  //               ),
+  //               "modify_file" => modify_file(
+  //                 function_args["path"].as_str().unwrap(),
+  //                 start_line.unwrap_or(0),
+  //                 end_line,
+  //                 function_args["insert_text"].as_str(),
+  //               ),
+  //               "cargo_check" => cargo_check(),
+  //               _ => Ok(None),
+  //             }
+  //           },
+  //           Err(e) => Err(FunctionCallError::new(
+  //             format!("Failed to parse function arguments:\nfunction:{:?}\nargs:{:?}\nerror:{:?}", fn_name, fn_args, e)
+  //               .as_str(),
+  //           )),
+  //         }
+  //       }
+  //     }
+  //     .await
+  //     {
+  //       Ok(Some(output)) => {
+  //         //self.data.add_message(ChatMessage::FunctionResult(FunctionResult { name: fn_name, response: output }));
+  //         tx.send(Action::AddMessage(ChatMessage::FunctionResult(FunctionResult { name: fn_name, response: output })))
+  //           .unwrap();
+  //       },
+  //       Ok(None) => {},
+  //       Err(e) => {
+  //         // self.data.add_message(ChatMessage::FunctionResult(FunctionResult {
+  //         //   name: fn_name,
+  //         //   response: format!("Error: {:?}", e),
+  //         // }));
+  //         tx.send(Action::AddMessage(ChatMessage::FunctionResult(FunctionResult {
+  //           name: fn_name,
+  //           response: format!("Error: {:?}", e),
+  //         })))
+  //         .unwrap();
+  //       },
+  //     }
+  //     tx.send(Action::RequestChatCompletion()).unwrap();
+  //   });
+  // }
 
   pub fn request_chat_completion(&mut self, tx: UnboundedSender<Action>) {
     let stream_response = self.config.stream_response;
     let openai_config = self.config.openai_config.clone();
-    let (request, token_count) = self.construct_request();
+    let commands = define_commands();
+    let (request, token_count) = self.construct_request(commands);
     trace_dbg!("Sending Request:\n{:?}", &request.messages.last().unwrap().content);
     tokio::spawn(async move {
       tx.send(Action::EnterProcessing).unwrap();
@@ -459,63 +462,63 @@ impl Session<'static> {
     tx.send(Action::Update).unwrap();
   }
 
-  async fn execute_function_call(
-    fn_name: String,
-    fn_args: String,
-    config: SessionConfig,
-  ) -> Result<Option<String>, FunctionCallError> {
-    let function_args: Result<HashMap<String, Value>, serde_json::Error> = serde_json::from_str(fn_args.as_str());
-    match function_args {
-      Ok(function_args) => {
-        if let Some(v) = function_args.get("path") {
-          if let Some(pathstr) = v.as_str() {
-            let accesible_paths = get_accessible_file_paths(config.list_file_paths.clone());
-            if !accesible_paths.contains_key(Path::new(pathstr).to_str().unwrap()) {
-              return Err(FunctionCallError::new(
-                format!("File path is not accessible: {:?}. Suggest using file_search command", pathstr).as_str(),
-              ));
-            } else {
-              trace_dbg!("path: {:?} exists", pathstr);
-            }
-          }
-        }
-        let start_line: Option<usize> = function_args.get("start_line").and_then(|s| s.as_u64().map(|u| u as usize));
-        let end_line: Option<usize> = function_args.get("end_line").and_then(|s| s.as_u64().map(|u| u as usize));
-        let search_term: Option<&str> = function_args.get("search_term").and_then(|s| s.as_str());
-
-        match fn_name.as_str() {
-          "create_file" => create_file(
-            function_args["path"].as_str().unwrap_or_default(),
-            function_args["text"].as_str().unwrap_or_default(),
-          ),
-          "grep" => crate::app::gpt_interface::grep(
-            function_args["pattern"].as_str().unwrap_or_default(),
-            function_args["paths"].as_str().unwrap_or_default(),
-          ),
-          "file_search" => file_search(config.function_result_max_tokens, config.list_file_paths.clone(), search_term),
-          "read_lines" => read_file_lines(
-            function_args["path"].as_str().unwrap_or_default(),
-            start_line,
-            end_line,
-            config.function_result_max_tokens,
-            config.list_file_paths.clone(),
-          ),
-          "modify_file" => modify_file(
-            function_args["path"].as_str().unwrap(),
-            start_line.unwrap_or(0),
-            end_line,
-            function_args["insert_text"].as_str(),
-          ),
-          "cargo_check" => cargo_check(),
-          _ => Ok(None),
-        }
-      },
-      Err(e) => Err(FunctionCallError::new(
-        format!("Failed to parse function arguments:\nfunction:{:?}\nargs:{:?}\nerror:{:?}", fn_name, fn_args, e)
-          .as_str(),
-      )),
-    }
-  }
+  // async fn execute_function_call(
+  //   fn_name: String,
+  //   fn_args: String,
+  //   config: SessionConfig,
+  // ) -> Result<Option<String>, FunctionCallError> {
+  //   let function_args: Result<HashMap<String, Value>, serde_json::Error> = serde_json::from_str(fn_args.as_str());
+  //   match function_args {
+  //     Ok(function_args) => {
+  //       if let Some(v) = function_args.get("path") {
+  //         if let Some(pathstr) = v.as_str() {
+  //           let accesible_paths = get_accessible_file_paths(config.list_file_paths.clone());
+  //           if !accesible_paths.contains_key(Path::new(pathstr).to_str().unwrap()) {
+  //             return Err(FunctionCallError::new(
+  //               format!("File path is not accessible: {:?}. Suggest using file_search command", pathstr).as_str(),
+  //             ));
+  //           } else {
+  //             trace_dbg!("path: {:?} exists", pathstr);
+  //           }
+  //         }
+  //       }
+  //       let start_line: Option<usize> = function_args.get("start_line").and_then(|s| s.as_u64().map(|u| u as usize));
+  //       let end_line: Option<usize> = function_args.get("end_line").and_then(|s| s.as_u64().map(|u| u as usize));
+  //       let search_term: Option<&str> = function_args.get("search_term").and_then(|s| s.as_str());
+  //
+  //       match fn_name.as_str() {
+  //         "create_file" => create_file(
+  //           function_args["path"].as_str().unwrap_or_default(),
+  //           function_args["text"].as_str().unwrap_or_default(),
+  //         ),
+  //         "grep" => crate::app::gpt_interface::grep(
+  //           function_args["pattern"].as_str().unwrap_or_default(),
+  //           function_args["paths"].as_str().unwrap_or_default(),
+  //         ),
+  //         "file_search" => file_search(config.function_result_max_tokens, config.list_file_paths.clone(), search_term),
+  //         "read_lines" => read_file_lines(
+  //           function_args["path"].as_str().unwrap_or_default(),
+  //           start_line,
+  //           end_line,
+  //           config.function_result_max_tokens,
+  //           config.list_file_paths.clone(),
+  //         ),
+  //         "modify_file" => modify_file(
+  //           function_args["path"].as_str().unwrap(),
+  //           start_line.unwrap_or(0),
+  //           end_line,
+  //           function_args["insert_text"].as_str(),
+  //         ),
+  //         "cargo_check" => cargo_check(),
+  //         _ => Ok(None),
+  //       }
+  //     },
+  //     Err(e) => Err(FunctionCallError::new(
+  //       format!("Failed to parse function arguments:\nfunction:{:?}\nargs:{:?}\nerror:{:?}", fn_name, fn_args, e)
+  //         .as_str(),
+  //     )),
+  //   }
+  // }
 
   pub fn load_session_by_id(session_id: String) -> Session<'static> {
     Self::get_session_filepath(session_id.clone());
@@ -567,6 +570,7 @@ impl Session<'static> {
     let last_session_path = Path::new(SESSIONS_DIR).join("last_session.txt");
     fs::write(last_session_path, self.config.session_id.clone()).unwrap();
   }
+
   pub fn select_model(model_preference_list: Vec<Model>, client: Client<OpenAIConfig>) {
     trace_dbg!("select model");
     tokio::spawn(async move {
@@ -593,8 +597,6 @@ impl Session<'static> {
 }
 
 pub fn create_openai_client(openai_config: OpenAIConfig) -> async_openai::Client<OpenAIConfig> {
-  // let api_key: String = env::var("OPENAI_API_KEY").expect("OPENAI_API_KEY not set");
-  // let openai_config = OpenAIConfig::new().with_api_key(api_key);
   let backoff = ExponentialBackoffBuilder::new() // Ensure backoff crate is added to Cargo.toml
     .with_max_elapsed_time(Some(std::time::Duration::from_secs(60)))
     .build();

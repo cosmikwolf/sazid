@@ -41,4 +41,9 @@
       - Retrieve source code for Library
       - list all publically accessible functions, methods, dataypes, enums, constants
     - Validate and Evaluate Code
-      -
+
+
+
+## notes
+- calling multiple functions in one request:
+   - https://community.openai.com/t/emulated-multi-function-calls-within-one-request/269582

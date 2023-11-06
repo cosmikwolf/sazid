@@ -7,7 +7,10 @@ use derive_deref::{Deref, DerefMut};
 use ratatui::style::{Color, Modifier, Style};
 use serde::{de::Deserializer, Deserialize};
 
-use crate::{action::Action, app::Mode, components::session::SessionConfig};
+use crate::{
+  action::Action,
+  app::{session_config::SessionConfig, Mode},
+};
 
 const CONFIG: &str = include_str!("../.config/config.json5");
 

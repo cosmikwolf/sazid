@@ -17,6 +17,7 @@ use bat::{
   style::{StyleComponent, StyleComponents},
   Input,
 };
+
 use color_eyre::owo_colors::OwoColorize;
 use serde::{Deserialize, Serialize};
 use std::{collections::BTreeMap, ffi::OsString, path::PathBuf};
@@ -587,36 +588,6 @@ pub struct IngestData {
   pub file_paths: Vec<PathBuf>,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
-pub struct CommandProperty {
-  #[serde(rename = "type")]
-  pub property_type: String,
-  pub description: Option<String>,
-  #[serde(rename = "enum", default)]
-  #[serde(skip_serializing_if = "Option::is_none")]
-  pub enum_values: Option<Vec<String>>,
-}
-
-#[derive(Serialize, Deserialize, Debug)]
-pub struct CommandParameters {
-  #[serde(rename = "type")]
-  pub param_type: String,
-  pub required: Vec<String>,
-  pub properties: std::collections::HashMap<String, CommandProperty>,
-}
-
-#[derive(Serialize, Deserialize, Debug)]
-pub struct Command {
-  pub name: String,
-  pub description: Option<String>,
-  pub parameters: Option<CommandParameters>,
-}
-
-#[derive(Serialize, Deserialize, Debug)]
-pub struct Commands {
-  pub commands: Vec<Command>,
-}
-
 // a display function for Message
 impl std::fmt::Display for Message {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -634,7 +605,70 @@ fn format_chat_message(f: &mut std::fmt::Formatter<'_>, role: Role, message: Str
 
 #[cfg(test)]
 mod tests {
+  use crate::app::llm_functions::types::{CommandParameters, CommandProperty};
+
   use super::*;
+  use serde_json::{from_str, to_string};
+
+  #[test]
+  fn test_serialization_command_properties() {
+    let json_data = r#"
+            {
+                "type": "object",
+                "required": ["location"],
+                "properties": {
+                    "location": {
+                        "type": "string",
+                        "description": "The city and state, e.g. San Francisco, CA"
+                    },
+                    "unit": {
+                        "type": "string",
+                        "enum": ["celsius", "fahrenheit"]
+                    }
+                }
+            }
+        "#;
+
+    // Deserialize the JSON string into `CommandParameters`
+    let command_parameters: CommandParameters = from_str(json_data).expect("Failed to deserialize JSON");
+
+    // Manually construct the expected `CommandProperty` vector
+    let location_property = CommandProperty {
+      name: "location".to_owned(),
+      required: true,
+      property_type: "string".to_owned(),
+      description: Some("The city and state, e.g. San Francisco, CA".to_owned()),
+      enum_values: None,
+    };
+    let unit_property = CommandProperty {
+      name: "unit".to_owned(),
+      required: false,
+      property_type: "string".to_owned(),
+      description: None,
+      enum_values: Some(vec!["celsius".to_owned(), "fahrenheit".to_owned()]),
+    };
+    let properties_vec = vec![location_property, unit_property];
+
+    // Serialize the vector into JSON
+    let serialized_properties = to_string(&properties_vec).expect("Failed to serialize properties");
+
+    // Since the serialization will not include the `name` and `required` fields (due to `#[serde(skip)]`),
+    // we need to adjust the expected JSON to match this format.
+    let expected_json = r#"[
+            {
+                "type": "string",
+                "description": "The city and state, e.g. San Francisco, CA",
+                "enum": null
+            },
+            {
+                "type": "string",
+                "description": null,
+                "enum": ["celsius", "fahrenheit"]
+            }
+        ]"#;
+
+    assert_eq!(serialized_properties, expected_json);
+  }
 
   // Concatenate Function implementations (concatenate_option_strings, concatenate_function_call_streams, etc.)
 
