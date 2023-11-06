@@ -15,6 +15,7 @@ use super::{consts::GPT3_TURBO, types::Model};
 pub struct SessionConfig {
   pub prompt: String,
   pub session_id: String,
+  pub session_dir: PathBuf,
   pub list_file_paths: Vec<PathBuf>,
   pub model: Model,
   pub name: String,
@@ -31,6 +32,7 @@ impl Default for SessionConfig {
     SessionConfig {
       prompt: String::new(),
       session_id: Self::generate_session_id(),
+      session_dir: PathBuf::new(),
       openai_config: OpenAIConfig::default(),
       list_file_paths: vec![],
       model: GPT3_TURBO.clone(),

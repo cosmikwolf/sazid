@@ -20,6 +20,7 @@ pub mod create_file_function;
 pub mod file_search_function;
 pub mod grep_function;
 pub mod modify_file_function;
+pub mod patch_files_function;
 pub mod read_file_lines_function;
 pub mod types;
 

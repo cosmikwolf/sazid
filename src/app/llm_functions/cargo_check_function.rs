@@ -23,6 +23,7 @@ impl FunctionCall for CargoCheckFunction {
       optional_properties: vec![],
     }
   }
+
   fn call(
     &self,
     _function_args: HashMap<String, serde_json::Value>,
