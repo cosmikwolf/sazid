@@ -44,8 +44,10 @@ impl FunctionCall for GrepFunction {
         CommandProperty {
           name: "paths".to_string(),
           required: true,
-          property_type: "array".to_string(),
-          description: Some("a list of paths to walk for files which the pattern will be matched against".to_string()),
+          property_type: "string".to_string(),
+          description: Some(
+            "a list of comma separated paths to walk for files which the pattern will be matched against".to_string(),
+          ),
           enum_values: None,
         },
       ],
@@ -112,17 +114,15 @@ pub fn validate_and_extract_paths_from_argument(
   session_config: SessionConfig,
 ) -> Result<Vec<PathBuf>, FunctionCallError> {
   let mut paths_vec: Vec<PathBuf> = Vec::new();
-  if let serde_json::Value::Array(paths) = paths {
-    for path_value in paths {
-      if let Some(pathstr) = path_value.as_str() {
-        let accesible_paths = get_accessible_file_paths(session_config.list_file_paths.clone());
-        if !accesible_paths.contains_key(Path::new(pathstr).to_str().unwrap()) {
-          return Err(FunctionCallError::new(
-            format!("File path is not accessible: {:?}. Suggest using file_search command", pathstr).as_str(),
-          ));
-        } else {
-          paths_vec.push(pathstr.into());
-        }
+  if let serde_json::Value::String(paths) = paths {
+    for path in paths.split(',').map(|s| s.trim()) {
+      let accesible_paths = get_accessible_file_paths(session_config.list_file_paths.clone());
+      if !accesible_paths.contains_key(Path::new(path).to_str().unwrap()) {
+        return Err(FunctionCallError::new(
+          format!("File path is not accessible: {:?}. Suggest using file_search command", path).as_str(),
+        ));
+      } else {
+        paths_vec.push(path.into());
       }
     }
   }
