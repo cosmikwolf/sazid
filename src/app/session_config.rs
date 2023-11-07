@@ -9,7 +9,7 @@ use async_openai::{
 };
 use serde_derive::{Deserialize, Serialize};
 
-use super::{consts::GPT3_TURBO, llm_functions::CallableFunction, types::Model};
+use super::{consts::GPT4_TURBO, llm_functions::CallableFunction, types::Model};
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct SessionConfig {
@@ -37,7 +37,7 @@ impl Default for SessionConfig {
       available_functions: vec![],
       openai_config: OpenAIConfig::default(),
       list_file_paths: vec![],
-      model: GPT3_TURBO.clone(),
+      model: GPT4_TURBO.clone(),
       name: "Sazid Test".to_string(),
       function_result_max_tokens: 1024,
       response_max_tokens: 1024,
