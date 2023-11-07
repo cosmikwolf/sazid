@@ -1,0 +1,88 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Create Chat Completion Request",
+  "type": "object",
+  "properties": {
+    "model": {
+      "type": "string",
+      "description": "The model to generate the completion."
+    },
+    "messages": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "role": {
+            "type": "string",
+            "description": "The role of the message's author (system, user, or assistant).",
+            "enum": ["system", "user", "assistant"]
+          },
+          "content": {
+            "type": ["string", "null"],
+            "description": "The contents of the message."
+          }
+        },
+        "required": ["role", "content"]
+      },
+      "description": "A list of messages comprising the conversation so far.",
+      "minItems": 1
+    },
+    "system_fingerprint": {
+      "type": "string",
+      "description": "This fingerprint represents the backend configuration that the model runs with."
+    },
+    "choices": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "index": {
+            "type": "integer",
+            "description": "The index of the choice in the list of choices."
+          },
+          "message": {
+            "type": "object",
+            "properties": {
+              "role": {
+                "type": "string",
+                "description": "The role of the message's author (system, user, or assistant).",
+                "enum": ["system", "user", "assistant"]
+              },
+              "content": {
+                "type": "string",
+                "description": "The contents of the message."
+              }
+            },
+            "required": ["role", "content"]
+          },
+          "finish_reason": {
+            "type": "string",
+            "description": "The reason the model stopped generating tokens."
+          }
+        },
+        "required": ["index", "message", "finish_reason"]
+      },
+      "description": "A list of chat completion choices."
+    },
+    "usage": {
+      "type": "object",
+      "properties": {
+        "prompt_tokens": {
+          "type": "integer",
+          "description": "Number of tokens in the prompt."
+        },
+        "completion_tokens": {
+          "type": "integer",
+          "description": "Number of tokens in the generated completion."
+        },
+        "total_tokens": {
+          "type": "integer",
+          "description": "Total number of tokens used in the request (prompt + completion)."
+        }
+      },
+      "required": ["prompt_tokens", "completion_tokens", "total_tokens"],
+      "description": "Usage statistics for the completion request."
+    }
+  },
+  "required": ["model", "messages"]
+}

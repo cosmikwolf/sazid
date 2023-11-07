@@ -9,6 +9,7 @@ use futures::StreamExt;
 use ratatui::layout::Rect;
 use ratatui::{prelude::*, widgets::block::*, widgets::*};
 use serde_derive::{Deserialize, Serialize};
+use serde_json::to_string_pretty;
 use std::path::{Path, PathBuf};
 use std::result::Result;
 use std::{fs, io};
@@ -21,7 +22,7 @@ use backoff::exponential::ExponentialBackoffBuilder;
 
 use super::{Component, Frame};
 use crate::app::llm_functions::{all_functions, handle_chat_response_function_call};
-use crate::app::request_validation::validate_json_request;
+use crate::app::request_validation::debug_request_validation;
 use crate::app::session_config::SessionConfig;
 use crate::app::{consts::*, errors::*, tools::chunkifier::*, types::*};
 use crate::trace_dbg;
@@ -427,32 +428,10 @@ impl Session<'static> {
               },
               Err(e) => {
                 trace_dbg!("Error: {:?} -- check https://status.openai.com/se", e);
-                let reqtext = format!("Request: \n{:#?}", request.clone()).replace("\\n", "\n");
+                let reqtext =
+                  format!("Request: \n{}", to_string_pretty(&request).unwrap_or("can't prettify result".to_string()));
                 trace_dbg!(reqtext);
-                let request_as_json = serde_json::to_string_pretty(&request).unwrap();
-                match validate_json_request(request_as_json.as_str()) {
-                  Ok(_) => {
-                    trace_dbg!("no errors found");
-                  },
-                  Err(e) => {
-                    let timestamp = chrono::Utc::now().timestamp().to_string();
-                    let failed_requests_dir = ".data/failed_requests";
-                    match ensure_directory_exists(failed_requests_dir) {
-                      Ok(_) => {
-                        let request_file_path = Path::new(failed_requests_dir).join(timestamp + "_failed.json");
-                        fs::write(request_file_path.clone(), request_as_json).unwrap();
-                        trace_dbg!(
-                          "Json Errors, failed request saved to {}\nerrors:\n{:?}",
-                          request_file_path.display(),
-                          e
-                        );
-                      },
-                      Err(e) => {
-                        trace_dbg!("unable to create failed requests directory {:?}", e);
-                      },
-                    }
-                  },
-                }
+                debug_request_validation(&request);
                 tx.send(Action::Error(format!("Error: {:?} -- check https://status.openai.com/", e))).unwrap();
               },
             }
