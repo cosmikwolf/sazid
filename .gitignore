@@ -7,3 +7,5 @@ history.txt
 data
 tmp
 .data/*.log
+docs/.DS_Store
+.DS_Store
