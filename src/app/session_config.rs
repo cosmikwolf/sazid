@@ -39,8 +39,8 @@ impl Default for SessionConfig {
       list_file_paths: vec![],
       model: GPT4_TURBO.clone(),
       name: "Sazid Test".to_string(),
-      function_result_max_tokens: 1024,
-      response_max_tokens: 1024,
+      function_result_max_tokens: 8192,
+      response_max_tokens: 4095,
       include_functions: true,
       stream_response: true,
     }

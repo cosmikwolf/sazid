@@ -450,8 +450,8 @@ impl From<RenderedChatMessage> for String {
     let mut string_vec: Vec<String> = Vec::new();
     if let Some(content) = message.content {
       match message.role {
-        Some(Role::User) => string_vec.push(format!("***You:*** {}", content)),
-        Some(Role::Assistant) => string_vec.push(format!("***Bot:*** {}", content).bright_red().to_string()),
+        Some(Role::User) => string_vec.push(format!("You:\n{}", content)),
+        Some(Role::Assistant) => string_vec.push(format!("Bot:\n{}", content).to_string()),
         Some(Role::Function) => string_vec.push(format!("{}: {}", message.name.unwrap_or("".to_string()), content)),
         _ => string_vec.push(content),
       }

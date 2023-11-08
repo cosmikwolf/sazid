@@ -34,14 +34,14 @@ impl FunctionCall for ReadFileLinesFunction {
         CommandProperty {
           name: "start_line".to_string(),
           required: false,
-          property_type: "number".to_string(),
+          property_type: "string".to_string(),
           description: Some("first line to read, default: 1".to_string()),
           enum_values: None,
         },
         CommandProperty {
           name: "end_line".to_string(),
           required: false,
-          property_type: "number".to_string(),
+          property_type: "string".to_string(),
           description: Some("last line to read, default: EOF".to_string()),
           enum_values: None,
         },

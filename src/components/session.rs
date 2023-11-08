@@ -73,6 +73,7 @@ impl Component for Session<'static> {
     self.config.prompt =
         "act as a programming architecture and implementation expert, that specializes in the Rust.
         Use the functions available to assist with the user inquiry.
+        Provide your response as ascii formatted text.
         Do not try and execute arbitrary python code.
         Do not try to infer a path to a file, if you have not been provided a path with the root ./, use the file_search function to verify the file path before you execute a function call.".to_string();
     self.data.add_message(ChatMessage::PromptMessage(self.config.prompt_message()));
@@ -138,23 +139,23 @@ impl Component for Session<'static> {
             self.vertical_content_height.saturating_sub(self.vertical_viewport_height) + 1,
           );
           self.vertical_scroll_state = self.vertical_scroll_state.position(self.vertical_scroll);
-          trace_dbg!(
-            "previous scroll {} content height: {} vertical_viewport_height: {}",
-            self.vertical_scroll,
-            self.vertical_content_height,
-            self.vertical_viewport_height
-          );
+          // trace_dbg!(
+          //   "previous scroll {} content height: {} vertical_viewport_height: {}",
+          //   self.vertical_scroll,
+          //   self.vertical_content_height,
+          //   self.vertical_viewport_height
+          // );
           //self.vertical_scroll_state.prev();
           Ok(Some(Action::Update))
         },
         KeyCode::Char('k') => {
           self.vertical_scroll = self.vertical_scroll.saturating_sub(1);
-          trace_dbg!(
-            "next scroll {} content height: {} vertical_viewport_height: {}",
-            self.vertical_scroll,
-            self.vertical_content_height,
-            self.vertical_viewport_height
-          );
+          // trace_dbg!(
+          //   "next scroll {} content height: {} vertical_viewport_height: {}",
+          //   self.vertical_scroll,
+          //   self.vertical_content_height,
+          //   self.vertical_viewport_height
+          // );
           self.vertical_scroll_state.next();
           Ok(Some(Action::Update))
         },

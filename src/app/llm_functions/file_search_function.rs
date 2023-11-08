@@ -123,11 +123,11 @@ pub fn file_search(
   let accessible_paths = paths.keys().map(|path| path.as_str()).collect::<Vec<&str>>();
   // find the length of the longest string in accessible_paths
   let search_results = if let Some(search) = search_term {
-    let fuzzy_search_result = rust_fuzzy_search::fuzzy_search_threshold(search, &accessible_paths, 0.1);
+    let fuzzy_search_result = rust_fuzzy_search::fuzzy_search_sorted(search, &accessible_paths);
     let column_width = get_column_width(fuzzy_search_result.iter().map(|(s, _)| *s).collect());
     let fuzzy_search_result = fuzzy_search_result
       .iter()
-      .filter(|(_, result_score)| result_score > &0.1)
+      .filter(|(_, result_score)| result_score > &0.15)
       .filter_map(|(path, result_score)| count_lines_and_format_search_results(path, column_width, Some(result_score)))
       .collect::<Vec<String>>();
     if fuzzy_search_result.is_empty() {

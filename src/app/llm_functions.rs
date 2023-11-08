@@ -161,17 +161,18 @@ pub fn handle_chat_response_function_call(
       let fn_name = fn_name.clone();
       let fn_args = fn_args;
       async move {
-        let function_args: Result<HashMap<String, serde_json::Value>, serde_json::Error> =
+        let function_args_result: Result<HashMap<String, serde_json::Value>, serde_json::Error> =
           serde_json::from_str(fn_args.as_str());
-        match function_args {
+        trace_dbg!("function call: {}\narguments:\n{:#?}", fn_name.clone(), function_args_result);
+        match function_args_result {
           Ok(function_args) => match fn_name.as_str() {
             "create_file" => CreateFileFunction::init().call(function_args, session_config),
             "grep" => GrepFunction::init().call(function_args, session_config),
             "file_search" => FileSearchFunction::init().call(function_args, session_config),
-            "read_lines" => ReadFileLinesFunction::init().call(function_args, session_config),
+            "read_file" => ReadFileLinesFunction::init().call(function_args, session_config),
             "modify_file" => ModifyFileFunction::init().call(function_args, session_config),
             "cargo_check" => CargoCheckFunction::init().call(function_args, session_config),
-            _ => Ok(None),
+            _ => Ok(Some("function not found".to_string())),
           },
           Err(e) => Err(FunctionCallError::new(
             format!("Failed to parse function arguments:\nfunction:{:?}\nargs:{:?}\nerror:{:?}", fn_name, fn_args, e)
@@ -184,6 +185,7 @@ pub fn handle_chat_response_function_call(
     {
       Ok(Some(output)) => {
         //self.data.add_message(ChatMessage::FunctionResult(FunctionResult { name: fn_name, response: output }));
+        trace_dbg!("function output:\n{}", output);
         tx.send(Action::AddMessage(ChatMessage::FunctionResult(FunctionResult { name: fn_name, response: output })))
           .unwrap();
       },
