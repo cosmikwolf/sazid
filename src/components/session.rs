@@ -215,7 +215,7 @@ impl Component for Session<'static> {
     let use_text_area = false;
 
     let mut text = String::with_capacity(inner[1].width as usize * inner[1].height as usize + 1);
-    text.push_str(&self.data.stylized_lines.join("\n"));
+    text.push_str(String::from(&self.data).as_str());
     //self.vertical_content_height = calculate_wrapped_lines(&text, inner[1].width as usize);
     // pad the text with empty lines so that the text appears to come from the bottom up
     // text =
@@ -258,7 +258,7 @@ impl Component for Session<'static> {
   }
 }
 
-fn create_empty_lines(n: usize) -> String {
+fn _create_empty_lines(n: usize) -> String {
   let mut s = String::with_capacity(n + 1);
   for _ in 0..n {
     s.push('\n');
@@ -916,9 +916,9 @@ mod tests {
     } else {
       panic!("Expected ChatMessage::ChatCompletionRequestMessage(ChatResponseSingleMessage::StreamResponse(msg))");
     }
-
+    session.data.stylize_text();
     insta::assert_yaml_snapshot!(&session.data);
-    insta::assert_yaml_snapshot!(&session.data.stylized_text());
+    insta::assert_yaml_snapshot!(&session.data.stylized_text);
   }
 
   #[test]

@@ -18,7 +18,6 @@ use bat::{
   Input,
 };
 
-use color_eyre::owo_colors::OwoColorize;
 use serde::{Deserialize, Serialize};
 use std::{collections::BTreeMap, ffi::OsString, path::PathBuf};
 
@@ -100,6 +99,25 @@ impl MessageContainer {
       None
     }
   }
+
+  fn render_message_pulldown_cmark(&mut self, format_responses_only: bool) -> bool {
+    let rendered_message = RenderedChatMessage::from(&ChatMessage::from(self.clone()));
+    if format_responses_only {
+      if matches!(self.message, ChatMessage::ChatCompletionResponseMessage(_)) {
+        self.stylized = Some(render_markdown_to_string(String::from(&rendered_message)))
+      } else {
+        self.stylized = Some(String::from(&rendered_message))
+      }
+    } else {
+      self.stylized = Some(render_markdown_to_string(String::from(&rendered_message)))
+    }
+    if rendered_message.finish_reason.is_some() {
+      self.finished = true;
+      trace_dbg!("post_process_new_messages: finished message {:#?}", self);
+      return true;
+    }
+    false
+  }
 }
 
 impl From<MessageContainer> for ChatMessage {
@@ -152,7 +170,7 @@ impl From<&ChatMessage> for Option<ChatCompletionRequestMessage> {
         });
         ChatCompletionRequestMessage {
           role: Role::Assistant,
-          // todo: this might be a problem...
+          // todo: this MIGHT be a problem...
           content: Some(message.delta.content.unwrap_or("".to_string())),
           function_call: None,
           name: None,
@@ -246,12 +264,16 @@ pub struct SessionData {
   pub unrendered_text: String,
 }
 
-impl From<SessionData> for String {
-  fn from(session_data: SessionData) -> String {
+impl From<&SessionData> for String {
+  fn from(session_data: &SessionData) -> String {
     session_data
       .messages
       .iter()
-      .map(|m| String::from(RenderedChatMessage::from(m.message.as_ref())))
+      .flat_map(|m| m.stylized.clone())
+      .collect::<Vec<String>>()
+      .join("\n")
+      .lines()
+      .map(|l| l.to_string())
       .collect::<Vec<String>>()
       .join("\n")
   }
@@ -367,42 +389,11 @@ impl SessionData {
     // return a vec of any functions that need to be called
     self.post_process_new_messages()
   }
+
   pub fn post_process_new_messages(&mut self) {
-    for message in self.messages.iter_mut().filter(|m| !m.finished) {
-      SessionData::render_message_pulldown_cmark(message, true);
-      let rendered_message = RenderedChatMessage::from(&message.message);
-      if rendered_message.finish_reason.is_some() {
-        message.finished = true;
-        trace_dbg!("post_process_new_messages: finished message {:#?}", message);
-      }
-    }
-    self.stylized_lines = self.stylized_text();
-    self.stylized_text = self.stylized_lines.join("\n");
-    //self.unrendered_text = self.stylized_text[stylized_text_char_len..].to_string();
-  }
-
-  pub fn get_functions_that_need_calling(&mut self) -> Vec<RenderedFunctionCall> {
-    self
-      .messages
-      .iter_mut()
-      .filter(|m| m.finished && !m.function_called)
-      .filter_map(|m| {
-        m.function_called = true;
-        RenderedChatMessage::from(&m.message).function_call
-      })
-      .collect()
-  }
-
-  fn render_message_pulldown_cmark(message: &mut MessageContainer, format_responses_only: bool) {
-    let rendered_message = String::from(RenderedChatMessage::from(&ChatMessage::from(message.clone())));
-    if format_responses_only {
-      if matches!(message.message, ChatMessage::ChatCompletionResponseMessage(_)) {
-        message.stylized = Some(render_markdown_to_string(rendered_message))
-      } else {
-        message.stylized = Some(rendered_message)
-      }
-    } else {
-      message.stylized = Some(render_markdown_to_string(rendered_message))
+    if self.messages.iter_mut().filter(|m| !m.finished).any(|message| message.render_message_pulldown_cmark(true)) {
+      trace_dbg!("stylizing text");
+      self.stylize_text();
     }
   }
 
@@ -421,7 +412,7 @@ impl SessionData {
     let controller = Controller::new(&config, &assets);
     let rendered_message = RenderedChatMessage::from(&ChatMessage::from(message.clone()));
     let stylize_option = false;
-    let message_content = String::from(rendered_message);
+    let message_content = String::from(&rendered_message);
     message.stylized = if stylize_option {
       let mut buffer = String::new();
       let input = Input::from_bytes(message_content.as_bytes());
@@ -432,8 +423,8 @@ impl SessionData {
     }
   }
 
-  pub fn stylized_text(&self) -> Vec<String> {
-    self
+  pub fn stylize_text(&mut self) {
+    self.stylized_text = self
       .messages
       .iter()
       .flat_map(|m| m.stylized.clone())
@@ -441,25 +432,38 @@ impl SessionData {
       .join("\n")
       .lines()
       .map(|l| l.to_string())
+      .collect::<Vec<String>>()
+      .join("\n");
+  }
+
+  pub fn get_functions_that_need_calling(&mut self) -> Vec<RenderedFunctionCall> {
+    self
+      .messages
+      .iter_mut()
+      .filter(|m| m.finished && !m.function_called)
+      .filter_map(|m| {
+        m.function_called = true;
+        RenderedChatMessage::from(&m.message).function_call
+      })
       .collect()
   }
 }
 
-impl From<RenderedChatMessage> for String {
-  fn from(message: RenderedChatMessage) -> Self {
-    let mut string_vec: Vec<String> = Vec::new();
-    if let Some(content) = message.content {
+impl From<&RenderedChatMessage> for String {
+  fn from(message: &RenderedChatMessage) -> Self {
+    let mut string = String::new();
+    if let Some(content) = &message.content {
       match message.role {
-        Some(Role::User) => string_vec.push(format!("You:\n{}", content)),
-        Some(Role::Assistant) => string_vec.push(format!("Bot:\n{}", content).to_string()),
-        Some(Role::Function) => {}, // string_vec.push(format!("{}:\n{}", message.name.unwrap_or("".to_string()), content)),
-        _ => string_vec.push(content),
+        Some(Role::User) => string.push_str(&format!("You:\n{}", content)),
+        Some(Role::Assistant) => string.push_str(&format!("Bot:\n{}", content).to_string()),
+        Some(Role::Function) => {}, // string.push_str(format!("{}:\n{}", message.name.unwrap_or("".to_string()), content)),
+        _ => string.push_str(&content.to_string()),
       }
     }
-    if let Some(function_call) = message.function_call {
-      string_vec.push(format!("function call: {} {}", function_call.name.as_str(), function_call.arguments.as_str()));
+    if let Some(function_call) = &message.function_call {
+      string.push_str(&format!("function call: {} {}", function_call.name.as_str(), function_call.arguments.as_str()));
     }
-    string_vec.join("\n")
+    string
   }
 }
 
