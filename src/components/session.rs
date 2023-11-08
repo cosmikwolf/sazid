@@ -93,7 +93,7 @@ impl Component for Session<'static> {
     let tx = self.action_tx.clone().unwrap();
     match action {
       Action::AddMessage(chat_message) => {
-        trace_dbg!(level: tracing::Level::INFO, "adding message to session");
+        //trace_dbg!(level: tracing::Level::INFO, "adding message to session");
         self.data.add_message(chat_message);
         for function_call in self.data.get_functions_that_need_calling().drain(..) {
           let debug_text = format!("calling function: {:?}", function_call);
