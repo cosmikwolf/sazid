@@ -9,3 +9,5 @@ tmp
 .data/*.log
 docs/.DS_Store
 .DS_Store
+.data/failed_requests
+.session_data/patches
