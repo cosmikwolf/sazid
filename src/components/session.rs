@@ -33,7 +33,7 @@ use crate::app::gpt_interface::create_chat_completion_function_args;
 use crate::app::tools::utils::ensure_directory_exists;
 use crate::components::home::Mode;
 
-#[derive(Default, Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Session<'a> {
   pub data: SessionData,
   pub config: SessionConfig,
@@ -58,11 +58,36 @@ pub struct Session<'a> {
   #[serde(skip)]
   pub vertical_viewport_height: usize,
   #[serde(skip)]
+  pub scroll_sticky_end: bool,
+  #[serde(skip)]
   pub render: bool,
   #[serde(skip)]
   pub fn_name: Option<String>,
   #[serde(skip)]
   pub fn_args: Option<String>,
+}
+
+impl<'a> Default for Session<'a> {
+  fn default() -> Self {
+    Session {
+      data: SessionData::default(),
+      config: SessionConfig::default(),
+      action_tx: None,
+      mode: Mode::Normal,
+      last_events: vec![],
+      text_area: TextArea::default(),
+      vertical_scroll_state: ScrollbarState::default(),
+      horizontal_scroll_state: ScrollbarState::default(),
+      vertical_scroll: 0,
+      horizontal_scroll: 0,
+      vertical_content_height: 0,
+      vertical_viewport_height: 0,
+      scroll_sticky_end: true,
+      render: false,
+      fn_name: None,
+      fn_args: None,
+    }
+  }
 }
 
 impl Component for Session<'static> {
@@ -107,6 +132,7 @@ impl Component for Session<'static> {
         }
       },
       Action::SubmitInput(s) => {
+        self.scroll_sticky_end = true;
         self.submit_chat_completion_request(s, tx);
       },
       Action::RequestChatCompletion() => {
@@ -134,11 +160,15 @@ impl Component for Session<'static> {
     match self.mode {
       Mode::Normal => match key.code {
         KeyCode::Char('j') => {
-          self.vertical_scroll = std::cmp::min(
-            self.vertical_scroll.saturating_add(1),
-            self.vertical_content_height.saturating_sub(self.vertical_viewport_height) + 1,
-          );
+          let end_line = self.vertical_content_height.saturating_sub(self.vertical_viewport_height) + 1;
+          self.vertical_scroll = self.vertical_scroll.saturating_add(1).clamp(0, end_line);
           self.vertical_scroll_state = self.vertical_scroll_state.position(self.vertical_scroll);
+          if self.vertical_scroll_state == self.vertical_scroll_state.position(end_line) {
+            if !self.scroll_sticky_end {
+              trace_dbg!("end line reached {}\nsetting scroll_sticky_end", end_line);
+            }
+            self.scroll_sticky_end = true;
+          }
           // trace_dbg!(
           //   "previous scroll {} content height: {} vertical_viewport_height: {}",
           //   self.vertical_scroll,
@@ -150,13 +180,14 @@ impl Component for Session<'static> {
         },
         KeyCode::Char('k') => {
           self.vertical_scroll = self.vertical_scroll.saturating_sub(1);
+          self.scroll_sticky_end = false;
           // trace_dbg!(
           //   "next scroll {} content height: {} vertical_viewport_height: {}",
           //   self.vertical_scroll,
           //   self.vertical_content_height,
           //   self.vertical_viewport_height
           // );
-          self.vertical_scroll_state.next();
+          //self.vertical_scroll_state.next();
           Ok(Some(Action::Update))
         },
         _ => Ok(None),
@@ -185,12 +216,11 @@ impl Component for Session<'static> {
 
     let mut text = String::with_capacity(inner[1].width as usize * inner[1].height as usize + 1);
     text.push_str(&self.data.stylized_lines.join("\n"));
-    self.vertical_content_height = calculate_wrapped_lines(&text, inner[1].width as usize);
-    self.vertical_viewport_height = inner[1].height as usize;
+    //self.vertical_content_height = calculate_wrapped_lines(&text, inner[1].width as usize);
     // pad the text with empty lines so that the text appears to come from the bottom up
-    text =
-      create_empty_lines((inner[1].height as usize).saturating_sub(self.vertical_content_height).saturating_sub(1))
-        + &text;
+    // text =
+    //   create_empty_lines((inner[1].height as usize).saturating_sub(self.vertical_content_height).saturating_sub(1))
+    //     + &text;
 
     if use_text_area {
       self.text_area.move_cursor(CursorMove::End);
@@ -206,7 +236,13 @@ impl Component for Session<'static> {
       f.render_widget(self.text_area.widget(), inner[1]);
     } else {
       self.vertical_content_height = calculate_wrapped_lines(&text, inner[1].width as usize);
+      self.vertical_viewport_height = inner[1].height as usize;
       self.vertical_scroll_state = self.vertical_scroll_state.content_length(self.vertical_content_height);
+      self.vertical_scroll_state = self.vertical_scroll_state.viewport_content_length(self.vertical_viewport_height);
+      if self.scroll_sticky_end {
+        self.vertical_scroll = self.vertical_content_height.saturating_sub(self.vertical_viewport_height) + 1;
+        self.vertical_scroll_state = self.vertical_scroll_state.position(self.vertical_scroll);
+      }
       let texts = text.into_text().unwrap();
       let paragraph =
         Paragraph::new(texts).block(block).wrap(Wrap { trim: true }).scroll((self.vertical_scroll as u16, 0));
@@ -216,7 +252,6 @@ impl Component for Session<'static> {
         .end_symbol(Some("↓"));
       f.render_widget(paragraph, inner[1]);
       f.render_stateful_widget(scrollbar, inner[1], &mut self.vertical_scroll_state);
-      self.auto_set_scroll_to_end();
     }
     //self.render = false;
     Ok(())
@@ -238,12 +273,6 @@ fn calculate_wrapped_lines(text: &str, width: usize) -> usize {
 impl Session<'static> {
   pub fn new() -> Session<'static> {
     Self::default()
-  }
-
-  pub fn auto_set_scroll_to_end(&mut self) {
-    if self.vertical_scroll > self.vertical_content_height.saturating_sub(self.vertical_viewport_height) {
-      self.vertical_scroll_state.last();
-    }
   }
 
   pub fn add_chunked_chat_completion_request_messages(
@@ -431,8 +460,9 @@ impl Session<'static> {
                 trace_dbg!("Error: {:?} -- check https://status.openai.com/se", e);
                 let reqtext =
                   format!("Request: \n{}", to_string_pretty(&request).unwrap_or("can't prettify result".to_string()));
-                trace_dbg!(reqtext);
+                trace_dbg!(&reqtext);
                 debug_request_validation(&request);
+                tx.send(Action::AddMessage(ChatMessage::SazidSystemMessage(reqtext))).unwrap();
                 tx.send(Action::Error(format!("Error: {:?} -- check https://status.openai.com/", e))).unwrap();
               },
             }

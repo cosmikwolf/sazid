@@ -26,7 +26,7 @@ async fn tokio_main() -> Result<()> {
   Ok(())
 }
 
-#[tokio::main]
+#[tokio::main(flavor = "multi_thread", worker_threads = 10)]
 async fn main() -> Result<()> {
   if let Err(e) = tokio_main().await {
     eprintln!("{} error: Something went wrong", env!("CARGO_PKG_NAME"));
