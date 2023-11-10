@@ -91,7 +91,9 @@ pub fn get_config_dir() -> PathBuf {
   } else if let Some(proj_dirs) = project_directory() {
     proj_dirs.config_local_dir().to_path_buf()
   } else {
-    PathBuf::from(".").join(".config")
+    let default_cfg_dir = PathBuf::from("~").join(".config").join("sazid");
+    std::fs::create_dir_all(default_cfg_dir.clone()).unwrap();
+    default_cfg_dir
   };
   directory
 }

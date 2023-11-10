@@ -1,3 +1,4 @@
+use anstyle::{AnsiColor, Color, Style};
 use pulldown_cmark::{Options, Parser};
 use pulldown_cmark_mdcat::resources::*;
 use pulldown_cmark_mdcat::terminal::{TerminalProgram, TerminalSize};
@@ -26,6 +27,19 @@ fn resource_handler() -> &'static DispatchingResourceHandler {
 }
 
 pub fn render_markdown_to_string(input: String) -> String {
+  // let theme = Theme::default();
+  // theme.html_block_style = Style::new().fg_color(Some(AnsiColor::Green.into()));
+  //
+  // Theme {
+  //   html_block_style: Style::new().fg_color(Some(AnsiColor::Green.into())),
+  //   inline_html_style: Style::new().fg_color(Some(AnsiColor::Green.into())),
+  //   code_style: Style::new().fg_color(Some(AnsiColor::Yellow.into())),
+  //   link_style: Style::new().fg_color(Some(AnsiColor::Blue.into())),
+  //   image_link_style: Style::new().fg_color(Some(AnsiColor::Magenta.into())),
+  //   rule_color: AnsiColor::Green.into(),
+  //   code_block_border_color: AnsiColor::Green.into(),
+  //   heading_style: Style::new().fg_color(Some(AnsiColor::Blue.into())).bold(),
+  // };
   let settings = Settings {
     terminal_capabilities: TerminalProgram::ITerm2.capabilities(),
     terminal_size: TerminalSize::default(),

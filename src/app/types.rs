@@ -259,7 +259,6 @@ impl From<&ChatMessage> for RenderedChatMessage {
 #[derive(Default, Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct SessionData {
   pub messages: Vec<MessageContainer>,
-  pub stylized_lines: Vec<String>,
   pub stylized_text: String,
   pub unrendered_text: String,
 }

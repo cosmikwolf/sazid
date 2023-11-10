@@ -3350,6 +3350,7 @@ name = "sazid"
 version = "0.1.0"
 dependencies = [
  "ansi-to-tui",
+ "anstyle",
  "async-openai 0.15.0",
  "async-recursion",
  "backoff",

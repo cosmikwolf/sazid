@@ -1,5 +1,5 @@
 
-![Project Banner or Logo](docs/sazid_banner_image.png) 
+![Project Banner or Logo](docs/sazid_banner_image.png)
 # **Sazid: Ascended Rust Development**
 
 [![CI](https://github.com/cosmikwolf/sazid/workflows/CI/badge.svg)](https://github.com/cosmikwolf/sazid/actions)
@@ -21,11 +21,11 @@ Sazid is an interactive chat application that connects users with OpenAI's GPT m
 
 ## **Features**
 
-- **GPT Integration**: Seamlessly connect with OpenAI's GPT model for interactive chats.
-- **Chat Session Management**: Start new sessions or continue previous ones with ease.
-- **File Ingestion**: Import and process a variety of file formats.
-- **Interactive CLI**: Engage with a user-friendly command-line interface.
-- **Error Handling**: Robust mechanisms to handle potential issues, ensuring smooth user experiences.
+- [x] **Interactive CLI**: Engage with a user-friendly command-line interface.
+- [x] **GPT Integration**: Seamlessly connect with OpenAI's GPT model for interactive chats.
+- [ ] **Chat Session Management**: Start new sessions or continue previous ones with ease.
+- [ ] **File Ingestion**: Import and process a variety of file formats
+- [ ] **Vector Database**: Connection to a vector enabled postgres database for local data access
 
 ## **Getting Started**
 
@@ -35,65 +35,18 @@ Before you start, ensure you have the following installed:
 
 - [Rust](https://www.rust-lang.org/)
 - [Cargo](https://doc.rust-lang.org/cargo/)
-
-You'll also need API keys for OpenAI's GPT. Store them securely as environment variables.
+- cargo-pgrx
 
 ### **Installation**
+- configure your OPENAI_API_KEY env variable
 
-1. Clone the repository:
 
-```bash
-git clone https://github.com/your_username/sazid.git
-cd sazid
-```
+### Vector DB Setup
 
-2. Build the project:
+adapted from: https://github.com/tensorchord/pgvecto.rs/blob/0efe49d97623656c2e26452df473c6518786dc06/docs/install.md
 
-```bash
-cargo build --release
-```
+- cargo install cargo-pgrx
+- cargo pgrx init
+- brew install postgresql@15
+- initdb /usr/local/var/postgres
 
-3. Run the application:
-
-```bash
-cargo run --release
-```
-
-## **Usage**
-
-To start a new chat session:
-
-```bash
-sazid -n
-```
-
-To continue a previous session:
-
-```bash
-sazid -c path_to_session_file
-```
-
-To import a file or directory:
-
-```bash
-sazid -i path_to_file_or_directory
-```
-
-For a complete list of options:
-
-```bash
-sazid --help
-```
-
-## **Contributing**
-
-We welcome contributions! Please read [CONTRIBUTING.md](path_to_contributing.md) for details on our code of conduct and submission process.
-
-## **License**
-
-This project is licensed under the MIT License - see the [LICENSE.md](path_to_license.md) file for details.
-
-## **Acknowledgements**
-
-- [OpenAI](https://www.openai.com/) for providing the GPT model.
-- [Rust community](https://www.rust-lang.org/) for their comprehensive documentation and support.

@@ -47,3 +47,11 @@
 ## notes
 - calling multiple functions in one request:
    - https://community.openai.com/t/emulated-multi-function-calls-within-one-request/269582
+
+-- API failures: need to handle these so they present user errors
+  -- error 400
+    -- invalid request, also server errors
+  -- error 401
+    - invalid api key
+  -- error 429
+    - too many requests
