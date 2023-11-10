@@ -48,13 +48,13 @@ fn main() {
 
   println!("cargo:rustc-env=SAZID_GIT_INFO={}", git_describe);
 
-  let openai_api_key = std::process::Command::new("/opt/homebrew/bin/openssl")
-    .args(["enc", "-d", "-pbkdf2", "-in", "/Users/tenkai/.local/share/keys/open_api_key.enc", "-pass", "pass:'openai'"])
-    .output()
-    .ok()
-    .as_ref()
-    .and_then(|output| std::str::from_utf8(&output.stdout).ok().map(str::trim))
-    .unwrap()
-    .to_string();
-  println!("cargo:rustc-env=OPENAI_API_KEY={}", openai_api_key);
+  // let openai_api_key = std::process::Command::new("/opt/homebrew/bin/openssl")
+  //   .args(["enc", "-d", "-pbkdf2", "-in", "/Users/tenkai/.local/share/keys/open_api_key.enc", "-pass", "pass:'openai'"])
+  //   .output()
+  //   .ok()
+  //   .as_ref()
+  //   .and_then(|output| std::str::from_utf8(&output.stdout).ok().map(str::trim))
+  //   .unwrap()
+  //   .to_string();
+  // println!("cargo:rustc-env=OPENAI_API_KEY={}", openai_api_key);
 }

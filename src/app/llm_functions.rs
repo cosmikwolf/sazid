@@ -130,21 +130,21 @@ pub fn get_accessible_file_paths(list_file_paths: Vec<PathBuf>) -> HashMap<Strin
 
   // Create an empty HashMap to store the relative paths.
   let mut file_paths = HashMap::new();
-  // for mut path in list_file_paths {
-  //   // Iterate through the files using WalkDir.
-  //   path = base_dir.join(path);
-  //   if path.exists() {
-  //     WalkDir::new(path).into_iter().flatten().for_each(|entry| {
-  //       let path = entry.path();
-  //       file_paths.insert(path.to_string_lossy().to_string(), path.to_path_buf());
-  //     });
-  //   }
-  // }
+  for mut path in list_file_paths {
+    // Iterate through the files using WalkDir.
+    path = base_dir.join(path);
+    if path.exists() {
+      WalkDir::new(path).into_iter().flatten().for_each(|entry| {
+        let path = entry.path();
+        file_paths.insert(path.to_string_lossy().to_string(), path.to_path_buf());
+      });
+    }
+  }
 
-  WalkDir::new(base_dir).into_iter().flatten().for_each(|entry| {
-    let path = entry.path();
-    file_paths.insert(path.to_string_lossy().to_string(), path.to_path_buf());
-  });
+  // WalkDir::new(base_dir).into_iter().flatten().for_each(|entry| {
+  //   let path = entry.path();
+  //   file_paths.insert(path.to_string_lossy().to_string(), path.to_path_buf());
+  // });
 
   trace_dbg!("file_paths: {:?}", file_paths);
   file_paths

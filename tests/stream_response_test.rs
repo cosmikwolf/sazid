@@ -33,7 +33,7 @@ mod tests {
               insta::assert_yaml_snapshot!(&session.data.messages.last().unwrap(), { ".id" => "[id]", ".created"  => "[created]" });
               insta::assert_yaml_snapshot!(&session.data.messages, { ".id" => "[id]", ".created"  => "[created]" });
               insta::assert_yaml_snapshot!(&session.data);
-              insta::assert_yaml_snapshot!(&session.data.stylized_text);
+              insta::assert_yaml_snapshot!(&session.data.rendered_text);
             } else {
               panic!(
                 "Expected last transaction message to be StreamResponse {:#?}",

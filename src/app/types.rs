@@ -48,7 +48,8 @@ impl From<FunctionCall> for RenderedFunctionCall {
 pub struct RenderedChatMessage {
   pub role: Option<Role>,
   pub content: Option<String>,
-  pub rendered_content: Option<String>,
+  pub stylized: Option<String>,
+  pub wrapped_lines: Vec<String>,
   pub function_call: Option<RenderedFunctionCall>,
   pub name: Option<String>,
   pub finish_reason: Option<FinishReason>,
@@ -84,7 +85,7 @@ pub enum ChatMessage {
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct MessageContainer {
   pub message: ChatMessage,
-  pub stylized: Option<String>,
+  pub rendered: RenderedChatMessage,
   pub finished: bool,
   pub function_called: bool,
   pub response_count: usize,
@@ -92,7 +93,7 @@ pub struct MessageContainer {
 
 impl MessageContainer {
   pub fn get_token_count(&self) -> Option<usize> {
-    if let Some(content) = &self.stylized {
+    if let Some(content) = &self.rendered.stylized {
       let bpe = tiktoken_rs::cl100k_base().unwrap();
       Some(bpe.encode_with_special_tokens(content.as_str()).len())
     } else {
@@ -100,23 +101,22 @@ impl MessageContainer {
     }
   }
 
-  fn render_message_pulldown_cmark(&mut self, format_responses_only: bool) -> bool {
-    let rendered_message = RenderedChatMessage::from(&ChatMessage::from(self.clone()));
+  fn render_message_pulldown_cmark(&mut self, format_responses_only: bool) {
     if format_responses_only {
       if matches!(self.message, ChatMessage::ChatCompletionResponseMessage(_)) {
-        self.stylized = Some(render_markdown_to_string(String::from(&rendered_message)))
+        self.rendered.stylized = Some(render_markdown_to_string(String::from(&self.rendered)))
       } else {
-        self.stylized = Some(String::from(&rendered_message))
+        self.rendered.stylized = Some(String::from(&self.rendered))
       }
     } else {
-      self.stylized = Some(render_markdown_to_string(String::from(&rendered_message)))
+      self.rendered.stylized = Some(render_markdown_to_string(String::from(&self.rendered)))
     }
-    if rendered_message.finish_reason.is_some() {
-      self.finished = true;
-      trace_dbg!("post_process_new_messages: finished message {:#?}", self);
-      return true;
+  }
+
+  fn wrap_stylized_text(&mut self, width: usize) {
+    if let Some(stylized_text) = &self.rendered.stylized {
+      self.rendered.wrapped_lines = bwrap::wrap!(stylized_text, width).split('\n').map(|s| s.to_string()).collect();
     }
-    false
   }
 }
 
@@ -133,7 +133,13 @@ impl From<&MessageContainer> for ChatMessage {
 }
 impl From<ChatMessage> for MessageContainer {
   fn from(message: ChatMessage) -> Self {
-    MessageContainer { message, stylized: None, finished: false, function_called: false, response_count: 0 }
+    MessageContainer {
+      message: message.clone(),
+      rendered: RenderedChatMessage::from(&message),
+      finished: false,
+      function_called: false,
+      response_count: 0,
+    }
   }
 }
 
@@ -200,7 +206,8 @@ impl From<&ChatMessage> for RenderedChatMessage {
         name: None,
         role: None,
         content: Some(content.clone()),
-        rendered_content: None,
+        wrapped_lines: vec![],
+        stylized: None,
         function_call: None,
         finish_reason: None,
       },
@@ -208,7 +215,8 @@ impl From<&ChatMessage> for RenderedChatMessage {
         name: Some(result.name.clone()),
         role: Some(Role::Function),
         content: Some(result.response.clone()),
-        rendered_content: None,
+        wrapped_lines: vec![],
+        stylized: None,
         function_call: None,
         finish_reason: None,
       },
@@ -216,7 +224,8 @@ impl From<&ChatMessage> for RenderedChatMessage {
         name: None,
         role: Some(request.role),
         content: Some(format!("# Prompt\n\n*{}*", request.content.clone().unwrap_or("no prompt".to_string()))),
-        rendered_content: None,
+        wrapped_lines: vec![],
+        stylized: None,
         function_call: None,
         finish_reason: None,
       },
@@ -224,7 +233,8 @@ impl From<&ChatMessage> for RenderedChatMessage {
         name: None,
         role: Some(request.role),
         content: request.content.clone(),
-        rendered_content: None,
+        wrapped_lines: vec![],
+        stylized: None,
         function_call: request.function_call.clone().map(|function_call| function_call.into()),
         finish_reason: None,
       },
@@ -233,7 +243,8 @@ impl From<&ChatMessage> for RenderedChatMessage {
           name: None,
           role: Some(Role::Assistant),
           content: response.message.content.clone(),
-          rendered_content: None,
+          wrapped_lines: vec![],
+          stylized: None,
           function_call: response.message.function_call.clone().map(|function_call| function_call.into()),
           finish_reason: response.finish_reason,
         }
@@ -247,7 +258,8 @@ impl From<&ChatMessage> for RenderedChatMessage {
           name: None,
           role: Some(Role::Assistant),
           content: message.delta.content,
-          rendered_content: None,
+          wrapped_lines: vec![],
+          stylized: None,
           function_call: message.delta.function_call.map(|function_call| function_call.into()),
           finish_reason: message.finish_reason,
         }
@@ -256,25 +268,16 @@ impl From<&ChatMessage> for RenderedChatMessage {
   }
 }
 
-#[derive(Default, Serialize, Deserialize, Debug, Clone, PartialEq)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct SessionData {
   pub messages: Vec<MessageContainer>,
-  pub stylized_text: String,
-  pub unrendered_text: String,
+  pub rendered_text: String,
+  pub window_width: usize,
 }
 
-impl From<&SessionData> for String {
-  fn from(session_data: &SessionData) -> String {
-    session_data
-      .messages
-      .iter()
-      .flat_map(|m| m.stylized.clone())
-      .collect::<Vec<String>>()
-      .join("\n")
-      .lines()
-      .map(|l| l.to_string())
-      .collect::<Vec<String>>()
-      .join("\n")
+impl Default for SessionData {
+  fn default() -> Self {
+    SessionData { messages: vec![], rendered_text: String::new(), window_width: 80 }
   }
 }
 
@@ -367,9 +370,10 @@ impl SessionData {
             existing_srvec,
           )) = &mut mc.message
           {
+            //trace_dbg!("add_message: existing delta \n{:?}\n{:?}", new_srvec, existing_srvec);
             collate_stream_response_vec(new_srvec, existing_srvec);
           } else {
-            trace_dbg!("add_message: new delta {:?}", new_srvec);
+            //trace_dbg!("add_message: new delta {:?}", new_srvec);
             // No existing StreamResponse, just push the message.
             self.messages.push(
               ChatMessage::ChatCompletionResponseMessage(ChatResponseSingleMessage::StreamResponse(new_srvec)).into(),
@@ -388,12 +392,32 @@ impl SessionData {
     // return a vec of any functions that need to be called
     self.post_process_new_messages()
   }
+  pub fn set_window_width(&mut self, width: usize) {
+    if self.window_width != width {
+      self.window_width = width;
+      self.messages.iter_mut().for_each(|m| m.wrap_stylized_text(width));
+    }
+  }
 
   pub fn post_process_new_messages(&mut self) {
-    if self.messages.iter_mut().filter(|m| !m.finished).any(|message| message.render_message_pulldown_cmark(true)) {
-      trace_dbg!("stylizing text");
-      self.stylize_text();
-    }
+    self.rendered_text = self
+      .messages
+      .iter_mut()
+      .flat_map(|message| {
+        if !message.finished {
+          trace_dbg!("post_process_new_messages: processing message {:#?}", message.message);
+          message.rendered = RenderedChatMessage::from(&ChatMessage::from(message.clone()));
+          message.render_message_pulldown_cmark(true);
+          message.wrap_stylized_text(self.window_width);
+          if message.rendered.finish_reason.is_some() {
+            message.finished = true;
+            trace_dbg!("post_process_new_messages: finished message {:#?}", message);
+          }
+        }
+        message.rendered.wrapped_lines.iter().map(|wl| wl.as_str()).collect::<Vec<&str>>()
+      })
+      .collect::<Vec<&str>>()
+      .join("\n");
   }
 
   fn _render_message(message: &mut MessageContainer) {
@@ -412,7 +436,7 @@ impl SessionData {
     let rendered_message = RenderedChatMessage::from(&ChatMessage::from(message.clone()));
     let stylize_option = false;
     let message_content = String::from(&rendered_message);
-    message.stylized = if stylize_option {
+    message.rendered.stylized = if stylize_option {
       let mut buffer = String::new();
       let input = Input::from_bytes(message_content.as_bytes());
       controller.run(vec![input.into()], Some(&mut buffer)).unwrap();
@@ -422,17 +446,15 @@ impl SessionData {
     }
   }
 
-  pub fn stylize_text(&mut self) {
-    self.stylized_text = self
+  pub fn get_display_text(&self, index: usize, count: usize) -> Vec<String> {
+    self
       .messages
       .iter()
-      .flat_map(|m| m.stylized.clone())
+      .map(|m| m.rendered.wrapped_lines.clone())
+      .skip(index)
+      .take(count)
+      .flatten()
       .collect::<Vec<String>>()
-      .join("\n")
-      .lines()
-      .map(|l| l.to_string())
-      .collect::<Vec<String>>()
-      .join("\n");
   }
 
   pub fn get_functions_that_need_calling(&mut self) -> Vec<RenderedFunctionCall> {

@@ -10,6 +10,7 @@ use serde::{de::Deserializer, Deserialize};
 use crate::{
   action::Action,
   app::{session_config::SessionConfig, Mode},
+  trace_dbg,
 };
 
 const CONFIG: &str = include_str!("../.config/config.json5");
@@ -69,6 +70,8 @@ impl Config {
       true => SessionConfig::default().with_local_api(),
       false => {
         let api_key: String = env::var("OPENAI_API_KEY").expect("OPENAI_API_KEY not set");
+
+        trace_dbg!("api_key: {:?}", api_key);
         SessionConfig::default().with_openai_api_key(api_key)
       },
     };
