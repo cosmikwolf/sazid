@@ -3,7 +3,7 @@ use std::{fmt, io};
 
 use crate::trace_dbg;
 
-use super::llm_functions::FunctionCallError;
+use super::functions::errors::FunctionCallError;
 
 #[derive(Debug)]
 pub enum SazidError {

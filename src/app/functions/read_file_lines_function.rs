@@ -7,8 +7,10 @@ use crate::app::session_config::SessionConfig;
 use crate::trace_dbg;
 use serde_derive::{Deserialize, Serialize};
 
+use super::errors::FunctionCallError;
+use super::function_call::FunctionCall;
 use super::types::{Command, CommandParameters, CommandProperty};
-use super::{count_tokens, get_accessible_file_paths, FunctionCall, FunctionCallError};
+use super::{count_tokens, get_accessible_file_paths};
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct ReadFileLinesFunction {
@@ -210,7 +212,7 @@ mod tests {
     let result = read_file_lines("5.txt", Some(6), None, 10, list_file_paths);
 
     assert!(result.is_err());
-    assert_eq!(result.unwrap_err().message, "Invalid start line number.");
+    assert_eq!(result.unwrap_err().to_string(), "Invalid start line number.");
   }
 
   #[test]
@@ -223,7 +225,7 @@ mod tests {
     let result = read_file_lines("5.txt", None, Some(10), 10, list_file_paths);
 
     assert!(result.is_err());
-    assert_eq!(result.unwrap_err().message, "Invalid end line number.");
+    assert_eq!(result.unwrap_err().to_string(), "Invalid end line number.");
   }
 
   #[test]
@@ -234,7 +236,7 @@ mod tests {
 
     assert!(result.is_err());
     assert_eq!(
-      result.unwrap_err().message,
+      result.unwrap_err().to_string(),
       "File not found or not accessible.\nare you sure a file exists at the path you are accessing?"
     );
   }

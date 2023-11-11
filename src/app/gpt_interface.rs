@@ -2,7 +2,7 @@ use async_openai::{config::OpenAIConfig, types::ChatCompletionFunctions, Client}
 
 use crate::app::types::*;
 
-use super::llm_functions::types::Command;
+use super::functions::types::Command;
 
 #[derive(Clone)]
 pub struct GPTConnector {
@@ -342,7 +342,7 @@ pub fn create_chat_completion_function_args(commands: Vec<Command>) -> Vec<ChatC
 mod test {
   use std::path::PathBuf;
 
-  use crate::app::llm_functions::{cargo_check_function::cargo_check, file_search_function::file_search};
+  use crate::app::functions::{cargo_check_function::cargo_check, file_search_function::file_search};
 
   #[test]
   fn test_list_dir() {

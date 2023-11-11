@@ -3378,6 +3378,7 @@ dependencies = [
  "lopdf",
  "ntest",
  "nu-ansi-term 0.49.0",
+ "once_cell",
  "pretty_assertions",
  "pulldown-cmark",
  "pulldown-cmark-mdcat",

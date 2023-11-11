@@ -21,9 +21,12 @@ use async_openai::{config::OpenAIConfig, Client};
 use backoff::exponential::ExponentialBackoffBuilder;
 
 use super::{Component, Frame};
-use crate::app::llm_functions::{all_functions, handle_chat_response_function_call};
+use crate::app::functions::{all_functions, handle_chat_response_function_call};
+use crate::app::messages::{ChatMessage, ChatResponse};
 use crate::app::request_validation::debug_request_validation;
 use crate::app::session_config::SessionConfig;
+use crate::app::session_data::SessionData;
+use crate::app::session_view::SessionView;
 use crate::app::{consts::*, errors::*, tools::chunkifier::*, types::*};
 use crate::trace_dbg;
 use crate::tui::Event;
@@ -33,10 +36,12 @@ use crate::app::gpt_interface::create_chat_completion_function_args;
 use crate::app::tools::utils::ensure_directory_exists;
 use crate::components::home::Mode;
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug)]
 pub struct Session<'a> {
   pub data: SessionData,
   pub config: SessionConfig,
+  #[serde(skip)]
+  pub view: SessionView,
   #[serde(skip)]
   pub action_tx: Option<UnboundedSender<Action>>,
   #[serde(skip)]
@@ -77,6 +82,7 @@ impl<'a> Default for Session<'a> {
       last_events: vec![],
       text_area: TextArea::default(),
       vertical_scroll_state: ScrollbarState::default(),
+      view: SessionView::default(),
       horizontal_scroll_state: ScrollbarState::default(),
       vertical_scroll: 0,
       horizontal_scroll: 0,
@@ -98,7 +104,8 @@ impl Component for Session<'static> {
     self.config.prompt =
         "act as a programming architecture and implementation expert, that specializes in the Rust.
         Use the functions available to assist with the user inquiry.
-        Provide your response as ascii formatted text.
+        Provide your response as markdown formatted text.
+        Make sure to properly entabulate any code blocks
         Do not try and execute arbitrary python code.
         Do not try to infer a path to a file, if you have not been provided a path with the root ./, use the file_search function to verify the file path before you execute a function call.".to_string();
     self.data.add_message(ChatMessage::PromptMessage(self.config.prompt_message()));
@@ -220,7 +227,7 @@ impl Component for Session<'static> {
     self.data.set_window_width(inner[1].width as usize);
     // let text = self.data.get_display_text(self.vertical_scroll.saturating_sub(1), self.vertical_viewport_height);
     self.vertical_content_height = self.data.messages.iter().map(|m| m.rendered.wrapped_lines.len()).sum();
-    self.vertical_scroll_state = self.vertical_scroll_state.content_length(self.data.rendered_text.split("\n").count());
+    self.vertical_scroll_state = self.vertical_scroll_state.content_length(self.data.rendered_text.split('\n').count());
     self.vertical_scroll_state = self.vertical_scroll_state.viewport_content_length(self.vertical_viewport_height);
     //self.vertical_content_height = calculate_wrapped_lines(&text, inner[1].width as usize);
     // pad the text with empty lines so that the text appears to come from the bottom up
@@ -244,7 +251,7 @@ impl Component for Session<'static> {
         self.vertical_scroll_state = self.vertical_scroll_state.position(self.vertical_scroll);
       }
 
-      let paragraph = Paragraph::new(self.data.rendered_text.into_text().unwrap())
+      let paragraph = Paragraph::new(self.data.rendered_text.as_str().into_text().unwrap())
         .block(block)
         .wrap(Wrap { trim: true })
         .scroll((self.vertical_scroll as u16, 0));
@@ -649,6 +656,7 @@ pub async fn create_embedding_request(
 mod tests {
   use super::*;
   use crate::action;
+  use crate::app::messages::ChatResponseSingleMessage;
   use async_openai::types::{
     ChatChoice, ChatCompletionResponseMessage, ChatCompletionResponseStreamMessage, ChatCompletionStreamResponseDelta,
     CreateChatCompletionResponse, CreateChatCompletionStreamResponse, FinishReason, FunctionCallStream,

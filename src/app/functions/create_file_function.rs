@@ -9,8 +9,9 @@ use crate::app::session_config::SessionConfig;
 use serde_derive::{Deserialize, Serialize};
 
 use super::{
+  errors::FunctionCallError,
+  function_call::FunctionCall,
   types::{Command, CommandParameters, CommandProperty},
-  FunctionCall, FunctionCallError,
 };
 
 #[derive(Debug, Serialize, Deserialize, Clone)]

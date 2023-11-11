@@ -1,0 +1,48 @@
+Create a plan to create code to facilitate generating embeddings for future functionality.
+
+This code should use the async_openai library. Here is an example for how embeddings are implemented with this crate:
+
+```rust
+use std::error::Error;
+
+use async_openai::{types::CreateEmbeddingRequestArgs, Client};
+
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn Error>> {
+    let client = Client::new();
+
+    // An embedding is a vector (list) of floating point numbers.
+    // The distance between two vectors measures their relatedness.
+    // Small distances suggest high relatedness and large distances suggest low relatedness.
+
+    let request = CreateEmbeddingRequestArgs::default()
+        .model("text-embedding-ada-002")
+        .input([
+            "Why do programmers hate nature? It has too many bugs.",
+            "Why was the computer cold? It left its Windows open.",
+        ])
+        .build()?;
+
+    let response = client.embeddings().create(request).await?;
+
+    for data in response.data {
+        println!(
+            "[{}]: has embedding of length {}",
+            data.index,
+            data.embedding.len()
+        )
+    }
+
+    Ok(())
+}
+```
+
+The code that is generated should all be put in ./src/app/embeddings.rs and should include tests for all files that implements the insta crate testing against yaml snapshots.
+
+Make sure the plan involves resolving any placeholder comments that GPT may generate, and better yet, preventing it from creating any placehodlers to begin with.
+
+Do not create any code, just create a plan to create the code.
+Create a plan that GPT can implement in its entirety with the functions that are available
+use create_file to create files
+use patch_file to add to and remove code from files
+Do not worry about documentation

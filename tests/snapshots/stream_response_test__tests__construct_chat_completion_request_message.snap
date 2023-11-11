@@ -7,6 +7,19 @@ messages:
       ChatCompletionRequestMessage:
         role: user
         content: testing testing 1 2 3
-    stylized: "testing testing 1 2 3---\n"
+    rendered:
+      role: user
+      content: testing testing 1 2 3
+      stylized: "You:\ntesting testing 1 2 3"
+      wrapped_lines:
+        - "You:"
+        - testing testing 1 2 3
+      function_call: ~
+      name: ~
+      finish_reason: ~
     finished: false
+    function_called: false
+    response_count: 0
+rendered_text: "You:\ntesting testing 1 2 3"
+window_width: 80
 

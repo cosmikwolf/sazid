@@ -1,16 +1,13 @@
 ---
 source: tests/stream_response_test.rs
-expression: "&session.data.messages.last().unwrap()"
+expression: "&chat_message"
 ---
-message:
-  ChatCompletionResponseMessage:
-    StreamResponse:
-      - index: 0
-        delta:
-          role: assistant
-          content: Hello! How can I assist you today?
-          function_call: ~
-        finish_reason: stop
-stylized: "Hello! How can I assist you today?---\n"
-finished: false
+ChatCompletionResponseMessage:
+  StreamResponse:
+    - index: 0
+      delta:
+        role: ~
+        content: " you"
+        function_call: ~
+      finish_reason: ~
 

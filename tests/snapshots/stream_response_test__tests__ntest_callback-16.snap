@@ -1,6 +1,13 @@
 ---
 source: tests/stream_response_test.rs
-expression: "&session.data.stylized_text()"
+expression: "&chat_message"
 ---
-"Hello World---\nHello! How can I assist you today?---\n"
+ChatCompletionResponseMessage:
+  StreamResponse:
+    - index: 0
+      delta:
+        role: ~
+        content: " questions"
+        function_call: ~
+      finish_reason: ~
 

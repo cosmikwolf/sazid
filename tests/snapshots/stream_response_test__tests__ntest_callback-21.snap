@@ -7,7 +7,7 @@ ChatCompletionResponseMessage:
     - index: 0
       delta:
         role: ~
-        content: " assist"
+        content: " a"
         function_call: ~
       finish_reason: ~
 

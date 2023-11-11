@@ -1,0 +1,6 @@
+---
+source: tests/stream_response_test.rs
+expression: "&session.data.rendered_text"
+---
+"You:\nHello World\nRequest Token Count: 4\nBot: Hello! How can I assist you today? If you have any questions or need\ninformation on a specific topic, feel free to ask.\n"
+

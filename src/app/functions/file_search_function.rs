@@ -5,12 +5,13 @@ use std::path::{Path, PathBuf};
 
 use serde_derive::{Deserialize, Serialize};
 
-use crate::app::llm_functions::types::{Command, CommandProperty};
+use crate::app::functions::types::{Command, CommandProperty};
 use crate::app::session_config::SessionConfig;
 use crate::trace_dbg;
 
+use super::function_call::FunctionCall;
 use super::types::CommandParameters;
-use super::{count_tokens, get_accessible_file_paths, FunctionCall, FunctionCallError};
+use super::{count_tokens, get_accessible_file_paths, FunctionCallError};
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct FileSearchFunction {

@@ -1,0 +1,11 @@
+---
+source: tests/stream_response_test.rs
+expression: "&combined"
+---
+- index: 0
+  delta:
+    role: assistant
+    content: "Hello! How can I assist you today? If you have any questions or need information on a specific topic, feel free to ask."
+    function_call: ~
+  finish_reason: stop
+

@@ -1,0 +1,59 @@
+---
+source: tests/stream_response_test.rs
+expression: "&session.data.messages"
+---
+- message:
+    ChatCompletionRequestMessage:
+      role: user
+      content: Hello World
+  rendered:
+    role: user
+    content: Hello World
+    stylized: "You:\nHello World"
+    wrapped_lines:
+      - "You:"
+      - Hello World
+    function_call: ~
+    name: ~
+    finish_reason: ~
+  finished: false
+  function_called: false
+  response_count: 0
+- message:
+    SazidSystemMessage: "Request Token Count: 4"
+  rendered:
+    role: ~
+    content: "Request Token Count: 4"
+    stylized: "Request Token Count: 4"
+    wrapped_lines:
+      - "Request Token Count: 4"
+    function_call: ~
+    name: ~
+    finish_reason: ~
+  finished: false
+  function_called: false
+  response_count: 0
+- message:
+    ChatCompletionResponseMessage:
+      StreamResponse:
+        - index: 0
+          delta:
+            role: assistant
+            content: "Hello! How can I assist you today? If you have any questions or need information on a specific topic, feel free to ask."
+            function_call: ~
+          finish_reason: stop
+  rendered:
+    role: assistant
+    content: "Hello! How can I assist you today? If you have any questions or need information on a specific topic, feel free to ask."
+    stylized: "Bot: Hello! How can I assist you today? If you have any questions or need\ninformation on a specific topic, feel free to ask.\n"
+    wrapped_lines:
+      - "Bot: Hello! How can I assist you today? If you have any questions or need"
+      - "information on a specific topic, feel free to ask."
+      - ""
+    function_call: ~
+    name: ~
+    finish_reason: stop
+  finished: true
+  function_called: false
+  response_count: 0
+

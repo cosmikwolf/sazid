@@ -15,9 +15,10 @@ use walkdir::WalkDir;
 use crate::app::session_config::SessionConfig;
 
 use super::{
+  function_call::FunctionCall,
   get_accessible_file_paths,
   types::{Command, CommandParameters, CommandProperty},
-  FunctionCall, FunctionCallError,
+  FunctionCallError,
 };
 
 #[derive(Debug, Serialize, Deserialize, Clone)]

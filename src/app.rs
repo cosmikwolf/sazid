@@ -4,12 +4,16 @@ use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc;
 
 pub mod consts;
+pub mod embeddings;
 pub mod errors;
+pub mod functions;
 pub mod gpt_interface;
-pub mod llm_functions;
-pub mod markdown;
+pub mod helpers;
+pub mod messages;
 pub mod request_validation;
 pub mod session_config;
+pub mod session_data;
+pub mod session_view;
 pub mod tools;
 pub mod types;
 

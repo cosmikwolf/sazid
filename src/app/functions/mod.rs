@@ -1,35 +1,34 @@
-use crate::{action::Action, trace_dbg};
-use grep;
+use crate::app::functions::function_call::FunctionCall;
+use crate::components::Component;
+use crate::{
+  action::Action,
+  app::messages::{ChatMessage, FunctionResult},
+  trace_dbg,
+};
 use serde_derive::{Deserialize, Serialize};
-use std::{collections::HashMap, error::Error, fmt, io, path::PathBuf};
+use std::{collections::HashMap, path::PathBuf};
 use tokio::sync::mpsc::UnboundedSender;
+use tracing_subscriber::util::SubscriberInitExt;
 use walkdir::WalkDir;
 
 use self::{
-  cargo_check_function::CargoCheckFunction, create_file_function::CreateFileFunction,
+  cargo_check_function::CargoCheckFunction, create_file_function::CreateFileFunction, errors::FunctionCallError,
   file_search_function::FileSearchFunction, grep_function::GrepFunction, modify_file_function::ModifyFileFunction,
   patch_files_function::PatchFilesFunction, read_file_lines_function::ReadFileLinesFunction, types::Command,
 };
 
-use super::{
-  session_config::SessionConfig,
-  types::{ChatMessage, FunctionResult},
-};
+use super::session_config::SessionConfig;
 
 pub mod cargo_check_function;
 pub mod create_file_function;
+pub mod errors;
 pub mod file_search_function;
+pub mod function_call;
 pub mod grep_function;
 pub mod modify_file_function;
 pub mod patch_files_function;
 pub mod read_file_lines_function;
 pub mod types;
-
-#[derive(Debug)]
-pub struct FunctionCallError {
-  message: String,
-  source: Option<Box<dyn Error>>,
-}
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub enum CallableFunction {
@@ -39,6 +38,7 @@ pub enum CallableFunction {
   ModifyFileFunction(ModifyFileFunction),
   CreateFileFunction(CreateFileFunction),
   PatchFilesFunction(PatchFilesFunction),
+  CargoCheckFunction(CargoCheckFunction),
 }
 
 impl From<&CallableFunction> for Command {
@@ -50,6 +50,7 @@ impl From<&CallableFunction> for Command {
       CallableFunction::ModifyFileFunction(f) => f.command_definition(),
       CallableFunction::CreateFileFunction(f) => f.command_definition(),
       CallableFunction::PatchFilesFunction(f) => f.command_definition(),
+      CallableFunction::CargoCheckFunction(f) => f.command_definition(),
     }
   }
 }
@@ -62,67 +63,14 @@ pub fn all_functions() -> Vec<CallableFunction> {
     CallableFunction::ReadFileLinesFunction(ReadFileLinesFunction::init()),
     CallableFunction::ModifyFileFunction(ModifyFileFunction::init()),
     CallableFunction::CreateFileFunction(CreateFileFunction::init()),
+    CallableFunction::CargoCheckFunction(CargoCheckFunction::init()),
   ]
 }
-
-impl FunctionCallError {
-  pub fn new(message: &str) -> Self {
-    trace_dbg!("FunctionCallError: {}", message);
-    FunctionCallError { message: message.to_string(), source: None }
-  }
-}
-
-// Implement the Display trait for your custom error type.
-impl fmt::Display for FunctionCallError {
-  fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-    write!(f, "FunctionCallError: {}", self.message)
-  }
-}
-
-// Implement the Error trait for your custom error type.
-impl Error for FunctionCallError {
-  fn description(&self) -> &str {
-    &self.message
-  }
-
-  fn source(&self) -> Option<&(dyn Error + 'static)> {
-    self.source.as_ref().map(|e| e.as_ref())
-  }
-}
-
-impl From<grep::regex::Error> for FunctionCallError {
-  fn from(error: grep::regex::Error) -> Self {
-    FunctionCallError { message: format!("Grep Regex Error: {}", error), source: Some(Box::new(error)) }
-  }
-}
-
-impl From<serde_json::Error> for FunctionCallError {
-  fn from(error: serde_json::Error) -> Self {
-    FunctionCallError { message: format!("Serde JSON Error: {}", error), source: Some(Box::new(error)) }
-  }
-}
-
-impl From<io::Error> for FunctionCallError {
-  fn from(error: io::Error) -> Self {
-    FunctionCallError { message: format!("IO Error: {}", error), source: Some(Box::new(error)) }
-  }
-}
-
-impl From<String> for FunctionCallError {
-  fn from(message: String) -> Self {
-    FunctionCallError { message, source: None }
-  }
-}
-
-pub trait FunctionCall {
-  fn init() -> Self;
-  fn call(
-    &self,
-    function_args: HashMap<String, serde_json::Value>,
-    session_config: SessionConfig,
-  ) -> Result<Option<String>, FunctionCallError>;
-  fn command_definition(&self) -> Command;
-}
+// impl From<Box<dyn FunctionCall>> for RenderedFunctionCall {
+//   fn from(function_call: Box<dyn FunctionCall>) -> Self {
+//     RenderedFunctionCall { name: function_call.name, arguments: function_call.arguments }
+//   }
+// }
 
 pub fn get_accessible_file_paths(list_file_paths: Vec<PathBuf>) -> HashMap<String, PathBuf> {
   // Define the base directory you want to start the search from.

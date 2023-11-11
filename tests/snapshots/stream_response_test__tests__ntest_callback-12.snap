@@ -1,11 +1,13 @@
 ---
 source: tests/stream_response_test.rs
-expression: "&combined"
+expression: "&chat_message"
 ---
-- index: 0
-  delta:
-    role: assistant
-    content: Hello! How can I assist you today?
-    function_call: ~
-  finish_reason: stop
+ChatCompletionResponseMessage:
+  StreamResponse:
+    - index: 0
+      delta:
+        role: ~
+        content: " If"
+        function_call: ~
+      finish_reason: ~
 
