@@ -1,14 +1,11 @@
 use serde_derive::{Deserialize, Serialize};
 
-use super::{
-  functions::function_call::RenderedFunctionCall, helpers::concatenate_stream_response_messages,
-  session_view::render_markdown_to_string,
-};
+use super::{helpers::concatenate_stream_response_messages, session_view::render_markdown_to_string};
 use async_openai::{
   self,
   types::{
     ChatChoice, ChatCompletionRequestMessage, ChatCompletionResponseStreamMessage, CreateChatCompletionResponse,
-    CreateChatCompletionStreamResponse, FinishReason, Role,
+    CreateChatCompletionStreamResponse, FinishReason, FunctionCall, FunctionCallStream, Role,
   },
 };
 
@@ -79,6 +76,27 @@ pub enum ChatResponseSingleMessage {
 pub struct FunctionResult {
   pub name: String,
   pub response: String,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+pub struct RenderedFunctionCall {
+  pub name: String,
+  pub arguments: String,
+}
+
+impl From<FunctionCallStream> for RenderedFunctionCall {
+  fn from(function_call: FunctionCallStream) -> Self {
+    RenderedFunctionCall {
+      name: function_call.name.unwrap_or("".to_string()),
+      arguments: function_call.arguments.unwrap_or("".to_string()),
+    }
+  }
+}
+
+impl From<FunctionCall> for RenderedFunctionCall {
+  fn from(function_call: FunctionCall) -> Self {
+    RenderedFunctionCall { name: function_call.name, arguments: function_call.arguments }
+  }
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
@@ -205,7 +223,7 @@ impl From<&ChatMessage> for RenderedChatMessage {
         content: request.content.clone(),
         wrapped_lines: vec![],
         stylized: None,
-        function_call: request.function_call.clone().map(|function_call| Box::new(function_call).into()),
+        function_call: request.function_call.map(|function_call| function_call.into()),
         finish_reason: None,
       },
       ChatMessage::ChatCompletionResponseMessage(ChatResponseSingleMessage::Response(response)) => {
@@ -215,7 +233,7 @@ impl From<&ChatMessage> for RenderedChatMessage {
           content: response.message.content.clone(),
           wrapped_lines: vec![],
           stylized: None,
-          function_call: response.message.function_call.clone().map(|function_call| function_call.into()),
+          function_call: response.message.function_call.map(|function_call| function_call.into()),
           finish_reason: response.finish_reason,
         }
       },

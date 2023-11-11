@@ -1,4 +1,4 @@
-use crate::app::functions::function_call::FunctionCall;
+use crate::app::functions::function_call::ModelFunction;
 use crate::components::Component;
 use crate::{
   action::Action,
@@ -12,7 +12,7 @@ use tracing_subscriber::util::SubscriberInitExt;
 use walkdir::WalkDir;
 
 use self::{
-  cargo_check_function::CargoCheckFunction, create_file_function::CreateFileFunction, errors::FunctionCallError,
+  cargo_check_function::CargoCheckFunction, create_file_function::CreateFileFunction, errors::ModelFunctionError,
   file_search_function::FileSearchFunction, grep_function::GrepFunction, modify_file_function::ModifyFileFunction,
   patch_files_function::PatchFilesFunction, read_file_lines_function::ReadFileLinesFunction, types::Command,
 };
@@ -67,7 +67,7 @@ pub fn all_functions() -> Vec<CallableFunction> {
   ]
 }
 // impl From<Box<dyn FunctionCall>> for RenderedFunctionCall {
-//   fn from(function_call: Box<dyn FunctionCall>) -> Self {
+//   fn from(function_call: Box<dyn ModelFunction>) -> Self {
 //     RenderedFunctionCall { name: function_call.name, arguments: function_call.arguments }
 //   }
 // }
@@ -128,7 +128,7 @@ pub fn handle_chat_response_function_call(
             "cargo_check" => CargoCheckFunction::init().call(function_args, session_config),
             _ => Ok(Some("function not found".to_string())),
           },
-          Err(e) => Err(FunctionCallError::new(
+          Err(e) => Err(ModelFunctionError::new(
             format!("Failed to parse function arguments:\nfunction:{:?}\nargs:{:?}\nerror:{:?}", fn_name, fn_args, e)
               .as_str(),
           )),

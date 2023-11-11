@@ -5,9 +5,9 @@ use serde_derive::{Deserialize, Serialize};
 use crate::{app::session_config::SessionConfig, trace_dbg};
 
 use super::{
-  function_call::FunctionCall,
+  function_call::ModelFunction,
   types::{Command, CommandParameters, CommandProperty},
-  FunctionCallError,
+  ModelFunctionError,
 };
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -18,7 +18,7 @@ pub struct CargoCheckFunction {
   optional_properties: Vec<CommandProperty>,
 }
 
-impl FunctionCall for CargoCheckFunction {
+impl ModelFunction for CargoCheckFunction {
   fn init() -> Self {
     CargoCheckFunction {
       name: "cargo_check".to_string(),
@@ -32,7 +32,7 @@ impl FunctionCall for CargoCheckFunction {
     &self,
     _function_args: HashMap<String, serde_json::Value>,
     _session_config: SessionConfig,
-  ) -> Result<Option<String>, FunctionCallError> {
+  ) -> Result<Option<String>, ModelFunctionError> {
     cargo_check()
   }
 
@@ -58,7 +58,7 @@ impl FunctionCall for CargoCheckFunction {
   }
 }
 
-pub fn cargo_check() -> Result<Option<String>, FunctionCallError> {
+pub fn cargo_check() -> Result<Option<String>, ModelFunctionError> {
   let mut command = std::process::Command::new("cargo");
   command.arg("check");
   command.arg("--message-format");

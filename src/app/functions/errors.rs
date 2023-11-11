@@ -3,27 +3,27 @@ use std::{error::Error, fmt, io};
 use crate::trace_dbg;
 
 #[derive(Debug)]
-pub struct FunctionCallError {
+pub struct ModelFunctionError {
   message: String,
   source: Option<Box<dyn Error>>,
 }
 
-impl FunctionCallError {
+impl ModelFunctionError {
   pub fn new(message: &str) -> Self {
-    trace_dbg!("FunctionCallError: {}", message);
-    FunctionCallError { message: message.to_string(), source: None }
+    trace_dbg!("ModelFunctionError: {}", message);
+    ModelFunctionError { message: message.to_string(), source: None }
   }
 }
 
 // Implement the Display trait for your custom error type.
-impl fmt::Display for FunctionCallError {
+impl fmt::Display for ModelFunctionError {
   fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-    write!(f, "FunctionCallError: {}", self.message)
+    write!(f, "ModelFunctionError: {}", self.message)
   }
 }
 
 // Implement the Error trait for your custom error type.
-impl Error for FunctionCallError {
+impl Error for ModelFunctionError {
   fn description(&self) -> &str {
     &self.message
   }
@@ -33,26 +33,26 @@ impl Error for FunctionCallError {
   }
 }
 
-impl From<grep::regex::Error> for FunctionCallError {
+impl From<grep::regex::Error> for ModelFunctionError {
   fn from(error: grep::regex::Error) -> Self {
-    FunctionCallError { message: format!("Grep Regex Error: {}", error), source: Some(Box::new(error)) }
+    ModelFunctionError { message: format!("Grep Regex Error: {}", error), source: Some(Box::new(error)) }
   }
 }
 
-impl From<serde_json::Error> for FunctionCallError {
+impl From<serde_json::Error> for ModelFunctionError {
   fn from(error: serde_json::Error) -> Self {
-    FunctionCallError { message: format!("Serde JSON Error: {}", error), source: Some(Box::new(error)) }
+    ModelFunctionError { message: format!("Serde JSON Error: {}", error), source: Some(Box::new(error)) }
   }
 }
 
-impl From<io::Error> for FunctionCallError {
+impl From<io::Error> for ModelFunctionError {
   fn from(error: io::Error) -> Self {
-    FunctionCallError { message: format!("IO Error: {}", error), source: Some(Box::new(error)) }
+    ModelFunctionError { message: format!("IO Error: {}", error), source: Some(Box::new(error)) }
   }
 }
 
-impl From<String> for FunctionCallError {
+impl From<String> for ModelFunctionError {
   fn from(message: String) -> Self {
-    FunctionCallError { message, source: None }
+    ModelFunctionError { message, source: None }
   }
 }

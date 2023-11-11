@@ -5,10 +5,10 @@ use std::{collections::HashMap, fs::File, io::Write};
 use crate::app::session_config::SessionConfig;
 use crate::trace_dbg;
 
-use super::function_call::FunctionCall;
+use super::function_call::ModelFunction;
 use super::{
   types::{Command, CommandParameters, CommandProperty},
-  FunctionCallError,
+  ModelFunctionError,
 };
 use serde_derive::{Deserialize, Serialize};
 
@@ -20,7 +20,7 @@ pub struct ModifyFileFunction {
   optional_properties: Vec<CommandProperty>,
 }
 
-impl FunctionCall for ModifyFileFunction {
+impl ModelFunction for ModifyFileFunction {
   fn init() -> Self {
     ModifyFileFunction {
       name: "modify_file".to_string(),
@@ -64,11 +64,11 @@ impl FunctionCall for ModifyFileFunction {
     &self,
     function_args: HashMap<String, serde_json::Value>,
     _session_config: SessionConfig,
-  ) -> Result<Option<String>, FunctionCallError> {
+  ) -> Result<Option<String>, ModelFunctionError> {
     let path: Option<&str> = function_args.get("path").and_then(|s| s.as_str());
     let start_line = match function_args.get("start_line").and_then(|s| s.as_u64().map(|u| u as usize)) {
       Some(start_line) => start_line,
-      None => return Err(FunctionCallError::new("start_line argument is required")),
+      None => return Err(ModelFunctionError::new("start_line argument is required")),
     };
 
     let end_line: Option<usize> = function_args.get("end_line").and_then(|s| s.as_u64().map(|u| u as usize));
@@ -76,7 +76,7 @@ impl FunctionCall for ModifyFileFunction {
     if let Some(path) = path {
       modify_file(path, start_line, end_line, insert_text)
     } else {
-      Err(FunctionCallError::new("path argument is required"))
+      Err(ModelFunctionError::new("path argument is required"))
     }
   }
 
@@ -107,7 +107,7 @@ pub fn modify_file(
   start_line: usize,
   end_line: Option<usize>,
   insert_text: Option<&str>,
-) -> Result<Option<String>, FunctionCallError> {
+) -> Result<Option<String>, ModelFunctionError> {
   match File::open(path) {
     Ok(file) => {
       let reader = std::io::BufReader::new(file);

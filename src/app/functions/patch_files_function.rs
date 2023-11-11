@@ -9,9 +9,9 @@ use crate::app::session_config::SessionConfig;
 use serde_derive::{Deserialize, Serialize};
 
 use super::{
-  function_call::FunctionCall,
+  function_call::ModelFunction,
   types::{Command, CommandParameters, CommandProperty},
-  FunctionCallError,
+  ModelFunctionError,
 };
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -22,7 +22,7 @@ pub struct PatchFilesFunction {
   optional_properties: Vec<CommandProperty>,
 }
 
-impl FunctionCall for PatchFilesFunction {
+impl ModelFunction for PatchFilesFunction {
   fn init() -> Self {
     PatchFilesFunction {
       name: "patch_files".to_string(),
@@ -48,7 +48,7 @@ impl FunctionCall for PatchFilesFunction {
     &self,
     function_args: HashMap<String, serde_json::Value>,
     session_config: SessionConfig,
-  ) -> Result<Option<String>, FunctionCallError> {
+  ) -> Result<Option<String>, ModelFunctionError> {
     let patches_dir = session_config.session_dir.join("patches");
     // ensure the patches directory and session_data dir exist
     if !patches_dir.exists() {
@@ -97,7 +97,7 @@ impl FunctionCall for PatchFilesFunction {
   }
 }
 
-pub fn apply_patch_file(patch_path: PathBuf) -> Result<String, FunctionCallError> {
+pub fn apply_patch_file(patch_path: PathBuf) -> Result<String, ModelFunctionError> {
   let mut command = std::process::Command::new("patch");
   command.arg("-p1");
   command.arg("-i");
@@ -106,7 +106,7 @@ pub fn apply_patch_file(patch_path: PathBuf) -> Result<String, FunctionCallError
   Ok(format!("output: {}", String::from_utf8_lossy(&output.stdout)))
 }
 
-pub fn create_patch_file(patch_path: PathBuf, patch_content: &str) -> Result<String, FunctionCallError> {
+pub fn create_patch_file(patch_path: PathBuf, patch_content: &str) -> Result<String, ModelFunctionError> {
   match File::create(patch_path.clone()) {
     Ok(mut file) => match file.write_all(patch_content.as_bytes()) {
       Ok(_) => Ok("patch file created\n".to_string()),

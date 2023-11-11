@@ -3,13 +3,13 @@ use std::{fmt, io};
 
 use crate::trace_dbg;
 
-use super::functions::errors::FunctionCallError;
+use super::functions::errors::ModelFunctionError;
 
 #[derive(Debug)]
 pub enum SazidError {
   ParseError(ParseError),
   OpenAiError(OpenAIError),
-  FunctionCallError(FunctionCallError),
+  FunctionCallError(ModelFunctionError),
   ConfigError(config::ConfigError),
   IoError(io::Error),
   Other(String),

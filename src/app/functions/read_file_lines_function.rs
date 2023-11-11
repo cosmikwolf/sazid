@@ -7,8 +7,8 @@ use crate::app::session_config::SessionConfig;
 use crate::trace_dbg;
 use serde_derive::{Deserialize, Serialize};
 
-use super::errors::FunctionCallError;
-use super::function_call::FunctionCall;
+use super::errors::ModelFunctionError;
+use super::function_call::ModelFunction;
 use super::types::{Command, CommandParameters, CommandProperty};
 use super::{count_tokens, get_accessible_file_paths};
 
@@ -20,7 +20,7 @@ pub struct ReadFileLinesFunction {
   pub optional_properties: Vec<CommandProperty>,
 }
 
-impl FunctionCall for ReadFileLinesFunction {
+impl ModelFunction for ReadFileLinesFunction {
   fn init() -> Self {
     ReadFileLinesFunction {
       name: "read_file".to_string(),
@@ -55,14 +55,14 @@ impl FunctionCall for ReadFileLinesFunction {
     &self,
     function_args: HashMap<String, serde_json::Value>,
     session_config: SessionConfig,
-  ) -> Result<Option<String>, FunctionCallError> {
+  ) -> Result<Option<String>, ModelFunctionError> {
     let start_line: Option<usize> = function_args.get("start_line").and_then(|s| s.as_u64().map(|u| u as usize));
     let end_line: Option<usize> = function_args.get("end_line").and_then(|s| s.as_u64().map(|u| u as usize));
     if let Some(v) = function_args.get("path") {
       if let Some(file) = v.as_str() {
         let accesible_paths = get_accessible_file_paths(session_config.list_file_paths.clone());
         if !accesible_paths.contains_key(Path::new(file).to_str().unwrap()) {
-          Err(FunctionCallError::new(
+          Err(ModelFunctionError::new(
             format!("File path is not accessible: {:?}. Suggest using file_search command", file).as_str(),
           ))
         } else {
@@ -76,10 +76,10 @@ impl FunctionCall for ReadFileLinesFunction {
           )
         }
       } else {
-        Err(FunctionCallError::new("path argument must be a string"))
+        Err(ModelFunctionError::new("path argument must be a string"))
       }
     } else {
-      Err(FunctionCallError::new("path argument is required"))
+      Err(ModelFunctionError::new("path argument is required"))
     }
   }
 
@@ -111,14 +111,14 @@ pub fn read_file_lines(
   end_line: Option<usize>,
   reply_max_tokens: usize,
   list_file_paths: Vec<PathBuf>,
-) -> Result<Option<String>, FunctionCallError> {
+) -> Result<Option<String>, ModelFunctionError> {
   // trace_dbg!("list_file_paths: {:?}", list_file_paths);
   // trace_dbg!("file: {:?} {:#?}", get_accessible_file_paths(list_file_paths.clone()).get(file), file);
   if let Some(file_path) = get_accessible_file_paths(list_file_paths).get(file) {
     let file_contents = match read_lines(file_path) {
       Ok(contents) => contents,
       Err(error) => {
-        return Err(FunctionCallError::new(
+        return Err(ModelFunctionError::new(
           format!("Error reading file: {}\nare you sure a file exists at the provided path?", error).as_str(),
         ));
       },
@@ -128,13 +128,13 @@ pub fn read_file_lines(
 
     if let Some(start_line) = start_line {
       if start_line > file_contents.len() {
-        return Err(FunctionCallError::new("Invalid start line number."));
+        return Err(ModelFunctionError::new("Invalid start line number."));
       }
     }
 
     if let Some(end_line) = end_line {
       if end_line > file_contents.len() {
-        return Err(FunctionCallError::new("Invalid end line number."));
+        return Err(ModelFunctionError::new("Invalid end line number."));
       }
     }
     let selected_lines: Vec<String> =
@@ -154,7 +154,7 @@ pub fn read_file_lines(
       token_count
     )))
   } else {
-    Err(FunctionCallError::new(
+    Err(ModelFunctionError::new(
       "File not found or not accessible.\nare you sure a file exists at the path you are accessing?",
     ))
   }

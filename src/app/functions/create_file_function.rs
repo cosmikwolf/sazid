@@ -9,8 +9,8 @@ use crate::app::session_config::SessionConfig;
 use serde_derive::{Deserialize, Serialize};
 
 use super::{
-  errors::FunctionCallError,
-  function_call::FunctionCall,
+  errors::ModelFunctionError,
+  function_call::ModelFunction,
   types::{Command, CommandParameters, CommandProperty},
 };
 
@@ -22,7 +22,7 @@ pub struct CreateFileFunction {
   optional_properties: Vec<CommandProperty>,
 }
 
-impl FunctionCall for CreateFileFunction {
+impl ModelFunction for CreateFileFunction {
   fn init() -> Self {
     CreateFileFunction {
       name: "create_file".to_string(),
@@ -51,17 +51,17 @@ impl FunctionCall for CreateFileFunction {
     &self,
     function_args: HashMap<String, serde_json::Value>,
     _session_config: SessionConfig,
-  ) -> Result<Option<String>, FunctionCallError> {
+  ) -> Result<Option<String>, ModelFunctionError> {
     let path: Option<&str> = function_args.get("path").and_then(|s| s.as_str());
     let text: Option<&str> = function_args.get("text").and_then(|s| s.as_str());
     if let Some(path) = path {
       if let Some(text) = text {
         create_file(path, text)
       } else {
-        Err(FunctionCallError::new("text argument is required"))
+        Err(ModelFunctionError::new("text argument is required"))
       }
     } else {
-      Err(FunctionCallError::new("path argument is required"))
+      Err(ModelFunctionError::new("path argument is required"))
     }
   }
 
@@ -87,7 +87,7 @@ impl FunctionCall for CreateFileFunction {
   }
 }
 
-pub fn create_file(path: &str, text: &str) -> Result<Option<String>, FunctionCallError> {
+pub fn create_file(path: &str, text: &str) -> Result<Option<String>, ModelFunctionError> {
   // Convert the string path to a `Path` object to manipulate file paths.
   let path = Path::new(path);
 

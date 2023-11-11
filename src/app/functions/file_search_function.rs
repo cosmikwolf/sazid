@@ -9,9 +9,9 @@ use crate::app::functions::types::{Command, CommandProperty};
 use crate::app::session_config::SessionConfig;
 use crate::trace_dbg;
 
-use super::function_call::FunctionCall;
+use super::function_call::ModelFunction;
 use super::types::CommandParameters;
-use super::{count_tokens, get_accessible_file_paths, FunctionCallError};
+use super::{count_tokens, get_accessible_file_paths, ModelFunctionError};
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct FileSearchFunction {
@@ -21,7 +21,7 @@ pub struct FileSearchFunction {
   pub optional_properties: Vec<CommandProperty>,
 }
 
-impl FunctionCall for FileSearchFunction {
+impl ModelFunction for FileSearchFunction {
   fn init() -> Self {
     FileSearchFunction {
         name: "file_search".to_string(),
@@ -43,12 +43,12 @@ impl FunctionCall for FileSearchFunction {
     &self,
     function_args: HashMap<String, serde_json::Value>,
     session_config: SessionConfig,
-  ) -> Result<Option<String>, FunctionCallError> {
+  ) -> Result<Option<String>, ModelFunctionError> {
     if let Some(v) = function_args.get("path") {
       if let Some(pathstr) = v.as_str() {
         let accesible_paths = get_accessible_file_paths(session_config.list_file_paths.clone());
         if !accesible_paths.contains_key(Path::new(pathstr).to_str().unwrap()) {
-          return Err(FunctionCallError::new(
+          return Err(ModelFunctionError::new(
             format!("File path is not accessible: {:?}. Suggest using file_search command", pathstr).as_str(),
           ));
         } else {
@@ -119,7 +119,7 @@ pub fn file_search(
   reply_max_tokens: usize,
   list_file_paths: Vec<PathBuf>,
   search_term: Option<&str>,
-) -> Result<Option<String>, FunctionCallError> {
+) -> Result<Option<String>, ModelFunctionError> {
   let paths = get_accessible_file_paths(list_file_paths);
   let accessible_paths = paths.keys().map(|path| path.as_str()).collect::<Vec<&str>>();
   // find the length of the longest string in accessible_paths

@@ -15,10 +15,10 @@ use walkdir::WalkDir;
 use crate::app::session_config::SessionConfig;
 
 use super::{
-  function_call::FunctionCall,
+  function_call::ModelFunction,
   get_accessible_file_paths,
   types::{Command, CommandParameters, CommandProperty},
-  FunctionCallError,
+  ModelFunctionError,
 };
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -29,7 +29,7 @@ pub struct GrepFunction {
   pub optional_properties: Vec<CommandProperty>,
 }
 
-impl FunctionCall for GrepFunction {
+impl ModelFunction for GrepFunction {
   fn init() -> Self {
     GrepFunction {
       name: "grep".to_string(),
@@ -70,13 +70,13 @@ impl FunctionCall for GrepFunction {
     &self,
     function_args: HashMap<String, serde_json::Value>,
     session_config: SessionConfig,
-  ) -> Result<Option<String>, FunctionCallError> {
+  ) -> Result<Option<String>, ModelFunctionError> {
     let paths = match function_args.get("paths") {
       Some(paths) => match validate_and_extract_paths_from_argument(paths.clone(), session_config) {
         Ok(paths) => paths,
         Err(err) => return Err(err),
       },
-      None => return Err(FunctionCallError::new("paths argument is required")),
+      None => return Err(ModelFunctionError::new("paths argument is required")),
     };
 
     let pattern: Option<&str> = function_args.get("pattern").and_then(|s| s.as_str());
@@ -84,7 +84,7 @@ impl FunctionCall for GrepFunction {
     let _multi_line: Option<bool> = function_args.get("multi_line").and_then(|s| s.as_bool());
     match pattern {
       Some(pattern) => grep(pattern, paths),
-      None => Err(FunctionCallError::new("pattern argument is required")),
+      None => Err(ModelFunctionError::new("pattern argument is required")),
     }
   }
 
@@ -113,13 +113,13 @@ impl FunctionCall for GrepFunction {
 pub fn validate_and_extract_paths_from_argument(
   paths: serde_json::Value,
   session_config: SessionConfig,
-) -> Result<Vec<PathBuf>, FunctionCallError> {
+) -> Result<Vec<PathBuf>, ModelFunctionError> {
   let mut paths_vec: Vec<PathBuf> = Vec::new();
   if let serde_json::Value::String(paths) = paths {
     for path in paths.split(',').map(|s| s.trim()) {
       let accesible_paths = get_accessible_file_paths(session_config.list_file_paths.clone());
       if !accesible_paths.contains_key(Path::new(path).to_str().unwrap()) {
-        return Err(FunctionCallError::new(
+        return Err(ModelFunctionError::new(
           format!("File path is not accessible: {:?}. Suggest using file_search command", path).as_str(),
         ));
       } else {
@@ -130,7 +130,7 @@ pub fn validate_and_extract_paths_from_argument(
   Ok(paths_vec)
 }
 
-pub fn grep(pattern: &str, paths: Vec<PathBuf>) -> Result<Option<String>, FunctionCallError> {
+pub fn grep(pattern: &str, paths: Vec<PathBuf>) -> Result<Option<String>, ModelFunctionError> {
   //let mut buffer = Cursor::new(Vec::new());
   let buffer: BufWriter<Vec<u8>> = BufWriter::new(Vec::new());
   let mut error_buffer: BufWriter<Vec<u8>> = BufWriter::new(Vec::new());
