@@ -223,7 +223,7 @@ impl From<&ChatMessage> for RenderedChatMessage {
         content: request.content.clone(),
         wrapped_lines: vec![],
         stylized: None,
-        function_call: request.function_call.map(|function_call| function_call.into()),
+        function_call: request.function_call.clone().map(|function_call| function_call.into()),
         finish_reason: None,
       },
       ChatMessage::ChatCompletionResponseMessage(ChatResponseSingleMessage::Response(response)) => {
@@ -233,7 +233,7 @@ impl From<&ChatMessage> for RenderedChatMessage {
           content: response.message.content.clone(),
           wrapped_lines: vec![],
           stylized: None,
-          function_call: response.message.function_call.map(|function_call| function_call.into()),
+          function_call: response.message.function_call.clone().map(|function_call| function_call.into()),
           finish_reason: response.finish_reason,
         }
       },

@@ -6,7 +6,6 @@ use bat::{
   Input,
 };
 
-use anstyle::{AnsiColor, Color, Style};
 use pulldown_cmark::{Options, Parser};
 use pulldown_cmark_mdcat::resources::*;
 use pulldown_cmark_mdcat::terminal::{TerminalProgram, TerminalSize};
@@ -16,17 +15,54 @@ use std::path::Path;
 use std::sync::OnceLock;
 use syntect::parsing::SyntaxSet;
 
+use super::{
+  messages::{ChatMessage, MessageContainer, RenderedChatMessage},
+  session_data::SessionData,
+};
+
 // static TEST_READ_LIMIT: u64 = 5_242_880;
 #[derive(Default, Debug)]
 pub struct SessionView {
   pub renderer: BatRenderer<'static>,
+  pub window_width: usize,
 }
 
+impl SessionView {
+  pub fn set_window_width(&mut self, width: usize, messages: &mut Vec<MessageContainer>) {
+    if self.window_width != width {
+      self.window_width = width;
+      messages.iter_mut().for_each(|m| m.wrap_stylized_text(width));
+    }
+  }
+  pub fn post_process_new_messages(&self, session_data: &mut SessionData) {
+    session_data.rendered_text = session_data
+      .messages
+      .iter_mut()
+      .flat_map(|message| {
+        if !message.finished {
+          // trace_dbg!("post_process_new_messages: processing message {:#?}", message.message);
+          message.rendered = RenderedChatMessage::from(&ChatMessage::from(message.clone()));
+          // message.render_message_pulldown_cmark(true);
+          message.rendered.stylized =
+            Some(self.renderer.render_message_bat(message.rendered.content.clone().unwrap_or_default().as_str()));
+          message.wrap_stylized_text(self.window_width);
+          if message.rendered.finish_reason.is_some() {
+            message.finished = true;
+            // trace_dbg!("post_process_new_messages: finished message {:#?}", message);
+          }
+        }
+        message.rendered.wrapped_lines.iter().map(|wl| wl.as_str()).collect::<Vec<&str>>()
+      })
+      .collect::<Vec<&str>>()
+      .join("\n");
+  }
+}
+pub fn get_display_text(index: usize, count: usize, messages: Vec<MessageContainer>) -> Vec<String> {
+  messages.iter().map(|m| m.rendered.wrapped_lines.clone()).skip(index).take(count).flatten().collect::<Vec<String>>()
+}
 pub struct BatRenderer<'a> {
-  style_components: StyleComponents,
   assets: HighlightingAssets,
   config: Config<'a>,
-  controller: Controller<'a>,
 }
 
 impl<'a> Default for BatRenderer<'a> {
@@ -37,11 +73,7 @@ impl<'a> Default for BatRenderer<'a> {
 
 impl<'a> std::fmt::Debug for BatRenderer<'a> {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-    f.debug_struct("BatRenderer")
-      .field("style_components", &self.style_components)
-      .field("assets", &self.assets)
-      .field("config", &self.config)
-      .finish()
+    f.debug_struct("BatRenderer").field("assets", &self.assets).field("config", &self.config).finish()
   }
 }
 // static BAT_RENDERER: Lazy<BatRenderer<'static>> = Lazy::new(|| BatRenderer::new());
@@ -80,14 +112,14 @@ impl<'a> BatRenderer<'a> {
     ]);
     let config = Config { colored_output: true, language: Some("markdown"), style_components, ..Default::default() };
     let assets = HighlightingAssets::from_binary();
-    let controller = Controller::new(&config, &assets);
-    BatRenderer { style_components, config, assets, controller }
+    BatRenderer { config, assets }
   }
 
-  fn render_message_bat(&mut self, content: &str) -> String {
+  fn render_message_bat(&self, content: &str) -> String {
+    let controller = Controller::new(&self.config, &self.assets);
     let mut buffer = String::new();
     let input = Input::from_bytes(content.as_bytes());
-    self.controller.run(vec![input.into()], Some(&mut buffer)).unwrap();
+    controller.run(vec![input.into()], Some(&mut buffer)).unwrap();
     buffer
   }
 }

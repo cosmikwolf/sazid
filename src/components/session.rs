@@ -127,6 +127,7 @@ impl Component for Session<'static> {
       Action::AddMessage(chat_message) => {
         //trace_dbg!(level: tracing::Level::INFO, "adding message to session");
         self.data.add_message(chat_message);
+        self.view.post_process_new_messages(&mut self.data);
         for function_call in self.data.get_functions_that_need_calling().drain(..) {
           let debug_text = format!("calling function: {:?}", function_call);
           trace_dbg!(level: tracing::Level::INFO, debug_text);
@@ -224,7 +225,7 @@ impl Component for Session<'static> {
     //let mut text = String::with_capacity(inner[1].width as usize * inner[1].height as usize + 1);
 
     self.vertical_viewport_height = inner[1].height as usize - 1;
-    self.data.set_window_width(inner[1].width as usize);
+    self.view.set_window_width(inner[1].width as usize, &mut self.data.messages);
     // let text = self.data.get_display_text(self.vertical_scroll.saturating_sub(1), self.vertical_viewport_height);
     self.vertical_content_height = self.data.messages.iter().map(|m| m.rendered.wrapped_lines.len()).sum();
     self.vertical_scroll_state = self.vertical_scroll_state.content_length(self.data.rendered_text.split('\n').count());
@@ -273,10 +274,6 @@ fn _create_empty_lines(n: usize) -> String {
     s.push('\n');
   }
   s
-}
-
-fn calculate_wrapped_lines(text: &str, width: usize) -> usize {
-  bwrap::wrap!(text, width).chars().filter(|c| *c == '\n').count()
 }
 
 impl Session<'static> {
@@ -929,63 +926,4 @@ mod tests {
     insta::assert_yaml_snapshot!(&session.data);
     insta::assert_yaml_snapshot!(&session.data.rendered_text);
   }
-
-  #[test]
-  fn test_zero_width() {
-    assert_eq!(calculate_wrapped_lines("test", 0), 0);
-  }
-
-  #[test]
-  fn test_word_longer_than_width() {
-    assert_eq!(calculate_wrapped_lines("hello", 3), 1); // "hello" is longer than width 3
-  }
-
-  #[test]
-  fn test_single_word() {
-    assert_eq!(calculate_wrapped_lines("word", 5), 1); // Single word should be a single line
-  }
-
-  #[test]
-  fn test_multiple_words() {
-    let text = "this is a test";
-    assert_eq!(calculate_wrapped_lines(text, 7), 2); // "this is\na test"
-  }
-
-  #[test]
-  fn test_exact_fit() {
-    assert_eq!(calculate_wrapped_lines("1234", 4), 1); // "1234" fits exactly in width 4
-  }
-
-  #[test]
-  fn test_empty_string() {
-    assert_eq!(calculate_wrapped_lines("", 10), 0); // Empty string should result in 0 lines
-  }
-
-  #[test]
-  fn test_space_handling() {
-    let text = "word1 word2";
-    assert_eq!(calculate_wrapped_lines(text, 6), 2); // "word1\nword2"
-  }
-
-  #[test]
-  fn test_multiple_lines() {
-    let text = "one two three four";
-    assert_eq!(calculate_wrapped_lines(text, 8), 3); // "one two\nthree\nfour"
-  }
-
-  #[test]
-  fn test_long_text_wrapping() {
-    let text = "Rust is a multi-paradigm, general-purpose programming language designed for performance and safety, especially safe concurrency.";
-    let width = 20;
-    // The expected line count is calculated manually by counting how the text
-    // would wrap at a width of 20 characters.
-    let expected_line_count = 7;
-    assert_eq!(calculate_wrapped_lines(text, width), expected_line_count);
-  }
-  // write a test for Session::add_chunked_chat_completion_request_messages
-  // write a test for Session::construct_request
-  // write a test for Session::submit_chat_completion_request
-  // write a test for Session::request_chat_completion
-  // write a test for Session::response_handler
-  // write a test for Session::execute_function_call
 }

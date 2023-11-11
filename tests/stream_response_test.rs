@@ -5,7 +5,7 @@ mod tests {
   use async_openai::types::Role;
   use ntest::timeout;
   use sazid::action::Action;
-  use sazid::app::types::{ChatMessage, ChatResponseSingleMessage, MessageContainer};
+  use sazid::app::messages::{ChatMessage, ChatResponseSingleMessage, MessageContainer};
   use sazid::components::session::*;
   use tokio::sync::mpsc;
 

@@ -67,7 +67,7 @@ pub fn cargo_check() -> Result<Option<String>, ModelFunctionError> {
     Ok(output) => {
       if output.status.success() {
         let cargo_check_json: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
-        let mut output_str = cargo_check_json
+        let output_str = cargo_check_json
           .as_array()
           .unwrap()
           .iter()
