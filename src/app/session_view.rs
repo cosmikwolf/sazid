@@ -33,10 +33,11 @@ pub struct SessionView {
 
 impl SessionView {
   pub fn set_window_width(&mut self, width: usize, messages: &mut [MessageContainer]) {
-    if self.window_width != width {
-      trace_dbg!("setting window width to {}", width);
+    let new_value = width - 20;
+    if self.window_width != new_value {
+      trace_dbg!("setting window width to {}", new_value);
 
-      self.window_width = width - 6;
+      self.window_width = new_value;
       self.renderer = BatRenderer::new(self.window_width);
       messages.iter_mut().for_each(|m| {
         m.finished = false;
@@ -50,34 +51,45 @@ impl SessionView {
   //   //self.rendered.wrapped_lines = stylized_text.split('\n').map(|s| s.to_string()).collect()
   // }
   pub fn post_process_new_messages(&mut self, session_data: &mut SessionData) {
+    let dividing_newlines_count = 2;
     session_data.messages.iter_mut().for_each(|message| {
       let rendered_text_message_start_index = self.rendered_text.len_chars() - message.rendered.stylized.len_chars();
-      trace_dbg!("post_process_new_messages: processing message {:#?}", message.message);
-      trace_dbg!("original_stylized_char_count  {:#?}", rendered_text_message_start_index);
+      // trace_dbg!("original_stylized_char_count  {:#?}", rendered_text_message_start_index);
       if !message.finished {
-        trace_dbg!("post_process_new_messages: processing message {:#?}", message.rendered.stylized);
+        // trace_dbg!("post_process_new_messages: processing message {:#?}", message.rendered.stylized);
         message.rendered = RenderedChatMessage::from(&message.message);
         //trace_dbg!("{:#?}", message.rendered);
         message.rendered.stylized = Rope::from_str(
-          //self.renderer.render_message_bat(bwrap::wrap_maybrk!(&message.rendered.content, self.window_width).as_str()),
-          self.renderer.render_message_bat(&message.rendered.content).as_str(),
+          self
+            .renderer
+            .render_message_bat(bwrap::wrap_maybrk!(&message.rendered.content, self.window_width).as_str())
+            .as_str(),
+          //bwrap::wrap_maybrk!(&message.rendered.content, self.window_width, "=", "+").as_str(),
+          //self.renderer.render_message_bat(&message.rendered.content).as_str(),
         );
         //  self.renderer.render_message_bat(&message.rendered.content);
         //self.wrap_stylized_text(message);
         if message.rendered.finish_reason.is_some() {
           message.finished = true;
-          message.rendered.stylized.append(Rope::from_str("\n\n"));
-          trace_dbg!("post_process_new_messages: finished message {:#?}", message.rendered.stylized);
+          message.rendered.stylized.append(Rope::from_str("\n".to_string().repeat(dividing_newlines_count).as_str()));
+          // trace_dbg!("post_process_new_messages: finished message {:#?}", message.rendered.stylized);
         }
-        trace_dbg!(
-          "appending stylized chars: {:#?}   rendered_length: {:#?}",
-          message.rendered.stylized.len_chars(),
-          self.rendered_text.len_chars()
-        );
+        // trace_dbg!(
+        //   "appending stylized chars: {:#?}   rendered_length: {:#?}",
+        //   message.rendered.stylized.len_chars(),
+        //   self.rendered_text.len_chars()
+        // );
         // Insert the replacement text
+        trace_dbg!(
+          "pre-remove len: {}   removing: {}",
+          self.rendered_text.len_lines(),
+          rendered_text_message_start_index
+        );
         self.rendered_text.remove(rendered_text_message_start_index..);
+        trace_dbg!("post-remove len: {}   ", self.rendered_text.len_lines());
         self.rendered_text.append(message.rendered.stylized.clone());
-        trace_dbg!("appended stylized to rendered_text: {:#?}", self.rendered_text.len_chars());
+        trace_dbg!("post-append len: {}   ", self.rendered_text.len_lines());
+        // trace_dbg!("appended stylized to rendered_text: {:#?}", self.rendered_text.len_chars());
       }
 
       // message.rendered.stylized.chars().for_each(|char| {
@@ -152,7 +164,8 @@ impl<'a> BatRenderer<'a> {
       colored_output: true,
       language: Some("markdown"),
       style_components,
-      tab_width: 4,
+      show_nonprintable: false,
+      tab_width: 0,
       wrapping_mode: bat::WrappingMode::NoWrapping(true),
       use_italic_text: true,
       term_width,

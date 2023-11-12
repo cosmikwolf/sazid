@@ -4,10 +4,11 @@ use async_openai::types::{
   FunctionCall, Role,
 };
 
-use crossterm::event::{KeyCode, KeyEvent};
+use crossterm::event::{KeyCode, KeyEvent, MouseEvent, MouseEventKind};
 use futures::StreamExt;
 use ratatui::layout::Rect;
 use ratatui::{prelude::*, widgets::block::*, widgets::*};
+use ropey::Rope;
 use serde_derive::{Deserialize, Serialize};
 use serde_json::to_string_pretty;
 use std::path::{Path, PathBuf};
@@ -165,41 +166,20 @@ Do not try to infer a path to a file, if you have not been provided a path with 
     Ok(r)
   }
 
+  fn handle_mouse_events(&mut self, mouse_event: MouseEvent) -> Result<Option<Action>, SazidError> {
+    match mouse_event {
+      MouseEvent { kind: MouseEventKind::ScrollUp, .. } => self.scroll_up(),
+      MouseEvent { kind: MouseEventKind::ScrollDown, .. } => self.scroll_down(),
+      _ => Ok(None),
+    }
+  }
+
   fn handle_key_events(&mut self, key: KeyEvent) -> Result<Option<Action>, SazidError> {
     self.last_events.push(key);
     match self.mode {
       Mode::Normal => match key.code {
-        KeyCode::Char('j') => {
-          let end_line = self.vertical_content_height.saturating_sub(self.vertical_viewport_height) + 1;
-          self.vertical_scroll = self.vertical_scroll.saturating_add(1).clamp(0, end_line);
-          self.vertical_scroll_state = self.vertical_scroll_state.position(self.vertical_scroll);
-          if self.vertical_scroll_state == self.vertical_scroll_state.position(end_line) {
-            if !self.scroll_sticky_end {
-              trace_dbg!("end line reached {}\nsetting scroll_sticky_end", end_line);
-            }
-            self.scroll_sticky_end = true;
-          }
-          trace_dbg!(
-            "previous scroll {} content height: {} vertical_viewport_height: {}",
-            self.vertical_scroll,
-            self.vertical_content_height,
-            self.vertical_viewport_height
-          );
-          //self.vertical_scroll_state.prev();
-          Ok(Some(Action::Update))
-        },
-        KeyCode::Char('k') => {
-          self.vertical_scroll = self.vertical_scroll.saturating_sub(1);
-          self.scroll_sticky_end = false;
-          trace_dbg!(
-            "next scroll {} content height: {} vertical_viewport_height: {}",
-            self.vertical_scroll,
-            self.vertical_content_height,
-            self.vertical_viewport_height
-          );
-          //self.vertical_scroll_state.next();
-          Ok(Some(Action::Update))
-        },
+        KeyCode::Char('j') => self.scroll_down(),
+        KeyCode::Char('k') => self.scroll_up(),
         _ => Ok(None),
       },
       _ => Ok(None),
@@ -226,19 +206,43 @@ Do not try to infer a path to a file, if you have not been provided a path with 
 
     //let mut text = String::with_capacity(inner[1].width as usize * inner[1].height as usize + 1);
 
-    self.vertical_viewport_height = inner[1].height as usize - 1;
+    self.vertical_viewport_height = inner[1].height as usize;
     self.view.set_window_width(inner[1].width as usize, &mut self.data.messages);
     // let text = self.data.get_display_text(self.vertical_scroll.saturating_sub(1), self.vertical_viewport_height);
     self.vertical_content_height = self.view.rendered_text.len_lines();
-    self.vertical_scroll_state = self.vertical_scroll_state.content_length(self.view.rendered_text.len_lines());
-    self.vertical_scroll_state = self.vertical_scroll_state.viewport_content_length(self.vertical_viewport_height);
+    let start_line = self.vertical_scroll;
+    let end_line = (self.vertical_viewport_height + 2 * self.vertical_scroll).min(self.vertical_content_height);
+    let start_idx = self.view.rendered_text.line_to_char(start_line);
+    let end_idx = self.view.rendered_text.line_to_char(end_line);
+    // trace_dbg!(
+    //   "\nstart_idx: {}     end_idx: {}    vertical_scroll {}   viewport_height {} content_height {}",
+    //   start_idx,
+    //   end_idx,
+    //   self.vertical_scroll,
+    //   self.vertical_viewport_height,
+    //   self.vertical_content_height,
+    // );
+    let str = "no string found";
+    let r = Rope::from_str(str.clone());
+    //let text = match self.view.rendered_text.get_slice(start_idx..end_idx) {
+    let text = match self.view.rendered_text.get_slice(0..) {
+      Some(s) => s,
+      None => {
+        trace_dbg!("no text found start_idx: {}     end_idx: {}", start_idx, end_idx,);
+        r.line(0)
+      },
+    };
+
+    self.vertical_scroll_state = self.vertical_scroll_state.viewport_content_length(text.len_lines());
+    self.vertical_scroll_state = self.vertical_scroll_state.content_length(self.vertical_content_height);
 
     if self.scroll_sticky_end {
+      //self.vertical_scroll_state.last();
       self.vertical_scroll = self.vertical_content_height.saturating_sub(self.vertical_viewport_height);
       self.vertical_scroll_state = self.vertical_scroll_state.position(self.vertical_scroll);
     }
 
-    let paragraph = Paragraph::new(self.view.rendered_text.to_string().into_text().unwrap())
+    let paragraph = Paragraph::new(text.to_string().into_text().unwrap())
       .block(block)
       .wrap(Wrap { trim: true })
       .scroll((self.vertical_scroll as u16, 0));
@@ -267,6 +271,38 @@ impl Session<'static> {
     Self::default()
   }
 
+  pub fn scroll_up(&mut self) -> Result<Option<Action>, SazidError> {
+    self.vertical_scroll = self.vertical_scroll.saturating_sub(1);
+    self.scroll_sticky_end = false;
+    trace_dbg!(
+      "next scroll {} content height: {} vertical_viewport_height: {}",
+      self.vertical_scroll,
+      self.vertical_content_height,
+      self.vertical_viewport_height
+    );
+    //self.vertical_scroll_state.next();
+    Ok(Some(Action::Update))
+  }
+  pub fn scroll_down(&mut self) -> Result<Option<Action>, SazidError> {
+    let end_line = self.vertical_content_height.saturating_sub(self.vertical_viewport_height) + 1;
+    self.vertical_scroll = self.vertical_scroll.saturating_add(1).clamp(0, end_line);
+    self.vertical_scroll_state = self.vertical_scroll_state.position(self.vertical_scroll);
+    if self.vertical_scroll_state == self.vertical_scroll_state.position(end_line) {
+      if !self.scroll_sticky_end {
+        trace_dbg!("end line reached {}\nsetting scroll_sticky_end", end_line);
+      }
+      self.scroll_sticky_end = true;
+    }
+    trace_dbg!(
+      "previous scroll {} content height: {} vertical_viewport_height: {}",
+      self.vertical_scroll,
+      self.vertical_content_height,
+      self.vertical_viewport_height
+    );
+
+    //self.vertical_scroll_state.prev();
+    Ok(Some(Action::Update))
+  }
   pub fn add_chunked_chat_completion_request_messages(
     &mut self,
     content: &str,
