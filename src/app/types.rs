@@ -11,13 +11,11 @@ use super::messages::RenderedChatMessage;
 impl From<&RenderedChatMessage> for String {
   fn from(message: &RenderedChatMessage) -> Self {
     let mut string = String::new();
-    if let Some(content) = &message.content {
-      match message.role {
-        Some(Role::User) => string.push_str(&format!("You:\n{}", content)),
-        Some(Role::Assistant) => string.push_str(&format!("Bot:\n{}", content).to_string()),
-        Some(Role::Function) => {}, // string.push_str(format!("{}:\n{}", message.name.unwrap_or("".to_string()), content)),
-        _ => string.push_str(&content.to_string()),
-      }
+    match message.role {
+      Some(Role::User) => string.push_str(&format!("You:\n{}", &message.content)),
+      Some(Role::Assistant) => string.push_str(&format!("Bot:\n{}", &message.content).to_string()),
+      Some(Role::Function) => {}, // string.push_str(format!("{}:\n{}", message.name.unwrap_or("".to_string()), &message.content)),
+      _ => string.push_str(&message.content.to_string()),
     }
     if let Some(function_call) = &message.function_call {
       string.push_str(&format!("function call: {} {}", function_call.name.as_str(), function_call.arguments.as_str()));

@@ -128,7 +128,7 @@ impl Component for Home {
       Block::default()
         .title(title_text)
         .title_alignment(Alignment::Center)
-        .borders(Borders::TOP)
+        .borders(Borders::NONE)
         .border_style(match self.mode {
           Mode::Processing => Style::default().fg(Color::Yellow),
           _ => Style::default(),

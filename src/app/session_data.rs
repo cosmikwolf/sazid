@@ -8,13 +8,12 @@ use super::{
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct SessionData {
   pub messages: Vec<MessageContainer>,
-  pub rendered_text: String,
   pub window_width: usize,
 }
 
 impl Default for SessionData {
   fn default() -> Self {
-    SessionData { messages: vec![], rendered_text: String::new(), window_width: 80 }
+    SessionData { messages: vec![], window_width: 80 }
   }
 }
 

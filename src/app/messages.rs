@@ -1,6 +1,7 @@
+use ropey::Rope;
 use serde_derive::{Deserialize, Serialize};
 
-use super::{helpers::concatenate_stream_response_messages, session_view::render_markdown_to_string};
+use super::helpers::concatenate_stream_response_messages;
 use async_openai::{
   self,
   types::{
@@ -19,42 +20,32 @@ pub struct MessageContainer {
 }
 
 impl MessageContainer {
-  pub fn get_token_count(&self) -> Option<usize> {
-    if let Some(content) = &self.rendered.stylized {
-      let bpe = tiktoken_rs::cl100k_base().unwrap();
-      Some(bpe.encode_with_special_tokens(content.as_str()).len())
-    } else {
-      None
-    }
+  pub fn get_token_count(&self) -> usize {
+    let bpe = tiktoken_rs::cl100k_base().unwrap();
+    bpe.encode_with_special_tokens(self.rendered.stylized.to_string().as_str()).len()
   }
 
-  pub fn render_message_pulldown_cmark(&mut self, format_responses_only: bool) {
-    // self.rendered.stylized = Some(String::from(&self.rendered))
-    if format_responses_only {
-      if matches!(self.message, ChatMessage::ChatCompletionResponseMessage(_)) {
-        self.rendered.stylized = Some(render_markdown_to_string(String::from(&self.rendered)))
-      } else {
-        self.rendered.stylized = Some(String::from(&self.rendered))
-      }
-    } else {
-      self.rendered.stylized = Some(render_markdown_to_string(String::from(&self.rendered)))
-    }
-  }
-
-  pub fn wrap_stylized_text(&mut self, width: usize) {
-    if let Some(stylized_text) = &self.rendered.stylized {
-      self.rendered.wrapped_lines = bwrap::wrap!(stylized_text, width).split('\n').map(|s| s.to_string()).collect();
-      // self.rendered.wrapped_lines = stylized_text.split('\n').map(|s| s.to_string()).collect()
-    }
-  }
+  // pub fn render_message_pulldown_cmark(&mut self, format_responses_only: bool) {
+  //   // self.rendered.stylized = Some(String::from(&self.rendered))
+  //   if format_responses_only {
+  //     if matches!(self.message, ChatMessage::ChatCompletionResponseMessage(_)) {
+  //       self.rendered.stylized = Some(render_markdown_to_string(String::from(&self.rendered)))
+  //     } else {
+  //       self.rendered.stylized = Some(String::from(&self.rendered))
+  //     }
+  //   } else {
+  //     self.rendered.stylized = Some(render_markdown_to_string(String::from(&self.rendered)))
+  //   }
+  // }
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, Default, PartialEq)]
 pub struct RenderedChatMessage {
   pub role: Option<Role>,
-  pub content: Option<String>,
-  pub stylized: Option<String>,
-  pub wrapped_lines: Vec<String>,
+  pub content: String,
+  pub wrapped_content: String,
+  #[serde(skip)]
+  pub stylized: Rope,
   pub function_call: Option<RenderedFunctionCall>,
   pub name: Option<String>,
   pub finish_reason: Option<FinishReason>,
@@ -193,46 +184,46 @@ impl From<&ChatMessage> for RenderedChatMessage {
       ChatMessage::SazidSystemMessage(content) => RenderedChatMessage {
         name: None,
         role: None,
-        content: Some(content.clone()),
-        wrapped_lines: vec![],
-        stylized: None,
+        content: content.clone(),
+        wrapped_content: String::new(),
+        stylized: Rope::new(),
         function_call: None,
-        finish_reason: None,
+        finish_reason: Some(FinishReason::Stop),
       },
       ChatMessage::FunctionResult(result) => RenderedChatMessage {
         name: Some(result.name.clone()),
         role: Some(Role::Function),
-        content: Some(result.response.clone()),
-        wrapped_lines: vec![],
-        stylized: None,
+        content: result.response.clone(),
+        wrapped_content: String::new(),
+        stylized: Rope::new(),
         function_call: None,
-        finish_reason: None,
+        finish_reason: Some(FinishReason::Stop),
       },
       ChatMessage::PromptMessage(request) => RenderedChatMessage {
         name: None,
         role: Some(request.role),
-        content: Some(format!("# Prompt\n\n*{}*", request.content.clone().unwrap_or("no prompt".to_string()))),
-        wrapped_lines: vec![],
-        stylized: None,
+        content: format!("## Prompt\n\n{}", request.content.clone().unwrap_or("no prompt".to_string())),
+        wrapped_content: String::new(),
+        stylized: Rope::new(),
         function_call: None,
-        finish_reason: None,
+        finish_reason: Some(FinishReason::Stop),
       },
       ChatMessage::ChatCompletionRequestMessage(request) => RenderedChatMessage {
         name: None,
         role: Some(request.role),
-        content: request.content.clone(),
-        wrapped_lines: vec![],
-        stylized: None,
+        content: request.content.clone().unwrap_or_default(),
+        wrapped_content: String::new(),
+        stylized: Rope::new(),
         function_call: request.function_call.clone().map(|function_call| function_call.into()),
-        finish_reason: None,
+        finish_reason: Some(FinishReason::Stop),
       },
       ChatMessage::ChatCompletionResponseMessage(ChatResponseSingleMessage::Response(response)) => {
         RenderedChatMessage {
           name: None,
           role: Some(Role::Assistant),
-          content: response.message.content.clone(),
-          wrapped_lines: vec![],
-          stylized: None,
+          content: response.message.content.clone().unwrap_or_default(),
+          wrapped_content: String::new(),
+          stylized: Rope::new(),
           function_call: response.message.function_call.clone().map(|function_call| function_call.into()),
           finish_reason: response.finish_reason,
         }
@@ -245,9 +236,9 @@ impl From<&ChatMessage> for RenderedChatMessage {
         RenderedChatMessage {
           name: None,
           role: Some(Role::Assistant),
-          content: message.delta.content,
-          wrapped_lines: vec![],
-          stylized: None,
+          content: message.delta.content.unwrap_or_default(),
+          wrapped_content: String::new(),
+          stylized: Rope::new(),
           function_call: message.delta.function_call.map(|function_call| function_call.into()),
           finish_reason: message.finish_reason,
         }

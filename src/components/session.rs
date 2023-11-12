@@ -97,18 +97,20 @@ impl<'a> Default for Session<'a> {
 }
 
 impl Component for Session<'static> {
-  fn init(&mut self, _area: Rect) -> Result<(), SazidError> {
+  fn init(&mut self, area: Rect) -> Result<(), SazidError> {
     //let model_preference: Vec<Model> = vec![GPT4.clone(), GPT3_TURBO.clone(), WIZARDLM.clone()];
     //Session::select_model(model_preference, create_openai_client(self.config.openai_config.clone()));
     trace_dbg!("init session");
     self.config.prompt =
-        "act as a programming architecture and implementation expert, that specializes in the Rust.
-        Use the functions available to assist with the user inquiry.
-        Provide your response as markdown formatted text.
-        Make sure to properly entabulate any code blocks
-        Do not try and execute arbitrary python code.
-        Do not try to infer a path to a file, if you have not been provided a path with the root ./, use the file_search function to verify the file path before you execute a function call.".to_string();
+"act as a programming architecture and implementation expert, that specializes in the Rust.
+Use the functions available to assist with the user inquiry.
+Provide your response as markdown formatted text.
+Make sure to properly entabulate any code blocks
+Do not try and execute arbitrary python code.
+Do not try to infer a path to a file, if you have not been provided a path with the root ./, use the file_search function to verify the file path before you execute a function call.".to_string();
+    self.view.set_window_width(area.width as usize, &mut self.data.messages);
     self.data.add_message(ChatMessage::PromptMessage(self.config.prompt_message()));
+    self.view.post_process_new_messages(&mut self.data);
     self.config.available_functions = all_functions();
     Ok(())
   }
@@ -227,42 +229,26 @@ impl Component for Session<'static> {
     self.vertical_viewport_height = inner[1].height as usize - 1;
     self.view.set_window_width(inner[1].width as usize, &mut self.data.messages);
     // let text = self.data.get_display_text(self.vertical_scroll.saturating_sub(1), self.vertical_viewport_height);
-    self.vertical_content_height = self.data.messages.iter().map(|m| m.rendered.wrapped_lines.len()).sum();
-    self.vertical_scroll_state = self.vertical_scroll_state.content_length(self.data.rendered_text.split('\n').count());
+    self.vertical_content_height = self.view.rendered_text.len_lines();
+    self.vertical_scroll_state = self.vertical_scroll_state.content_length(self.view.rendered_text.len_lines());
     self.vertical_scroll_state = self.vertical_scroll_state.viewport_content_length(self.vertical_viewport_height);
-    //self.vertical_content_height = calculate_wrapped_lines(&text, inner[1].width as usize);
-    // pad the text with empty lines so that the text appears to come from the bottom up
-    // text =
-    //   create_empty_lines((inner[1].height as usize).saturating_sub(self.vertical_content_height).saturating_sub(1))
-    //     + &text;
 
-    if use_text_area {
-      self.text_area.move_cursor(CursorMove::End);
-      self.text_area.move_cursor(CursorMove::Bottom);
-      let text = &self.data.rendered_text;
-      bwrap::wrap!(text, inner[1].width as usize).lines().skip(self.text_area.lines().len()).for_each(|line| {
-        self.text_area.insert_str(line);
-        self.text_area.insert_newline();
-      });
-      self.text_area.set_block(block);
-      f.render_widget(self.text_area.widget(), inner[1]);
-    } else {
-      if self.scroll_sticky_end {
-        self.vertical_scroll = self.vertical_content_height.saturating_sub(self.vertical_viewport_height);
-        self.vertical_scroll_state = self.vertical_scroll_state.position(self.vertical_scroll);
-      }
-
-      let paragraph = Paragraph::new(self.data.rendered_text.as_str().into_text().unwrap())
-        .block(block)
-        .wrap(Wrap { trim: true })
-        .scroll((self.vertical_scroll as u16, 0));
-      let scrollbar = Scrollbar::default()
-        .orientation(ScrollbarOrientation::VerticalRight)
-        .begin_symbol(Some("↑"))
-        .end_symbol(Some("↓"));
-      f.render_widget(paragraph, inner[1]);
-      f.render_stateful_widget(scrollbar, inner[1], &mut self.vertical_scroll_state);
+    if self.scroll_sticky_end {
+      self.vertical_scroll = self.vertical_content_height.saturating_sub(self.vertical_viewport_height);
+      self.vertical_scroll_state = self.vertical_scroll_state.position(self.vertical_scroll);
     }
+
+    let paragraph = Paragraph::new(self.view.rendered_text.to_string().into_text().unwrap())
+      .block(block)
+      .wrap(Wrap { trim: true })
+      .scroll((self.vertical_scroll as u16, 0));
+    let scrollbar = Scrollbar::default()
+      .orientation(ScrollbarOrientation::VerticalRight)
+      .thumb_symbol("󱁨")
+      .begin_symbol(Some("󰶼"))
+      .end_symbol(Some("󰶹"));
+    f.render_widget(paragraph, inner[1]);
+    f.render_stateful_widget(scrollbar, inner[2], &mut self.vertical_scroll_state);
     //self.render = false;
     Ok(())
   }
@@ -320,7 +306,7 @@ impl Session<'static> {
         .messages
         .iter()
         .flat_map(|m| {
-          token_count += m.get_token_count().unwrap_or(0);
+          token_count += m.get_token_count();
           <Option<ChatCompletionRequestMessage>>::from(m.message.as_ref())
         })
         .collect::<Vec<ChatCompletionRequestMessage>>(),
@@ -924,6 +910,6 @@ mod tests {
       panic!("Expected ChatMessage::ChatCompletionRequestMessage(ChatResponseSingleMessage::StreamResponse(msg))");
     }
     insta::assert_yaml_snapshot!(&session.data);
-    insta::assert_yaml_snapshot!(&session.data.rendered_text);
+    insta::assert_yaml_snapshot!(&session.view.rendered_text.to_string());
   }
 }

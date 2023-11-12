@@ -15,102 +15,150 @@ use std::path::Path;
 use std::sync::OnceLock;
 use syntect::parsing::SyntaxSet;
 
+use crate::trace_dbg;
+
 use super::{
-  messages::{ChatMessage, MessageContainer, RenderedChatMessage},
+  messages::{MessageContainer, RenderedChatMessage},
   session_data::SessionData,
 };
-
+use bwrap::{EasyWrapper, WrapStyle};
+use ropey::Rope;
 // static TEST_READ_LIMIT: u64 = 5_242_880;
 #[derive(Default, Debug)]
 pub struct SessionView {
   pub renderer: BatRenderer<'static>,
   pub window_width: usize,
+  pub rendered_text: Rope,
 }
 
 impl SessionView {
-  pub fn set_window_width(&mut self, width: usize, messages: &mut Vec<MessageContainer>) {
+  pub fn set_window_width(&mut self, width: usize, messages: &mut [MessageContainer]) {
     if self.window_width != width {
-      self.window_width = width;
-      messages.iter_mut().for_each(|m| m.wrap_stylized_text(width));
+      trace_dbg!("setting window width to {}", width);
+
+      self.window_width = width - 6;
+      self.renderer = BatRenderer::new(self.window_width);
+      messages.iter_mut().for_each(|m| {
+        m.finished = false;
+        //m.wrap_stylized_text(width)
+      });
     }
   }
-  pub fn post_process_new_messages(&self, session_data: &mut SessionData) {
-    session_data.rendered_text = session_data
-      .messages
-      .iter_mut()
-      .flat_map(|message| {
-        if !message.finished {
-          // trace_dbg!("post_process_new_messages: processing message {:#?}", message.message);
-          message.rendered = RenderedChatMessage::from(&ChatMessage::from(message.clone()));
-          // message.render_message_pulldown_cmark(true);
-          message.rendered.stylized =
-            Some(self.renderer.render_message_bat(message.rendered.content.clone().unwrap_or_default().as_str()));
-          message.wrap_stylized_text(self.window_width);
-          if message.rendered.finish_reason.is_some() {
-            message.finished = true;
-            // trace_dbg!("post_process_new_messages: finished message {:#?}", message);
-          }
+  // pub fn wrap_stylized_text(&self, message: &mut MessageContainer) {
+  //   let mut wrapper = EasyWrapper::new(&message.rendered.stylized, self.window_width).expect("bwrap init");
+  //   let w = wrapper.wrap_use_style(WrapStyle::MayBrk(None, None)).expect("bwrap wrap");
+  //   //self.rendered.wrapped_lines = stylized_text.split('\n').map(|s| s.to_string()).collect()
+  // }
+  pub fn post_process_new_messages(&mut self, session_data: &mut SessionData) {
+    session_data.messages.iter_mut().for_each(|message| {
+      let rendered_text_message_start_index = self.rendered_text.len_chars() - message.rendered.stylized.len_chars();
+      trace_dbg!("post_process_new_messages: processing message {:#?}", message.message);
+      trace_dbg!("original_stylized_char_count  {:#?}", rendered_text_message_start_index);
+      if !message.finished {
+        trace_dbg!("post_process_new_messages: processing message {:#?}", message.rendered.stylized);
+        message.rendered = RenderedChatMessage::from(&message.message);
+        //trace_dbg!("{:#?}", message.rendered);
+        message.rendered.stylized = Rope::from_str(
+          //self.renderer.render_message_bat(bwrap::wrap_maybrk!(&message.rendered.content, self.window_width).as_str()),
+          self.renderer.render_message_bat(&message.rendered.content).as_str(),
+        );
+        //  self.renderer.render_message_bat(&message.rendered.content);
+        //self.wrap_stylized_text(message);
+        if message.rendered.finish_reason.is_some() {
+          message.finished = true;
+          message.rendered.stylized.append(Rope::from_str("\n\n"));
+          trace_dbg!("post_process_new_messages: finished message {:#?}", message.rendered.stylized);
         }
-        message.rendered.wrapped_lines.iter().map(|wl| wl.as_str()).collect::<Vec<&str>>()
-      })
-      .collect::<Vec<&str>>()
-      .join("\n");
+        trace_dbg!(
+          "appending stylized chars: {:#?}   rendered_length: {:#?}",
+          message.rendered.stylized.len_chars(),
+          self.rendered_text.len_chars()
+        );
+        // Insert the replacement text
+        self.rendered_text.remove(rendered_text_message_start_index..);
+        self.rendered_text.append(message.rendered.stylized.clone());
+        trace_dbg!("appended stylized to rendered_text: {:#?}", self.rendered_text.len_chars());
+      }
+
+      // message.rendered.stylized.chars().for_each(|char| {
+      //   char_count += 1;
+      //   if char_count > self.rendered_text.chars().count() {
+      //     self.rendered_text.push(char);
+      //   }
+      // })
+      //message.rendered.wrapped_lines.iter().map(|wl| wl.as_str()).collect::<Vec<&str>>()
+    });
   }
 }
-pub fn get_display_text(index: usize, count: usize, messages: Vec<MessageContainer>) -> Vec<String> {
-  messages.iter().map(|m| m.rendered.wrapped_lines.clone()).skip(index).take(count).flatten().collect::<Vec<String>>()
-}
+
+// pub fn update_rendered_chat_message(
+//   original: RenderedChatMessage,
+//   incoming: RenderedChatMessage,
+// ) -> RenderedChatMessage {
+//   let new_content = &incoming.content.unwrap_or_default()[original.content.unwrap_or_default().len()..];
+//
+//   let mut wrapper = EasyWrapper::new(&message.rendered.stylized, self.window_width).expect("bwrap init");
+//   let wrapped_content = wrapper.wrap_use_style(WrapStyle::MayBrk(None, None)).expect("bwrap wrap");
+//
+//   RenderedChatMessage {
+//     role: incoming.role,
+//     content: incoming.content,
+//     wrapped_content,
+//     stylized: (),
+//     function_call: (),
+//     name: incoming.name,
+//     finish_reason: (),
+//   }
+// }
+
+// pub fn get_display_text(index: usize, count: usize, messages: Vec<MessageContainer>) -> Vec<String> {
+//   let mut lines = vec!["".to_string(); index];
+//   messages.iter().map(|m| m.rendered.stylized.lines().skip(index).take(count).map(|l| lines.push(l.to_string())));
+//   let full_line_count = messages.iter().map(|m| m.rendered.stylized.matches('\n').count()).sum::<usize>();
+//   lines.append(&mut vec!["".to_string(); full_line_count - index - count]);
+//   lines
+// }
 pub struct BatRenderer<'a> {
   assets: HighlightingAssets,
   config: Config<'a>,
+  //controller: Controller<'a>,
 }
 
 impl<'a> Default for BatRenderer<'a> {
   fn default() -> Self {
-    BatRenderer::new()
+    BatRenderer::new(80)
   }
 }
 
 impl<'a> std::fmt::Debug for BatRenderer<'a> {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-    f.debug_struct("BatRenderer").field("assets", &self.assets).field("config", &self.config).finish()
+    f.debug_struct("BatRenderer").finish()
   }
 }
-// static BAT_RENDERER: Lazy<BatRenderer<'static>> = Lazy::new(|| BatRenderer::new());
-// static HIGHIGHT_ASSETS: OnceCell<HighlightingAssets> = OnceCell::new(|| HighlightingAssets::from_binary());
-// static SYNTAX_SET: OnceLock<SyntaxSet> = OnceLock::new();
-//
-// fn syntax_set() -> &'static SyntaxSet {
-//   SYNTAX_SET.get_or_init(SyntaxSet::load_defaults_newlines)
-// }
-//
-// static BAT_RENDERER: OnceLock<BatRenderer> = OnceLock::new();
-//
-// fn bat_renderer() -> &'static BatRenderer<'static> {
-//   BAT_RENDERER.get_or_init(BatRenderer::new())
-// }
-//
-// static HIGHIGHT_ASSETS: <HighlightingAssets> = OnceLock::new();
-//
-// fn highlighting_assets() -> &'static HighlightingAssets {
-//   HIGHIGHT_ASSETS.get_or_init(HighlightingAssets::new(
-//     SerializedSyntaxSet::FromBinary(get_serialized_integrated_syntaxset()),
-//     get_integrated_themeset(),
-//   ))
-// }
 
 impl<'a> BatRenderer<'a> {
-  fn new() -> Self {
+  fn new(term_width: usize) -> Self {
     let style_components = StyleComponents::new(&[
-      StyleComponent::Header,
-      StyleComponent::Grid,
-      StyleComponent::LineNumbers,
-      StyleComponent::Changes,
-      StyleComponent::Rule,
-      StyleComponent::Snip,
-      StyleComponent::Plain,
+      //StyleComponent::Header,
+      //StyleComponent::Grid,
+      //StyleComponent::LineNumbers,
+      //StyleComponent::Changes,
+      //StyleComponent::Rule,
+      //StyleComponent::Default,
+      //StyleComponent::Snip,
+      //StyleComponent::Plain,
     ]);
-    let config = Config { colored_output: true, language: Some("markdown"), style_components, ..Default::default() };
+    let config: Config<'static> = Config {
+      colored_output: true,
+      language: Some("markdown"),
+      style_components,
+      tab_width: 4,
+      wrapping_mode: bat::WrappingMode::NoWrapping(true),
+      use_italic_text: true,
+      term_width,
+      true_color: true,
+      ..Default::default()
+    };
     let assets = HighlightingAssets::from_binary();
     BatRenderer { config, assets }
   }
