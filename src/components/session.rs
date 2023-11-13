@@ -60,6 +60,8 @@ pub struct Session<'a> {
   #[serde(skip)]
   pub horizontal_scroll: usize,
   #[serde(skip)]
+  pub scroll_max: usize,
+  #[serde(skip)]
   pub vertical_content_height: usize,
   #[serde(skip)]
   pub vertical_viewport_height: usize,
@@ -86,6 +88,7 @@ impl<'a> Default for Session<'a> {
       view: SessionView::default(),
       horizontal_scroll_state: ScrollbarState::default(),
       vertical_scroll: 0,
+      scroll_max: 0,
       horizontal_scroll: 0,
       vertical_content_height: 0,
       vertical_viewport_height: 0,
@@ -207,42 +210,21 @@ Do not try to infer a path to a file, if you have not been provided a path with 
     //let mut text = String::with_capacity(inner[1].width as usize * inner[1].height as usize + 1);
 
     self.vertical_viewport_height = inner[1].height as usize;
-    self.view.set_window_width(inner[1].width as usize, &mut self.data.messages);
-    // let text = self.data.get_display_text(self.vertical_scroll.saturating_sub(1), self.vertical_viewport_height);
     self.vertical_content_height = self.view.rendered_text.len_lines();
-    let start_line = self.vertical_scroll;
-    let end_line = (self.vertical_viewport_height + 2 * self.vertical_scroll).min(self.vertical_content_height);
-    let start_idx = self.view.rendered_text.line_to_char(start_line);
-    let end_idx = self.view.rendered_text.line_to_char(end_line);
-    // trace_dbg!(
-    //   "\nstart_idx: {}     end_idx: {}    vertical_scroll {}   viewport_height {} content_height {}",
-    //   start_idx,
-    //   end_idx,
-    //   self.vertical_scroll,
-    //   self.vertical_viewport_height,
-    //   self.vertical_content_height,
-    // );
-    let str = "no string found";
-    let r = Rope::from_str(str.clone());
-    //let text = match self.view.rendered_text.get_slice(start_idx..end_idx) {
-    let text = match self.view.rendered_text.get_slice(0..) {
-      Some(s) => s,
-      None => {
-        trace_dbg!("no text found start_idx: {}     end_idx: {}", start_idx, end_idx,);
-        r.line(0)
-      },
-    };
-
-    self.vertical_scroll_state = self.vertical_scroll_state.viewport_content_length(text.len_lines());
-    self.vertical_scroll_state = self.vertical_scroll_state.content_length(self.vertical_content_height);
+    self.vertical_scroll_state = self.vertical_scroll_state.content_length(self.vertical_viewport_height);
+    self.view.set_window_width(inner[1].width as usize, &mut self.data.messages);
+    self.scroll_max = self.view.rendered_text.len_lines().saturating_sub(self.vertical_viewport_height);
+    self.vertical_scroll_state = self.vertical_scroll_state.viewport_content_length(self.vertical_content_height);
 
     if self.scroll_sticky_end {
       //self.vertical_scroll_state.last();
-      self.vertical_scroll = self.vertical_content_height.saturating_sub(self.vertical_viewport_height);
+      self.vertical_scroll = self.scroll_max;
       self.vertical_scroll_state = self.vertical_scroll_state.position(self.vertical_scroll);
     }
 
-    let paragraph = Paragraph::new(text.to_string().into_text().unwrap())
+    let text =
+      self.view.get_stylized_rendered_slice(self.vertical_scroll, self.vertical_viewport_height, self.vertical_scroll);
+    let paragraph = Paragraph::new(text.into_text().unwrap())
       .block(block)
       .wrap(Wrap { trim: true })
       .scroll((self.vertical_scroll as u16, 0));
@@ -274,33 +256,35 @@ impl Session<'static> {
   pub fn scroll_up(&mut self) -> Result<Option<Action>, SazidError> {
     self.vertical_scroll = self.vertical_scroll.saturating_sub(1);
     self.scroll_sticky_end = false;
-    trace_dbg!(
-      "next scroll {} content height: {} vertical_viewport_height: {}",
-      self.vertical_scroll,
-      self.vertical_content_height,
-      self.vertical_viewport_height
-    );
-    //self.vertical_scroll_state.next();
+    // trace_dbg!(
+    //   "next scroll {} content height: {} vertical_viewport_height: {}",
+    //   self.vertical_scroll,
+    //   self.vertical_content_height,
+    //   self.vertical_viewport_height
+    // );
     Ok(Some(Action::Update))
   }
+
   pub fn scroll_down(&mut self) -> Result<Option<Action>, SazidError> {
-    let end_line = self.vertical_content_height.saturating_sub(self.vertical_viewport_height) + 1;
-    self.vertical_scroll = self.vertical_scroll.saturating_add(1).clamp(0, end_line);
+    self.vertical_scroll = self.vertical_scroll.saturating_add(1).min(self.scroll_max);
     self.vertical_scroll_state = self.vertical_scroll_state.position(self.vertical_scroll);
-    if self.vertical_scroll_state == self.vertical_scroll_state.position(end_line) {
+    if self.vertical_scroll_state == self.vertical_scroll_state.position(self.scroll_max) {
       if !self.scroll_sticky_end {
-        trace_dbg!("end line reached {}\nsetting scroll_sticky_end", end_line);
+        let mut debug_string = String::new();
+        for (idx, line) in self.view.rendered_text.lines().enumerate() {
+          debug_string.push_str(format!("{:02}\t", idx).as_str());
+          debug_string.push_str(line.to_string().as_str());
+        }
       }
       self.scroll_sticky_end = true;
     }
-    trace_dbg!(
-      "previous scroll {} content height: {} vertical_viewport_height: {}",
-      self.vertical_scroll,
-      self.vertical_content_height,
-      self.vertical_viewport_height
-    );
+    // trace_dbg!(
+    //   "previous scroll {} content height: {} vertical_viewport_height: {}",
+    //   self.vertical_scroll,
+    //   self.vertical_content_height,
+    //   self.vertical_viewport_height
+    // );
 
-    //self.vertical_scroll_state.prev();
     Ok(Some(Action::Update))
   }
   pub fn add_chunked_chat_completion_request_messages(

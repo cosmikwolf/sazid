@@ -21,19 +21,20 @@ use super::{
   messages::{MessageContainer, RenderedChatMessage},
   session_data::SessionData,
 };
-use bwrap::{EasyWrapper, WrapStyle};
 use ropey::Rope;
-// static TEST_READ_LIMIT: u64 = 5_242_880;
+
 #[derive(Default, Debug)]
 pub struct SessionView {
   pub renderer: BatRenderer<'static>,
   pub window_width: usize,
+  pub render_conditions: (usize, usize, usize, usize),
+  pub rendered_view: String,
   pub rendered_text: Rope,
 }
 
 impl SessionView {
   pub fn set_window_width(&mut self, width: usize, messages: &mut [MessageContainer]) {
-    let new_value = width - 20;
+    let new_value = width - 6;
     if self.window_width != new_value {
       trace_dbg!("setting window width to {}", new_value);
 
@@ -41,95 +42,40 @@ impl SessionView {
       self.renderer = BatRenderer::new(self.window_width);
       messages.iter_mut().for_each(|m| {
         m.finished = false;
-        //m.wrap_stylized_text(width)
       });
     }
   }
-  // pub fn wrap_stylized_text(&self, message: &mut MessageContainer) {
-  //   let mut wrapper = EasyWrapper::new(&message.rendered.stylized, self.window_width).expect("bwrap init");
-  //   let w = wrapper.wrap_use_style(WrapStyle::MayBrk(None, None)).expect("bwrap wrap");
-  //   //self.rendered.wrapped_lines = stylized_text.split('\n').map(|s| s.to_string()).collect()
-  // }
+  pub fn get_stylized_rendered_slice(&mut self, start_line: usize, line_count: usize, vertical_scroll: usize) -> &str {
+    if (start_line, line_count, vertical_scroll, self.rendered_text.len_lines()) != self.render_conditions {
+      self.render_conditions = (start_line, line_count, vertical_scroll, self.rendered_text.len_lines());
+      let text =
+        self.rendered_text.lines().skip(start_line).take(line_count).map(|c| c.to_string()).collect::<String>();
+      let wrapped_text = bwrap::wrap!(&text, self.window_width);
+      self.rendered_view =
+        "\n".repeat(vertical_scroll).to_string() + &self.renderer.render_message_bat(wrapped_text.as_str());
+    }
+    &self.rendered_view
+  }
+
   pub fn post_process_new_messages(&mut self, session_data: &mut SessionData) {
     let dividing_newlines_count = 2;
     session_data.messages.iter_mut().for_each(|message| {
       let rendered_text_message_start_index = self.rendered_text.len_chars() - message.rendered.stylized.len_chars();
-      // trace_dbg!("original_stylized_char_count  {:#?}", rendered_text_message_start_index);
       if !message.finished {
-        // trace_dbg!("post_process_new_messages: processing message {:#?}", message.rendered.stylized);
         message.rendered = RenderedChatMessage::from(&message.message);
-        //trace_dbg!("{:#?}", message.rendered);
-        message.rendered.stylized = Rope::from_str(
-          self
-            .renderer
-            .render_message_bat(bwrap::wrap_maybrk!(&message.rendered.content, self.window_width).as_str())
-            .as_str(),
-          //bwrap::wrap_maybrk!(&message.rendered.content, self.window_width, "=", "+").as_str(),
-          //self.renderer.render_message_bat(&message.rendered.content).as_str(),
-        );
-        //  self.renderer.render_message_bat(&message.rendered.content);
-        //self.wrap_stylized_text(message);
+        message.rendered.stylized =
+          Rope::from_str(bwrap::wrap!(&message.rendered.content, self.window_width - 3).as_str());
         if message.rendered.finish_reason.is_some() {
           message.finished = true;
           message.rendered.stylized.append(Rope::from_str("\n".to_string().repeat(dividing_newlines_count).as_str()));
-          // trace_dbg!("post_process_new_messages: finished message {:#?}", message.rendered.stylized);
         }
-        // trace_dbg!(
-        //   "appending stylized chars: {:#?}   rendered_length: {:#?}",
-        //   message.rendered.stylized.len_chars(),
-        //   self.rendered_text.len_chars()
-        // );
-        // Insert the replacement text
-        trace_dbg!(
-          "pre-remove len: {}   removing: {}",
-          self.rendered_text.len_lines(),
-          rendered_text_message_start_index
-        );
         self.rendered_text.remove(rendered_text_message_start_index..);
-        trace_dbg!("post-remove len: {}   ", self.rendered_text.len_lines());
         self.rendered_text.append(message.rendered.stylized.clone());
-        trace_dbg!("post-append len: {}   ", self.rendered_text.len_lines());
-        // trace_dbg!("appended stylized to rendered_text: {:#?}", self.rendered_text.len_chars());
       }
-
-      // message.rendered.stylized.chars().for_each(|char| {
-      //   char_count += 1;
-      //   if char_count > self.rendered_text.chars().count() {
-      //     self.rendered_text.push(char);
-      //   }
-      // })
-      //message.rendered.wrapped_lines.iter().map(|wl| wl.as_str()).collect::<Vec<&str>>()
     });
   }
 }
 
-// pub fn update_rendered_chat_message(
-//   original: RenderedChatMessage,
-//   incoming: RenderedChatMessage,
-// ) -> RenderedChatMessage {
-//   let new_content = &incoming.content.unwrap_or_default()[original.content.unwrap_or_default().len()..];
-//
-//   let mut wrapper = EasyWrapper::new(&message.rendered.stylized, self.window_width).expect("bwrap init");
-//   let wrapped_content = wrapper.wrap_use_style(WrapStyle::MayBrk(None, None)).expect("bwrap wrap");
-//
-//   RenderedChatMessage {
-//     role: incoming.role,
-//     content: incoming.content,
-//     wrapped_content,
-//     stylized: (),
-//     function_call: (),
-//     name: incoming.name,
-//     finish_reason: (),
-//   }
-// }
-
-// pub fn get_display_text(index: usize, count: usize, messages: Vec<MessageContainer>) -> Vec<String> {
-//   let mut lines = vec!["".to_string(); index];
-//   messages.iter().map(|m| m.rendered.stylized.lines().skip(index).take(count).map(|l| lines.push(l.to_string())));
-//   let full_line_count = messages.iter().map(|m| m.rendered.stylized.matches('\n').count()).sum::<usize>();
-//   lines.append(&mut vec!["".to_string(); full_line_count - index - count]);
-//   lines
-// }
 pub struct BatRenderer<'a> {
   assets: HighlightingAssets,
   config: Config<'a>,
@@ -153,9 +99,9 @@ impl<'a> BatRenderer<'a> {
     let style_components = StyleComponents::new(&[
       //StyleComponent::Header,
       //StyleComponent::Grid,
-      //StyleComponent::LineNumbers,
+      StyleComponent::LineNumbers,
       //StyleComponent::Changes,
-      //StyleComponent::Rule,
+      StyleComponent::Rule,
       //StyleComponent::Default,
       //StyleComponent::Snip,
       //StyleComponent::Plain,
@@ -166,9 +112,10 @@ impl<'a> BatRenderer<'a> {
       style_components,
       show_nonprintable: false,
       tab_width: 0,
-      wrapping_mode: bat::WrappingMode::NoWrapping(true),
+      wrapping_mode: bat::WrappingMode::NoWrapping(false),
       use_italic_text: true,
       term_width,
+      paging_mode: bat::PagingMode::Never,
       true_color: true,
       ..Default::default()
     };
