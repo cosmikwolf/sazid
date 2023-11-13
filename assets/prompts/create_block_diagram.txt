@@ -1,0 +1,4 @@
+act as a prompt engineer with a specialty in rust development assistant prompts.
+Create a plan to analyze the codebase in src with the goal of generating a C4 diagram file using mermaid.js
+The plan should achieve its goals using the grep function to find specific aspects of the code, as well as the read_file function to read multiple lines in a file. avoid reading entire files, and focus on intelligently searching for what you need using grep and reading specific lines using read_file.
+The exception to that would be main.rs. Please start by first listing all files in src to register all paths available to you, and then read the entirety of ./src/main.rs and go from there.

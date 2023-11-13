@@ -1,0 +1,38 @@
+C4Context
+title System Context diagram for Rust Application - Detailed
+
+Person(user, "User", "A user of the application.")
+System(app, "Rust Application", "The central system providing interactive functionalities.")
+
+System_Boundary(c1, "App Container") {
+    Container(app_core, "App Core", "Rust", "Handles core application logic such as the main event loop.")
+    Container(app_session, "Session Component", "Rust", "Manages user sessions and interactions, including chat functionality.")
+    Container(app_messages, "Message Processing", "Rust", "Handles processing of chat messages and command execution.")
+    Container(app_error_handling, "Error Handling", "Rust", "Manages application-level errors through various specific error types.")
+    Container(app_data_processing, "Data Processing", "Rust", "Handles input/output data processing including PDF extraction, text parsing.")
+    Container(app_external_api, "External API Interface", "Rust", "Interfaces with external services like OpenAI for GPT responses and AI model interaction.")
+    Container(app_helpers, "Helpers and Utilities", "Rust", "Provides common helper functions for string and stream manipulation utilized across the application.")
+    Container(app_cli, "CLI", "Rust", "Handles command-line interaction and option parsing.")
+    Container(app_models, "Model Management", "Rust", "Manages AI model configurations and settings.")
+    Container(app_document_handling, "Document Handling", "Rust", "Processes PDF documents and text-related data.")
+    
+    Rel(user, app_core, "Interacts with", "Command-line/HTTP")
+    Rel(app_core, app_session, "Initiates and manages")
+    Rel(app_core, app_external_api, "Utilizes")
+    
+    Rel(app_session, app_messages, "Creates and processes")
+    Rel(app_session, app_error_handling, "Handles errors during")
+    Rel(app_session, app_data_processing, "Sends data for")
+    
+    Rel(app_external_api, app_error_handling, "Reports errors to")
+    
+    Rel(app_messages, app_helpers, "Utilizes")
+    
+    Rel(app_helpers, app_data_processing, "Assists with")
+    Rel(app_cli, app_core, "Provides input to")
+    
+    Rel(app_models, app_external_api, "Configures models for")
+    Rel(app_document_handling, app_data_processing, "Converts documents to")
+}
+
+@enduml

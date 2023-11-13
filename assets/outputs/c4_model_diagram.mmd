@@ -1,0 +1,24 @@
+%%{init: {'theme': 'base', 'themeVariables': {'primaryColor': '#ffcc00', 'edgeLabelBackground':'#ffffff', 'tertiaryColor': '#ffcc00'}}}%%
+C4Context(c4Context, "Application Context", "Describes the high-level view of the system, including external entities.") {
+    Container(app, "App Container", "Rust Application", "Hosts the core application logic, TUI, and manages the main event loop.") {
+        Component(home, "Home Component", "Rust", "Component handling the Home view.")
+        Component(session, "Session Component", "Rust", "Component managing user sessions.")
+        Component(tui, "TUI Service", "Rust", "Text User Interface management and rendering.")
+        
+        app -[Uses]-> home
+        app -[Uses]-> session
+        app --> tui
+        
+        Component(messages, "Messages Module", "Rust", "Module to standardize communication formats.")
+        Component(errors, "Error Handling Module", "Rust", "Centralizes error and exception management.")
+        
+        session --> messages
+        session --> errors
+        
+        Component(types, "Types Module", "Rust", "Defines fundamental data structures and types.")
+        Component(helpers, "Helpers Module", "Rust", "Provides shared utility functions.")
+        
+        messages --> types
+        session --> helpers
+    }
+}

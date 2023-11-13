@@ -1,0 +1,26 @@
+C4Context
+title System Context diagram for Rust Application
+
+Person(user, "User", "A user of the application.")
+System(app, "Rust Application", "The central system providing interactive functionalities.")
+
+System_Boundary(c1, "App Container") {
+    Container(app_core, "App Core", "Rust", "Handles core application logic such as the main event loop.")
+    Container(app_session, "Session Component", "Rust", "Manages user sessions and interactions.")
+    Container(app_messages, "Message Processing", "Rust", "Handles incoming and outgoing chat messages.")
+    Container(app_error_handling, "Error Handling", "Rust", "Manages application-level errors.")
+    Container(app_data_processing, "Data Processing", "Rust", "Processes data input/output and persistence.")
+    Container(app_external_api, "External API Interface", "Rust", "Interfaces with external services and APIs like OpenAI.")
+    Container(app_helpers, "Helpers and Utilities", "Rust", "Provides common helper functions utilized across the application.")
+    
+    Rel(app_core, app_session, "Uses")
+    Rel(app_core, app_messages, "Uses")
+    Rel(app_core, app_error_handling, "Uses")
+    Rel(app_core, app_data_processing, "Uses")
+    Rel(app_core, app_external_api, "Uses")
+    Rel(app_core, app_helpers, "Uses")
+}
+
+Rel(user, app, "Uses", "HTTP/CLI")
+
+@enduml

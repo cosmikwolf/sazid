@@ -209,9 +209,10 @@ Do not try to infer a path to a file, if you have not been provided a path with 
 
     self.vertical_viewport_height = inner[1].height as usize;
     self.vertical_content_height = self.view.rendered_text.len_lines();
-    self.vertical_scroll_state = self.vertical_scroll_state.content_length(self.vertical_viewport_height);
+    self.vertical_scroll_state = self.vertical_scroll_state.content_length(self.vertical_content_height);
     self.view.set_window_width(inner[1].width as usize, &mut self.data.messages);
     self.scroll_max = self.view.rendered_text.len_lines().saturating_sub(self.vertical_viewport_height);
+    // + self.vertical_viewport_height.min(3);
     self.vertical_scroll_state = self.vertical_scroll_state.viewport_content_length(self.vertical_content_height);
 
     if self.scroll_sticky_end {
