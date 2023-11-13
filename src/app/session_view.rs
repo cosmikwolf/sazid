@@ -64,6 +64,7 @@ impl SessionView {
       //   self.rendered_text.lines().skip(start_line).take(line_count).map(|c| c.to_string()).collect::<String>();
       // let wrapped_text = bwrap::wrap!(&text, self.window_width);
       let rendered_text = &self.renderer.render_message_bat(start_line, line_count, &self.rendered_text);
+      // let rendered_text = &self.rendered_text.to_string();
       let debug = format!("{}\n", rendered_text);
       trace_dbg!(debug);
       self.rendered_view = "-\n".repeat(vertical_scroll) + rendered_text.as_str()
@@ -120,13 +121,13 @@ impl<'a> BatRenderer<'a> {
   fn new(term_width: usize) -> Self {
     let style_components = StyleComponents::new(&[
       //StyleComponent::Header,
-      StyleComponent::Grid,
-      StyleComponent::LineNumbers,
+      //StyleComponent::Grid,
+      // StyleComponent::LineNumbers,
       //StyleComponent::Changes,
       //StyleComponent::Rule,
       //StyleComponent::Default,
       //StyleComponent::Snip,
-      //StyleComponent::Plain,
+      StyleComponent::Plain,
     ]);
     let config: Config<'static> = Config {
       colored_output: true,

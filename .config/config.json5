@@ -8,6 +8,6 @@
     },
   },
   "list_file_paths": [
-    "assets", "src", "Cargo.toml", ".data/session_files"
+    "lib/bat/src", "assets", "src", "Cargo.toml", ".data/session_files"
   ]
 }

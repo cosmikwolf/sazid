@@ -1,0 +1,14 @@
+I am having an issue where the text that is rendered out by render_message_bat is coming out with unexpected formatting.
+render_message_bat is in session_view.rs
+
+It is using bat, a rust library that is used to apply color and formatting to text.
+
+The problem I am having is that under certain conditions, code snippets that are wrapped in markdown text is not properly indented.
+
+When I format it using the StyleComponent::LineNumbers, the code does appear indented, but it also appears that the line numbers are not aligned the way it does when I am using the command line app for bat.
+
+the source for the bat lib is accessible to you in  ./lib/bat/src
+
+use grep to find the functions you want to look at, and use read_file to analyze code
+
+Familiarize yourself with the code that is involved in this issue, including code in the bat library, and see if you can figure out why I may be experiencing this issue.
