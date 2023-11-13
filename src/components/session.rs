@@ -8,7 +8,6 @@ use crossterm::event::{KeyCode, KeyEvent, MouseEvent, MouseEventKind};
 use futures::StreamExt;
 use ratatui::layout::Rect;
 use ratatui::{prelude::*, widgets::block::*, widgets::*};
-use ropey::Rope;
 use serde_derive::{Deserialize, Serialize};
 use serde_json::to_string_pretty;
 use std::path::{Path, PathBuf};

@@ -1,7 +1,8 @@
 use bat::{
   assets::HighlightingAssets,
-  config::Config,
+  config::{Config, VisibleLines},
   controller::Controller,
+  line_range::{LineRange, LineRanges},
   style::{StyleComponent, StyleComponents},
   Input,
 };
@@ -27,8 +28,9 @@ use ropey::Rope;
 pub struct SessionView {
   pub renderer: BatRenderer<'static>,
   pub window_width: usize,
-  pub render_conditions: (usize, usize, usize, usize),
+  pub render_conditions: (usize, usize, usize, usize, bool),
   pub rendered_view: String,
+  pub new_data: bool,
   pub rendered_text: Rope,
 }
 
@@ -39,20 +41,30 @@ impl SessionView {
       trace_dbg!("setting window width to {}", new_value);
 
       self.window_width = new_value;
-      self.renderer = BatRenderer::new(self.window_width);
+      self.renderer.config.term_width = new_value;
       messages.iter_mut().for_each(|m| {
         m.finished = false;
       });
     }
   }
   pub fn get_stylized_rendered_slice(&mut self, start_line: usize, line_count: usize, vertical_scroll: usize) -> &str {
-    if (start_line, line_count, vertical_scroll, self.rendered_text.len_lines()) != self.render_conditions {
-      self.render_conditions = (start_line, line_count, vertical_scroll, self.rendered_text.len_lines());
-      let text =
-        self.rendered_text.lines().skip(start_line).take(line_count).map(|c| c.to_string()).collect::<String>();
-      let wrapped_text = bwrap::wrap!(&text, self.window_width);
+    if (start_line, line_count, vertical_scroll, self.rendered_text.len_chars(), self.new_data)
+      != self.render_conditions
+    {
+      self.render_conditions = (start_line, line_count, vertical_scroll, self.rendered_text.len_chars(), self.new_data);
+      trace_dbg!(
+      "get_stylized_rendered_slice: start_line: {}, line_count: {}, vertical_scroll: {}, rendered_text.len_lines(): {}",
+      start_line,
+      line_count,
+      vertical_scroll,
+      self.rendered_text.len_lines()
+    );
+      self.new_data = false;
+      // let text =
+      //   self.rendered_text.lines().skip(start_line).take(line_count).map(|c| c.to_string()).collect::<String>();
+      // let wrapped_text = bwrap::wrap!(&text, self.window_width);
       self.rendered_view =
-        "\n".repeat(vertical_scroll).to_string() + &self.renderer.render_message_bat(wrapped_text.as_str());
+        "-\n".repeat(vertical_scroll) + &self.renderer.render_message_bat(start_line, line_count, &self.rendered_text);
     }
     &self.rendered_view
   }
@@ -61,6 +73,8 @@ impl SessionView {
     let dividing_newlines_count = 2;
     session_data.messages.iter_mut().for_each(|message| {
       let rendered_text_message_start_index = self.rendered_text.len_chars() - message.rendered.stylized.len_chars();
+
+      // let previously_rendered_bytecount = message.rendered.stylized.len_bytes();
       if !message.finished {
         message.rendered = RenderedChatMessage::from(&message.message);
         message.rendered.stylized =
@@ -69,8 +83,13 @@ impl SessionView {
           message.finished = true;
           message.rendered.stylized.append(Rope::from_str("\n".to_string().repeat(dividing_newlines_count).as_str()));
         }
+        self.new_data = true;
         self.rendered_text.remove(rendered_text_message_start_index..);
         self.rendered_text.append(message.rendered.stylized.clone());
+        // message.rendered.stylized.bytes_at(previously_rendered_bytecount).for_each(|b| {
+        //   self.renderer.rendered_bytes.push(b);
+        // });
+        // trace_dbg!("bytes: {:?}", self.renderer.rendered_bytes.len());
       }
     });
   }
@@ -79,7 +98,7 @@ impl SessionView {
 pub struct BatRenderer<'a> {
   assets: HighlightingAssets,
   config: Config<'a>,
-  //controller: Controller<'a>,
+  buffer: Vec<u8>,
 }
 
 impl<'a> Default for BatRenderer<'a> {
@@ -120,14 +139,24 @@ impl<'a> BatRenderer<'a> {
       ..Default::default()
     };
     let assets = HighlightingAssets::from_binary();
-    BatRenderer { config, assets }
+    let buffer: Vec<u8> = Vec::new();
+    BatRenderer { config, assets, buffer }
   }
 
-  fn render_message_bat(&self, content: &str) -> String {
+  fn render_message_bat(&mut self, start_line: usize, line_count: usize, text: &Rope) -> String {
+    //    fn render_message_bat(&self, content: &str) -> String {
+    self.config.visible_lines =
+      VisibleLines::Ranges(LineRanges::from(vec![LineRange::new(start_line, start_line + line_count)]));
+
     let controller = Controller::new(&self.config, &self.assets);
     let mut buffer = String::new();
-    let input = Input::from_bytes(content.as_bytes());
+    //let input = Input::from_bytes(content.as_bytes());
+    //trace_dbg!("render_message_bat: {:?}", self.rendered_bytes);
+    text.bytes().skip(self.buffer.len()).for_each(|b| self.buffer.push(b));
+    let input = Input::from_bytes(self.buffer.as_slice());
+    //trace_dbg!("render_message_bat: {:?}", self.rendered_bytes);
     controller.run(vec![input.into()], Some(&mut buffer)).unwrap();
+    //trace_dbg!("render_message_bat: {:?}", buffer);
     buffer
   }
 }
