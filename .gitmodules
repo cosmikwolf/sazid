@@ -1,6 +1,0 @@
-[submodule "lib/bat"]
-	path = lib/bat
-	url = git@github.com:sharkdp/bat.git
-[submodule "lib/ansi_to_tui"]
-	path = lib/ansi_to_tui
-	url = git@github.com:uttarayan21/ansi-to-tui.git
