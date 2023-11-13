@@ -12,8 +12,8 @@ use pulldown_cmark_mdcat::resources::*;
 use pulldown_cmark_mdcat::terminal::{TerminalProgram, TerminalSize};
 use pulldown_cmark_mdcat::Settings;
 use pulldown_cmark_mdcat::{Environment, Theme};
-use std::path::Path;
 use std::sync::OnceLock;
+use std::{error::Error, fmt::Write, path::Path};
 use syntect::parsing::SyntaxSet;
 
 use crate::trace_dbg;
@@ -63,8 +63,10 @@ impl SessionView {
       // let text =
       //   self.rendered_text.lines().skip(start_line).take(line_count).map(|c| c.to_string()).collect::<String>();
       // let wrapped_text = bwrap::wrap!(&text, self.window_width);
-      self.rendered_view =
-        "-\n".repeat(vertical_scroll) + &self.renderer.render_message_bat(start_line, line_count, &self.rendered_text);
+      let rendered_text = &self.renderer.render_message_bat(start_line, line_count, &self.rendered_text);
+      let debug = format!("{}\n", rendered_text);
+      trace_dbg!(debug);
+      self.rendered_view = "-\n".repeat(vertical_scroll) + rendered_text.as_str()
     }
     &self.rendered_view
   }
@@ -78,7 +80,8 @@ impl SessionView {
       if !message.finished {
         message.rendered = RenderedChatMessage::from(&message.message);
         message.rendered.stylized =
-          Rope::from_str(bwrap::wrap!(&message.rendered.content, self.window_width - 3).as_str());
+           // Rope::from_str(&message.rendered.content.as_str());
+        Rope::from_str(bwrap::wrap!(&message.rendered.content, self.window_width - 3).as_str());
         if message.rendered.finish_reason.is_some() {
           message.finished = true;
           message.rendered.stylized.append(Rope::from_str("\n".to_string().repeat(dividing_newlines_count).as_str()));
@@ -117,10 +120,10 @@ impl<'a> BatRenderer<'a> {
   fn new(term_width: usize) -> Self {
     let style_components = StyleComponents::new(&[
       //StyleComponent::Header,
-      //StyleComponent::Grid,
+      StyleComponent::Grid,
       StyleComponent::LineNumbers,
       //StyleComponent::Changes,
-      StyleComponent::Rule,
+      //StyleComponent::Rule,
       //StyleComponent::Default,
       //StyleComponent::Snip,
       //StyleComponent::Plain,
@@ -130,7 +133,7 @@ impl<'a> BatRenderer<'a> {
       language: Some("markdown"),
       style_components,
       show_nonprintable: false,
-      tab_width: 0,
+      tab_width: 2,
       wrapping_mode: bat::WrappingMode::NoWrapping(false),
       use_italic_text: true,
       term_width,
@@ -141,6 +144,10 @@ impl<'a> BatRenderer<'a> {
     let assets = HighlightingAssets::from_binary();
     let buffer: Vec<u8> = Vec::new();
     BatRenderer { config, assets, buffer }
+  }
+
+  fn render_error(err: &bat::error::Error, _write: &mut dyn std::io::Write) {
+    trace_dbg!("bat rendering error: {}", err);
   }
 
   fn render_message_bat(&mut self, start_line: usize, line_count: usize, text: &Rope) -> String {
@@ -155,7 +162,7 @@ impl<'a> BatRenderer<'a> {
     text.bytes().skip(self.buffer.len()).for_each(|b| self.buffer.push(b));
     let input = Input::from_bytes(self.buffer.as_slice());
     //trace_dbg!("render_message_bat: {:?}", self.rendered_bytes);
-    controller.run(vec![input.into()], Some(&mut buffer)).unwrap();
+    controller.run_with_error_handler(vec![input.into()], Some(&mut buffer), Self::render_error).unwrap();
     //trace_dbg!("render_message_bat: {:?}", buffer);
     buffer
   }

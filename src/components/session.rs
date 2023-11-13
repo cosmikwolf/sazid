@@ -193,14 +193,14 @@ Do not try to infer a path to a file, if you have not been provided a path with 
       .direction(Direction::Vertical)
       .constraints([Constraint::Percentage(100), Constraint::Min(4)].as_ref())
       .split(area);
-    let inner_a = Layout::default()
+    let inner = Layout::default()
       .direction(Direction::Vertical)
       .constraints(vec![Constraint::Length(1), Constraint::Min(10), Constraint::Length(0)])
       .split(rects[0]);
-    let inner = Layout::default()
-      .direction(Direction::Horizontal)
-      .constraints(vec![Constraint::Length(3), Constraint::Min(10), Constraint::Length(3)])
-      .split(inner_a[1]);
+    // let inner = Layout::default()
+    //   .direction(Direction::Horizontal)
+    //   .constraints(vec![Constraint::Length(3), Constraint::Min(10), Constraint::Length(3)])
+    //   .split(inner_a[1]);
 
     let block = Block::default().borders(Borders::NONE).gray();
 
@@ -208,7 +208,7 @@ Do not try to infer a path to a file, if you have not been provided a path with 
 
     //let mut text = String::with_capacity(inner[1].width as usize * inner[1].height as usize + 1);
 
-    self.vertical_viewport_height = inner[1].height as usize;
+    self.vertical_viewport_height = inner[1].height as usize - 2;
     self.vertical_content_height = self.view.rendered_text.len_lines();
     self.vertical_scroll_state = self.vertical_scroll_state.content_length(self.vertical_viewport_height);
     self.view.set_window_width(inner[1].width as usize, &mut self.data.messages);
