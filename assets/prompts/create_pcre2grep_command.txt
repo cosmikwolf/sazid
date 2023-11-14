@@ -1,0 +1,115 @@
+create a new function for my application.
+the following files are examples of existing functions that are already defined:
+./src/app/functions/cargo_check_function.rs
+./src/app/functions/create_file_function.rs
+./src/app/functions/patch_files_function.rs
+
+Create the function in a new file using the patterns and conventions that are used in the files I referenced above.
+
+The ModelFunction trait is defined in
+./src/app/functions/function_call.rs
+
+The function should:
+
+call the terminal command: pcre2grep
+
+it should have three arguments. options, pattern, paths
+Each of these arguments should be a string in their command property.
+options should be a comma separated list of pcre2grep options
+
+in the code that parses the function arguments, it should match the options to options that are available in the pcre2grep mac command. below is the help text from the command.
+
+
+below is the help text for the CLI. Please look at all of the options and determine which 10 options would be ideal to provide a GPT bot so it can search for text in files. This bot is a programming assistant that will be using this function to gain awareness of the code that exists in a codebase.
+
+The bot should ensure that only the allowed options are parsed, and if GPT provides an invalid option, it should reply with the options that are available.
+
+The bot should also ensure that only allowed paths are passed to the function, as it does the other functions of which the source I provided above.
+
+
+Please analyze this request, and create a plan to implement this new function before taking action.
+
+
+
+Usage: pcre2grep [OPTION]... [PATTERN] [FILE1 FILE2 ...]
+Search for PATTERN in each FILE or standard input.
+PATTERN must be present if neither -e nor -f is used.
+All callout scripts in patterns are supported.
+"-" can be used as a file name to mean STDIN.
+Files whose names end in .gz are read using zlib.
+Files whose names end in .bz2 are read using bzlib2.
+Other files and the standard input are read as plain files.
+
+Example: pcre2grep -i 'hello.*world' menu.h main.c
+
+Options:
+      --                       terminate options
+      --help                   display this help and exit
+  -A, --after-context=number   set number of following context lines
+  -a, --text                   treat binary files as text
+  -B, --before-context=number  set number of prior context lines
+      --binary-files=word      set treatment of binary files
+      --buffer-size=number     set processing buffer starting size
+      --max-buffer-size=number set processing buffer maximum size
+      --color=option           matched text color option
+      --colour=option          matched text colour option
+  -C, --context=number         set number of context lines, before & after
+  -c, --count                  print only a count of matching lines per FILE
+  -D, --devices=action         how to handle devices, FIFOs, and sockets
+  -d, --directories=action     how to handle directories
+  -e, --regex(p)=pattern       specify pattern (may be used more than once)
+  -F, --fixed-strings          patterns are sets of newline-separated strings
+  -f, --file=path              read patterns from file
+      --file-list=path         read files to search from file
+      --file-offsets           output file offsets, not text
+  -H, --with-filename          force the prefixing filename on output
+  -h, --no-filename            suppress the prefixing filename on output
+  -I                           treat binary files as not matching (ignore)
+  -i, --ignore-case            ignore case distinctions
+  -l, --files-with-matches     print only FILE names containing matches
+  -L, --files-without-match    print only FILE names not containing matches
+      --label=name             set name for standard input
+      --line-buffered          use line buffering
+      --line-offsets           output line numbers and offsets, not text
+      --locale=locale          use the named locale
+      --heap-limit=number      set PCRE2 heap limit option (kibibytes)
+      --match-limit=number     set PCRE2 match limit option
+      --depth-limit=number     set PCRE2 depth limit option
+      --recursion-limit=number obsolete synonym for depth-limit
+  -M, --multiline              run in multiline mode
+  -m, --max-count=number       stop after <number> matched lines
+  -N, --newline=type           set newline type (CR, LF, CRLF, ANYCRLF, ANY, or NUL)
+  -n, --line-number            print line number with output lines
+      --no-jit                 do not use just-in-time compiler optimization
+  -O, --output=text            show only this text (possibly expanded)
+  -o, --only-matching=n        show only the part of the line that matched
+      --om-separator=text      set separator for multiple -o output
+      --om-capture=n           set capture count for --only-matching
+  -q, --quiet                  suppress output, just set return code
+  -r, --recursive              recursively scan sub-directories
+      --exclude=pattern        exclude matching files when recursing
+      --include=pattern        include matching files when recursing
+      --exclude-dir=pattern    exclude matching directories when recursing
+      --include-dir=pattern    include matching directories when recursing
+      --exclude-from=path      read exclude list from file
+      --include-from=path      read include list from file
+  -s, --no-messages            suppress error messages
+  -t, --total-count            print total count of matching lines
+  -u, --utf                    use UTF mode
+  -U, --utf-allow-invalid      use UTF mode, allow for invalid code units
+  -V, --version                print version information and exit
+  -v, --invert-match           select non-matching lines
+  -w, --word-regex(p)          force patterns to match only as words
+  -x, --line-regex(p)          force patterns to match only whole lines
+      --allow-lookaround-bsk   allow \K in lookarounds
+  -Z, --null                   output 0 byte after file names
+
+Numbers may be followed by K or M, e.g. --max-buffer-size=100K.
+The default value for --buffer-size is 20480.
+The default value for --max-buffer-size is 1048576.
+When reading patterns or file names from a file, trailing white
+space is removed and blank lines are ignored.
+The maximum size of any pattern is 8192 bytes.
+
+With no FILEs, read standard input. If fewer than two FILEs given, assume -h.
+Exit status is 0 if any matches, 1 if no matches, and 2 if trouble.

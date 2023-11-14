@@ -461,19 +461,19 @@ impl Session<'static> {
         .unwrap();
       match stream_response {
         true => {
-          let mut stream = client.chat().create_stream(request.clone()).await.unwrap();
+          let mut stream = client.chat().create_stream(request).await.unwrap();
           while let Some(response_result) = stream.next().await {
             match response_result {
               Ok(response) => {
                 Self::response_handler(tx.clone(), ChatResponse::StreamResponse(response)).await;
               },
               Err(e) => {
-                trace_dbg!("Error: {:?} -- check https://status.openai.com/se", e);
-                let reqtext =
-                  format!("Request: \n{}", to_string_pretty(&request).unwrap_or("can't prettify result".to_string()));
-                trace_dbg!(&reqtext);
-                debug_request_validation(&request);
-                tx.send(Action::AddMessage(ChatMessage::SazidSystemMessage(reqtext))).unwrap();
+                trace_dbg!("Error: {:?} -- check https://status.openai.com", e);
+                // let reqtext =
+                //   format!("Request: \n{}", to_string_pretty(&request).unwrap_or("can't prettify result".to_string()));
+                // trace_dbg!(&reqtext);
+                // debug_request_validation(&request);
+                // tx.send(Action::AddMessage(ChatMessage::SazidSystemMessage(reqtext))).unwrap();
                 tx.send(Action::Error(format!("Error: {:?} -- check https://status.openai.com/", e))).unwrap();
               },
             }
