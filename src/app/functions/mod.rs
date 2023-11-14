@@ -27,6 +27,7 @@ pub mod function_call;
 pub mod grep_function;
 pub mod modify_file_function;
 pub mod patch_files_function;
+pub mod pcre2grep_function;
 pub mod read_file_lines_function;
 pub mod types;
 
