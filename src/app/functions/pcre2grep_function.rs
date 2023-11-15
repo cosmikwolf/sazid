@@ -1,121 +1,120 @@
-use crate::app::functions::function_call::ModelFunction;
-use std::process::Command;
-use crate::app::functions::errors::FunctionError;
-use serde_json::Value;
+use crate::app::{functions::function_call::ModelFunction, session_config::SessionConfig};
+use std::{collections::HashMap, path::PathBuf};
 
-// This structure represents the options we allow for pcre2grep.
-// Easy to add or remove elements for future updates.
-const PCRE2GREP_OPTIONS: &[(char, &str, &str)] = &[
-    // (Character Option, Full Option, Description)
-    ('i', "--ignore-case", "Ignore case distinctions in the pattern."),
-    ('v', "--invert-match", "Select non-matching lines."),
-    ('l', "--files-with-matches", "Print only file names with matches."),
-    ('c', "--count", "Print only a count of matching lines per file."),
-    ('n', "--line-number", "Print line number with output lines."),
-    ('e', "--regexp", "Specify a pattern, may be used more than once."),
-    ('r', "--recursive", "Recursively scan sub-directories."),
-    ('H', "--with-filename", "Force the prefixing of the file name on output."),
-    ('h', "--no-filename", "Suppress the prefixing of the file name on output."),
-    ('o', "--only-matching", "Show only the part of the line that matched."),
-];
+use super::{
+  errors::ModelFunctionError,
+  types::{Command, CommandParameters, CommandProperty},
+  validate_and_extract_options, validate_and_extract_paths_from_argument, validate_and_extract_string_argument,
+};
+use clap::Parser;
 
-pub struct Pcre2GrepFunction {
-    options: String,
-    pattern: String,
-    paths: String,
+#[derive(Parser, Debug)]
+#[clap(author, version, about, long_about = None)]
+struct Args {
+  #[clap(short = 'i', long = "ignore-case", help = "Ignore case distinctions in the pattern.")]
+  ignore_case: bool,
+  #[clap(short = 'v', long = "invert-match", help = "Select non-matching lines.")]
+  invert_match: bool,
+  #[clap(short = 'l', long = "files-with-matches", help = "Print only file names with matches.")]
+  files_with_matches: bool,
+  #[clap(short = 'c', long = "count", help = "Print only a count of matching lines per file.")]
+  count: bool,
+  #[clap(short = 'n', long = "line-number", help = "Print line number with output lines.")]
+  line_number: bool,
+  #[clap(short = 'e', long = "regexp", help = "Specify a pattern, may be used more than once.", number_of_values = 1)]
+  regexp: Vec<String>,
+  #[clap(short = 'r', long = "recursive", help = "Recursively scan sub-directories.")]
+  recursive: bool,
+  #[clap(short = 'H', long = "with-filename", help = "Force the prefixing of the file name on output.")]
+  with_filename: bool,
+  #[clap(short = 'h', long = "no-filename", help = "Suppress the prefixing of the file name on output.")]
+  no_filename: bool,
+  #[clap(short = 'o', long = "only-matching", help = "Show only the part of the line that matched.")]
+  only_matching: bool,
 }
 
-impl Pcre2GrepFunction {
-    pub fn new(options: String, pattern: String, paths: String) -> Self {
-        Self {
-            options,
-            pattern,
-            paths,
-        }
-    }
+pub struct Pcre2GrepFunction {
+  pub name: String,
+  pub description: String,
+  pub required_properties: Vec<CommandProperty>,
+  pub optional_properties: Vec<CommandProperty>,
+}
 
-    fn execute_pcre2grep(&self) -> Result<String, FunctionError> {
-        let options = self.options.split(',')
-            .filter_map(|opt| {
-                let opt_trimmed = opt.trim();
-                if opt_trimmed.is_empty() { None } else { Some(opt_trimmed) }
-            })
-            .collect::<Vec<_>>()
-            .join(" ");
+pub fn execute_pcre2grep(
+  options: Vec<String>,
+  pattern: String,
+  paths: Vec<PathBuf>,
+) -> Result<Option<String>, ModelFunctionError> {
+  let output = std::process::Command::new("pcre2grep")
+    .args(options)
+    .arg(pattern)
+    .args(paths)
+    .output()
+    .map_err(|e| ModelFunctionError::new(e.to_string().as_str()))?;
 
-        let output = Command::new("pcre2grep")
-            .args(&[&options, &self.pattern])
-            .args(self.paths.split(' '))
-            .output()
-            .map_err(|e| FunctionError::CommandExecutionError(e.to_string()))?;
+  if !output.status.success() {
+    return Ok(Some(ModelFunctionError::new(output.status.code().unwrap().to_string().as_str()).to_string()));
+  }
 
-        if !output.status.success() {
-            return Err(FunctionError::CommandError(output.status.code()));
-        }
-
-        Ok(String::from_utf8_lossy(&output.stdout).to_string())
-    }
-    
-    fn validate_options(&self) -> Result<(), FunctionError> {
-        let valid_options: Vec<char> = PCRE2GREP_OPTIONS.iter().map(|opt| opt.0).collect();
-        for opt in self.options.split(',') {
-            let opt_trim = opt.trim();
-            if !valid_options.contains(&opt_trim.chars().next().unwrap()) {
-                return Err(FunctionError::InvalidArgument(format!("Invalid option '-{}'. Available options are: {:?}", opt, valid_options)));
-            }
-        }
-        Ok(())
-    }
-
-    fn validate_paths(&self) -> Result<(), FunctionError> {
-        // Implement logic to validate paths. For instance:
-        if !self.paths.starts_with("./") {
-            return Err(FunctionError::InvalidArgument("Paths must be relative and start with './'".to_owned()));
-        }
-        Ok(())
-    }
+  Ok(Some(String::from_utf8_lossy(&output.stdout).to_string()))
 }
 
 impl ModelFunction for Pcre2GrepFunction {
-    fn call(&self) -> Result<Value, FunctionError> {
-        self.validate_options()?;
-        self.validate_paths()?;
-        
-        let result = self.execute_pcre2grep()?;
-        // Parse the result into the desired output format (e.g., JSON)
-        let json_result = serde_json::from_str(&result)
-            .map_err(|e| FunctionError::ParseError(e.to_string()))?;
-        Ok(json_result)
+  fn init() -> Self {
+    Pcre2GrepFunction {
+      name: "pcre2grep".to_string(),
+      description: "an implementation of grep".to_string(),
+      required_properties: vec![
+        CommandProperty {
+          name: "pattern".to_string(),
+          required: true,
+          property_type: "string".to_string(),
+          description: Some("a regular expression pattern to match against file contents".to_string()),
+          enum_values: None,
+        },
+        CommandProperty {
+          name: "paths".to_string(),
+          required: true,
+          property_type: "string".to_string(),
+          description: Some(
+            "a list of comma separated paths to walk for files which the pattern will be matched against".to_string(),
+          ),
+          enum_values: None,
+        },
+      ],
+      optional_properties: vec![],
     }
-}
+  }
+  fn call(
+    &self,
+    function_args: HashMap<String, serde_json::Value>,
+    session_config: SessionConfig,
+  ) -> Result<Option<String>, ModelFunctionError> {
+    let options = validate_and_extract_options::<Args>(&function_args, false)?.unwrap();
+    let pattern = validate_and_extract_string_argument(&function_args, "pattern", true)?.unwrap();
+    let paths = validate_and_extract_paths_from_argument(&function_args, session_config, true)?.unwrap();
 
-#[cfg(test)]
-mod tests {
-    use super::*;
+    execute_pcre2grep(options, pattern, paths)
+  }
 
-    #[test]
-    fn test_validate_options_with_valid_option() {
-        let pcre2_function = Pcre2GrepFunction::new("-i".to_string(), "pattern".to_string(), "./path".to_string());
-        assert!(pcre2_function.validate_options().is_ok());
+  fn command_definition(&self) -> Command {
+    let mut properties: HashMap<String, CommandProperty> = HashMap::new();
+
+    self.required_properties.iter().for_each(|p| {
+      properties.insert(p.name.clone(), p.clone());
+    });
+    self.optional_properties.iter().for_each(|p| {
+      properties.insert(p.name.clone(), p.clone());
+    });
+
+    Command {
+      name: self.name.clone(),
+      description: Some(self.description.clone()),
+      parameters: Some(CommandParameters {
+        param_type: "object".to_string(),
+        required: self.required_properties.clone().into_iter().map(|p| p.name).collect(),
+        properties,
+      }),
     }
-
-    #[test]
-    fn test_validate_options_with_invalid_option() {
-        let pcre2_function = Pcre2GrepFunction::new("-z".to_string(), "pattern".to_string(), "./path".to_string());
-        assert!(pcre2_function.validate_options().is_err());
-    }
-
-    #[test]
-    fn test_validate_paths_with_valid_path() {
-        let pcre2_function = Pcre2GrepFunction::new("-i".to_string(), "pattern".to_string(), "./valid/path".to_string());
-        assert!(pcre2_function.validate_paths().is_ok());
-    }
-
-    #[test]
-    fn test_validate_paths_with_invalid_path() {
-        let pcre2_function = Pcre2GrepFunction::new("-i".to_string(), "pattern".to_string(), "invalid/path".to_string());
-        assert!(pcre2_function.validate_paths().is_err());
-    }
-
-    // Additional tests for execute_pcre2grep can be added here
+  }
 }

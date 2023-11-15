@@ -5,10 +5,11 @@ use crate::{
   app::messages::{ChatMessage, FunctionResult},
   trace_dbg,
 };
+use clap::Parser;
 use serde_derive::{Deserialize, Serialize};
+use std::path::Path;
 use std::{collections::HashMap, path::PathBuf};
 use tokio::sync::mpsc::UnboundedSender;
-use tracing_subscriber::util::SubscriberInitExt;
 use walkdir::WalkDir;
 
 use self::{
@@ -67,11 +68,71 @@ pub fn all_functions() -> Vec<CallableFunction> {
     CallableFunction::CargoCheckFunction(CargoCheckFunction::init()),
   ]
 }
-// impl From<Box<dyn FunctionCall>> for RenderedFunctionCall {
-//   fn from(function_call: Box<dyn ModelFunction>) -> Self {
-//     RenderedFunctionCall { name: function_call.name, arguments: function_call.arguments }
-//   }
-// }
+
+fn validate_and_extract_options<T>(
+  function_args: &HashMap<String, serde_json::Value>,
+  required: bool,
+) -> Result<Option<Vec<String>>, ModelFunctionError>
+where
+  T: Parser + std::fmt::Debug,
+{
+  match function_args.get("options") {
+    Some(options) => match T::try_parse_from(options.as_str().unwrap().split(' ')) {
+      Ok(args) => Ok(Some(format!("{:?}", args).split(' ').map(|a| a.to_string()).collect())),
+      Err(err) => Err(ModelFunctionError::new(err.to_string().as_str())),
+    },
+    None => match required {
+      true => Err(ModelFunctionError::new("options argument is required")),
+      false => Ok(None),
+    },
+  }
+}
+
+pub fn validate_and_extract_string_argument(
+  function_args: &HashMap<String, serde_json::Value>,
+  argument: &str,
+  required: bool,
+) -> Result<Option<String>, ModelFunctionError> {
+  match function_args.get(argument) {
+    Some(argument) => match argument {
+      serde_json::Value::String(s) => Ok(Some(s.clone())),
+      _ => Err(ModelFunctionError::new(format!("{} argument must be a string", argument).as_str())),
+    },
+    None => match required {
+      true => Err(ModelFunctionError::new(format!("{} argument is required", argument).as_str())),
+      false => Ok(None),
+    },
+  }
+}
+
+pub fn validate_and_extract_paths_from_argument(
+  function_args: &HashMap<String, serde_json::Value>,
+  session_config: SessionConfig,
+  required: bool,
+) -> Result<Option<Vec<PathBuf>>, ModelFunctionError> {
+  match function_args.get("paths") {
+    Some(paths) => {
+      let mut paths_vec: Vec<PathBuf> = Vec::new();
+      if let serde_json::Value::String(paths) = paths {
+        for path in paths.split(',').map(|s| s.trim()) {
+          let accesible_paths = get_accessible_file_paths(session_config.list_file_paths.clone());
+          if !accesible_paths.contains_key(Path::new(path).to_str().unwrap()) {
+            return Err(ModelFunctionError::new(
+              format!("File path is not accessible: {:?}. Suggest using file_search command", path).as_str(),
+            ));
+          } else {
+            paths_vec.push(path.into());
+          }
+        }
+      }
+      Ok(Some(paths_vec))
+    },
+    None => match required {
+      true => Err(ModelFunctionError::new("paths argument is required")),
+      false => Ok(None),
+    },
+  }
+}
 
 pub fn get_accessible_file_paths(list_file_paths: Vec<PathBuf>) -> HashMap<String, PathBuf> {
   // Define the base directory you want to start the search from.

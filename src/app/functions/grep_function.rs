@@ -6,19 +6,15 @@ use grep::{
 use serde_derive::{Deserialize, Serialize};
 
 use std::{collections::HashMap, io::Write};
-use std::{
-  io::BufWriter,
-  path::{Path, PathBuf},
-};
+use std::{io::BufWriter, path::PathBuf};
 use walkdir::WalkDir;
 
 use crate::app::session_config::SessionConfig;
 
 use super::{
   function_call::ModelFunction,
-  get_accessible_file_paths,
   types::{Command, CommandParameters, CommandProperty},
-  ModelFunctionError,
+  validate_and_extract_paths_from_argument, validate_and_extract_string_argument, ModelFunctionError,
 };
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -71,21 +67,9 @@ impl ModelFunction for GrepFunction {
     function_args: HashMap<String, serde_json::Value>,
     session_config: SessionConfig,
   ) -> Result<Option<String>, ModelFunctionError> {
-    let paths = match function_args.get("paths") {
-      Some(paths) => match validate_and_extract_paths_from_argument(paths.clone(), session_config) {
-        Ok(paths) => paths,
-        Err(err) => return Err(err),
-      },
-      None => return Err(ModelFunctionError::new("paths argument is required")),
-    };
-
-    let pattern: Option<&str> = function_args.get("pattern").and_then(|s| s.as_str());
-
-    let _multi_line: Option<bool> = function_args.get("multi_line").and_then(|s| s.as_bool());
-    match pattern {
-      Some(pattern) => grep(pattern, paths),
-      None => Err(ModelFunctionError::new("pattern argument is required")),
-    }
+    let paths = validate_and_extract_paths_from_argument(&function_args, session_config, true)?.unwrap();
+    let pattern = validate_and_extract_string_argument(&function_args, "pattern", true)?.unwrap();
+    grep(pattern.as_str(), paths)
   }
 
   fn command_definition(&self) -> Command {
@@ -108,26 +92,6 @@ impl ModelFunction for GrepFunction {
       }),
     }
   }
-}
-
-pub fn validate_and_extract_paths_from_argument(
-  paths: serde_json::Value,
-  session_config: SessionConfig,
-) -> Result<Vec<PathBuf>, ModelFunctionError> {
-  let mut paths_vec: Vec<PathBuf> = Vec::new();
-  if let serde_json::Value::String(paths) = paths {
-    for path in paths.split(',').map(|s| s.trim()) {
-      let accesible_paths = get_accessible_file_paths(session_config.list_file_paths.clone());
-      if !accesible_paths.contains_key(Path::new(path).to_str().unwrap()) {
-        return Err(ModelFunctionError::new(
-          format!("File path is not accessible: {:?}. Suggest using file_search command", path).as_str(),
-        ));
-      } else {
-        paths_vec.push(path.into());
-      }
-    }
-  }
-  Ok(paths_vec)
 }
 
 pub fn grep(pattern: &str, paths: Vec<PathBuf>) -> Result<Option<String>, ModelFunctionError> {

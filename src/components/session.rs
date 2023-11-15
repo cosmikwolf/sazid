@@ -9,12 +9,11 @@ use futures::StreamExt;
 use ratatui::layout::Rect;
 use ratatui::{prelude::*, widgets::block::*, widgets::*};
 use serde_derive::{Deserialize, Serialize};
-use serde_json::to_string_pretty;
 use std::path::{Path, PathBuf};
 use std::result::Result;
 use std::{fs, io};
 use tokio::sync::mpsc::UnboundedSender;
-use tui_textarea::{CursorMove, TextArea};
+use tui_textarea::TextArea;
 
 use async_openai::{config::OpenAIConfig, Client};
 
@@ -23,7 +22,6 @@ use backoff::exponential::ExponentialBackoffBuilder;
 use super::{Component, Frame};
 use crate::app::functions::{all_functions, handle_chat_response_function_call};
 use crate::app::messages::{ChatMessage, ChatResponse};
-use crate::app::request_validation::debug_request_validation;
 use crate::app::session_config::SessionConfig;
 use crate::app::session_data::SessionData;
 use crate::app::session_view::SessionView;
