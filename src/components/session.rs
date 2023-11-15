@@ -338,6 +338,7 @@ impl Session<'static> {
 
   pub fn submit_chat_completion_request(&mut self, input: String, tx: UnboundedSender<Action>) {
     let config = self.config.clone();
+    tx.send(Action::UpdateStatus(Some("submitting input".to_string()))).unwrap();
     match self.add_chunked_chat_completion_request_messages(
       &input,
       config.name.as_str(),
@@ -448,21 +449,29 @@ impl Session<'static> {
   // }
 
   pub fn request_chat_completion(&mut self, tx: UnboundedSender<Action>) {
+    tx.send(Action::UpdateStatus(Some("Configuring Client".to_string()))).unwrap();
     let stream_response = self.config.stream_response;
     let openai_config = self.config.openai_config.clone();
     let (request, token_count) = self.construct_request();
     trace_dbg!("Sending Request:\n{:?}", &request.messages.last().unwrap().content);
+    tx.send(Action::UpdateStatus(Some("Assembling request...".to_string()))).unwrap();
     tokio::spawn(async move {
+      tx.send(Action::UpdateStatus(Some("Establishing Client Connection".to_string()))).unwrap();
       tx.send(Action::EnterProcessing).unwrap();
       let client = create_openai_client(openai_config);
       tx.send(Action::AddMessage(ChatMessage::SazidSystemMessage(format!("Request Token Count: {}", token_count))))
         .unwrap();
       match stream_response {
         true => {
+          tx.send(Action::UpdateStatus(Some("Sending Request to OpenAI API...".to_string()))).unwrap();
           let mut stream = client.chat().create_stream(request).await.unwrap();
+          tx.send(Action::UpdateStatus(Some("Request submitted. Awaiting Response...".to_string()))).unwrap();
+          let mut count = 0;
           while let Some(response_result) = stream.next().await {
             match response_result {
               Ok(response) => {
+                count += 1;
+                tx.send(Action::UpdateStatus(Some(format!("Received responses: {}", count).to_string()))).unwrap();
                 Self::response_handler(tx.clone(), ChatResponse::StreamResponse(response)).await;
               },
               Err(e) => {
@@ -487,6 +496,7 @@ impl Session<'static> {
           },
         },
       };
+      tx.send(Action::UpdateStatus(Some("Chat Request Complete".to_string()))).unwrap();
       tx.send(Action::ExitProcessing).unwrap();
     });
   }

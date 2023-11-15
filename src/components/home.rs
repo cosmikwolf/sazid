@@ -21,6 +21,7 @@ pub enum Mode {
 #[derive(Debug, Default)]
 pub struct Home {
   pub show_help: bool,
+  pub status: Option<String>,
   pub mode: Mode,
   pub input: Input,
   pub action_tx: Option<UnboundedSender<Action>>,
@@ -63,6 +64,10 @@ impl Component for Home {
       // Action::Increment(i) => self.increment(i),
       // Action::Decrement(i) => self.decrement(i),
       // Action::ProcessResponse(s) => Action::Update(),
+      Action::UpdateStatus(s) => {
+        trace_dbg!("update status: {:?}", s);
+        self.status = s;
+      },
       Action::EnterNormal => {
         self.mode = Mode::Normal;
         self.session.mode = Mode::Normal;
@@ -122,6 +127,10 @@ impl Component for Home {
         Mode::Normal => Span::styled("Normal Mode", Style::default().fg(Color::Green)),
         Mode::Insert => Span::styled("Insert Mode", Style::default().fg(Color::Yellow)),
         Mode::Processing => Span::styled("Processing", Style::default().fg(Color::Yellow)),
+      },
+      match self.status {
+        Some(ref s) => Span::styled(format!(": {}", s), Style::default().fg(Color::Yellow)),
+        None => Span::raw(""),
       },
     ]);
     f.render_widget(

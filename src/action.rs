@@ -20,6 +20,7 @@ pub enum Action {
   RequestChatCompletion(),
   AddMessage(ChatMessage),
   SelectModel(Model),
+  UpdateStatus(Option<String>),
   EnterNormal,
   EnterInsert,
   EnterProcessing,
