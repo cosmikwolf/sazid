@@ -21,6 +21,7 @@ pub enum Action {
   AddMessage(ChatMessage),
   SelectModel(Model),
   UpdateStatus(Option<String>),
+  SetInputVsize(u16),
   EnterVisual,
   EnterNormal,
   EnterInsert,

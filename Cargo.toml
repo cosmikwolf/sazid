@@ -5,8 +5,15 @@ edition = "2021"
 description = "Semantic GPT Programming Intelligence"
 repository = "https://github.com/cosmikwolf/sazid"
 authors = ["tenkai <tenkai@kariya.ai>"]
+default-run = "sazid"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+[[bin]]
+name = "sazid"
+path = "src/main.rs"
+
+[[bin]]
+name = "chartest"
+path = "src/bin/crossterm_character_test.rs"
 
 [dependencies]
 uuid = "1.5.0"
@@ -29,6 +36,10 @@ clap = { version = "4.4.5", features = [
 color-eyre = "0.6.2"
 config = "0.13.3"
 console-subscriber = "0.2.0"
+# crossterm = { version = "0.27.0", path = "lib/crossterm", features = [
+#   "serde",
+#   "event-stream",
+# ] }
 crossterm = { version = "0.27.0", features = ["serde", "event-stream"] }
 derive_deref = "1.1.1"
 directories = "5.0.1"

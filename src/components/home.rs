@@ -9,7 +9,7 @@ use crate::{
   trace_dbg,
 };
 
-use color_eyre::eyre::Result;
+use color_eyre::{eyre::Result, owo_colors::OwoColorize};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use log::error;
 use rand;
@@ -54,10 +54,6 @@ impl<'a> Home<'a> {
 
   pub fn tick(&mut self) {
     //log::info!("Tick");
-    self.color_counter += 5000000;
-    self.color_counter %= MAX24BIT;
-    (self.rgb, self.inv_rgb) = get_rainbow_and_inverse_colors(self.color_counter, MAX24BIT);
-    self.input.set_cursor_style(self.input.cursor_style().bg(self.rgb).fg(self.inv_rgb));
     self.last_events.drain(..);
   }
 }
@@ -85,6 +81,12 @@ impl Component for Home<'static> {
 
   fn update(&mut self, action: Action) -> Result<Option<Action>, SazidError> {
     match action {
+      Action::Render => {
+        self.color_counter += 100000;
+        self.color_counter %= MAX24BIT;
+        (self.rgb, self.inv_rgb) = get_rainbow_and_inverse_colors(self.color_counter, MAX24BIT);
+        self.input.set_cursor_style(self.input.cursor_style().bg(self.rgb).fg(self.inv_rgb));
+      },
       Action::Tick => self.tick(),
       // Action::Render => self.render_tick(),
       // Action::ToggleShowHelp => self.show_help = !self.show_help,
@@ -112,11 +114,11 @@ impl Component for Home<'static> {
       },
       Action::EnterProcessing => {
         //self.input.reset();
-        let input_length = self.input.clone().into_lines().len();
-        for _i in 0..input_length {
-          self.input.move_cursor(CursorMove::Head);
-          self.input.move_cursor(CursorMove::Top);
-          self.input.delete_line_by_end();
+
+        // self.input.clone().into_lines().iter().for_each(|_a| {
+        while !self.input.is_empty() {
+          self.input.move_cursor(CursorMove::End);
+          self.input.delete_line_by_head();
         }
         self.mode = Mode::Processing;
         self.session.mode = Mode::Processing;
@@ -149,13 +151,13 @@ impl Component for Home<'static> {
     let action = match self.mode {
       Mode::Visual => match key {
         KeyEvent { code: KeyCode::Esc, .. } => Action::EnterNormal,
-        KeyEvent { code: KeyCode::Enter, modifiers: KeyModifiers::META, .. } => submit_input(""),
+        KeyEvent { code: KeyCode::Enter, modifiers: KeyModifiers::ALT, .. } => submit_input(""),
         _ => Action::Update,
       },
       Mode::Normal | Mode::Processing => return Ok(None),
       Mode::Insert => match key {
         KeyEvent { code: KeyCode::Esc, .. } => Action::EnterVisual,
-        KeyEvent { code: KeyCode::Enter, modifiers: KeyModifiers::META, .. } => submit_input(""),
+        KeyEvent { code: KeyCode::Enter, modifiers: KeyModifiers::ALT, .. } => submit_input(""),
         _ => {
           self.input.input(crossterm::event::Event::Key(key));
           Action::Update
@@ -166,10 +168,11 @@ impl Component for Home<'static> {
   }
 
   fn draw(&mut self, f: &mut Frame<'_>, area: Rect) -> Result<(), SazidError> {
-    let input_length = self.input.clone().into_lines().len();
-    let rects = Layout::default()
-      .constraints([Constraint::Percentage(100), Constraint::Min(2 + input_length as u16)].as_ref())
-      .split(area);
+    let input_length = self.input.clone().into_lines().len() as u16 + 2;
+    let tx = self.action_tx.clone().unwrap();
+    tx.send(Action::SetInputVsize(input_length)).unwrap();
+    let rects =
+      Layout::default().constraints([Constraint::Percentage(100), Constraint::Min(input_length)].as_ref()).split(area);
     // let text: Vec<Line> = self.text.clone().iter().map(|l| Line::from(l.clone())).collect();
     let title_text = Line::from(vec![
       Span::raw("sazid semantic llvm console "),
@@ -197,16 +200,48 @@ impl Component for Home<'static> {
       rects[0],
     );
 
-    let width = rects[1].width.max(3) - 3; // keep 2 for borders and 1 for cursor
+    self.input.set_placeholder_text({
+      match self.mode {
+        Mode::Insert => "",
+        _ => "press i to enter input mode",
+      }
+    });
 
-    self.input.set_block(Block::default().borders(Borders::ALL).title(Line::from(vec![
-      Span::raw("Enter Input Mode "),
-      Span::styled("(Press ", Style::default().fg(Color::DarkGray)),
-      Span::styled("i", Style::default().add_modifier(Modifier::BOLD).fg(Color::Gray)),
-      Span::styled(" to start, ", Style::default().fg(Color::DarkGray)),
-      Span::styled("ESC", Style::default().add_modifier(Modifier::BOLD).fg(Color::Gray)),
-      Span::styled(" to finish)", Style::default().fg(Color::DarkGray)),
-    ])));
+    self.input.set_block(
+      Block::default()
+        .borders(Borders::ALL)
+        .title(match self.mode {
+          Mode::Insert => Line::from(vec![
+            Span::raw("Input Mode"),
+            Span::styled("(press", Style::default().fg(Color::DarkGray)),
+            Span::styled("<alt>-<enter>", Style::default().add_modifier(Modifier::BOLD).fg(Color::Gray)),
+            Span::styled(" to submit input, ", Style::default().fg(Color::DarkGray)),
+            Span::styled("ESC", Style::default().add_modifier(Modifier::BOLD).fg(Color::Gray)),
+            Span::styled(" to enter Visual mode)", Style::default().fg(Color::DarkGray)),
+          ]),
+          Mode::Visual => Line::from(vec![
+            Span::raw("Visual Mode "),
+            Span::styled("(Press ", Style::default().fg(Color::DarkGray)),
+            Span::styled("i", Style::default().add_modifier(Modifier::BOLD).fg(Color::Gray)),
+            Span::styled(" to enter text, ", Style::default().fg(Color::DarkGray)),
+          ]),
+          Mode::Processing => Line::from(vec![Span::raw("Awaiting Chat Completion")]),
+          _ => Line::from(vec![
+            Span::raw("Enter Input Mode "),
+            Span::styled("(Press ", Style::default().fg(Color::DarkGray)),
+            Span::styled("i", Style::default().add_modifier(Modifier::BOLD).fg(Color::Gray)),
+            Span::styled(" to start, ", Style::default().fg(Color::DarkGray)),
+            Span::styled("ESC", Style::default().add_modifier(Modifier::BOLD).fg(Color::Gray)),
+            Span::styled(" to finish)", Style::default().fg(Color::DarkGray)),
+          ]),
+        })
+        .style(match self.mode {
+          Mode::Insert => Style::default().fg(Color::Yellow),
+          Mode::Visual => Style::default().fg(Color::Cyan),
+          Mode::Processing => Style::default().fg(self.rgb),
+          _ => Style::default(),
+        }),
+    );
     f.render_widget(self.input.widget(), rects[1]);
     // let scroll = self.input.visual_scroll(width as usize);
     // let input = Paragraph::new(self.input.value())

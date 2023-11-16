@@ -76,6 +76,8 @@ pub struct Session<'a> {
   pub request_message_buffer: Option<CreateChatCompletionRequest>,
   #[serde(skip)]
   pub request_buffer_token_count: usize,
+  #[serde(skip)]
+  pub input_vsize: u16,
 }
 
 impl<'a> Default for Session<'a> {
@@ -102,6 +104,7 @@ impl<'a> Default for Session<'a> {
       request_buffer_with_token_count: Vec::new(),
       request_message_buffer: None,
       request_buffer_token_count: 0,
+      input_vsize: 1,
     }
   }
 }
@@ -162,6 +165,9 @@ Do not try to infer a path to a file, if you have not been provided a path with 
         self.request_chat_completion(tx.clone())
       },
       Action::SelectModel(model) => self.config.model = model,
+      Action::SetInputVsize(vsize) => {
+        self.input_vsize = vsize;
+      },
       _ => (),
     }
     //self.action_tx.clone().unwrap().send(Action::Render).unwrap();
@@ -200,7 +206,7 @@ Do not try to infer a path to a file, if you have not been provided a path with 
   fn draw(&mut self, f: &mut Frame<'_>, area: Rect) -> Result<(), SazidError> {
     let rects = Layout::default()
       .direction(Direction::Vertical)
-      .constraints([Constraint::Percentage(100), Constraint::Min(4)].as_ref())
+      .constraints([Constraint::Percentage(100), Constraint::Min(self.input_vsize)].as_ref())
       .split(area);
     let inner_a = Layout::default()
       .direction(Direction::Vertical)
