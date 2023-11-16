@@ -1,5 +1,4 @@
 use crate::app::functions::function_call::ModelFunction;
-use crate::components::Component;
 use crate::{
   action::Action,
   app::messages::{ChatMessage, FunctionResult},

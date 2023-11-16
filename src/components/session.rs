@@ -212,9 +212,6 @@ Do not try to infer a path to a file, if you have not been provided a path with 
       .split(inner_a[1]);
 
     let block = Block::default().borders(Borders::NONE).gray();
-    let _use_text_area = false;
-
-    //let mut text = String::with_capacity(inner[1].width as usize * inner[1].height as usize + 1);
 
     self.vertical_viewport_height = inner[1].height as usize;
     self.vertical_content_height = self.view.rendered_text.len_lines();
@@ -331,7 +328,6 @@ impl Session<'static> {
         ChatMessage::ChatCompletionResponseMessage(_) => true,
         ChatMessage::FunctionResult(_) => true,
         ChatMessage::SazidSystemMessage(_) => false,
-        _ => false,
       })
       .skip(self.request_buffer_with_token_count.len())
       .map(|m| (<Option<ChatCompletionRequestMessage>>::from(&m.message), m.get_token_count()))

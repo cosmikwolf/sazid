@@ -3392,6 +3392,7 @@ dependencies = [
  "pretty_assertions",
  "pulldown-cmark",
  "pulldown-cmark-mdcat",
+ "rand 0.8.5",
  "ratatui 0.24.0",
  "reqwest",
  "ropey",

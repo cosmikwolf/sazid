@@ -3,7 +3,7 @@ use std::error::Error;
 
 use async_openai::{types::CreateEmbeddingRequestArgs, Client};
 
-async fn generate_embedding() -> Result<(), Box<dyn Error>> {
+async fn _generate_embedding() -> Result<(), Box<dyn Error>> {
   let client = Client::new();
 
   // An embedding is a vector (list) of floating point numbers.
@@ -49,4 +49,3 @@ mod tests {
     assert_yaml_snapshot!(response);
   }
 }
-

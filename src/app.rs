@@ -3,6 +3,7 @@ use ratatui::prelude::Rect;
 use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc;
 
+pub mod color_math;
 pub mod consts;
 pub mod embeddings;
 pub mod errors;

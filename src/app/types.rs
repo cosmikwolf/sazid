@@ -1,4 +1,4 @@
-use crate::{app::consts::*, trace_dbg};
+use crate::app::consts::*;
 
 use async_openai::{self, types::Role};
 use clap::Parser;

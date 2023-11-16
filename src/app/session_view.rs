@@ -15,7 +15,7 @@ use super::{
   messages::{MessageContainer, RenderedChatMessage},
   session_data::SessionData,
 };
-use ropey::{iter::Chars, Rope, RopeSlice};
+use ropey::Rope;
 
 #[derive(Default, Debug)]
 pub struct SessionView {
@@ -142,7 +142,7 @@ impl<'a> BatRenderer<'a> {
       ..Default::default()
     };
     let assets = HighlightingAssets::from_binary();
-    let buffer: Vec<u8> = Vec::new();
+    let _buffer: Vec<u8> = Vec::new();
     BatRenderer { config, assets }
   }
 
