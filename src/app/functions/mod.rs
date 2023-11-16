@@ -174,7 +174,7 @@ pub fn handle_chat_response_function_call(
   tokio::spawn(async move {
     match {
       let fn_name = fn_name.clone();
-      let fn_args = fn_args;
+      let fn_args = fn_args.clone();
       async move {
         let function_args_result: Result<HashMap<String, serde_json::Value>, serde_json::Error> =
           serde_json::from_str(fn_args.as_str());

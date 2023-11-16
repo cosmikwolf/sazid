@@ -70,6 +70,12 @@ pub struct Session<'a> {
   pub fn_name: Option<String>,
   #[serde(skip)]
   pub fn_args: Option<String>,
+  #[serde(skip)]
+  pub request_buffer_with_token_count: Vec<(Option<ChatCompletionRequestMessage>, usize)>,
+  #[serde(skip)]
+  pub request_message_buffer: Option<CreateChatCompletionRequest>,
+  #[serde(skip)]
+  pub request_buffer_token_count: usize,
 }
 
 impl<'a> Default for Session<'a> {
@@ -93,12 +99,16 @@ impl<'a> Default for Session<'a> {
       render: false,
       fn_name: None,
       fn_args: None,
+      request_buffer_with_token_count: Vec::new(),
+      request_message_buffer: None,
+      request_buffer_token_count: 0,
     }
   }
 }
 
 impl Component for Session<'static> {
   fn init(&mut self, area: Rect) -> Result<(), SazidError> {
+    let tx = self.action_tx.clone().unwrap();
     //let model_preference: Vec<Model> = vec![GPT4.clone(), GPT3_TURBO.clone(), WIZARDLM.clone()];
     //Session::select_model(model_preference, create_openai_client(self.config.openai_config.clone()));
     trace_dbg!("init session");
@@ -110,7 +120,7 @@ Make sure to properly entabulate any code blocks
 Do not try and execute arbitrary python code.
 Do not try to infer a path to a file, if you have not been provided a path with the root ./, use the file_search function to verify the file path before you execute a function call.".to_string();
     self.view.set_window_width(area.width as usize, &mut self.data.messages);
-    self.data.add_message(ChatMessage::PromptMessage(self.config.prompt_message()));
+    tx.send(Action::AddMessage(ChatMessage::PromptMessage(self.config.prompt_message()))).unwrap();
     self.view.post_process_new_messages(&mut self.data);
     self.config.available_functions = all_functions();
     Ok(())
@@ -141,6 +151,7 @@ Do not try to infer a path to a file, if you have not been provided a path with 
             self.config.clone(),
           );
         }
+        self.add_new_messages_to_request_buffer();
       },
       Action::SubmitInput(s) => {
         self.scroll_sticky_end = true;
@@ -308,32 +319,55 @@ impl Session<'static> {
     }
   }
 
-  pub fn construct_request(&self) -> (CreateChatCompletionRequest, usize) {
+  pub fn add_new_messages_to_request_buffer(&mut self) {
+    // add new request messages to the request buffer
+    let new_requests: Vec<(Option<ChatCompletionRequestMessage>, usize)> = self
+      .data
+      .messages
+      .iter()
+      .filter(|m| match m.message {
+        ChatMessage::ChatCompletionRequestMessage(_) => true,
+        ChatMessage::PromptMessage(_) => true,
+        ChatMessage::ChatCompletionResponseMessage(_) => true,
+        ChatMessage::FunctionResult(_) => true,
+        ChatMessage::SazidSystemMessage(_) => false,
+        _ => false,
+      })
+      .skip(self.request_buffer_with_token_count.len())
+      .map(|m| (<Option<ChatCompletionRequestMessage>>::from(&m.message), m.get_token_count()))
+      .collect();
+    self.request_buffer_with_token_count.extend(new_requests);
+  }
+
+  pub fn construct_request(&mut self) {
     let functions = match self.config.available_functions.is_empty() {
       true => None,
       false => {
         Some(create_chat_completion_function_args(self.config.available_functions.iter().map(|f| f.into()).collect()))
       },
     };
+
     let mut token_count = 0;
+
     let request = CreateChatCompletionRequest {
       model: self.config.model.name.clone(),
-      messages: self
-        .data
-        .messages
-        .iter()
-        .flat_map(|m| {
-          token_count += m.get_token_count();
-          <Option<ChatCompletionRequestMessage>>::from(m.message.as_ref())
-        })
-        .collect::<Vec<ChatCompletionRequestMessage>>(),
       functions,
+      messages: self
+        .request_buffer_with_token_count
+        .clone()
+        .into_iter()
+        .flat_map(|(o, tc)| {
+          token_count += tc;
+          o
+        })
+        .collect(),
       stream: Some(self.config.stream_response),
       max_tokens: Some(self.config.response_max_tokens as u16),
+      // todo: put the user information in here
       user: Some("testing testing".to_string()),
       ..Default::default()
     };
-    (request, token_count)
+    self.request_message_buffer = Some(request)
   }
 
   pub fn submit_chat_completion_request(&mut self, input: String, tx: UnboundedSender<Action>) {
@@ -452,8 +486,12 @@ impl Session<'static> {
     tx.send(Action::UpdateStatus(Some("Configuring Client".to_string()))).unwrap();
     let stream_response = self.config.stream_response;
     let openai_config = self.config.openai_config.clone();
-    let (request, token_count) = self.construct_request();
-    trace_dbg!("Sending Request:\n{:?}", &request.messages.last().unwrap().content);
+
+    if self.request_message_buffer.is_none() {
+      self.construct_request()
+    }
+    let request = self.request_message_buffer.clone().unwrap();
+    let token_count = self.request_buffer_token_count;
     tx.send(Action::UpdateStatus(Some("Assembling request...".to_string()))).unwrap();
     tokio::spawn(async move {
       tx.send(Action::UpdateStatus(Some("Establishing Client Connection".to_string()))).unwrap();
