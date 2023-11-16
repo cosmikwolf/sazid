@@ -139,15 +139,15 @@ impl Component for Home<'static> {
 
     let submit_input = |_a| {
       let input = self.input.lines().join("\n");
-      let string = format!("sending input: {}", input);
-      trace_dbg!(string);
+      // let string = format!("sending input: {}", input);
+      // trace_dbg!(string);
 
       if let Err(e) = tx.send(Action::SubmitInput(input)) {
         error!("Failed to send action: {:?}", e);
       }
       Action::EnterNormal
     };
-    trace_dbg!("key: {:#?}\n{:#?}", key, crossterm::event::Event::Key(key));
+    //trace_dbg!("key: {:#?}\n{:#?}", key, crossterm::event::Event::Key(key));
     let action = match self.mode {
       Mode::Visual => match key {
         KeyEvent { code: KeyCode::Esc, .. } => Action::EnterNormal,

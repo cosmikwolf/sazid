@@ -4,6 +4,7 @@ use async_openai::types::{
   FunctionCall, Role,
 };
 
+use color_eyre::owo_colors::OwoColorize;
 use crossterm::event::{KeyCode, KeyEvent, MouseEvent, MouseEventKind};
 use futures::StreamExt;
 use ratatui::layout::Rect;
@@ -115,13 +116,14 @@ impl Component for Session<'static> {
     //let model_preference: Vec<Model> = vec![GPT4.clone(), GPT3_TURBO.clone(), WIZARDLM.clone()];
     //Session::select_model(model_preference, create_openai_client(self.config.openai_config.clone()));
     trace_dbg!("init session");
-    self.config.prompt =
-"act as a programming architecture and implementation expert, that specializes in the Rust.
-Use the functions available to assist with the user inquiry.
-Provide your response as markdown formatted text.
-Make sure to properly entabulate any code blocks
-Do not try and execute arbitrary python code.
-Do not try to infer a path to a file, if you have not been provided a path with the root ./, use the file_search function to verify the file path before you execute a function call.".to_string();
+    //     self.config.prompt =
+    // "act as a programming architecture and implementation expert, that specializes in the Rust.
+    // Use the functions available to assist with the user inquiry.
+    // Provide your response as markdown formatted text.
+    // Make sure to properly entabulate any code blocks
+    // Do not try and execute arbitrary python code.
+    // Do not try to infer a path to a file, if you have not been provided a path with the root ./, use the file_search function to verify the file path before you execute a function call.".to_string();
+    self.config.prompt = "act as a very terse assistant".into();
     self.view.set_window_width(area.width as usize, &mut self.data.messages);
     tx.send(Action::AddMessage(ChatMessage::PromptMessage(self.config.prompt_message()))).unwrap();
     self.view.post_process_new_messages(&mut self.data);
@@ -336,9 +338,15 @@ impl Session<'static> {
         ChatMessage::SazidSystemMessage(_) => false,
       })
       .skip(self.request_buffer_with_token_count.len())
-      .map(|m| (<Option<ChatCompletionRequestMessage>>::from(&m.message), m.get_token_count()))
+      .filter(|m| m.finished)
+      .map(|m| {
+        let debug = format!("message: {:#?}", m.message).bright_red().to_string();
+        trace_dbg!(debug);
+        (<Option<ChatCompletionRequestMessage>>::from(&m.message), m.get_token_count())
+      })
       .collect();
     self.request_buffer_with_token_count.extend(new_requests);
+    trace_dbg!("request_buffer_with_token_count: {:#?}", self.request_buffer_with_token_count);
   }
 
   pub fn construct_request(&mut self) {
