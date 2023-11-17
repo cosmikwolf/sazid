@@ -1,5 +1,3 @@
-use crossterm;
-use crossterm::event::KeyEvent;
 use crossterm::event::{KeyboardEnhancementFlags, PopKeyboardEnhancementFlags, PushKeyboardEnhancementFlags};
 use crossterm::execute;
 use std::io::{stdout, Write};
@@ -16,7 +14,7 @@ fn main() {
     )
   )
   .unwrap();
-  while true {
+  loop {
     stdout().flush().unwrap();
     match crossterm::event::read().unwrap() {
       crossterm::event::Event::Key(key_event) => {
@@ -27,6 +25,7 @@ fn main() {
       },
     }
   }
+
   execute!(stdout(), PopKeyboardEnhancementFlags).unwrap();
 }
 

@@ -14,7 +14,7 @@ use walkdir::WalkDir;
 use self::pcre2grep_function::Pcre2GrepFunction;
 use self::{
   cargo_check_function::CargoCheckFunction, create_file_function::CreateFileFunction, errors::ModelFunctionError,
-  file_search_function::FileSearchFunction, grep_function::GrepFunction, modify_file_function::ModifyFileFunction,
+  file_search_function::FileSearchFunction, modify_file_function::ModifyFileFunction,
   patch_files_function::PatchFilesFunction, read_file_lines_function::ReadFileLinesFunction, types::Command,
 };
 

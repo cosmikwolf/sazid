@@ -12,7 +12,7 @@ use syntect::parsing::SyntaxSet;
 use crate::trace_dbg;
 
 use super::{
-  messages::{MessageContainer, RenderedChatMessage},
+  messages::{MessageContainer},
   session_data::SessionData,
 };
 use ropey::Rope;

@@ -18,8 +18,6 @@ use tui_textarea::TextArea;
 
 use async_openai::{config::OpenAIConfig, Client};
 
-use backoff::exponential::ExponentialBackoffBuilder;
-
 use super::{Component, Frame};
 use crate::app::functions::{all_functions, handle_chat_response_function_call};
 use crate::app::messages::{ChatMessage, ChatResponse};
@@ -30,6 +28,8 @@ use crate::app::{consts::*, errors::*, tools::chunkifier::*, types::*};
 use crate::trace_dbg;
 use crate::tui::Event;
 use crate::{action::Action, config::Config};
+use backoff::exponential::ExponentialBackoffBuilder;
+use dirs_next::home_dir;
 
 use crate::app::gpt_interface::create_chat_completion_function_args;
 use crate::app::tools::utils::ensure_directory_exists;
@@ -149,6 +149,12 @@ impl Component for Session<'static> {
           );
         }
         self.add_new_messages_to_request_buffer();
+      },
+      Action::ExecuteCommand(command) => {
+        tx.send(Action::CommandResult(self.execute_command(command).unwrap()));
+      },
+      Action::SaveSession => {
+        self.save_session().unwrap();
       },
       Action::SubmitInput(s) => {
         self.scroll_sticky_end = true;
@@ -292,6 +298,19 @@ impl Session<'static> {
 
     Ok(Some(Action::Update))
   }
+
+  pub fn execute_command(&mut self, command: String) -> Result<String, SazidError> {
+    let args = command.split_whitespace().collect::<Vec<&str>>();
+    match args[0] {
+      "exit" => std::process::exit(0),
+      "load" => {
+        self.load_session_by_id(args[1].to_string());
+        Ok(format!("session {} loaded successfully!", args[1]))
+      },
+      _ => Ok(format!("invalid command")),
+    }
+  }
+
   pub fn add_chunked_chat_completion_request_messages(
     &mut self,
     content: &str,
@@ -352,20 +371,20 @@ impl Session<'static> {
       },
     };
     self.add_new_messages_to_request_buffer();
-    let mut token_count = 0;
+    let _token_count = 0;
     let debug = format!("{:#?}", self.request_buffer).bright_cyan().to_string();
     trace_dbg!("constructing request {}", debug);
-    let request = CreateChatCompletionRequest {
+
+    CreateChatCompletionRequest {
       model: self.config.model.name.clone(),
       functions,
-      messages: self.request_buffer.clone().into_iter().flat_map(|o| o).collect(),
+      messages: self.request_buffer.clone().into_iter().flatten().collect(),
       stream: Some(self.config.stream_response),
       max_tokens: Some(self.config.response_max_tokens as u16),
       // todo: put the user information in here
       user: Some("testing testing".to_string()),
       ..Default::default()
-    };
-    request
+    }
   }
 
   pub fn submit_chat_completion_request(&mut self, input: String, tx: UnboundedSender<Action>) {
@@ -438,6 +457,7 @@ impl Session<'static> {
         },
       };
       tx.send(Action::UpdateStatus(Some("Chat Request Complete".to_string()))).unwrap();
+      tx.send(Action::SaveSession).unwrap();
       tx.send(Action::ExitProcessing).unwrap();
     });
   }
@@ -449,15 +469,17 @@ impl Session<'static> {
     tx.send(Action::Update).unwrap();
   }
 
-  pub fn load_session_by_id(session_id: String) -> Session<'static> {
+  pub fn load_session_by_id(&mut self, session_id: String) -> Result<(), SazidError> {
     Self::get_session_filepath(session_id.clone());
     let load_result = fs::read_to_string(Self::get_session_filepath(session_id.clone()));
     match load_result {
-      Ok(session_data) => return serde_json::from_str(session_data.as_str()).unwrap(),
-      Err(_) => {
-        println!("Failed to load session data, creating new session");
-        Session::new()
+      Ok(load_session) => {
+        let incoming_session: Session = serde_json::from_str(load_session.as_str()).unwrap();
+        self.data = incoming_session.data;
+        self.config = incoming_session.config;
+        Ok(())
       },
+      Err(e) => Err(SazidError::Other(format!("Failed to load session data: {:?}", e))),
     }
   }
 
@@ -480,17 +502,19 @@ impl Session<'static> {
   }
 
   pub fn load_last_session() -> Session<'static> {
-    let last_session_path = Path::new(SESSIONS_DIR).join("last_session.txt");
     let last_session_id = fs::read_to_string(last_session_path).unwrap();
-    Self::load_session_by_id(last_session_id)
   }
 
-  #[allow(dead_code)]
   fn save_session(&self) -> io::Result<()> {
-    ensure_directory_exists(SESSIONS_DIR).unwrap();
-    let session_file_path = Self::get_session_filepath(self.config.session_id.clone());
+    let home_dir = home_dir().unwrap();
+    let save_dir = home_dir.join(SESSIONS_DIR);
+    if !save_dir.exists() {
+      fs::create_dir_all(save_dir.clone())?;
+    }
+    let session_file_path = save_dir.join(Self::get_session_filename(self.config.session_id.clone()));
     let data = serde_json::to_string(&self)?;
-    fs::write(session_file_path, data)?;
+    fs::write(session_file_path.clone(), data)?;
+    trace_dbg!("session saved to {}", &session_file_path.clone().display());
     Ok(())
   }
 

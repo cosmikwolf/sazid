@@ -25,6 +25,7 @@ pub enum Mode {
   Normal,
   Insert,
   Processing,
+  Command,
 }
 
 #[derive(Debug, Default)]
@@ -55,6 +56,19 @@ impl<'a> Home<'a> {
   pub fn tick(&mut self) {
     //log::info!("Tick");
     self.last_events.drain(..);
+  }
+
+  pub fn replace_input(&mut self, text: String) {
+    self.clear_input();
+    self.input.move_cursor(CursorMove::Head);
+    self.input.insert_str(&text);
+  }
+
+  pub fn clear_input(&mut self) {
+    while !self.input.is_empty() {
+      self.input.move_cursor(CursorMove::End);
+      self.input.delete_line_by_head();
+    }
   }
 }
 
@@ -99,6 +113,10 @@ impl Component for Home<'static> {
         trace_dbg!("update status: {:?}", s);
         self.status = s;
       },
+      Action::EnterCommand => {
+        self.mode = Mode::Command;
+        self.session.mode = Mode::Command;
+      },
       Action::EnterNormal => {
         self.mode = Mode::Normal;
         self.session.mode = Mode::Normal;
@@ -112,14 +130,11 @@ impl Component for Home<'static> {
         self.mode = Mode::Insert;
         self.session.mode = Mode::Insert;
       },
+      Action::CommandResult(result) => {
+        self.mode = Mode::Command;
+      },
       Action::EnterProcessing => {
-        //self.input.reset();
-
-        // self.input.clone().into_lines().iter().for_each(|_a| {
-        while !self.input.is_empty() {
-          self.input.move_cursor(CursorMove::End);
-          self.input.delete_line_by_head();
-        }
+        self.clear_input();
         self.mode = Mode::Processing;
         self.session.mode = Mode::Processing;
       },
@@ -147,8 +162,27 @@ impl Component for Home<'static> {
       }
       Action::EnterNormal
     };
+
+    let execute_command = |_c| {
+      let input = self.input.lines().join("\n");
+      if let Err(e) = tx.send(Action::ExecuteCommand(input)) {
+        error!("Failed to send action: {:?}", e);
+      }
+      Action::EnterNormal
+    };
     //trace_dbg!("key: {:#?}\n{:#?}", key, crossterm::event::Event::Key(key));
     let action = match self.mode {
+      Mode::Command => match key {
+        KeyEvent { code: KeyCode::Esc, .. } => {
+          self.clear_input();
+          Action::EnterInsert
+        },
+        KeyEvent { code: KeyCode::Enter, modifiers: KeyModifiers::ALT, .. } => execute_command(""),
+        _ => {
+          self.input.input(crossterm::event::Event::Key(key));
+          Action::Update
+        },
+      },
       Mode::Visual => match key {
         KeyEvent { code: KeyCode::Esc, .. } => Action::EnterNormal,
         KeyEvent { code: KeyCode::Enter, modifiers: KeyModifiers::ALT, .. } => submit_input(""),
@@ -156,6 +190,13 @@ impl Component for Home<'static> {
       },
       Mode::Normal | Mode::Processing => return Ok(None),
       Mode::Insert => match key {
+        KeyEvent { code: KeyCode::Char(':'), .. } => {
+          if self.input.cursor() == (0, 0) {
+            Action::EnterCommand
+          } else {
+            Action::Update
+          }
+        },
         KeyEvent { code: KeyCode::Esc, .. } => Action::EnterVisual,
         KeyEvent { code: KeyCode::Enter, modifiers: KeyModifiers::ALT, .. } => submit_input(""),
         _ => {
@@ -177,6 +218,7 @@ impl Component for Home<'static> {
     let title_text = Line::from(vec![
       Span::raw("sazid semantic llvm console "),
       match self.mode {
+        Mode::Command => Span::styled("Command Mode", Style::default().fg(self.rgb)),
         Mode::Visual => Span::styled("Visual Mode", Style::default().fg(Color::Magenta)),
         Mode::Normal => Span::styled("Normal Mode", Style::default().fg(Color::Green)),
         Mode::Insert => Span::styled("Insert Mode", Style::default().fg(Color::Yellow)),
@@ -211,6 +253,14 @@ impl Component for Home<'static> {
       Block::default()
         .borders(Borders::ALL)
         .title(match self.mode {
+          Mode::Command => Line::from(vec![
+            Span::styled("Command Mode", Style::default().fg(self.rgb)),
+            Span::styled("(press ", Style::default().fg(Color::DarkGray)),
+            Span::styled("<alt>-<enter>", Style::default().add_modifier(Modifier::BOLD).fg(Color::Gray)),
+            Span::styled(" to execute command, ", Style::default().fg(Color::DarkGray)),
+            Span::styled("ESC", Style::default().add_modifier(Modifier::BOLD).fg(Color::Gray)),
+            Span::styled(" to enter Insert mode)", Style::default().fg(Color::DarkGray)),
+          ]),
           Mode::Insert => Line::from(vec![
             Span::raw("Input Mode"),
             Span::styled("(press", Style::default().fg(Color::DarkGray)),
