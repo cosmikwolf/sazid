@@ -82,3 +82,15 @@ pub fn collate_stream_response_vec(
     }
   });
 }
+use std::fs::{self, DirEntry};
+use std::io;
+use std::path::Path;
+use std::time::SystemTime;
+
+pub fn list_files_ordered_by_date<P: AsRef<Path>>(path: P) -> io::Result<Vec<DirEntry>> {
+  let mut entries: Vec<DirEntry> = fs::read_dir(path)?.filter_map(|entry| entry.ok()).collect();
+
+  entries.sort_by_key(|entry| entry.metadata().and_then(|meta| meta.modified()).unwrap_or(SystemTime::UNIX_EPOCH));
+
+  Ok(entries)
+}

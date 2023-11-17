@@ -20,6 +20,7 @@ use async_openai::{config::OpenAIConfig, Client};
 
 use super::{Component, Frame};
 use crate::app::functions::{all_functions, handle_chat_response_function_call};
+use crate::app::helpers::list_files_ordered_by_date;
 use crate::app::messages::{ChatMessage, ChatResponse};
 use crate::app::session_config::SessionConfig;
 use crate::app::session_data::SessionData;
@@ -151,7 +152,7 @@ impl Component for Session<'static> {
         self.add_new_messages_to_request_buffer();
       },
       Action::ExecuteCommand(command) => {
-        tx.send(Action::CommandResult(self.execute_command(command).unwrap()));
+        tx.send(Action::CommandResult(self.execute_command(command).unwrap())).unwrap();
       },
       Action::SaveSession => {
         self.save_session().unwrap();
@@ -304,10 +305,15 @@ impl Session<'static> {
     match args[0] {
       "exit" => std::process::exit(0),
       "load" => {
-        self.load_session_by_id(args[1].to_string());
-        Ok(format!("session {} loaded successfully!", args[1]))
+        if args.len() > 1 {
+          self.load_session_by_id(args[1].to_string())?;
+          Ok(format!("session {} loaded successfully!", args[1]))
+        } else {
+          self.load_last_session()?;
+          Ok("last session loaded successfully!".to_string())
+        }
       },
-      _ => Ok(format!("invalid command")),
+      _ => Ok("invalid command".to_string()),
     }
   }
 
@@ -426,11 +432,9 @@ impl Session<'static> {
           tx.send(Action::UpdateStatus(Some("Sending Request to OpenAI API...".to_string()))).unwrap();
           let mut stream = client.chat().create_stream(request).await.unwrap();
           tx.send(Action::UpdateStatus(Some("Request submitted. Awaiting Response...".to_string()))).unwrap();
-          let mut count = 0;
           while let Some(response_result) = stream.next().await {
             match response_result {
               Ok(response) => {
-                count += 1;
                 //tx.send(Action::UpdateStatus(Some(format!("Received responses: {}", count).to_string()))).unwrap();
                 Self::response_handler(tx.clone(), ChatResponse::StreamResponse(response)).await;
               },
@@ -469,20 +473,6 @@ impl Session<'static> {
     tx.send(Action::Update).unwrap();
   }
 
-  pub fn load_session_by_id(&mut self, session_id: String) -> Result<(), SazidError> {
-    Self::get_session_filepath(session_id.clone());
-    let load_result = fs::read_to_string(Self::get_session_filepath(session_id.clone()));
-    match load_result {
-      Ok(load_session) => {
-        let incoming_session: Session = serde_json::from_str(load_session.as_str()).unwrap();
-        self.data = incoming_session.data;
-        self.config = incoming_session.config;
-        Ok(())
-      },
-      Err(e) => Err(SazidError::Other(format!("Failed to load session data: {:?}", e))),
-    }
-  }
-
   pub fn get_session_filepath(session_id: String) -> PathBuf {
     Path::new(SESSIONS_DIR).join(Self::get_session_filename(session_id))
   }
@@ -501,10 +491,44 @@ impl Session<'static> {
     }
   }
 
-  pub fn load_last_session() -> Session<'static> {
-    let last_session_id = fs::read_to_string(last_session_path).unwrap();
+  fn load_session(&mut self, session_serde: String) -> Result<(), SazidError> {
+    let incoming_session: Session = serde_json::from_str(session_serde.as_str()).unwrap();
+    self.data = incoming_session.data;
+    self.config = incoming_session.config;
+    self.data.messages.iter_mut().for_each(|m| {
+      m.finished = false;
+    });
+    Ok(())
+  }
+  pub fn load_session_by_id(&mut self, session_id: String) -> Result<(), SazidError> {
+    Self::get_session_filepath(session_id.clone());
+    let load_result = fs::read_to_string(Self::get_session_filepath(session_id.clone()));
+    match load_result {
+      Ok(load_session) => self.load_session(load_session),
+      Err(e) => Err(SazidError::Other(format!("Failed to load session data: {:?}", e))),
+    }
+  }
+  pub fn load_last_session(&mut self) -> Result<(), SazidError> {
+    let home_dir = home_dir().unwrap();
+    let save_dir = home_dir.join(SESSIONS_DIR);
+    let session_files = list_files_ordered_by_date(save_dir).unwrap();
+    let last_session_file = session_files.iter().last().unwrap();
+    if last_session_file.path().is_file() {
+      self.load_session_by_path(last_session_file.path().to_str().unwrap().to_string())
+    } else {
+      Err(SazidError::Other(format!("Failed to load session data: {:?}", last_session_file)))
+    }
   }
 
+  fn load_session_by_path(&mut self, session_file_path: String) -> Result<(), SazidError> {
+    trace_dbg!("loading session from {}", session_file_path);
+
+    let load_result = fs::read_to_string(session_file_path);
+    match load_result {
+      Ok(load_session) => self.load_session(load_session),
+      Err(e) => Err(SazidError::Other(format!("Failed to load session data: {:?}", e))),
+    }
+  }
   fn save_session(&self) -> io::Result<()> {
     let home_dir = home_dir().unwrap();
     let save_dir = home_dir.join(SESSIONS_DIR);

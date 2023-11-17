@@ -35,6 +35,8 @@ pub struct Config {
   pub styles: Styles,
   #[serde(default)]
   pub list_file_paths: Vec<PathBuf>,
+  #[serde(default)]
+  pub session_dir: PathBuf,
 }
 
 impl Config {
@@ -76,6 +78,7 @@ impl Config {
       },
     };
     cfg.session_config.list_file_paths = cfg.list_file_paths.clone();
+    cfg.session_config.session_dir = cfg.session_dir.clone();
     for (mode, default_bindings) in default_config.keybindings.iter() {
       let user_bindings = cfg.keybindings.entry(*mode).or_default();
       for (key, cmd) in default_bindings.iter() {

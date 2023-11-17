@@ -131,6 +131,7 @@ impl Component for Home<'static> {
         self.session.mode = Mode::Insert;
       },
       Action::CommandResult(result) => {
+        self.replace_input(result);
         self.mode = Mode::Command;
       },
       Action::EnterProcessing => {
@@ -171,25 +172,24 @@ impl Component for Home<'static> {
       Action::EnterNormal
     };
     //trace_dbg!("key: {:#?}\n{:#?}", key, crossterm::event::Event::Key(key));
+    trace_dbg!("insert key: {:?}\n{:?}", key, self.input.cursor());
     let action = match self.mode {
       Mode::Command => match key {
         KeyEvent { code: KeyCode::Esc, .. } => {
           self.clear_input();
           Action::EnterInsert
         },
-        KeyEvent { code: KeyCode::Enter, modifiers: KeyModifiers::ALT, .. } => execute_command(""),
+        KeyEvent { code: KeyCode::Enter, .. } => {
+          execute_command("");
+          self.clear_input();
+          Action::Update
+        },
         _ => {
           self.input.input(crossterm::event::Event::Key(key));
           Action::Update
         },
       },
       Mode::Visual => match key {
-        KeyEvent { code: KeyCode::Esc, .. } => Action::EnterNormal,
-        KeyEvent { code: KeyCode::Enter, modifiers: KeyModifiers::ALT, .. } => submit_input(""),
-        _ => Action::Update,
-      },
-      Mode::Normal | Mode::Processing => return Ok(None),
-      Mode::Insert => match key {
         KeyEvent { code: KeyCode::Char(':'), .. } => {
           if self.input.cursor() == (0, 0) {
             Action::EnterCommand
@@ -197,6 +197,12 @@ impl Component for Home<'static> {
             Action::Update
           }
         },
+        KeyEvent { code: KeyCode::Esc, .. } => Action::EnterNormal,
+        KeyEvent { code: KeyCode::Enter, modifiers: KeyModifiers::ALT, .. } => submit_input(""),
+        _ => Action::Update,
+      },
+      Mode::Normal | Mode::Processing => return Ok(None),
+      Mode::Insert => match key {
         KeyEvent { code: KeyCode::Esc, .. } => Action::EnterVisual,
         KeyEvent { code: KeyCode::Enter, modifiers: KeyModifiers::ALT, .. } => submit_input(""),
         _ => {

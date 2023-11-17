@@ -1,3 +1,4 @@
+use patch::{Line, Patch};
 use std::{
   collections::HashMap,
   fs::{self, File},
@@ -27,16 +28,27 @@ impl ModelFunction for PatchFilesFunction {
     PatchFilesFunction {
       name: "patch_files".to_string(),
       description: "optionally create and compulsorily apply a unified diff format .patch file".to_string(),
-      required_properties: vec![CommandProperty {
-        name: "patch_name".to_string(),
-        required: true,
-        property_type: "string".to_string(),
-        description: Some("name of .patch file, including extension, in the .session_data/patches folder".to_string()),
-        enum_values: None,
-      }],
+      required_properties: vec![
+        CommandProperty {
+          name: "file_to_patch".to_string(),
+          required: true,
+          property_type: "string".to_string(),
+          description: Some("the path to the file which the patch will be applied to".to_string()),
+          enum_values: None,
+        },
+        CommandProperty {
+          name: "patch_name".to_string(),
+          required: true,
+          property_type: "string".to_string(),
+          description: Some(
+            "name of .patch file, including extension. patch must be in the .session_data/patches folder".to_string(),
+          ),
+          enum_values: None,
+        },
+      ],
       optional_properties: vec![CommandProperty {
         name: "patch_content".to_string(),
-        required: true,
+        required: false,
         property_type: "string".to_string(),
         description: Some(".patch file content in unified diff format".to_string()),
         enum_values: None,
@@ -54,6 +66,11 @@ impl ModelFunction for PatchFilesFunction {
     if !patches_dir.exists() {
       fs::create_dir_all(patches_dir)?;
     }
+    let file_path = function_args
+      .get("file_to_patch")
+      .and_then(|s| s.as_str())
+      .map(PathBuf::from)
+      .ok_or_else(|| ModelFunctionError::new("file_to_patch argument is required"))?;
 
     match function_args.get("patch_name").and_then(|s| s.as_str()) {
       Some(patch_name) => {
@@ -62,14 +79,14 @@ impl ModelFunction for PatchFilesFunction {
           if let Some(patch_content) = function_args.get("patch_content").and_then(|s| s.as_str()) {
             create_patch_file(patch_path.clone(), patch_content)
           } else {
-            Ok("".to_string())
+            Ok("new patch content not present".to_string())
           };
         let create_patch_output = match create_patch_file_results {
           Ok(output) => output,
           Err(e) => format!("create patch file error: {}", e).to_string(),
         };
-        let apply_patch_results = apply_patch_file(patch_path)?;
-        Ok(Some(format!("{}{}", create_patch_output, apply_patch_results)))
+        let apply_patch_results = apply_patch_file(file_path, patch_path)?;
+        Ok(Some(format!("patch_content output: {}\tpatch_file output: {}", create_patch_output, apply_patch_results)))
       },
       None => Ok(Some("patch_name argument is required".to_string())),
     }
@@ -97,13 +114,40 @@ impl ModelFunction for PatchFilesFunction {
   }
 }
 
-pub fn apply_patch_file(patch_path: PathBuf) -> Result<String, ModelFunctionError> {
-  let mut command = std::process::Command::new("patch");
-  command.arg("-p1");
-  command.arg("-i");
-  command.arg(patch_path);
-  let output = command.output()?;
-  Ok(format!("output: {}", String::from_utf8_lossy(&output.stdout)))
+fn apply(diff: Patch, old: &str) -> String {
+  let old_lines = old.lines().collect::<Vec<&str>>();
+  let mut out: Vec<&str> = vec![];
+  let mut old_line = 0;
+  for hunk in diff.hunks {
+    while old_line < hunk.old_range.start - 1 {
+      out.push(old_lines[old_line as usize]);
+      old_line += 1;
+    }
+    old_line += hunk.old_range.count;
+    for line in hunk.lines {
+      match line {
+        Line::Add(s) | Line::Context(s) => out.push(s),
+        Line::Remove(_) => {},
+      }
+    }
+  }
+  out.join("\n")
+}
+pub fn apply_patch_file(file_path: PathBuf, patch_path: PathBuf) -> Result<String, ModelFunctionError> {
+  let original_content = fs::read_to_string(&file_path)
+    .map_err(|e| ModelFunctionError::new(&format!("error reading original file: {}", e)))?;
+  let patch_content =
+    fs::read_to_string(patch_path).map_err(|e| ModelFunctionError::new(&format!("error reading patch file: {}", e)))?;
+
+  let patch = Patch::from_single(&patch_content)
+    .map_err(|e| ModelFunctionError::new(&format!("error parsing patch content: {}", e)))?;
+
+  let patched_content = apply(patch, &original_content);
+
+  fs::write(&file_path, patched_content)
+    .map_err(|e| ModelFunctionError::new(&format!("error writing patched file: {}", e)))?;
+
+  Ok("Patch applied successfully".to_string())
 }
 
 pub fn create_patch_file(patch_path: PathBuf, patch_content: &str) -> Result<String, ModelFunctionError> {

@@ -5,8 +5,8 @@ use std::path::PathBuf;
 pub const MAX_FUNCTION_CALL_DEPTH: u32 = 0;
 pub const CHUNK_TOKEN_LIMIT: u32 = 4096u32;
 
-pub const SESSIONS_DIR: &str = "$HOME/.local/share/sazid/data/sessions";
-pub const INGESTED_DIR: &str = "$HOME/.local/share/sazid/data/ingested";
+pub const SESSIONS_DIR: &str = ".local/share/sazid/data/sessions";
+pub const INGESTED_DIR: &str = ".local/share/sazid/data/ingested";
 
 lazy_static! {
     // model constants
