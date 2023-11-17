@@ -165,6 +165,10 @@ impl Component for Session<'static> {
         trace_dbg!(level: tracing::Level::INFO, "requesting chat completion");
         self.request_chat_completion(tx.clone())
       },
+      Action::Resize(width, _height) => {
+        self.view.set_window_width(width.into(), &mut self.data.messages);
+        self.redraw_messages()
+      },
       Action::SelectModel(model) => self.config.model = model,
       Action::SetInputVsize(vsize) => {
         self.input_vsize = vsize;
@@ -209,14 +213,14 @@ impl Component for Session<'static> {
       .direction(Direction::Vertical)
       .constraints([Constraint::Percentage(100), Constraint::Min(self.input_vsize)].as_ref())
       .split(area);
-    let inner_a = Layout::default()
+    let inner = Layout::default()
       .direction(Direction::Vertical)
       .constraints(vec![Constraint::Length(1), Constraint::Min(10), Constraint::Length(0)])
       .split(rects[0]);
-    let inner = Layout::default()
-      .direction(Direction::Horizontal)
-      .constraints(vec![Constraint::Length(3), Constraint::Min(10), Constraint::Length(3)])
-      .split(inner_a[1]);
+    // let inner = Layout::default()
+    //   .direction(Direction::Horizontal)
+    //   .constraints(vec![Constraint::Length(3), Constraint::Min(10), Constraint::Length(3)])
+    //   .split(inner_a[1]);
 
     let block = Block::default().borders(Borders::NONE).gray();
 
@@ -238,15 +242,15 @@ impl Component for Session<'static> {
       self.view.get_stylized_rendered_slice(self.vertical_scroll, self.vertical_viewport_height, self.vertical_scroll);
     let paragraph = Paragraph::new(text.into_text().unwrap())
       .block(block)
-      .wrap(Wrap { trim: false })
+      //.wrap(Wrap { trim: false })
       .scroll((self.vertical_scroll as u16, 0));
-    let scrollbar = Scrollbar::default()
-      .orientation(ScrollbarOrientation::VerticalRight)
-      .thumb_symbol("󱁨")
-      .begin_symbol(Some("󰶼"))
-      .end_symbol(Some("󰶹"));
+    // let scrollbar = Scrollbar::default()
+    //   .orientation(ScrollbarOrientation::VerticalRight)
+    //   .thumb_symbol("󱁨")
+    //   .begin_symbol(Some("󰶼"))
+    //   .end_symbol(Some("󰶹"));
     f.render_widget(paragraph, inner[1]);
-    f.render_stateful_widget(scrollbar, inner[2], &mut self.vertical_scroll_state);
+    // f.render_stateful_widget(scrollbar, inner[2], &mut self.vertical_scroll_state);
     //self.render = false;
     Ok(())
   }
@@ -265,6 +269,13 @@ impl Session<'static> {
     Self::default()
   }
 
+  fn redraw_messages(&mut self) {
+    trace_dbg!("redrawing messages");
+    self.data.messages.iter_mut().for_each(|m| {
+      m.finished = false;
+    });
+    self.view.post_process_new_messages(&mut self.data);
+  }
   pub fn scroll_up(&mut self) -> Result<Option<Action>, SazidError> {
     self.vertical_scroll = self.vertical_scroll.saturating_sub(1);
     self.scroll_sticky_end = false;

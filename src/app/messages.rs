@@ -26,11 +26,12 @@ pub struct MessageContainer {
 impl MessageContainer {
   pub fn render_message(&mut self, window_width: usize) {
     self.rendered = RenderedChatMessage::from(&self.message);
-    let padding = " ".repeat(2);
-    let padded_content =
-      self.rendered.content.split('\n').map(|l| format!("{}{}", padding, l)).collect::<Vec<String>>().join("\n");
+    let _padding = " ".repeat(2);
+    let padded_content = &self.rendered.content;
+    //   self.rendered.content.split('\n').map(|l| format!("{}{}", padding, l)).collect::<Vec<String>>().join("\n");
     let new_content = match self.message {
       ChatMessage::ChatCompletionResponseMessage(ChatResponseSingleMessage::StreamResponse(_)) => {
+        // regex to check if the message is just whitespace
         let re = Regex::new(r"^\s*$").unwrap();
         if re.is_match(padded_content.as_str()) {
           format!(
@@ -45,6 +46,7 @@ impl MessageContainer {
         }
       },
       ChatMessage::ChatCompletionResponseMessage(ChatResponseSingleMessage::Response(_)) => {
+        // regex to check if the message is just whitespace
         let re = Regex::new(r"^\s*$").unwrap();
         if re.is_match(padded_content.as_str()) {
           format!(
@@ -71,7 +73,8 @@ impl MessageContainer {
         format!("{}\n{}", "System:".bright_magenta(), padded_content)
       },
     };
-    self.rendered.content = bwrap::wrap_maybrk!(new_content.as_str(), window_width - 20, "", padding.as_str())
+    self.rendered.content = new_content;
+    //self.rendered.content = bwrap::wrap_maybrk!(new_content.as_str(), window_width - 20, "", padding.as_str())
   }
 }
 impl MessageContainer {

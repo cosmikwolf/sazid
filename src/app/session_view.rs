@@ -1,20 +1,11 @@
 use bat::{assets::HighlightingAssets, config::Config, controller::Controller, style::StyleComponents, Input};
-
-use pulldown_cmark::{Options, Parser};
-use pulldown_cmark_mdcat::resources::*;
 use pulldown_cmark_mdcat::terminal::{TerminalProgram, TerminalSize};
-use pulldown_cmark_mdcat::Settings;
-use pulldown_cmark_mdcat::{Environment, Theme};
-use std::path::Path;
-use std::sync::OnceLock;
-use syntect::parsing::SyntaxSet;
+use textwrap::wrap_algorithms::{wrap_optimal_fit, OverflowError, Penalties};
+use textwrap::{self, Options, WordSeparator, WordSplitter, WrapAlgorithm};
 
 use crate::trace_dbg;
 
-use super::{
-  messages::{MessageContainer},
-  session_data::SessionData,
-};
+use super::{messages::MessageContainer, session_data::SessionData};
 use ropey::Rope;
 
 #[derive(Default, Debug)]
@@ -34,10 +25,8 @@ impl SessionView {
       trace_dbg!("setting window width to {}", new_value);
 
       self.window_width = new_value;
-      self.renderer.config.term_width = new_value;
-      messages.iter_mut().for_each(|m| {
-        m.finished = false;
-      });
+      self.renderer.config.term_width = 10000;
+      //self.renderer.config.term_width = new_value;
     }
   }
 
@@ -75,10 +64,34 @@ impl SessionView {
       // let previously_rendered_bytecount = message.rendered.stylized.len_bytes();
       if !message.finished {
         message.render_message(self.window_width);
-        message.rendered.stylized = Rope::from_str(&self.renderer.render_message_bat(&message.rendered.content));
-        // Rope::from_str(&message.rendered.content.as_str());
-        //
+        let text_width = self.window_width.min(80);
+        let left_padding = self.window_width.saturating_sub(text_width) / 2;
+        trace_dbg!("left_padding: {}\ttext_width: {}, window_width: {}", left_padding, text_width, self.window_width);
+        let stylized = self.renderer.render_message_bat(&message.rendered.content);
+        let options = Options::new(text_width)
+          //.break_words(false)
+          .word_splitter(WordSplitter::NoHyphenation)
+          .word_separator(WordSeparator::AsciiSpace)
+          //.wrap_algorithm(WrapAlgorithm::FirstFit);
+        .wrap_algorithm(WrapAlgorithm::new_optimal_fit());
+        let wrapped = textwrap::wrap(stylized.as_str(), options);
 
+        message.rendered.stylized = Rope::from_str(
+          wrapped
+            .iter()
+            .enumerate()
+            .map(|(i, l)| {
+              if i == 0 {
+                format!("{}{}", " ".repeat(left_padding + 2), l)
+              } else {
+                format!("{}{}", " ".repeat(left_padding + 4), l)
+              }
+            })
+            .collect::<Vec<String>>()
+            .join("\n")
+            .as_str(),
+        );
+        //message.rendered.stylized = Rope::from_str(&message.rendered.content);
         if message.rendered.finish_reason.is_some() {
           message.finished = true;
           message.rendered.stylized.append(Rope::from_str("\n".to_string().repeat(dividing_newlines_count).as_str()));
@@ -123,7 +136,7 @@ impl<'a> BatRenderer<'a> {
       //StyleComponent::Rule,
       //StyleComponent::Default,
       //StyleComponent::Snip,
-      //StyleComponent::Plain,
+      //StyleComponents::plain,
     ]);
     let config: Config<'static> = Config {
       colored_output: true,
@@ -165,50 +178,4 @@ impl<'a> BatRenderer<'a> {
     //trace_dbg!("render_message_bat: {:?}", buffer);
     buffer
   }
-}
-
-static SYNTAX_SET: OnceLock<SyntaxSet> = OnceLock::new();
-
-fn syntax_set() -> &'static SyntaxSet {
-  SYNTAX_SET.get_or_init(SyntaxSet::load_defaults_newlines)
-}
-
-static RESOURCE_HANDLER: OnceLock<DispatchingResourceHandler> = OnceLock::new();
-
-fn resource_handler() -> &'static DispatchingResourceHandler {
-  RESOURCE_HANDLER.get_or_init(|| {
-    let handlers: Vec<Box<dyn ResourceUrlHandler>> = vec![];
-    //let handlers: Vec<Box<dyn ResourceUrlHandler>> = vec![Box::new(FileResourceHandler::new(TEST_READ_LIMIT))];
-    DispatchingResourceHandler::new(handlers)
-  })
-}
-
-pub fn render_markdown_to_string(input: String) -> String {
-  // let theme = Theme::default();
-  // theme.html_block_style = Style::new().fg_color(Some(AnsiColor::Green.into()));
-  //
-  // Theme {
-  //   html_block_style: Style::new().fg_color(Some(AnsiColor::Green.into())),
-  //   inline_html_style: Style::new().fg_color(Some(AnsiColor::Green.into())),
-  //   code_style: Style::new().fg_color(Some(AnsiColor::Yellow.into())),
-  //   link_style: Style::new().fg_color(Some(AnsiColor::Blue.into())),
-  //   image_link_style: Style::new().fg_color(Some(AnsiColor::Magenta.into())),
-  //   rule_color: AnsiColor::Green.into(),
-  //   code_block_border_color: AnsiColor::Green.into(),
-  //   heading_style: Style::new().fg_color(Some(AnsiColor::Blue.into())).bold(),
-  // };
-  let settings = Settings {
-    terminal_capabilities: TerminalProgram::ITerm2.capabilities(),
-    terminal_size: TerminalSize::default(),
-    theme: Theme::default(),
-    syntax_set: syntax_set(),
-  };
-
-  let parser = Parser::new_ext(&input, Options::ENABLE_TASKLISTS | Options::ENABLE_STRIKETHROUGH);
-  let abs_path = std::fs::canonicalize(Path::new("./")).unwrap();
-  let base_dir = abs_path.parent().expect("Absolute file name must have a parent!");
-  let mut sink = Vec::new();
-  let env = Environment { hostname: "HOSTNAME".to_string(), ..Environment::for_local_directory(&base_dir).unwrap() };
-  pulldown_cmark_mdcat::push_tty(&settings, &env, resource_handler(), &mut sink, parser).unwrap();
-  String::from_utf8(sink).unwrap()
 }
