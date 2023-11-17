@@ -3394,6 +3394,7 @@ dependencies = [
  "pulldown-cmark-mdcat",
  "rand 0.8.5",
  "ratatui 0.24.0",
+ "regex",
  "reqwest",
  "ropey",
  "rust-fuzzy-search",

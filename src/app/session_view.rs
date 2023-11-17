@@ -74,10 +74,8 @@ impl SessionView {
 
       // let previously_rendered_bytecount = message.rendered.stylized.len_bytes();
       if !message.finished {
-        message.rendered = RenderedChatMessage::from(&message.message);
-        message.rendered.stylized = Rope::from_str(
-          &self.renderer.render_message_bat(bwrap::wrap!(&message.rendered.content, self.window_width - 3).as_str()),
-        );
+        message.render_message(self.window_width);
+        message.rendered.stylized = Rope::from_str(&self.renderer.render_message_bat(&message.rendered.content));
         // Rope::from_str(&message.rendered.content.as_str());
         //
 

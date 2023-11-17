@@ -7,6 +7,7 @@ use super::{
   validate_and_extract_options, validate_and_extract_paths_from_argument, validate_and_extract_string_argument,
 };
 use clap::Parser;
+use serde_derive::{Deserialize, Serialize};
 
 #[derive(Parser, Debug)]
 #[clap(author, version, about, long_about = None)]
@@ -33,6 +34,7 @@ struct Args {
   only_matching: bool,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Pcre2GrepFunction {
   pub name: String,
   pub description: String,
@@ -90,9 +92,10 @@ impl ModelFunction for Pcre2GrepFunction {
     function_args: HashMap<String, serde_json::Value>,
     session_config: SessionConfig,
   ) -> Result<Option<String>, ModelFunctionError> {
-    let options = validate_and_extract_options::<Args>(&function_args, false)?.unwrap();
-    let pattern = validate_and_extract_string_argument(&function_args, "pattern", true)?.unwrap();
-    let paths = validate_and_extract_paths_from_argument(&function_args, session_config, true)?.unwrap();
+    let options = validate_and_extract_options::<Args>(&function_args, false).unwrap().unwrap_or_default();
+    let pattern = validate_and_extract_string_argument(&function_args, "pattern", true).unwrap().unwrap_or_default();
+    let paths =
+      validate_and_extract_paths_from_argument(&function_args, session_config, true).unwrap().unwrap_or_default();
 
     execute_pcre2grep(options, pattern, paths)
   }

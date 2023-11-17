@@ -11,6 +11,7 @@ use std::{collections::HashMap, path::PathBuf};
 use tokio::sync::mpsc::UnboundedSender;
 use walkdir::WalkDir;
 
+use self::pcre2grep_function::Pcre2GrepFunction;
 use self::{
   cargo_check_function::CargoCheckFunction, create_file_function::CreateFileFunction, errors::ModelFunctionError,
   file_search_function::FileSearchFunction, grep_function::GrepFunction, modify_file_function::ModifyFileFunction,
@@ -34,7 +35,8 @@ pub mod types;
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub enum CallableFunction {
   FileSearchFunction(FileSearchFunction),
-  GrepFunction(GrepFunction),
+  Pcre2GrepFunction(Pcre2GrepFunction),
+  //GrepFunction(GrepFunction),
   ReadFileLinesFunction(ReadFileLinesFunction),
   ModifyFileFunction(ModifyFileFunction),
   CreateFileFunction(CreateFileFunction),
@@ -46,7 +48,7 @@ impl From<&CallableFunction> for Command {
   fn from(callable_function: &CallableFunction) -> Self {
     match callable_function {
       CallableFunction::FileSearchFunction(f) => f.command_definition(),
-      CallableFunction::GrepFunction(f) => f.command_definition(),
+      CallableFunction::Pcre2GrepFunction(f) => f.command_definition(),
       CallableFunction::ReadFileLinesFunction(f) => f.command_definition(),
       CallableFunction::ModifyFileFunction(f) => f.command_definition(),
       CallableFunction::CreateFileFunction(f) => f.command_definition(),
@@ -60,7 +62,7 @@ pub fn all_functions() -> Vec<CallableFunction> {
   vec![
     CallableFunction::PatchFilesFunction(PatchFilesFunction::init()),
     CallableFunction::FileSearchFunction(FileSearchFunction::init()),
-    CallableFunction::GrepFunction(GrepFunction::init()),
+    CallableFunction::Pcre2GrepFunction(Pcre2GrepFunction::init()),
     CallableFunction::ReadFileLinesFunction(ReadFileLinesFunction::init()),
     CallableFunction::ModifyFileFunction(ModifyFileFunction::init()),
     CallableFunction::CreateFileFunction(CreateFileFunction::init()),
@@ -182,11 +184,12 @@ pub fn handle_chat_response_function_call(
           Ok(function_args) => match fn_name.as_str() {
             "create_file" => CreateFileFunction::init().call(function_args, session_config),
             "patch_files" => PatchFilesFunction::init().call(function_args, session_config),
-            "grep" => GrepFunction::init().call(function_args, session_config),
+            //"grep" => GrepFunction::init().call(function_args, session_config),
             "file_search" => FileSearchFunction::init().call(function_args, session_config),
             "read_file" => ReadFileLinesFunction::init().call(function_args, session_config),
             "modify_file" => ModifyFileFunction::init().call(function_args, session_config),
             "cargo_check" => CargoCheckFunction::init().call(function_args, session_config),
+            "pcre2grep" => Pcre2GrepFunction::init().call(function_args, session_config),
             _ => Ok(Some("function not found".to_string())),
           },
           Err(e) => Err(ModelFunctionError::new(

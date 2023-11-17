@@ -72,9 +72,7 @@ pub struct Session<'a> {
   #[serde(skip)]
   pub fn_args: Option<String>,
   #[serde(skip)]
-  pub request_buffer_with_token_count: Vec<(Option<ChatCompletionRequestMessage>, usize)>,
-  #[serde(skip)]
-  pub request_message_buffer: Option<CreateChatCompletionRequest>,
+  pub request_buffer: Vec<Option<ChatCompletionRequestMessage>>,
   #[serde(skip)]
   pub request_buffer_token_count: usize,
   #[serde(skip)]
@@ -102,8 +100,7 @@ impl<'a> Default for Session<'a> {
       render: false,
       fn_name: None,
       fn_args: None,
-      request_buffer_with_token_count: Vec::new(),
-      request_message_buffer: None,
+      request_buffer: Vec::new(),
       request_buffer_token_count: 0,
       input_vsize: 1,
     }
@@ -116,14 +113,9 @@ impl Component for Session<'static> {
     //let model_preference: Vec<Model> = vec![GPT4.clone(), GPT3_TURBO.clone(), WIZARDLM.clone()];
     //Session::select_model(model_preference, create_openai_client(self.config.openai_config.clone()));
     trace_dbg!("init session");
-    //     self.config.prompt =
-    // "act as a programming architecture and implementation expert, that specializes in the Rust.
-    // Use the functions available to assist with the user inquiry.
-    // Provide your response as markdown formatted text.
-    // Make sure to properly entabulate any code blocks
-    // Do not try and execute arbitrary python code.
-    // Do not try to infer a path to a file, if you have not been provided a path with the root ./, use the file_search function to verify the file path before you execute a function call.".to_string();
-    self.config.prompt = "act as a very terse assistant".into();
+    self.config.prompt =
+    "act as a somewhat terse programming architecture and implementation expert, that specializes in the Rust.\nUse the functions available to assist with the user inquiry.\nProvide your response as markdown formatted text.\nMake sure to properly entabulate any code blocks\nDo not try and execute arbitrary python code.\nDo not try to infer a path to a file, if you have not been provided a path with the root ./, use the file_search function to verify the file path before you execute a function call.".to_string();
+    // self.config.prompt = "act as a very terse assistant".into();
     self.view.set_window_width(area.width as usize, &mut self.data.messages);
     tx.send(Action::AddMessage(ChatMessage::PromptMessage(self.config.prompt_message()))).unwrap();
     self.view.post_process_new_messages(&mut self.data);
@@ -311,12 +303,15 @@ impl Session<'static> {
     match parse_input(content, CHUNK_TOKEN_LIMIT as usize, model.token_limit as usize) {
       Ok(chunks) => {
         chunks.iter().for_each(|chunk| {
-          self.data.add_message(ChatMessage::ChatCompletionRequestMessage(ChatCompletionRequestMessage {
-            role,
-            name: None,
-            content: Some(chunk.clone()),
-            function_call: function_call.clone(),
-          }));
+          // explicitly calling update because we need this to be blocking, since it can't move on until the input is processed
+          self
+            .update(Action::AddMessage(ChatMessage::ChatCompletionRequestMessage(ChatCompletionRequestMessage {
+              role,
+              name: None,
+              content: Some(chunk.clone()),
+              function_call: function_call.clone(),
+            })))
+            .unwrap();
         });
         Ok(())
       },
@@ -326,7 +321,7 @@ impl Session<'static> {
 
   pub fn add_new_messages_to_request_buffer(&mut self) {
     // add new request messages to the request buffer
-    let new_requests: Vec<(Option<ChatCompletionRequestMessage>, usize)> = self
+    let new_requests: Vec<Option<ChatCompletionRequestMessage>> = self
       .data
       .messages
       .iter()
@@ -337,47 +332,40 @@ impl Session<'static> {
         ChatMessage::FunctionResult(_) => true,
         ChatMessage::SazidSystemMessage(_) => false,
       })
-      .skip(self.request_buffer_with_token_count.len())
+      .skip(self.request_buffer.len())
       .filter(|m| m.finished)
       .map(|m| {
         let debug = format!("message: {:#?}", m.message).bright_red().to_string();
         trace_dbg!(debug);
-        (<Option<ChatCompletionRequestMessage>>::from(&m.message), m.get_token_count())
+        <Option<ChatCompletionRequestMessage>>::from(&m.message)
       })
       .collect();
-    self.request_buffer_with_token_count.extend(new_requests);
-    trace_dbg!("request_buffer_with_token_count: {:#?}", self.request_buffer_with_token_count);
+    self.request_buffer.extend(new_requests);
+    // trace_dbg!("request_buffer: {:#?}", self.request_buffer);
   }
 
-  pub fn construct_request(&mut self) {
+  pub fn construct_request(&mut self) -> CreateChatCompletionRequest {
     let functions = match self.config.available_functions.is_empty() {
       true => None,
       false => {
         Some(create_chat_completion_function_args(self.config.available_functions.iter().map(|f| f.into()).collect()))
       },
     };
-
+    self.add_new_messages_to_request_buffer();
     let mut token_count = 0;
-
+    let debug = format!("{:#?}", self.request_buffer).bright_cyan().to_string();
+    trace_dbg!("constructing request {}", debug);
     let request = CreateChatCompletionRequest {
       model: self.config.model.name.clone(),
       functions,
-      messages: self
-        .request_buffer_with_token_count
-        .clone()
-        .into_iter()
-        .flat_map(|(o, tc)| {
-          token_count += tc;
-          o
-        })
-        .collect(),
+      messages: self.request_buffer.clone().into_iter().flat_map(|o| o).collect(),
       stream: Some(self.config.stream_response),
       max_tokens: Some(self.config.response_max_tokens as u16),
       // todo: put the user information in here
       user: Some("testing testing".to_string()),
       ..Default::default()
     };
-    self.request_message_buffer = Some(request)
+    request
   }
 
   pub fn submit_chat_completion_request(&mut self, input: String, tx: UnboundedSender<Action>) {
@@ -399,116 +387,21 @@ impl Session<'static> {
     }
   }
 
-  // fn handle_chat_response_function_call(
-  //   tx: UnboundedSender<Action>,
-  //   fn_name: String,
-  //   fn_args: String,
-  //   session_config: SessionConfig,
-  // ) {
-  //   tokio::spawn(async move {
-  //     match {
-  //       let fn_name = fn_name.clone();
-  //       let fn_args = fn_args;
-  //       async move {
-  //         let function_args: Result<HashMap<String, Value>, serde_json::Error> = serde_json::from_str(fn_args.as_str());
-  //         match function_args {
-  //           Ok(function_args) => {
-  //             if let Some(v) = function_args.get("path") {
-  //               if let Some(pathstr) = v.as_str() {
-  //                 let accesible_paths = get_accessible_file_paths(session_config.list_file_paths.clone());
-  //                 if !accesible_paths.contains_key(Path::new(pathstr).to_str().unwrap()) {
-  //                   return Err(FunctionCallError::new(
-  //                     format!("File path is not accessible: {:?}. Suggest using file_search command", pathstr).as_str(),
-  //                   ));
-  //                 } else {
-  //                   trace_dbg!("path: {:?} exists", pathstr);
-  //                 }
-  //               }
-  //             }
-  //             let start_line: Option<usize> =
-  //               function_args.get("start_line").and_then(|s| s.as_u64().map(|u| u as usize));
-  //             let end_line: Option<usize> = function_args.get("end_line").and_then(|s| s.as_u64().map(|u| u as usize));
-  //             let search_term: Option<&str> = function_args.get("search_term").and_then(|s| s.as_str());
-  //
-  //             match fn_name.as_str() {
-  //               "create_file" => create_file(
-  //                 function_args["path"].as_str().unwrap_or_default(),
-  //                 function_args["text"].as_str().unwrap_or_default(),
-  //               ),
-  //               "grep" => crate::app::gpt_interface::grep(
-  //                 function_args["pattern"].as_str().unwrap_or_default(),
-  //                 function_args["paths"].as_str().unwrap_or_default(),
-  //               ),
-  //               "file_search" => file_search(
-  //                 session_config.function_result_max_tokens,
-  //                 session_config.list_file_paths.clone(),
-  //                 search_term,
-  //               ),
-  //               "read_lines" => read_file_lines(
-  //                 function_args["path"].as_str().unwrap_or_default(),
-  //                 start_line,
-  //                 end_line,
-  //                 session_config.function_result_max_tokens,
-  //                 session_config.list_file_paths.clone(),
-  //               ),
-  //               "modify_file" => modify_file(
-  //                 function_args["path"].as_str().unwrap(),
-  //                 start_line.unwrap_or(0),
-  //                 end_line,
-  //                 function_args["insert_text"].as_str(),
-  //               ),
-  //               "cargo_check" => cargo_check(),
-  //               _ => Ok(None),
-  //             }
-  //           },
-  //           Err(e) => Err(FunctionCallError::new(
-  //             format!("Failed to parse function arguments:\nfunction:{:?}\nargs:{:?}\nerror:{:?}", fn_name, fn_args, e)
-  //               .as_str(),
-  //           )),
-  //         }
-  //       }
-  //     }
-  //     .await
-  //     {
-  //       Ok(Some(output)) => {
-  //         //self.data.add_message(ChatMessage::FunctionResult(FunctionResult { name: fn_name, response: output }));
-  //         tx.send(Action::AddMessage(ChatMessage::FunctionResult(FunctionResult { name: fn_name, response: output })))
-  //           .unwrap();
-  //       },
-  //       Ok(None) => {},
-  //       Err(e) => {
-  //         // self.data.add_message(ChatMessage::FunctionResult(FunctionResult {
-  //         //   name: fn_name,
-  //         //   response: format!("Error: {:?}", e),
-  //         // }));
-  //         tx.send(Action::AddMessage(ChatMessage::FunctionResult(FunctionResult {
-  //           name: fn_name,
-  //           response: format!("Error: {:?}", e),
-  //         })))
-  //         .unwrap();
-  //       },
-  //     }
-  //     tx.send(Action::RequestChatCompletion()).unwrap();
-  //   });
-  // }
-
   pub fn request_chat_completion(&mut self, tx: UnboundedSender<Action>) {
     tx.send(Action::UpdateStatus(Some("Configuring Client".to_string()))).unwrap();
     let stream_response = self.config.stream_response;
     let openai_config = self.config.openai_config.clone();
 
-    if self.request_message_buffer.is_none() {
-      self.construct_request()
-    }
-    let request = self.request_message_buffer.clone().unwrap();
-    let token_count = self.request_buffer_token_count;
+    let request = self.construct_request();
+    // let request = self.request_message_buffer.clone().unwrap();
+    // let token_count = self.request_buffer_token_count;
     tx.send(Action::UpdateStatus(Some("Assembling request...".to_string()))).unwrap();
     tokio::spawn(async move {
       tx.send(Action::UpdateStatus(Some("Establishing Client Connection".to_string()))).unwrap();
       tx.send(Action::EnterProcessing).unwrap();
       let client = create_openai_client(openai_config);
-      tx.send(Action::AddMessage(ChatMessage::SazidSystemMessage(format!("Request Token Count: {}", token_count))))
-        .unwrap();
+      // tx.send(Action::AddMessage(ChatMessage::SazidSystemMessage(format!("Request Token Count: {}", token_count))))
+      //   .unwrap();
       match stream_response {
         true => {
           tx.send(Action::UpdateStatus(Some("Sending Request to OpenAI API...".to_string()))).unwrap();
@@ -519,7 +412,7 @@ impl Session<'static> {
             match response_result {
               Ok(response) => {
                 count += 1;
-                tx.send(Action::UpdateStatus(Some(format!("Received responses: {}", count).to_string()))).unwrap();
+                //tx.send(Action::UpdateStatus(Some(format!("Received responses: {}", count).to_string()))).unwrap();
                 Self::response_handler(tx.clone(), ChatResponse::StreamResponse(response)).await;
               },
               Err(e) => {
