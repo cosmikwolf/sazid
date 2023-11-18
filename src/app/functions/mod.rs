@@ -183,11 +183,11 @@ pub fn handle_chat_response_function_call(
         match function_args_result {
           Ok(function_args) => match fn_name.as_str() {
             "create_file" => CreateFileFunction::init().call(function_args, session_config),
-            "patch_files" => PatchFilesFunction::init().call(function_args, session_config),
+            //"patch_files" => PatchFilesFunction::init().call(function_args, session_config),
             //"grep" => GrepFunction::init().call(function_args, session_config),
             "file_search" => FileSearchFunction::init().call(function_args, session_config),
             "read_file" => ReadFileLinesFunction::init().call(function_args, session_config),
-            "modify_file" => ModifyFileFunction::init().call(function_args, session_config),
+            //"modify_file" => ModifyFileFunction::init().call(function_args, session_config),
             "cargo_check" => CargoCheckFunction::init().call(function_args, session_config),
             "pcre2grep" => Pcre2GrepFunction::init().call(function_args, session_config),
             _ => Ok(Some("function not found".to_string())),

@@ -1,0 +1,15 @@
+read patch_files_function.rs and patch_files_function_tests.rs
+
+The tests are resulting in two failures. Please identify the cause of the failures and determine a fix.
+Please implement the fix, and produce a new source file with the fix.
+The source file must be complete, and contain all code from the original, except with the fixes implemented.
+Do not leave anything out with placeholders.
+
+running 5 tests
+test tests::test_create_patch_file_error_on_write ... FAILED
+test tests::test_create_patch_file_success ... ok
+test tests::test_apply_patch_file_missing_original_file ... ok
+test tests::test_apply_patch_file_invalid_patch_content ... ok
+test tests::test_apply_patch_file_success ... FAILED
+
+

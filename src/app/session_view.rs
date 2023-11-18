@@ -72,7 +72,6 @@ impl SessionView {
           //.break_words(false)
           .word_splitter(WordSplitter::NoHyphenation)
           .word_separator(WordSeparator::AsciiSpace)
-          //.wrap_algorithm(WrapAlgorithm::FirstFit);
         .wrap_algorithm(WrapAlgorithm::new_optimal_fit());
         let wrapped = textwrap::wrap(stylized.as_str(), options);
 

@@ -10,6 +10,8 @@ need to add line numbers to grep output
 need to add multi line grep with regex
 
 
+## need to add a timeout check if it is expecting another message
+
 Acceptance tests
 ----------------
 

@@ -8,7 +8,7 @@
     },
   },
   "list_file_paths": [
-    "patches", "lib/bat/src", "assets", "src", "Cargo.toml", ".data/session_files", ".session_data"
+    "patches", "lib/bat/src", "assets", "src", "Cargo.toml", ".data/session_files", ".session_data", "tests"
   ],
   "session_dir": ".session_data",
 }
