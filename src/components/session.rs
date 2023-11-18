@@ -403,12 +403,15 @@ impl Session<'static> {
       ..Default::default()
     }
   }
+  fn filter_non_ascii(s: &str) -> String {
+    s.chars().filter(|c| c.is_ascii()).collect()
+  }
 
   pub fn submit_chat_completion_request(&mut self, input: String, tx: UnboundedSender<Action>) {
     let config = self.config.clone();
     tx.send(Action::UpdateStatus(Some("submitting input".to_string()))).unwrap();
     match self.add_chunked_chat_completion_request_messages(
-      &input,
+      Self::filter_non_ascii(&input).as_str(),
       config.name.as_str(),
       Role::User,
       &config.model,
