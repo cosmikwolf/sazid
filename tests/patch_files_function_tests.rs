@@ -14,20 +14,22 @@ mod tests {
 
     // test content and patch
     let original_content = "This is the original file content\n";
-    let patch_content = "patch content...";
+    let patch_content = "--- file_to_patch.txt\n+++ file_to_patch.txt\n@@ -1,1 +1,1 @@\n-This is the original file content\n+This is the patched file content\n";
 
     // create original file
     std::fs::write(&file_path, original_content).unwrap();
 
-    // create patch file
+    // create patch file with valid content
     std::fs::write(&patch_path, patch_content).unwrap();
 
     // action
-    let result = apply_patch_file(file_path, patch_path);
+    let result = apply_patch_file(file_path.clone(), patch_path);
 
     // verify
     assert!(result.is_ok(), "apply_patch_file should succeed");
-    assert_eq!(result.unwrap(), "Patch applied successfully");
+    // we expect the file content to be updated to "This is the patched file content"
+    let patched_content = std::fs::read_to_string(file_path).unwrap();
+    assert_eq!(patched_content, "This is the patched file content");
   }
 
   #[test]
