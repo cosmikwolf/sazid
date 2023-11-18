@@ -39,7 +39,7 @@ impl ModelFunction for CreateFileFunction {
           name: "text".to_string(),
           required: true,
           property_type: "string".to_string(),
-          description: Some("text to write to file".to_string()),
+          description: Some("text to write to file. this command cannot overwrite files".to_string()),
           enum_values: None,
         },
       ],

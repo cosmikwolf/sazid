@@ -2,7 +2,7 @@
 mod tests {
   use super::*;
   use sazid::app::functions::patch_files_function::{apply_patch_file, create_patch_file};
-  use std::path::PathBuf;
+  use std::{fs::read_to_string, path::PathBuf};
   use tempfile::tempdir;
 
   #[test]
@@ -106,5 +106,112 @@ mod tests {
 
     // verify
     assert!(result.is_err(), "create_patch_file should fail when unable to create patch file");
+  }
+  #[test]
+  fn test_apply_patch_idempotency() {
+    let temp_dir = tempdir().unwrap();
+    let file_path = temp_dir.path().join("sample.txt");
+    let patch_path = temp_dir.path().join("sample.patch");
+
+    // Create a sample file
+    write!(&file_path, "This is the first line.\n").unwrap();
+
+    // Create a patch file
+    let patch_content =
+      "--- a/sample.txt\n+++ b/sample.txt\n@@ -1 +1 @@\n-This is the first line.\n+This is an edited line.";
+    write!(&patch_path, patch_content).unwrap();
+
+    // Apply the patch for the first time
+    apply_patch_file(file_path.clone(), patch_path.clone()).unwrap();
+    let content_after_first_patch = read_to_string(&file_path).unwrap();
+
+    // Apply the patch for the second time
+    apply_patch_file(file_path.clone(), patch_path).unwrap();
+    let content_after_second_patch = read_to_string(&file_path).unwrap();
+
+    // Verify that the content remains unchanged after applying the patch again
+    assert_eq!(content_after_first_patch, content_after_second_patch);
+  }
+
+  #[test]
+  fn test_applying_multiple_patches() {
+    let temp_dir = tempdir().unwrap();
+    let file_path = temp_dir.path().join("sample.txt");
+    let patch1_path = temp_dir.path().join("sample1.patch");
+    let patch2_path = temp_dir.path().join("sample2.patch");
+
+    // Create a sample file
+    write!(&file_path, "Content before patches.\n").unwrap();
+
+    // Create patch 1
+    let patch1_content =
+      "--- a/sample.txt\n+++ b/sample.txt\n@@ -1 +1 @@\n-Content before patches.\n+Content after patch 1.\n";
+    write!(&patch1_path, patch1_content).unwrap();
+
+    // Create patch 2
+    let patch2_content =
+      "--- a/sample.txt\n+++ b/sample.txt\n@@ -1 +1 @@\n-Content after patch 1.\n+Final content after patch 2.\n";
+    write!(&patch2_path, patch2_content).unwrap();
+
+    // Apply patch 1
+    apply_patch_file(file_path.clone(), patch1_path).unwrap();
+    let content_after_patch1 = read_to_string(&file_path).unwrap();
+
+    // Apply patch 2
+    apply_patch_file(file_path.clone(), patch2_path).unwrap();
+    let content_after_patch2 = read_to_string(&file_path).unwrap();
+
+    // Verify that the content is as expected after applying both patches
+    assert_eq!(content_after_patch1, "Content after patch 1.\n");
+    assert_eq!(content_after_patch2, "Final content after patch 2.\n");
+  }
+
+  #[test]
+  fn test_invalid_file_path_during_patch_application() {
+    let temp_dir = tempdir().unwrap();
+    let invalid_file_path = temp_dir.path().join("nonexistent.txt");
+    let patch_path = temp_dir.path().join("sample.patch");
+
+    // Create a patch file
+    let patch_content = "patch content";
+    write!(&patch_path, patch_content).unwrap();
+
+    // Try to apply the patch to a non-existent file
+    let result = apply_patch_file(invalid_file_path, patch_path);
+
+    // Verify that an error is returned
+    assert!(result.is_err());
+  }
+
+  #[test]
+  fn test_create_patch_file_with_empty_content() {
+    let temp_dir = tempdir().unwrap();
+    let patch_path = temp_dir.path().join("empty.patch");
+
+    // Create a patch file with empty content
+    let result = create_patch_file(patch_path, "");
+
+    // Verify that the file creation was successful
+    assert!(result.is_ok());
+  }
+
+  #[test]
+  fn test_valid_but_ineffecive_patch_content() {
+    let temp_dir = tempdir().unwrap();
+    let file_path = temp_dir.path().join("sample.txt");
+    let patch_path = temp_dir.path().join("sample.patch");
+
+    // Create a sample file with some content
+    write!(&file_path, "This content will not be changed by the patch.\n").unwrap();
+
+    // Create a patch file that does not cause any changes
+    write!(&patch_path, "--- a/sample.txt\n+++ b/sample.txt\n").unwrap();
+
+    // Apply the patch
+    apply_patch_file(file_path.clone(), patch_path).unwrap();
+    let content_after_patch = read_to_string(&file_path).unwrap();
+
+    // Verify that the content is unchanged
+    assert_eq!(content_after_patch, "This content will not be changed by the patch.\n");
   }
 }
