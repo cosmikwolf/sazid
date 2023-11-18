@@ -133,29 +133,37 @@ fn apply(diff: Patch, old: &str) -> String {
   }
   out.join("\n")
 }
-pub fn apply_patch_file(file_path: PathBuf, patch_path: PathBuf) -> Result<String, ModelFunctionError> {
-  let original_content = fs::read_to_string(&file_path)
-    .map_err(|e| ModelFunctionError::new(&format!("error reading original file: {}", e)))?;
-  let patch_content =
-    fs::read_to_string(patch_path).map_err(|e| ModelFunctionError::new(&format!("error reading patch file: {}", e)))?;
 
-  let patch = Patch::from_single(&patch_content)
-    .map_err(|e| ModelFunctionError::new(&format!("error parsing patch content: {}", e)))?;
+pub fn apply_patch_file(file_path: PathBuf, patch_path: PathBuf) -> Result<String, ModelFunctionError> {
+  let original_content = match fs::read_to_string(&file_path) {
+    Ok(content) => content,
+    Err(e) => return Err(ModelFunctionError::new(&format!("error reading original file: {}", e))),
+  };
+
+  let patch_content = match fs::read_to_string(patch_path) {
+    Ok(content) => content,
+    Err(e) => return Err(ModelFunctionError::new(&format!("error reading patch file: {}", e))),
+  };
+
+  let patch = match Patch::from_single(&patch_content) {
+    Ok(patch) => patch,
+    Err(e) => return Err(ModelFunctionError::new(&format!("error parsing patch content: {}", e))),
+  };
 
   let patched_content = apply(patch, &original_content);
 
-  fs::write(&file_path, patched_content)
-    .map_err(|e| ModelFunctionError::new(&format!("error writing patched file: {}", e)))?;
-
-  Ok("Patch applied successfully".to_string())
+  match fs::write(&file_path, patched_content) {
+    Ok(()) => Ok("Patch applied successfully".to_string()),
+    Err(e) => Err(ModelFunctionError::new(&format!("error writing patched file: {}", e))),
+  }
 }
 
 pub fn create_patch_file(patch_path: PathBuf, patch_content: &str) -> Result<String, ModelFunctionError> {
   match File::create(patch_path.clone()) {
     Ok(mut file) => match file.write_all(patch_content.as_bytes()) {
       Ok(_) => Ok("patch file created\n".to_string()),
-      Err(e) => Ok(format!("error writing file: {}\n", e)),
+      Err(e) => Err(ModelFunctionError::new(&format!("error writing file: {}\n", e))),
     },
-    Err(e) => Ok(format!("error creating file at {}, error: {}\n", patch_path.display(), e)),
+    Err(e) => Err(ModelFunctionError::new(&format!("error creating file at {}, error: {}\n", patch_path.display(), e))),
   }
 }
