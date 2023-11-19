@@ -2,6 +2,7 @@ use crate::app::{functions::function_call::ModelFunction, session_config::Sessio
 use std::{collections::HashMap, path::PathBuf};
 
 use super::{
+  clap_args_to_json,
   errors::ModelFunctionError,
   types::{Command, CommandParameters, CommandProperty},
   validate_and_extract_options, validate_and_extract_paths_from_argument, validate_and_extract_string_argument,
@@ -67,6 +68,16 @@ impl ModelFunction for Pcre2GrepFunction {
       name: "pcre2grep".to_string(),
       description: "an implementation of grep".to_string(),
       required_properties: vec![
+        CommandProperty {
+          name: "options".to_string(),
+          required: true,
+          property_type: "string".to_string(),
+          description: Some(format!(
+            "pcre2grep arguments, space separated. valid options: {}",
+            clap_args_to_json::<Args>()
+          )),
+          enum_values: None,
+        },
         CommandProperty {
           name: "pattern".to_string(),
           required: true,

@@ -1,6 +1,5 @@
 #[cfg(test)]
 mod tests {
-  use sazid::app::functions::patch_files_function::{apply_patch_file, create_patch_file};
   use std::os::unix::fs::PermissionsExt; // Necessary for set_mode
   use std::{
     fs::{self, read_to_string, File},

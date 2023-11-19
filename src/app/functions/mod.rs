@@ -6,6 +6,7 @@ use crate::{
 };
 use clap::Parser;
 use serde_derive::{Deserialize, Serialize};
+use serde_json::json;
 use std::path::Path;
 use std::{collections::HashMap, path::PathBuf};
 use tokio::sync::mpsc::UnboundedSender;
@@ -13,8 +14,7 @@ use walkdir::WalkDir;
 
 use self::pcre2grep_function::Pcre2GrepFunction;
 use self::{
-  cargo_check_function::CargoCheckFunction, create_file_function::CreateFileFunction, errors::ModelFunctionError,
-  file_search_function::FileSearchFunction, modify_file_function::ModifyFileFunction,
+  create_file_function::CreateFileFunction, errors::ModelFunctionError, file_search_function::FileSearchFunction,
   patch_files_function::PatchFileFunction, read_file_lines_function::ReadFileLinesFunction, types::Command,
 };
 
@@ -68,6 +68,22 @@ pub fn all_functions() -> Vec<CallableFunction> {
     CallableFunction::CreateFileFunction(CreateFileFunction::init()),
     // CallableFunction::CargoCheckFunction(CargoCheckFunction::init()),
   ]
+}
+
+fn clap_args_to_json<P: Parser>() -> String {
+  let app = P::command();
+  let mut options = Vec::new();
+
+  for arg in app.get_arguments() {
+    if let Some(short) = arg.get_short() {
+      let help = arg.get_help().map(|s| s.to_string()).unwrap_or_default();
+
+      let entry = json!({ short.to_string(): help });
+      options.push(entry);
+    }
+  }
+
+  serde_json::to_string_pretty(&options).unwrap()
 }
 
 fn validate_and_extract_options<T>(
@@ -183,7 +199,7 @@ pub fn handle_chat_response_function_call(
         match function_args_result {
           Ok(function_args) => match fn_name.as_str() {
             "create_file" => CreateFileFunction::init().call(function_args, session_config),
-            "patch_file" => PatchFileFunction::init().call(function_args, session_config),
+            "git_apply" => PatchFileFunction::init().call(function_args, session_config),
             //"grep" => GrepFunction::init().call(function_args, session_config),
             "file_search" => FileSearchFunction::init().call(function_args, session_config),
             "read_file" => ReadFileLinesFunction::init().call(function_args, session_config),
