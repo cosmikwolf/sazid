@@ -16,18 +16,18 @@ use super::{
 };
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct PatchFilesFunction {
+pub struct PatchFileFunction {
   name: String,
   description: String,
   required_properties: Vec<CommandProperty>,
   optional_properties: Vec<CommandProperty>,
 }
 
-impl ModelFunction for PatchFilesFunction {
+impl ModelFunction for PatchFileFunction {
   fn init() -> Self {
-    PatchFilesFunction {
-      name: "patch_files".to_string(),
-      description: "optionally create and compulsorily apply a unified diff format .patch file".to_string(),
+    PatchFileFunction {
+      name: "patch_file".to_string(),
+      description: "optionally create and compulsorily apply a GNU Unified Format .patch file".to_string(),
       required_properties: vec![
         CommandProperty {
           name: "file_to_patch".to_string(),
@@ -79,14 +79,16 @@ impl ModelFunction for PatchFilesFunction {
           if let Some(patch_content) = function_args.get("patch_content").and_then(|s| s.as_str()) {
             create_patch_file(patch_path.clone(), patch_content)
           } else {
-            Ok("new patch content not present".to_string())
+            Ok("".to_string())
           };
         let create_patch_output = match create_patch_file_results {
           Ok(output) => output,
           Err(e) => format!("create patch file error: {}", e).to_string(),
         };
-        let apply_patch_results = apply_patch_file(file_path, patch_path)?;
-        Ok(Some(format!("patch_content output: {}\tpatch_file output: {}", create_patch_output, apply_patch_results)))
+        match apply_patch_file(file_path, patch_path) {
+          Ok(output) => Ok(Some(format!("{} patch applied successfully: {}\n", create_patch_output, output))),
+          Err(e) => Ok(Some(format!("apply patch file error: {}", e))),
+        }
       },
       None => Ok(Some("patch_name argument is required".to_string())),
     }

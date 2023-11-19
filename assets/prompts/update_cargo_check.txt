@@ -1,0 +1,26 @@
+Read cargo_check_function.rs
+
+Update the file with the following functionality:
+
+the function should run the cargo check command and filter for the appropriate information so that it can return issues with the source code in the project itself, not its depencies.
+
+The command should be something like this:
+cargo check --message-format json --package <current package name>
+
+The function should also filter out any information from the output that is not necessary by filtering the parsed json output of the command, so that the output can be optimized for token brevity.
+
+The function should check for any errors that cargo check might return to ensure that it can handle all error condidtions.
+
+After you have made these modificaitons, create a file in the tests directory that contains unit tests for all new code in the file.
+
+Make sure that you do not leave any placeholders when you are finished with the code.
+
+Make sure that all tests will pass.
+
+Make sure you use the most idiomatic rust you know.
+
+Make sure that the command will integrate with the rest of the application after you are finished, in the way it currently does now.
+Make sure that you double check all line numbers before applying changes using the patch_file function.
+
+Do not ask me any questions about what to do next, just make your best guess and proceed, and continue without prompting me until you finish.
+

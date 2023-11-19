@@ -15,7 +15,7 @@ use self::pcre2grep_function::Pcre2GrepFunction;
 use self::{
   cargo_check_function::CargoCheckFunction, create_file_function::CreateFileFunction, errors::ModelFunctionError,
   file_search_function::FileSearchFunction, modify_file_function::ModifyFileFunction,
-  patch_files_function::PatchFilesFunction, read_file_lines_function::ReadFileLinesFunction, types::Command,
+  patch_files_function::PatchFileFunction, read_file_lines_function::ReadFileLinesFunction, types::Command,
 };
 
 use super::session_config::SessionConfig;
@@ -40,7 +40,7 @@ pub enum CallableFunction {
   ReadFileLinesFunction(ReadFileLinesFunction),
   //ModifyFileFunction(ModifyFileFunction),
   CreateFileFunction(CreateFileFunction),
-  //PatchFilesFunction(PatchFilesFunction),
+  PatchFileFunction(PatchFileFunction),
   //CargoCheckFunction(CargoCheckFunction),
 }
 
@@ -52,7 +52,7 @@ impl From<&CallableFunction> for Command {
       CallableFunction::ReadFileLinesFunction(f) => f.command_definition(),
       // CallableFunction::ModifyFileFunction(f) => f.command_definition(),
       CallableFunction::CreateFileFunction(f) => f.command_definition(),
-      // CallableFunction::PatchFilesFunction(f) => f.command_definition(),
+      CallableFunction::PatchFileFunction(f) => f.command_definition(),
       // CallableFunction::CargoCheckFunction(f) => f.command_definition(),
     }
   }
@@ -60,7 +60,7 @@ impl From<&CallableFunction> for Command {
 
 pub fn all_functions() -> Vec<CallableFunction> {
   vec![
-    // CallableFunction::PatchFilesFunction(PatchFilesFunction::init()),
+    CallableFunction::PatchFileFunction(PatchFileFunction::init()),
     CallableFunction::FileSearchFunction(FileSearchFunction::init()),
     CallableFunction::Pcre2GrepFunction(Pcre2GrepFunction::init()),
     CallableFunction::ReadFileLinesFunction(ReadFileLinesFunction::init()),
@@ -183,7 +183,7 @@ pub fn handle_chat_response_function_call(
         match function_args_result {
           Ok(function_args) => match fn_name.as_str() {
             "create_file" => CreateFileFunction::init().call(function_args, session_config),
-            // "patch_files" => PatchFilesFunction::init().call(function_args, session_config),
+            "patch_file" => PatchFileFunction::init().call(function_args, session_config),
             //"grep" => GrepFunction::init().call(function_args, session_config),
             "file_search" => FileSearchFunction::init().call(function_args, session_config),
             "read_file" => ReadFileLinesFunction::init().call(function_args, session_config),

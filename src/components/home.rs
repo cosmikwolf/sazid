@@ -153,24 +153,6 @@ impl Component for Home<'static> {
     let tx = self.action_tx.clone().unwrap();
     self.last_events.push(key);
 
-    let submit_input = |_a| {
-      let input = self.input.lines().join("\n");
-      // let string = format!("sending input: {}", input);
-      // trace_dbg!(string);
-
-      if let Err(e) = tx.send(Action::SubmitInput(input)) {
-        error!("Failed to send action: {:?}", e);
-      }
-      Action::EnterNormal
-    };
-
-    let execute_command = |_c| {
-      let input = self.input.lines().join("\n");
-      if let Err(e) = tx.send(Action::ExecuteCommand(input)) {
-        error!("Failed to send action: {:?}", e);
-      }
-      Action::EnterNormal
-    };
     //trace_dbg!("key: {:#?}\n{:#?}", key, crossterm::event::Event::Key(key));
     trace_dbg!("insert key: {:?}\n{:?}", key, self.input.cursor());
     let action = match self.mode {
@@ -180,9 +162,12 @@ impl Component for Home<'static> {
           Action::EnterInsert
         },
         KeyEvent { code: KeyCode::Enter, .. } => {
-          execute_command("");
           self.clear_input();
-          Action::Update
+          let input = self.input.lines().join("\n");
+          if let Err(e) = tx.send(Action::ExecuteCommand(input)) {
+            error!("Failed to send action: {:?}", e);
+          }
+          Action::EnterNormal
         },
         _ => {
           self.input.input(crossterm::event::Event::Key(key));
@@ -198,13 +183,31 @@ impl Component for Home<'static> {
           }
         },
         KeyEvent { code: KeyCode::Esc, .. } => Action::EnterNormal,
-        KeyEvent { code: KeyCode::Enter, modifiers: KeyModifiers::ALT, .. } => submit_input(""),
+        KeyEvent { code: KeyCode::Enter, modifiers: KeyModifiers::ALT, .. } => {
+          self.input.move_cursor(CursorMove::End);
+          self.input.move_cursor(CursorMove::Bottom);
+          let input = self.input.lines().join("\n");
+
+          if let Err(e) = tx.send(Action::SubmitInput(input)) {
+            error!("Failed to send action: {:?}", e);
+          }
+          Action::EnterNormal
+        },
         _ => Action::Update,
       },
       Mode::Normal | Mode::Processing => return Ok(None),
       Mode::Insert => match key {
         KeyEvent { code: KeyCode::Esc, .. } => Action::EnterVisual,
-        KeyEvent { code: KeyCode::Enter, modifiers: KeyModifiers::ALT, .. } => submit_input(""),
+        KeyEvent { code: KeyCode::Enter, modifiers: KeyModifiers::ALT, .. } => {
+          self.input.move_cursor(CursorMove::End);
+          self.input.move_cursor(CursorMove::Bottom);
+          let input = self.input.lines().join("\n");
+
+          if let Err(e) = tx.send(Action::SubmitInput(input)) {
+            error!("Failed to send action: {:?}", e);
+          }
+          Action::EnterNormal
+        },
         _ => {
           self.input.input(crossterm::event::Event::Key(key));
           Action::Update
