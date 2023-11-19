@@ -38,10 +38,10 @@ pub enum CallableFunction {
   Pcre2GrepFunction(Pcre2GrepFunction),
   //GrepFunction(GrepFunction),
   ReadFileLinesFunction(ReadFileLinesFunction),
-  ModifyFileFunction(ModifyFileFunction),
+  //ModifyFileFunction(ModifyFileFunction),
   CreateFileFunction(CreateFileFunction),
-  PatchFilesFunction(PatchFilesFunction),
-  CargoCheckFunction(CargoCheckFunction),
+  //PatchFilesFunction(PatchFilesFunction),
+  //CargoCheckFunction(CargoCheckFunction),
 }
 
 impl From<&CallableFunction> for Command {
@@ -50,23 +50,23 @@ impl From<&CallableFunction> for Command {
       CallableFunction::FileSearchFunction(f) => f.command_definition(),
       CallableFunction::Pcre2GrepFunction(f) => f.command_definition(),
       CallableFunction::ReadFileLinesFunction(f) => f.command_definition(),
-      CallableFunction::ModifyFileFunction(f) => f.command_definition(),
+      // CallableFunction::ModifyFileFunction(f) => f.command_definition(),
       CallableFunction::CreateFileFunction(f) => f.command_definition(),
-      CallableFunction::PatchFilesFunction(f) => f.command_definition(),
-      CallableFunction::CargoCheckFunction(f) => f.command_definition(),
+      // CallableFunction::PatchFilesFunction(f) => f.command_definition(),
+      // CallableFunction::CargoCheckFunction(f) => f.command_definition(),
     }
   }
 }
 
 pub fn all_functions() -> Vec<CallableFunction> {
   vec![
-    CallableFunction::PatchFilesFunction(PatchFilesFunction::init()),
+    // CallableFunction::PatchFilesFunction(PatchFilesFunction::init()),
     CallableFunction::FileSearchFunction(FileSearchFunction::init()),
     CallableFunction::Pcre2GrepFunction(Pcre2GrepFunction::init()),
     CallableFunction::ReadFileLinesFunction(ReadFileLinesFunction::init()),
-    CallableFunction::ModifyFileFunction(ModifyFileFunction::init()),
+    // CallableFunction::ModifyFileFunction(ModifyFileFunction::init()),
     CallableFunction::CreateFileFunction(CreateFileFunction::init()),
-    CallableFunction::CargoCheckFunction(CargoCheckFunction::init()),
+    // CallableFunction::CargoCheckFunction(CargoCheckFunction::init()),
   ]
 }
 
@@ -183,12 +183,12 @@ pub fn handle_chat_response_function_call(
         match function_args_result {
           Ok(function_args) => match fn_name.as_str() {
             "create_file" => CreateFileFunction::init().call(function_args, session_config),
-            "patch_files" => PatchFilesFunction::init().call(function_args, session_config),
+            // "patch_files" => PatchFilesFunction::init().call(function_args, session_config),
             //"grep" => GrepFunction::init().call(function_args, session_config),
             "file_search" => FileSearchFunction::init().call(function_args, session_config),
             "read_file" => ReadFileLinesFunction::init().call(function_args, session_config),
             //"modify_file" => ModifyFileFunction::init().call(function_args, session_config),
-            "cargo_check" => CargoCheckFunction::init().call(function_args, session_config),
+            //"cargo_check" => CargoCheckFunction::init().call(function_args, session_config),
             "pcre2grep" => Pcre2GrepFunction::init().call(function_args, session_config),
             _ => Ok(Some("function not found".to_string())),
           },

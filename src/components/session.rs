@@ -115,7 +115,19 @@ impl Component for Session<'static> {
     //Session::select_model(model_preference, create_openai_client(self.config.openai_config.clone()));
     trace_dbg!("init session");
     self.config.prompt =
-    "act as a somewhat terse programming architecture and implementation expert, that specializes in the Rust.\nUse the functions available to assist with the user inquiry.\nProvide your response as markdown formatted text.\nMake sure to properly entabulate any code blocks\nDo not try and execute arbitrary python code.\nDo not try to infer a path to a file, if you have not been provided a path with the root ./, use the file_search function to verify the file path before you execute a function call.".to_string();
+        vec![
+    "- act as a somewhat terse programming architecture and development assistant robot, that specializes in the Rust.",
+    "- Use the functions available to assist with the user inquiry.Provide your response as markdown formatted text.",
+    "- Make sure to properly entabulate any code blocks",
+    "- Do not try and execute arbitrary python code.",
+    "- Do not try to infer a path to a file, if you have not been provided a path with the root ./, use the file_search function to verify the file path before you execute a function call.",
+    "- If the user asks you to create a file, use the create_file function",
+    // "- if the user asks you in a any way to modify a file, use the patch_file function",
+    "- Before you ask the user to supply anything, consider if you have access to what you need already in the context",
+    "- Before you respond, consider if your response is applicable to the current query, and if it is the appropriate response to further the goal of supporting a developer in their project",
+    "- When you are given a request, if you do not have enough information, use pcre2grep and file_search to find the information you need, if it is not information you need from the user",
+    "- When evaluating function tests, make it a priority to determine if the problems exist in the source code, or if the test code itself is not properly designed"
+        ].join("\n").to_string();
     // self.config.prompt = "act as a very terse assistant".into();
     self.view.set_window_width(area.width as usize, &mut self.data.messages);
     tx.send(Action::AddMessage(ChatMessage::PromptMessage(self.config.prompt_message()))).unwrap();
@@ -439,11 +451,13 @@ impl Session<'static> {
       tx.send(Action::UpdateStatus(Some("Establishing Client Connection".to_string()))).unwrap();
       tx.send(Action::EnterProcessing).unwrap();
       let client = create_openai_client(openai_config);
+      trace_dbg!("client connection established");
       // tx.send(Action::AddMessage(ChatMessage::SazidSystemMessage(format!("Request Token Count: {}", token_count))))
       //   .unwrap();
       match stream_response {
         true => {
           tx.send(Action::UpdateStatus(Some("Sending Request to OpenAI API...".to_string()))).unwrap();
+          trace_dbg!("Sending Request to API");
           let mut stream = client.chat().create_stream(request).await.unwrap();
           tx.send(Action::UpdateStatus(Some("Request submitted. Awaiting Response...".to_string()))).unwrap();
           while let Some(response_result) = stream.next().await {
