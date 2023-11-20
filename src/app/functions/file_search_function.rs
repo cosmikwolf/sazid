@@ -46,7 +46,7 @@ impl ModelFunction for FileSearchFunction {
   ) -> Result<Option<String>, ModelFunctionError> {
     if let Some(v) = function_args.get("path") {
       if let Some(pathstr) = v.as_str() {
-        let accesible_paths = get_accessible_file_paths(session_config.list_file_paths.clone());
+        let accesible_paths = get_accessible_file_paths(session_config.list_file_paths.clone(), None);
         if !accesible_paths.contains_key(Path::new(pathstr).to_str().unwrap()) {
           return Err(ModelFunctionError::new(
             format!("File path is not accessible: {:?}. Suggest using file_search command", pathstr).as_str(),
@@ -120,7 +120,7 @@ pub fn file_search(
   list_file_paths: Vec<PathBuf>,
   search_term: Option<&str>,
 ) -> Result<Option<String>, ModelFunctionError> {
-  let paths = get_accessible_file_paths(list_file_paths);
+  let paths = get_accessible_file_paths(list_file_paths, None);
   let accessible_paths = paths.keys().map(|path| path.as_str()).collect::<Vec<&str>>();
   // find the length of the longest string in accessible_paths
   let search_results = if let Some(search) = search_term {

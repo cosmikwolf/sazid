@@ -18,7 +18,7 @@ impl ModelFunctionError {
 // Implement the Display trait for your custom error type.
 impl fmt::Display for ModelFunctionError {
   fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-    write!(f, "ModelFunctionError: {}", self.message)
+    write!(f, "{}", self.message)
   }
 }
 

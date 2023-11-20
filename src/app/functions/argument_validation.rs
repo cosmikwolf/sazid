@@ -62,11 +62,12 @@ pub fn validate_and_extract_paths_from_argument(
   function_args: &HashMap<String, serde_json::Value>,
   session_config: SessionConfig,
   required: bool,
+  root_dir: Option<PathBuf>,
 ) -> Result<Option<Vec<PathBuf>>, ModelFunctionError> {
   match function_args.get("paths") {
     Some(paths) => {
       if let serde_json::Value::String(paths_str) = paths {
-        let accesible_paths = get_accessible_file_paths(session_config.list_file_paths.clone());
+        let accesible_paths = get_accessible_file_paths(session_config.list_file_paths.clone(), root_dir);
         let paths_vec: Result<Vec<PathBuf>, ModelFunctionError> = paths_str
           .split(',')
           .map(|s| s.trim())
@@ -94,9 +95,12 @@ pub fn validate_and_extract_paths_from_argument(
   }
 }
 
-pub fn get_accessible_file_paths(list_file_paths: Vec<PathBuf>) -> HashMap<String, PathBuf> {
+pub fn get_accessible_file_paths(list_file_paths: Vec<PathBuf>, root_dir: Option<PathBuf>) -> HashMap<String, PathBuf> {
   // Define the base directory you want to start the search from.
-  let base_dir = PathBuf::from("./");
+  let base_dir = match root_dir {
+    Some(path) => path,
+    None => PathBuf::from("./"),
+  };
 
   // Create an empty HashMap to store the relative paths.
   let mut file_paths = HashMap::new();

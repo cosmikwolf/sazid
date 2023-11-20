@@ -72,7 +72,7 @@ impl ModelFunction for PatchFileFunction {
     function_args: HashMap<String, serde_json::Value>,
     session_config: SessionConfig,
   ) -> Result<Option<String>, ModelFunctionError> {
-    match validate_and_extract_paths_from_argument(&function_args, session_config, true) {
+    match validate_and_extract_paths_from_argument(&function_args, session_config, true, None) {
       Ok(Some(paths)) => match validate_and_extract_options::<Args>(&function_args, false) {
         Ok(options) => execute_git_apply(options, paths),
         Err(err) => Ok(Some(err.to_string())),

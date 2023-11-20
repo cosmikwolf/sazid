@@ -60,7 +60,7 @@ impl ModelFunction for ReadFileLinesFunction {
     let end_line: Option<usize> = function_args.get("end_line").and_then(|s| s.as_u64().map(|u| u as usize));
     if let Some(v) = function_args.get("path") {
       if let Some(file) = v.as_str() {
-        let accesible_paths = get_accessible_file_paths(session_config.list_file_paths.clone());
+        let accesible_paths = get_accessible_file_paths(session_config.list_file_paths.clone(), None);
         if !accesible_paths.contains_key(Path::new(file).to_str().unwrap()) {
           Err(ModelFunctionError::new(
             format!("File path is not accessible: {:?}. Suggest using file_search command", file).as_str(),
@@ -114,7 +114,7 @@ pub fn read_file_lines(
 ) -> Result<Option<String>, ModelFunctionError> {
   // trace_dbg!("list_file_paths: {:?}", list_file_paths);
   // trace_dbg!("file: {:?} {:#?}", get_accessible_file_paths(list_file_paths.clone()).get(file), file);
-  if let Some(file_path) = get_accessible_file_paths(list_file_paths).get(file) {
+  if let Some(file_path) = get_accessible_file_paths(list_file_paths, None).get(file) {
     let file_contents = match read_lines(file_path) {
       Ok(contents) => contents,
       Err(error) => {

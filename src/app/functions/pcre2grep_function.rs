@@ -111,7 +111,7 @@ impl ModelFunction for Pcre2GrepFunction {
     function_args: HashMap<String, serde_json::Value>,
     session_config: SessionConfig,
   ) -> Result<Option<String>, ModelFunctionError> {
-    match validate_and_extract_paths_from_argument(&function_args, session_config, true) {
+    match validate_and_extract_paths_from_argument(&function_args, session_config, true, None) {
       Ok(Some(paths)) => match validate_and_extract_string_argument(&function_args, "pattern", true) {
         Ok(Some(pattern)) => match validate_and_extract_options::<Args>(&function_args, false) {
           Ok(options) => execute_pcre2grep(options, pattern, paths),
