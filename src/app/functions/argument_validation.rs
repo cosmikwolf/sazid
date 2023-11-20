@@ -23,20 +23,18 @@ pub fn clap_args_to_json<P: Parser>() -> String {
   serde_json::to_string_pretty(&options).unwrap()
 }
 
-pub fn validate_and_extract_options<T>(
+pub fn validate_and_extract_boolean_argument(
   function_args: &HashMap<String, serde_json::Value>,
+  argument: &str,
   required: bool,
-) -> Result<Option<Vec<String>>, ModelFunctionError>
-where
-  T: Parser + std::fmt::Debug,
-{
-  match function_args.get("options") {
-    Some(options) => match T::try_parse_from(options.as_str().unwrap().split(' ')) {
-      Ok(args) => Ok(Some(format!("{:?}", args).split(',').map(|a| a.to_string()).collect())),
-      Err(err) => Err(ModelFunctionError::new(err.to_string().as_str())),
+) -> Result<Option<bool>, ModelFunctionError> {
+  match function_args.get(argument) {
+    Some(argument) => match argument {
+      serde_json::Value::Bool(b) => Ok(Some(b.clone())),
+      _ => Err(ModelFunctionError::new(format!("{} argument must be a boolean", argument).as_str())),
     },
     None => match required {
-      true => Err(ModelFunctionError::new("options argument is required")),
+      true => Err(ModelFunctionError::new(format!("{} argument is required", argument).as_str())),
       false => Ok(None),
     },
   }
@@ -58,6 +56,7 @@ pub fn validate_and_extract_string_argument(
     },
   }
 }
+
 pub fn validate_and_extract_paths_from_argument(
   function_args: &HashMap<String, serde_json::Value>,
   session_config: SessionConfig,
