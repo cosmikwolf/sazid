@@ -1,0 +1,20 @@
+If the user does not supply a compiler error with this prompt, query the user for a compiler error
+
+first, read the test code itself, and then analyze the compiler error.
+Determine if the cause of the error is because the test is improperly coded.
+if it is not, then read the source file where the function that the test is testing exists.
+Determine if the cause of the error is because of the way the source function is coded.
+If it is not apparently that, then determine if there is any other apparent cause that could be causing the error.
+If there is not, suggest steps to debugging this error.
+
+
+This code will not be edited after you write it, it will be executed by the user using cargo test, and you will be required to fix any errors, so try and do it correctly the first time.
+Do not write any files until you are finished with the task.
+You must write code that will compile when it runs with cargo test.
+If you make a mistake, and need to write a subsequent file, save it with an incremented file name suffix, i.e. _1 _2 _3
+Make sure that all tests will pass.
+Make sure you use the most idiomatic rust possible.
+Do not ask me any questions about what to do next.
+Refer to this prompt if you have any questions, and make your best guess to proceed forward without asking for an update.
+Do not summarize your progress, and do not update me with your plan or with status, just execute the prompt without any further communication unless absolutely necessary
+After you have completed the test, you should summarize any concerns that you have with the test, or with the code that is being tested.

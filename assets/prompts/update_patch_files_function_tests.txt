@@ -1,0 +1,10 @@
+update the patch_files_function_tests.rs file with the updated code that is in the patch_files_function.rs file
+
+Make sure that you do not leave any placeholders when you are finished with the code.
+Make sure that all tests will pass.
+Make sure you use the most idiomatic rust you know.
+Make sure that the command will integrate with the rest of the application after you are finished, in the way it currently does now.
+Make sure that you double check all line numbers before applying changes using the git_apply function.
+Do not ask me any questions about what to do next, just make your best guess and proceed, and continue without prompting me until you finish.
+Before creating a file, check to see if it exists first and if it does, use apply_patch function to update it instead.
+Do not update me with your plan or with status, just execute the prompt without any further communication unless absolutely necessary

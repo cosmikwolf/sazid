@@ -24,3 +24,6 @@ Make sure that you double check all line numbers before applying changes using t
 
 Do not ask me any questions about what to do next, just make your best guess and proceed, and continue without prompting me until you finish.
 
+Before creating a file, check to see if it exists first and if it does, use patch_file to update it instead.
+
+Do not update me with your plan or with status, just execute the prompt without any further communication unless absolutely necessary

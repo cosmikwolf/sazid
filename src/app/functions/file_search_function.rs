@@ -11,7 +11,7 @@ use crate::trace_dbg;
 
 use super::function_call::ModelFunction;
 use super::types::CommandParameters;
-use super::{count_tokens, get_accessible_file_paths, ModelFunctionError};
+use super::{argument_validation::count_tokens, argument_validation::get_accessible_file_paths, ModelFunctionError};
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct FileSearchFunction {

@@ -103,6 +103,10 @@ pub fn create_file(path: &str, text: &str) -> Result<Option<String>, ModelFuncti
     return Ok(Some("error obtaining parent directory".to_string()));
   }
 
+  if path.exists() {
+    // If the file already exists, return an error message.
+    return Ok(Some("file already exists. cannot overwrite files".to_string()));
+  }
   // Proceed to create the file now that the parent directories should exist.
   match File::create(path) {
     Ok(mut file) => match file.write_all(text.as_bytes()) {

@@ -2,10 +2,12 @@ use crate::app::{functions::function_call::ModelFunction, session_config::Sessio
 use std::{collections::HashMap, path::PathBuf};
 
 use super::{
-  clap_args_to_json,
+  argument_validation::{
+    clap_args_to_json, validate_and_extract_options, validate_and_extract_paths_from_argument,
+    validate_and_extract_string_argument,
+  },
   errors::ModelFunctionError,
   types::{Command, CommandParameters, CommandProperty},
-  validate_and_extract_options, validate_and_extract_paths_from_argument, validate_and_extract_string_argument,
 };
 use clap::Parser;
 use serde_derive::{Deserialize, Serialize};
@@ -44,12 +46,18 @@ pub struct Pcre2GrepFunction {
 }
 
 pub fn execute_pcre2grep(
-  options: Vec<String>,
+  options: Option<Vec<String>>,
   pattern: String,
   paths: Vec<PathBuf>,
 ) -> Result<Option<String>, ModelFunctionError> {
   let output = std::process::Command::new("pcre2grep")
-    .args(options)
+    .args({
+      if let Some(options) = options {
+        options
+      } else {
+        vec![]
+      }
+    })
     .arg(pattern)
     .args(paths)
     .output()
@@ -103,12 +111,18 @@ impl ModelFunction for Pcre2GrepFunction {
     function_args: HashMap<String, serde_json::Value>,
     session_config: SessionConfig,
   ) -> Result<Option<String>, ModelFunctionError> {
-    let options = validate_and_extract_options::<Args>(&function_args, false).unwrap().unwrap_or_default();
-    let pattern = validate_and_extract_string_argument(&function_args, "pattern", true).unwrap().unwrap_or_default();
-    let paths =
-      validate_and_extract_paths_from_argument(&function_args, session_config, true).unwrap().unwrap_or_default();
-
-    execute_pcre2grep(options, pattern, paths)
+    match validate_and_extract_paths_from_argument(&function_args, session_config, true) {
+      Ok(Some(paths)) => match validate_and_extract_string_argument(&function_args, "pattern", true) {
+        Ok(Some(pattern)) => match validate_and_extract_options::<Args>(&function_args, false) {
+          Ok(options) => execute_pcre2grep(options, pattern, paths),
+          Err(err) => Ok(Some(err.to_string())),
+        },
+        Ok(None) => Ok(Some("pattenr is required".to_string())),
+        Err(err) => Ok(Some(err.to_string())),
+      },
+      Ok(None) => Ok(Some("paths are required".to_string())),
+      Err(err) => Ok(Some(err.to_string())),
+    }
   }
 
   fn command_definition(&self) -> Command {

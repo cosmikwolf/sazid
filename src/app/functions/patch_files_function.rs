@@ -6,10 +6,10 @@ use crate::app::session_config::SessionConfig;
 use serde_derive::{Deserialize, Serialize};
 
 use super::{
-  clap_args_to_json,
+  argument_validation::{clap_args_to_json, validate_and_extract_options, validate_and_extract_paths_from_argument},
   function_call::ModelFunction,
   types::{Command, CommandParameters, CommandProperty},
-  validate_and_extract_options, validate_and_extract_paths_from_argument, ModelFunctionError,
+  ModelFunctionError,
 };
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -43,14 +43,14 @@ impl ModelFunction for PatchFileFunction {
   fn init() -> Self {
     PatchFileFunction {
       name: "git_apply".to_string(),
-      description: "modify files using <git apply -i -3>".to_string(),
+      description: "modify files by executing 'git apply --index --3way <options> <paths>...'. git patch files must first be created with create_file, and must be in the git-format-patch format. all patch files should be created in ./.session_data/patches/".to_string(),
       required_properties: vec![
         CommandProperty {
           name: "options".to_string(),
           required: true,
           property_type: "string".to_string(),
           description: Some(format!(
-            "options to pass to git apply. --index and --3way are passed by default, options must be space separated. valid options: {}",
+            "options to pass to function. --index and --3way are always used, options must be comma separated. valid options: {}",
             clap_args_to_json::<Args>()
           )),
           enum_values: None,
@@ -59,7 +59,7 @@ impl ModelFunction for PatchFileFunction {
           name: "patch_files".to_string(),
           required: true,
           property_type: "string".to_string(),
-          description: Some("git patch files to apply".to_string()),
+          description: Some("git patch files to apply, comma separated".to_string()),
           enum_values: None,
         },
       ],
@@ -72,11 +72,14 @@ impl ModelFunction for PatchFileFunction {
     function_args: HashMap<String, serde_json::Value>,
     session_config: SessionConfig,
   ) -> Result<Option<String>, ModelFunctionError> {
-    let options = validate_and_extract_options::<Args>(&function_args, false).unwrap().unwrap_or_default();
-    let paths =
-      validate_and_extract_paths_from_argument(&function_args, session_config, true).unwrap().unwrap_or_default();
-
-    execute_git_apply(options, paths)
+    match validate_and_extract_paths_from_argument(&function_args, session_config, true) {
+      Ok(Some(paths)) => match validate_and_extract_options::<Args>(&function_args, false) {
+        Ok(options) => execute_git_apply(options, paths),
+        Err(err) => Ok(Some(err.to_string())),
+      },
+      Ok(None) => Ok(Some("no patch file passed to function".to_string())),
+      Err(err) => Ok(Some(err.to_string())),
+    }
   }
 
   fn command_definition(&self) -> Command {
@@ -101,12 +104,21 @@ impl ModelFunction for PatchFileFunction {
   }
 }
 
-pub fn execute_git_apply(options: Vec<String>, paths: Vec<PathBuf>) -> Result<Option<String>, ModelFunctionError> {
+pub fn execute_git_apply(
+  options: Option<Vec<String>>,
+  paths: Vec<PathBuf>,
+) -> Result<Option<String>, ModelFunctionError> {
   let output = std::process::Command::new("git")
     .arg("apply")
     .arg("--index")
     .arg("--3way")
-    .args(options)
+    .args({
+      if let Some(options) = options {
+        options
+      } else {
+        vec![]
+      }
+    })
     .args(paths)
     .output()
     .map_err(|e| ModelFunctionError::new(e.to_string().as_str()))?;

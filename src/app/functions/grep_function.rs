@@ -12,9 +12,10 @@ use walkdir::WalkDir;
 use crate::app::session_config::SessionConfig;
 
 use super::{
+  argument_validation::{validate_and_extract_paths_from_argument, validate_and_extract_string_argument},
   function_call::ModelFunction,
   types::{Command, CommandParameters, CommandProperty},
-  validate_and_extract_paths_from_argument, validate_and_extract_string_argument, ModelFunctionError,
+  ModelFunctionError,
 };
 
 #[derive(Debug, Serialize, Deserialize, Clone)]

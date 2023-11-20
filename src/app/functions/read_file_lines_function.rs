@@ -7,10 +7,10 @@ use crate::app::session_config::SessionConfig;
 use crate::trace_dbg;
 use serde_derive::{Deserialize, Serialize};
 
+use super::argument_validation::{count_tokens, get_accessible_file_paths};
 use super::errors::ModelFunctionError;
 use super::function_call::ModelFunction;
 use super::types::{Command, CommandParameters, CommandProperty};
-use super::{count_tokens, get_accessible_file_paths};
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct ReadFileLinesFunction {
