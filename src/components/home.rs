@@ -154,7 +154,7 @@ impl Component for Home<'static> {
     self.last_events.push(key);
 
     //trace_dbg!("key: {:#?}\n{:#?}", key, crossterm::event::Event::Key(key));
-    trace_dbg!("insert key: {:?}\n{:?}", key, self.input.cursor());
+    //trace_dbg!("insert key: {:?}\n{:?}", key, self.input.cursor());
     let action = match self.mode {
       Mode::Command => match key {
         KeyEvent { code: KeyCode::Esc, .. } => {

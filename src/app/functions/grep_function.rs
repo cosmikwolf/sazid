@@ -68,7 +68,7 @@ impl ModelFunction for GrepFunction {
     function_args: HashMap<String, serde_json::Value>,
     session_config: SessionConfig,
   ) -> Result<Option<String>, ModelFunctionError> {
-    let paths = validate_and_extract_paths_from_argument(&function_args, session_config, true, None)?.unwrap();
+    let paths = validate_and_extract_paths_from_argument(&function_args, session_config, true, None)?;
     let pattern = validate_and_extract_string_argument(&function_args, "pattern", true)?.unwrap();
     grep(pattern.as_str(), paths)
   }

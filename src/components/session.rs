@@ -115,8 +115,7 @@ impl Component for Session<'static> {
     //Session::select_model(model_preference, create_openai_client(self.config.openai_config.clone()));
     trace_dbg!("init session");
     self.config.prompt =
-        vec![
-    "- act as a somewhat terse programming architecture and development assistant robot, that specializes in the Rust.",
+        ["- act as a somewhat terse programming architecture and development assistant robot, that specializes in the Rust.",
     "- Use the functions available to assist with the user inquiry.Provide your response as markdown formatted text.",
     "- Make sure to properly entabulate any code blocks",
     "- Do not try and execute arbitrary python code.",
@@ -126,8 +125,7 @@ impl Component for Session<'static> {
     "- Before you ask the user to supply anything, consider if you have access to what you need already in the context",
     "- Before you respond, consider if your response is applicable to the current query, and if it is the appropriate response to further the goal of supporting a developer in their project",
     "- When you are given a request, if you do not have enough information, use pcre2grep and file_search to find the information you need, if it is not information you need from the user",
-    "- When evaluating function tests, make it a priority to determine if the problems exist in the source code, or if the test code itself is not properly designed"
-        ].join("\n").to_string();
+    "- When evaluating function tests, make it a priority to determine if the problems exist in the source code, or if the test code itself is not properly designed"].join("\n").to_string();
     // self.config.prompt = "act as a very terse assistant".into();
     self.view.set_window_width(area.width as usize, &mut self.data.messages);
     tx.send(Action::AddMessage(ChatMessage::PromptMessage(self.config.prompt_message()))).unwrap();
@@ -399,10 +397,11 @@ impl Session<'static> {
         Some(create_chat_completion_function_args(self.config.available_functions.iter().map(|f| f.into()).collect()))
       },
     };
+    trace_dbg!("functions: {:#?}", functions);
     self.add_new_messages_to_request_buffer();
     let _token_count = 0;
     let debug = format!("{:#?}", self.request_buffer).bright_cyan().to_string();
-    trace_dbg!("constructing request {}", debug);
+    //trace_dbg!("constructing request {}", debug);
 
     CreateChatCompletionRequest {
       model: self.config.model.name.clone(),

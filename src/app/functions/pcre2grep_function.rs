@@ -46,18 +46,12 @@ pub struct Pcre2GrepFunction {
 }
 
 pub fn execute_pcre2grep(
-  options: Option<Vec<String>>,
+  options: Vec<String>,
   pattern: String,
   paths: Vec<PathBuf>,
 ) -> Result<Option<String>, ModelFunctionError> {
   let output = std::process::Command::new("pcre2grep")
-    .args({
-      if let Some(options) = options {
-        options
-      } else {
-        vec![]
-      }
-    })
+    .args(options)
     .arg(pattern)
     .args(paths)
     .output()
@@ -112,15 +106,20 @@ impl ModelFunction for Pcre2GrepFunction {
     session_config: SessionConfig,
   ) -> Result<Option<String>, ModelFunctionError> {
     match validate_and_extract_paths_from_argument(&function_args, session_config, true, None) {
-      Ok(Some(paths)) => match validate_and_extract_string_argument(&function_args, "pattern", true) {
-        Ok(Some(pattern)) => match validate_and_extract_options::<Args>(&function_args, false) {
-          Ok(options) => execute_pcre2grep(options, pattern, paths),
-          Err(err) => Ok(Some(err.to_string())),
-        },
-        Ok(None) => Ok(Some("pattenr is required".to_string())),
-        Err(err) => Ok(Some(err.to_string())),
+      Ok(paths) => {
+        if paths.is_empty() {
+          Ok(Some("no paths provided".to_string()))
+        } else {
+          match validate_and_extract_string_argument(&function_args, "pattern", true) {
+            Ok(Some(pattern)) => match validate_and_extract_options::<Args>(self.name.clone(), &function_args, false) {
+              Ok(options) => execute_pcre2grep(options, pattern, paths),
+              Err(err) => Ok(Some(err.to_string())),
+            },
+            Ok(None) => Ok(Some("pattenr is required".to_string())),
+            Err(err) => Ok(Some(err.to_string())),
+          }
+        }
       },
-      Ok(None) => Ok(Some("paths are required".to_string())),
       Err(err) => Ok(Some(err.to_string())),
     }
   }

@@ -1,6 +1,6 @@
 #[cfg(test)]
 mod tests {
-    use super::*;
+    
 
     #[test]
     fn test_cargo_check_with_valid_package() {

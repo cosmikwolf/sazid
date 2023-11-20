@@ -24,7 +24,7 @@ pub struct MessageContainer {
 }
 
 impl MessageContainer {
-  pub fn render_message(&mut self, window_width: usize) {
+  pub fn render_message(&mut self, _window_width: usize) {
     self.rendered = RenderedChatMessage::from(&self.message);
     let _padding = " ".repeat(2);
     let padded_content = &self.rendered.content;

@@ -4,15 +4,15 @@ use crate::{
   app::messages::{ChatMessage, FunctionResult},
   trace_dbg,
 };
-use clap::Parser;
-use serde_derive::{Deserialize, Serialize};
-use serde_json::json;
-use std::path::Path;
-use std::{collections::HashMap, path::PathBuf};
-use tokio::sync::mpsc::UnboundedSender;
-use walkdir::WalkDir;
 
-use self::pcre2grep_function::Pcre2GrepFunction;
+use serde_derive::{Deserialize, Serialize};
+
+
+use std::{collections::HashMap};
+use tokio::sync::mpsc::UnboundedSender;
+
+
+
 use self::{
   create_file_function::CreateFileFunction, errors::ModelFunctionError, file_search_function::FileSearchFunction,
   patch_files_function::PatchFileFunction, read_file_lines_function::ReadFileLinesFunction, types::Command,

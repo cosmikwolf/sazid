@@ -1,6 +1,6 @@
 use bat::{assets::HighlightingAssets, config::Config, controller::Controller, style::StyleComponents, Input};
-use pulldown_cmark_mdcat::terminal::{TerminalProgram, TerminalSize};
-use textwrap::wrap_algorithms::{wrap_optimal_fit, OverflowError, Penalties};
+
+
 use textwrap::{self, Options, WordSeparator, WordSplitter, WrapAlgorithm};
 
 use crate::trace_dbg;
@@ -19,7 +19,7 @@ pub struct SessionView {
 }
 
 impl SessionView {
-  pub fn set_window_width(&mut self, width: usize, messages: &mut [MessageContainer]) {
+  pub fn set_window_width(&mut self, width: usize, _messages: &mut [MessageContainer]) {
     let new_value = width - 6;
     if self.window_width != new_value {
       trace_dbg!("setting window width to {}", new_value);
