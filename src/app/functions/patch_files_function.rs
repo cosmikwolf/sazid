@@ -83,9 +83,11 @@ impl ModelFunction for PatchFileFunction {
 pub fn execute_git_apply(reverse: Option<bool>, paths: Vec<PathBuf>) -> Result<Option<String>, ModelFunctionError> {
   let output = std::process::Command::new("git")
     .arg("apply")
-    .arg("--index")
     .arg("--ignore-whitespace")
     .arg("--3way")
+    .arg("--unidiff-zero")
+    .arg("--inaccurate-eof")
+    .arg("--unsafe-paths")
     .arg("--verbose")
     .args(if reverse.unwrap_or(false) { vec!["--reverse"] } else { vec![] })
     .args(paths)

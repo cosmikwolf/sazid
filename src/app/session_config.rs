@@ -9,7 +9,7 @@ use async_openai::{
 };
 use serde_derive::{Deserialize, Serialize};
 
-use super::{consts::GPT4_TURBO, functions::CallableFunction, types::Model};
+use super::{consts::*, functions::CallableFunction, types::Model};
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct SessionConfig {

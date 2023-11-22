@@ -26,7 +26,7 @@ impl ModelFunction for CreateFileFunction {
   fn init() -> Self {
     CreateFileFunction {
       name: "create_file".to_string(),
-      description: "create a file at path with text".to_string(),
+      description: "create a file at path with text. this command cannot overwrite files".to_string(),
       required_properties: vec![
         CommandProperty {
           name: "path".to_string(),
@@ -39,7 +39,7 @@ impl ModelFunction for CreateFileFunction {
           name: "text".to_string(),
           required: true,
           property_type: "string".to_string(),
-          description: Some("text to write to file. this command cannot overwrite files".to_string()),
+          description: Some("text to write to file.".to_string()),
           enum_values: None,
         },
       ],
@@ -105,7 +105,7 @@ pub fn create_file(path: &str, text: &str) -> Result<Option<String>, ModelFuncti
 
   if path.exists() {
     // If the file already exists, return an error message.
-    return Ok(Some("file already exists. cannot overwrite files".to_string()));
+    return Ok(Some("file already exists. cannot overwrite files. suggest using an incremented file name suffix before the extension, like _1.rs _2.rs".to_string()));
   }
   // Proceed to create the file now that the parent directories should exist.
   match File::create(path) {

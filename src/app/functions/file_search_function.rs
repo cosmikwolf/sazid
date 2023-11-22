@@ -48,9 +48,7 @@ impl ModelFunction for FileSearchFunction {
       if let Some(pathstr) = v.as_str() {
         let accesible_paths = get_accessible_file_paths(session_config.list_file_paths.clone(), None);
         if !accesible_paths.contains_key(Path::new(pathstr).to_str().unwrap()) {
-          return Err(ModelFunctionError::new(
-            format!("File path is not accessible: {:?}. Suggest using file_search command", pathstr).as_str(),
-          ));
+          return Err(ModelFunctionError::new(format!("File path is not accessible: {:?}", pathstr).as_str()));
         } else {
           trace_dbg!("path: {:?} exists", pathstr);
         }
