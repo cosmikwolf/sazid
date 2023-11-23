@@ -1,0 +1,25 @@
+The intent of this prompt is to generate a vectordb interface for the current application.
+The current application is a GPT interfacing CLI written in rust.
+We are going to be using pgvecto.rs in combination with a postgres database to provide the vector database.
+
+assume the database has already been created.
+documentation for pgvecto will be supplied in the context below.
+
+- Before you begin, see if any of these files have already been created and analyze the progress so far.
+
+- If the file exists, patch the file instead of creating a new one.
+in order to implement this we will need to:
+- Determine the way that a GPT app will need to interface with a vector database, and what types of functions it will need access to.
+- create a rust source file that contains code to provide the GPT app with these functions
+- create a set of SQL queries that will be used to interface with the database that will execute these functions
+- A set of tests to validate that the code written in the rust source file is working as intended
+
+-Do not worry about the glue code to the GPT app itself.
+
+-First, create an outline for each file that you will create in ./src/app/db/
+-Put placeholder comments that describe in detail what each segment of code will do.
+
+- Write the tests that will be used to validate the code that will replace each placeholder comment.
+- Code these tests, and ensure that they are written in idiomatic rust, and that they will compile and that they will ensure beyond any reasonable doubt that the code that will be written will function as intended.
+- Do not summarize your progress, and do not update me with your plan or with status
+- execute the prompt without any further communication unless absolutely necessary

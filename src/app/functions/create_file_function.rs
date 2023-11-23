@@ -42,6 +42,13 @@ impl ModelFunction for CreateFileFunction {
           description: Some("text to write to file.".to_string()),
           enum_values: None,
         },
+        CommandProperty {
+          name: "overwrite".to_string(),
+          required: true,
+          property_type: "boolean".to_string(),
+          description: Some("overwrite an existing file. default false".to_string()),
+          enum_values: None,
+        },
       ],
       optional_properties: vec![],
     }
@@ -54,9 +61,11 @@ impl ModelFunction for CreateFileFunction {
   ) -> Result<Option<String>, ModelFunctionError> {
     let path: Option<&str> = function_args.get("path").and_then(|s| s.as_str());
     let text: Option<&str> = function_args.get("text").and_then(|s| s.as_str());
+    let overwrite = function_args.get("overwrite").and_then(|b| b.as_bool()).unwrap_or(false);
+
     if let Some(path) = path {
       if let Some(text) = text {
-        create_file(path, text)
+        create_file(path, text, overwrite)
       } else {
         Err(ModelFunctionError::new("text argument is required"))
       }
@@ -87,7 +96,7 @@ impl ModelFunction for CreateFileFunction {
   }
 }
 
-pub fn create_file(path: &str, text: &str) -> Result<Option<String>, ModelFunctionError> {
+pub fn create_file(path: &str, text: &str, overwrite: bool) -> Result<Option<String>, ModelFunctionError> {
   // Convert the string path to a `Path` object to manipulate file paths.
   let path = Path::new(path);
 
@@ -105,7 +114,14 @@ pub fn create_file(path: &str, text: &str) -> Result<Option<String>, ModelFuncti
 
   if path.exists() {
     // If the file already exists, return an error message.
-    return Ok(Some("file already exists. cannot overwrite files. suggest using an incremented file name suffix before the extension, like _1.rs _2.rs".to_string()));
+    if overwrite {
+      match fs::remove_file(path) {
+        Ok(_) => (),
+        Err(e) => return Ok(Some(format!("error removing file: {}", e))),
+      }
+    } else {
+      return Ok(Some("file already exists. cannot overwrite files. suggest using an incremented file name suffix before the extension, like _1.rs _2.rs".to_string()));
+    }
   }
   // Proceed to create the file now that the parent directories should exist.
   match File::create(path) {
@@ -130,7 +146,7 @@ mod tests {
     let file_path = tmp_dir.path().join("test_file.txt");
     let file_contents = "Test file contents.";
 
-    let result = create_file(file_path.to_str().unwrap(), file_contents);
+    let result = create_file(file_path.to_str().unwrap(), file_contents, false);
     assert!(result.is_ok());
     check_file_contents(&file_path, file_contents);
   }
@@ -143,7 +159,7 @@ mod tests {
     let file_path = non_existent_subfolder.join("test_file.txt");
     let file_contents = "Test file contents.";
 
-    let result = create_file(file_path.to_str().unwrap(), file_contents);
+    let result = create_file(file_path.to_str().unwrap(), file_contents, false);
     assert!(result.is_ok());
     check_file_contents(&file_path, file_contents);
   }
@@ -155,7 +171,7 @@ mod tests {
     let file_path = tmp_dir.path().join("\0"); // Null byte is not allowed in file names.
     let file_contents = "Test file contents.";
 
-    let result = create_file(file_path.to_str().unwrap(), file_contents);
+    let result = create_file(file_path.to_str().unwrap(), file_contents, false);
     assert!(result.is_ok());
     assert!(result.unwrap().unwrap().contains("error"));
   }
@@ -169,7 +185,7 @@ mod tests {
     let file_path = Path::new(permissions_dir).join("test_file.txt");
     let file_contents = "Test file contents.";
 
-    let result = create_file(file_path.to_str().unwrap(), file_contents);
+    let result = create_file(file_path.to_str().unwrap(), file_contents, false);
     assert!(result.is_ok());
     assert!(result.unwrap().unwrap().contains("error"));
   }
@@ -183,7 +199,7 @@ mod tests {
     let file_path = Path::new(read_only_dir).join("test_file.txt");
     let file_contents = "Test file contents.";
 
-    let result = create_file(file_path.to_str().unwrap(), file_contents);
+    let result = create_file(file_path.to_str().unwrap(), file_contents, false);
     assert!(result.is_ok());
     assert!(result.unwrap().unwrap().contains("error"));
   }
@@ -203,7 +219,7 @@ mod tests {
     }
 
     // Perform the operation to create the file again with different contents.
-    let result = create_file(file_path.to_str().unwrap(), new_contents);
+    let result = create_file(file_path.to_str().unwrap(), new_contents, false);
     assert!(result.is_ok());
     check_file_contents(&file_path, new_contents);
   }
@@ -215,7 +231,7 @@ mod tests {
     let file_path = tmp_dir.path().join("large_test_file.txt");
     let file_contents = "a".repeat(10_000_000); // 10 MB of 'a'.
 
-    let result = create_file(file_path.to_str().unwrap(), &file_contents);
+    let result = create_file(file_path.to_str().unwrap(), &file_contents, false);
     assert!(result.is_ok());
     check_file_contents(&file_path, &file_contents);
   }
