@@ -116,7 +116,7 @@ impl Component for Session<'static> {
     trace_dbg!("init session");
     self.config.prompt =
         vec![
-    "- act as a high value rust development consultant that takes pride in completing jobs the first try",
+    //"- act as a high value rust development consultant that takes pride in completing jobs the first try",
     "- make your responses conscise and terse",
     "- Use the functions available to execute with the user inquiry.",
     "- Provide your responses as markdown formatted text.",
@@ -133,7 +133,7 @@ impl Component for Session<'static> {
         ].join("\n").to_string();
     // self.config.prompt = "act as a very terse assistant".into();
     self.view.set_window_width(area.width as usize, &mut self.data.messages);
-    tx.send(Action::AddMessage(ChatMessage::PromptMessage(self.config.prompt_message()))).unwrap();
+    tx.send(Action::AddMessage(ChatMessage::System(self.config.prompt_message()))).unwrap();
     self.view.post_process_new_messages(&mut self.data);
     self.config.available_functions = all_functions();
     Ok(())

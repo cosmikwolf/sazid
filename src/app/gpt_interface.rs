@@ -329,8 +329,8 @@ pub fn create_chat_completion_function_args(commands: Vec<Command>) -> Vec<ChatC
       name: command.name,
       description: command.description,
       parameters: match command.parameters {
-        Some(parameters) => Some(serde_json::to_value(parameters).unwrap()),
-        None => Some(serde_json::from_str(empty_parameters).unwrap()),
+        parameters => serde_json::to_value(parameters).unwrap(),
+        None => serde_json::from_str(empty_parameters).unwrap(),
       },
     };
     chat_completion_functions.push(chat_completion_function);

@@ -5,7 +5,7 @@ use std::{
 
 use async_openai::{
   config::OpenAIConfig,
-  types::{ChatCompletionRequestMessage, Role},
+  types::{ChatCompletionRequestMessage, ChatCompletionRequestSystemMessage, Role},
 };
 use serde_derive::{Deserialize, Serialize};
 
@@ -59,13 +59,8 @@ impl SessionConfig {
     self
   }
 
-  pub fn prompt_message(&self) -> ChatCompletionRequestMessage {
-    ChatCompletionRequestMessage {
-      content: Some(self.prompt.clone()),
-      name: None,
-      function_call: None,
-      role: Role::User,
-    }
+  pub fn prompt_message(&self) -> ChatCompletionRequestSystemMessage {
+    ChatCompletionRequestSystemMessage { content: Some(self.prompt.clone()), ..Default::default() }
   }
 
   pub fn generate_session_id() -> String {

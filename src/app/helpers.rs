@@ -1,5 +1,7 @@
 use async_openai::types::{
-  ChatCompletionResponseStreamMessage, ChatCompletionStreamResponseDelta, FinishReason, FunctionCallStream,
+  ChatCompletionMessageToolCall, ChatCompletionMessageToolCallChunk, ChatCompletionResponseStreamMessage,
+  ChatCompletionStreamResponseDelta, CreateChatCompletionStreamResponse, FinishReason, FunctionCall,
+  FunctionCallStream,
 };
 
 use super::errors::ParseError;
@@ -30,6 +32,27 @@ pub fn concatenate_function_call_streams(
   }
 }
 
+pub fn concatenate_option_vecs<T>(a: Option<Vec<T>>, b: Option<Vec<T>>) -> Option<Vec<T>> {
+  match (a, b) {
+    (Some(a_vec), Some(b_vec)) => Some(a_vec.into_iter().chain(b_vec.into_iter()).collect()),
+    (Some(a_vec), None) => Some(a_vec),
+    (None, Some(b_vec)) => Some(b_vec),
+    (None, None) => None,
+  }
+}
+
+pub fn concatenate_tool_call_chunks(
+  chunk1: &ChatCompletionMessageToolCallChunk,
+  chunk2: &ChatCompletionMessageToolCallChunk,
+) -> ChatCompletionMessageToolCallChunk {
+  ChatCompletionMessageToolCallChunk {
+    index: chunk1.index,
+    id: concatenate_option_strings(chunk1.id.clone(), chunk2.id.clone()),
+    r#type: chunk2.r#type.clone(),
+    function: concatenate_function_call_streams(chunk1.function.clone(), chunk2.function.clone()),
+  }
+}
+
 pub fn concatenate_stream_delta(
   delta1: ChatCompletionStreamResponseDelta,
   delta2: ChatCompletionStreamResponseDelta,
@@ -37,7 +60,29 @@ pub fn concatenate_stream_delta(
   ChatCompletionStreamResponseDelta {
     role: delta1.role,
     content: concatenate_option_strings(delta1.content, delta2.content),
+    tool_calls: concatenate_option_vecs::<ChatCompletionMessageToolCallChunk>(delta1.tool_calls, delta2.tool_calls),
     function_call: concatenate_function_call_streams(delta1.function_call, delta2.function_call),
+  }
+}
+
+pub fn concatenate_create_chat_completion_stream_response(
+  sr1: &CreateChatCompletionStreamResponse,
+  sr2: &CreateChatCompletionStreamResponse,
+) -> Result<CreateChatCompletionStreamResponse, ParseError> {
+  if sr1.id != sr2.id {
+    return Err(ParseError::new("Cannot concatenate two stream responses with different ids"));
+  } else {
+    let mut combined_choices = Vec::new();
+    combined_choices.extend(sr1.choices.clone());
+    combined_choices.extend(sr2.choices.clone());
+    Ok(CreateChatCompletionStreamResponse {
+      id: sr1.id,
+      choices: combined_choices,
+      created: sr2.created,
+      model: sr2.model,
+      system_fingerprint: sr2.system_fingerprint,
+      object: sr2.object,
+    })
   }
 }
 

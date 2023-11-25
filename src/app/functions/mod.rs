@@ -4,13 +4,10 @@ use crate::{
   app::messages::{ChatMessage, FunctionResult},
   trace_dbg,
 };
-use clap::Parser;
+use async_openai::types::ChatCompletionRequestFunctionMessage;
 use serde_derive::{Deserialize, Serialize};
-use serde_json::json;
-use std::path::Path;
-use std::{collections::HashMap, path::PathBuf};
+use std::collections::HashMap;
 use tokio::sync::mpsc::UnboundedSender;
-use walkdir::WalkDir;
 
 use self::pcre2grep_function::Pcre2GrepFunction;
 use self::{
@@ -109,8 +106,12 @@ pub fn handle_chat_response_function_call(
       Ok(Some(output)) => {
         //self.data.add_message(ChatMessage::FunctionResult(FunctionResult { name: fn_name, response: output }));
         trace_dbg!("function output:\n{}", output);
-        tx.send(Action::AddMessage(ChatMessage::FunctionResult(FunctionResult { name: fn_name, response: output })))
-          .unwrap();
+        tx.send(Action::AddMessage(ChatMessage::Function(ChatCompletionRequestFunctionMessage {
+          name: fn_name,
+          content: Some(output),
+          ..Default::default()
+        })))
+        .unwrap();
       },
       Ok(None) => {},
       Err(e) => {
@@ -118,9 +119,10 @@ pub fn handle_chat_response_function_call(
         //   name: fn_name,
         //   response: format!("Error: {:?}", e),
         // }));
-        tx.send(Action::AddMessage(ChatMessage::FunctionResult(FunctionResult {
+        tx.send(Action::AddMessage(ChatMessage::Function(ChatCompletionRequestFunctionMessage {
           name: fn_name,
-          response: format!("Error: {:?}", e),
+          content: Some(format!("Error: {:?}", e)),
+          ..Default::default()
         })))
         .unwrap();
       },

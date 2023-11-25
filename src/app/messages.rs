@@ -1,80 +1,242 @@
+use std::{
+  collections::HashSet,
+  fmt::{self, Formatter},
+};
+
 use color_eyre::owo_colors::OwoColorize;
 use crossterm::style::Stylize;
-use regex::Regex;
 use ropey::Rope;
 use serde_derive::{Deserialize, Serialize};
 
-use super::helpers::concatenate_stream_response_messages;
+use crate::app::helpers::concatenate_create_chat_completion_stream_response;
+
 use async_openai::{
   self,
   types::{
-    ChatChoice, ChatCompletionRequestMessage, ChatCompletionResponseStreamMessage, CreateChatCompletionResponse,
-    CreateChatCompletionStreamResponse, FinishReason, FunctionCall, FunctionCallStream, Role,
+    ChatCompletionMessageToolCallChunk, ChatCompletionRequestAssistantMessage, ChatCompletionRequestFunctionMessage,
+    ChatCompletionRequestMessageContentPart, ChatCompletionRequestSystemMessage, ChatCompletionRequestToolMessage,
+    ChatCompletionRequestUserMessage, ChatCompletionRequestUserMessageContent, CreateChatCompletionResponse,
+    CreateChatCompletionStreamResponse, FunctionCall, FunctionCallStream, Role,
   },
 };
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct MessageContainer {
   pub message: ChatMessage,
+  pub stream_id: Option<String>,
   pub rendered: RenderedChatMessage,
   pub finished: bool,
+  pub tool_calls: Vec<ChatCompletionMessageToolCall>,
   pub function_called: bool,
   pub response_count: usize,
   pub token_usage: usize,
 }
 
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+pub enum ChatMessage {
+  Response(CreateChatCompletionResponse),
+  StreamResponse(Vec<CreateChatCompletionStreamResponse>),
+  SazidMessage(String),
+  System(ChatCompletionRequestSystemMessage),
+  User(ChatCompletionRequestUserMessage),
+  Assistant(ChatCompletionRequestAssistantMessage),
+  Tool(ChatCompletionRequestToolMessage),
+  Function(ChatCompletionRequestFunctionMessage),
+}
+
+impl fmt::Display for ChatMessage {
+  fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+    write!(
+      f,
+      "{}",
+      match self {
+        ChatMessage::SazidMessage(message) => format!("{}\n{}", "Sazid:".cyan(), message),
+        ChatMessage::System(message) => match message.content {
+          Some(content) => {
+            format!("{}\n{}", "System:".bright_magenta(), content)
+          },
+          None => {
+            format!("{}\n{}", "System:".bright_magenta(), "no content")
+          },
+        },
+        ChatMessage::User(message) => match message.content {
+          Some(ChatCompletionRequestUserMessageContent::Text(content)) => {
+            format!("{}\n{}", "You:".bright_blue(), content)
+          },
+          Some(ChatCompletionRequestUserMessageContent::Array(parts)) => {
+            let mut content: Vec<String> = Vec::new();
+            for part in parts {
+              content.push(match part {
+                ChatCompletionRequestMessageContentPart::Text(content) => {
+                  format!("{}\n{}", "You:".bright_blue(), content.text)
+                },
+                ChatCompletionRequestMessageContentPart::Image(content) => {
+                  format!("{}\n{}", "You <Image>:".bright_blue(), content.image_url.url)
+                },
+              })
+            }
+            content.join("\n")
+          },
+          None => {
+            format!("{}\n{}", "You:".bright_blue(), "no content")
+          },
+        },
+        ChatMessage::Assistant(message) => {
+          let mut content: Vec<String> = Vec::new();
+          content.push(match message.content {
+            Some(content) => format!("{}\n{}\n", "Assistant:".bright_yellow(), content),
+            None => format!("{}\n{}\n", "Assistant:".bright_yellow(), "no content"),
+          });
+          match message.tool_calls {
+            Some(tool_calls) => {
+              for tool_call in tool_calls {
+                content.push(format!("{}\n{}", "Tool:".bright_green(), tool_call.function.name));
+                content.push(format!("{}\n{}", "Arguments:".bright_green(), tool_call.function.arguments));
+              }
+            },
+            None => {},
+          }
+          content.join("\n")
+        },
+        ChatMessage::Tool(message) => {
+          let mut content: Vec<String> = Vec::new();
+          content.push(format!("{}\n{}", "Tool:".bright_green(), message.tool_call_id));
+          content.push(match message.content {
+            Some(content) => format!("{}", content),
+            None => format!("{}", "no content"),
+          });
+          content.join("\n")
+        },
+        ChatMessage::Function(message) => {
+          let mut content: Vec<String> = Vec::new();
+          content.push(format!("{}\n{}", "Function:".bright_green(), message.name));
+          content.push(match message.content {
+            Some(content) => format!("{}", content),
+            None => format!("{}", "no content"),
+          });
+          content.join("\n")
+        },
+        ChatMessage::Response(message) => {
+          let mut content: Vec<String> = Vec::new();
+          for choice in &message.choices {
+            if &message.choices.len() > &1 {
+              content.push(format!("{}\n{}", "Choice #".bright_green(), choice.index));
+            }
+            content.push(match choice.message.content {
+              Some(content) => format!("{}\n{}", "Assistant:".bright_yellow(), content),
+              None => format!("{}\n{}", "Assistant:".bright_yellow(), "no content"),
+            });
+            match choice.message.tool_calls {
+              Some(tool_calls) => {
+                for tool_call in tool_calls {
+                  content.push(format!("{}\n{}", "Tool:".bright_green(), tool_call.function.name));
+                  content.push(format!("{}\n{}", "Arguments:".bright_green(), tool_call.function.arguments));
+                }
+              },
+              None => {},
+            };
+            if &message.choices.len() > &1 {
+              content.push("\n".to_string());
+            }
+          }
+          content.join("\n")
+        },
+        ChatMessage::StreamResponse(messages) => {
+          let mut content: Vec<String> = Vec::new();
+          let message = messages
+            .iter()
+            .skip(1)
+            .try_fold(messages[0], |acc, m| concatenate_create_chat_completion_stream_response(&acc, m))
+            .unwrap();
+
+          let mut choice_idxs = message.choices.iter().map(|c| c.index as usize).collect::<Vec<usize>>();
+          choice_idxs.sort_unstable();
+          choice_idxs.dedup();
+
+          choice_idxs.iter().for_each(|choice_idx| {
+            if choice_idxs.len() > 1 {
+              content.push(format!("{}{}:", "Choice #".bright_green(), choice_idx));
+            }
+            let mut tool_call_chunks: Vec<ChatCompletionMessageToolCallChunk> = Vec::new();
+            message.choices.iter().filter(|c| c.index as usize == *choice_idx).for_each(|choice| {
+              content.push(match choice.delta.content {
+                Some(content) => format!("{}\n{}", "Assistant:".bright_yellow(), content),
+                None => format!("{}\n{}", "Assistant:".bright_yellow(), "no content"),
+              });
+
+              match choice.delta.tool_calls {
+                Some(tool_calls) => {
+                  for tool_call in tool_calls {
+                    tool_call_chunks.push(tool_call.clone());
+                  }
+                },
+                None => {},
+              };
+            });
+            tool_call_chunks.iter().map(|tc| tc.index as usize).collect::<Vec<usize>>().iter().for_each(
+              |tool_call_idx| {
+                //tool_call_chunks.iter().filter(|tc| tc.index == tool_call_idx).skip(1).try_fold(tool_call_chunks[0], |acc, tc| concatenate_tool_call_chunks(&acc, tc) )
+                let tool_call_chunks_by_idx = tool_call_chunks
+                  .iter()
+                  .filter(|tc| tc.index as usize == *tool_call_idx)
+                  .collect::<Vec<&ChatCompletionMessageToolCallChunk>>();
+
+                let id = tool_call_chunks_by_idx.iter().flat_map(|tc| tc.id).collect::<Vec<String>>().join(" ");
+
+                let name = tool_call_chunks_by_idx
+                  .iter()
+                  .flat_map(|tc| tc.function)
+                  .flat_map(|fc| fc.name)
+                  .collect::<Vec<String>>()
+                  .join(" ");
+
+                let arguments = tool_call_chunks_by_idx
+                  .iter()
+                  .flat_map(|tc| tc.function)
+                  .flat_map(|fc| fc.name)
+                  .collect::<Vec<String>>()
+                  .join(" ");
+
+                content.push(format!("{}{}", "Tool ID:".bright_green(), id));
+                content.push(format!("{}\t{}", "Name:".bright_green(), name));
+                content.push(format!("{}\n{}", "Arguments:".bright_green(), arguments));
+              },
+            );
+          });
+          content.join("\n")
+        },
+      }
+    );
+    Ok(())
+  }
+}
+
 impl MessageContainer {
+  pub fn is_finished(&self) -> bool {
+    match self.message {
+      ChatMessage::Response(response) => response.choices.iter().all(|c| c.finish_reason.is_some()),
+      ChatMessage::StreamResponse(srvec) => {
+        let mut indexes_with_finish_reason = HashSet::new();
+
+        // First, insert indices that have a finish_reason into the set.
+        srvec.iter().for_each(|response| {
+          response.choices.iter().for_each(|choice| {
+            if choice.finish_reason.is_some() {
+              indexes_with_finish_reason.insert(choice.index);
+            }
+          });
+        });
+
+        // Now, check if every index has a corresponding finish_reason.
+        srvec
+          .iter()
+          .all(|response| response.choices.iter().all(|choice| indexes_with_finish_reason.contains(&choice.index)))
+      },
+      _ => true,
+    }
+  }
   pub fn render_message(&mut self, window_width: usize) {
     self.rendered = RenderedChatMessage::from(&self.message);
-    let _padding = " ".repeat(2);
-    let padded_content = &self.rendered.content;
-    //   self.rendered.content.split('\n').map(|l| format!("{}{}", padding, l)).collect::<Vec<String>>().join("\n");
-    let new_content = match self.message {
-      ChatMessage::ChatCompletionResponseMessage(ChatResponseSingleMessage::StreamResponse(_)) => {
-        // regex to check if the message is just whitespace
-        let re = Regex::new(r"^\s*$").unwrap();
-        if re.is_match(padded_content.as_str()) {
-          format!(
-            "{} {}\n{} {:#?}",
-            "Function Call:".dark_green(),
-            self.rendered.clone().function_call.unwrap_or_default().name,
-            "Arguments:".dark_green(),
-            self.rendered.clone().function_call.unwrap_or_default().arguments
-          )
-        } else {
-          format!("{}\n{}", "Sazid:".cyan(), padded_content)
-        }
-      },
-      ChatMessage::ChatCompletionResponseMessage(ChatResponseSingleMessage::Response(_)) => {
-        // regex to check if the message is just whitespace
-        let re = Regex::new(r"^\s*$").unwrap();
-        if re.is_match(padded_content.as_str()) {
-          format!(
-            "{} {}\n{} {}",
-            "Function Call:".dark_green(),
-            self.rendered.clone().function_call.unwrap_or_default().name,
-            "Arguments:".dark_green(),
-            self.rendered.clone().function_call.unwrap_or_default().arguments
-          )
-        } else {
-          format!("{}\n{}", "Sazid:".cyan(), padded_content)
-        }
-      },
-      ChatMessage::ChatCompletionRequestMessage(_) => {
-        format!("{}\n{}", "You:".bright_blue(), padded_content)
-      },
-      ChatMessage::PromptMessage(_) => {
-        format!("{}\n{}", "Prompt:".yellow(), padded_content)
-      },
-      ChatMessage::FunctionResult(_) => {
-        format!("{}\n{}\n...", "Sending Result:".grey(), padded_content.lines().take(4).collect::<String>())
-      },
-      ChatMessage::SazidSystemMessage(_) => {
-        format!("{}\n{}", "System:".bright_magenta(), padded_content)
-      },
-    };
-    self.rendered.content = new_content;
-    //self.rendered.content = bwrap::wrap_maybrk!(new_content.as_str(), window_width - 20, "", padding.as_str())
   }
 }
 impl MessageContainer {
@@ -98,24 +260,24 @@ pub struct RenderedChatMessage {
   pub wrapped_content: String,
   #[serde(skip)]
   pub stylized: Rope,
-  pub function_call: Option<RenderedFunctionCall>,
+  //pub function_call: Option<RenderedFunctionCall>,
   pub name: Option<String>,
-  pub finish_reason: Option<FinishReason>,
+  pub finished: bool,
   pub token_usage: usize,
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
-pub enum ChatResponse {
-  Response(CreateChatCompletionResponse),
-  StreamResponse(CreateChatCompletionStreamResponse),
-}
-
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
-pub enum ChatResponseSingleMessage {
-  Response(ChatChoice),
-  StreamResponse(Vec<ChatCompletionResponseStreamMessage>),
-}
-
+// #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+// pub enum ChatResponse {
+//   Response(CreateChatCompletionResponse),
+//   StreamResponse(CreateChatCompletionStreamResponse),
+// }
+//
+// #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+// pub enum ChatResponseSingleMessage {
+//   Response(ChatChoice),
+//   StreamResponse(Vec<ChatCompletionResponseStreamMessage>),
+// }
+//
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct FunctionResult {
   pub name: String,
@@ -143,15 +305,6 @@ impl From<FunctionCall> for RenderedFunctionCall {
   }
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
-pub enum ChatMessage {
-  SazidSystemMessage(String),
-  FunctionResult(FunctionResult),
-  PromptMessage(ChatCompletionRequestMessage),
-  ChatCompletionRequestMessage(ChatCompletionRequestMessage),
-  ChatCompletionResponseMessage(ChatResponseSingleMessage),
-}
-
 impl From<MessageContainer> for ChatMessage {
   fn from(message_container: MessageContainer) -> Self {
     message_container.message
@@ -165,10 +318,16 @@ impl From<&MessageContainer> for ChatMessage {
 }
 impl From<ChatMessage> for MessageContainer {
   fn from(message: ChatMessage) -> Self {
+    let stream_id = match message {
+      ChatMessage::StreamResponse(srvec) => Some(srvec[0].id.clone()),
+      _ => None,
+    };
     MessageContainer {
       message: message.clone(),
+      stream_id,
       rendered: RenderedChatMessage::from(&message),
       finished: false,
+      tool_calls: Vec::new(),
       function_called: false,
       response_count: 0,
       token_usage: 0,
@@ -176,57 +335,63 @@ impl From<ChatMessage> for MessageContainer {
   }
 }
 
-impl From<ChatResponse> for Vec<ChatMessage> {
-  fn from(response: ChatResponse) -> Self {
-    let mut messages: Vec<ChatMessage> = Vec::new();
-    match response {
-      ChatResponse::Response(response) => response.choices.iter().for_each(|choice| {
-        messages.push(ChatMessage::ChatCompletionResponseMessage(ChatResponseSingleMessage::Response(choice.clone())))
-      }),
-      ChatResponse::StreamResponse(response) => messages
-        .push(ChatMessage::ChatCompletionResponseMessage(ChatResponseSingleMessage::StreamResponse(response.choices))),
-    }
-    messages
-  }
-}
+// impl From<ChatResponse> for Vec<ChatMessage> {
+//   fn from(response: ChatResponse) -> Self {
+//     let mut messages: Vec<ChatMessage> = Vec::new();
+//     match response {
+//       ChatResponse::Response(response) => response.choices.iter().for_each(|choice| {
+//         messages.push(ChatMessage::ChatCompletionResponseMessage(ChatResponseSingleMessage::Response(choice.clone())))
+//       }),
+//       ChatResponse::StreamResponse(response) => messages
+//         .push(ChatMessage::ChatCompletionResponseMessage(ChatResponseSingleMessage::StreamResponse(response.choices))),
+//     }
+//     messages
+//   }
+// }
 
-impl From<&ChatMessage> for Option<ChatCompletionRequestMessage> {
-  fn from(message: &ChatMessage) -> Self {
-    match message {
-      ChatMessage::SazidSystemMessage(_) => None,
-      ChatMessage::FunctionResult(result) => Some(ChatCompletionRequestMessage {
-        role: Role::Function,
-        content: Some(result.response.clone()),
-        function_call: None,
-        name: Some(result.name.clone()),
-      }),
-      ChatMessage::PromptMessage(request) => Some(request.clone()),
-      ChatMessage::ChatCompletionRequestMessage(request) => Some(request.clone()),
-      ChatMessage::ChatCompletionResponseMessage(ChatResponseSingleMessage::StreamResponse(srvec)) => Some({
-        let mut message = srvec[0].clone();
-        srvec.iter().skip(1).for_each(|sr| {
-          message = concatenate_stream_response_messages(&message, sr);
-        });
-        ChatCompletionRequestMessage {
-          role: Role::Assistant,
-          // todo: this MIGHT be a problem...
-          content: Some(message.delta.content.unwrap_or("".to_string())),
-          function_call: None,
-          name: None,
-        }
-      }),
-      ChatMessage::ChatCompletionResponseMessage(ChatResponseSingleMessage::Response(response)) => Some({
-        ChatCompletionRequestMessage {
-          role: Role::Assistant,
-          content: response.message.content.clone(),
-          function_call: None,
-          name: None,
-        }
-      }),
-    }
-  }
-}
+// #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+// pub enum ChatMessage {
+//   SazidSystemMessage(String),
+//   FunctionResult(FunctionResult),
+//   ToolResult(ChatCompletionRequestToolMessage),
+//   PromptMessage(ChatCompletionRequestMessage),
+//   UserPromptMessage(ChatCompletionRequestMessage),
+//   ChatCompletionRequestMessage(ChatCompletionRequestMessage),
+//   ChatCompletionResponseMessage(ChatResponseSingleMessage),
+// }
 
+// impl From<&ChatMessage> for Option<MessageTypes> {
+//   fn from(message: &ChatMessage) -> Self {
+//     match message {
+//       ChatMessage::SazidSystemMessage(_) => None,
+//       ChatMessage::FunctionResult(result) => {
+//         Some(ChatCompletionMessage::Request(ChatCompletionRequestMessage::Tool(ChatCompletionRequestToolMessage {
+//           tool_call_id: result.name.clone(),
+//           role: Role::Function,
+//           content: Some(result.response.clone()),
+//         })))
+//       },
+//       ChatMessage::PromptMessage(request) => Some(ChatCompletionMessage::Request(request.clone())),
+//       ChatMessage::ChatCompletionRequestMessage(request) => Some(ChatCompletionMessage::Request(request.clone())),
+//       ChatMessage::ChatCompletionResponseMessage(ChatResponseSingleMessage::StreamResponse(srvec)) => Some({
+//         let mut message = srvec[0].clone();
+//         srvec.iter().skip(1).for_each(|sr| {
+//           message = concatenate_stream_response_messages(&message, sr);
+//         });
+//         ChatCompletionMessage::StreamResponse(message)
+//       }),
+//       ChatMessage::ChatCompletionResponseMessage(ChatResponseSingleMessage::Response(response)) => Some({
+//         ChatCompletionMessage::Response(ChatCompletionResponseMessage {
+//           role: Role::Assistant,
+//           content: response.message.content.clone(),
+//           function_call: None,
+//           tool_calls: None,
+//         })
+//       }),
+//     }
+//   }
+// }
+// //
 impl AsRef<ChatMessage> for ChatMessage {
   fn as_ref(&self) -> &ChatMessage {
     self
@@ -235,72 +400,90 @@ impl AsRef<ChatMessage> for ChatMessage {
 
 impl From<&ChatMessage> for RenderedChatMessage {
   fn from(message: &ChatMessage) -> Self {
+    let content = message.to_string();
     match message {
-      ChatMessage::SazidSystemMessage(content) => RenderedChatMessage {
+      ChatMessage::SazidMessage(_) => RenderedChatMessage {
         name: None,
         role: None,
-        content: content.clone(),
+        content,
         wrapped_content: String::new(),
         stylized: Rope::new(),
-        function_call: None,
-        finish_reason: Some(FinishReason::Stop),
+        finished: true,
         token_usage: 0,
       },
-      ChatMessage::FunctionResult(result) => RenderedChatMessage {
+      ChatMessage::Function(result) => RenderedChatMessage {
         name: Some(result.name.clone()),
         role: Some(Role::Function),
-        content: result.response.clone(),
+        content,
         wrapped_content: String::new(),
         stylized: Rope::new(),
-        function_call: None,
-        finish_reason: Some(FinishReason::Stop),
+        finished: true,
         token_usage: 0,
       },
-      ChatMessage::PromptMessage(request) => RenderedChatMessage {
+      ChatMessage::Tool(request) => RenderedChatMessage {
         name: None,
-        role: Some(request.role),
-        content: request.content.clone().unwrap_or("prompt missing".to_string()),
+        role: Some(Role::User),
+        content,
         wrapped_content: String::new(),
         stylized: Rope::new(),
-        function_call: None,
-        finish_reason: Some(FinishReason::Stop),
+        finished: true,
         token_usage: 0,
       },
-      ChatMessage::ChatCompletionRequestMessage(request) => RenderedChatMessage {
+      ChatMessage::System(request) => RenderedChatMessage {
         name: None,
-        role: Some(request.role),
-        content: request.content.clone().unwrap_or_default(),
+        role: Some(Role::User),
+        content,
         wrapped_content: String::new(),
         stylized: Rope::new(),
-        function_call: request.function_call.clone().map(|function_call| function_call.into()),
-        finish_reason: Some(FinishReason::Stop),
+        finished: true,
         token_usage: 0,
       },
-      ChatMessage::ChatCompletionResponseMessage(ChatResponseSingleMessage::Response(response)) => {
+      ChatMessage::User(request) => RenderedChatMessage {
+        name: None,
+        role: Some(Role::User),
+        content,
+        wrapped_content: String::new(),
+        stylized: Rope::new(),
+        finished: true,
+        token_usage: 0,
+      },
+      ChatMessage::Assistant(request) => RenderedChatMessage {
+        name: None,
+        role: Some(Role::User),
+        content,
+        wrapped_content: String::new(),
+        stylized: Rope::new(),
+        finished: true,
+        token_usage: 0,
+      },
+      ChatMessage::Response(response) => RenderedChatMessage {
+        name: None,
+        role: Some(Role::Assistant),
+        content,
+        wrapped_content: String::new(),
+        stylized: Rope::new(),
+        finished: response.choices.iter().all(|c| c.finish_reason.is_some()),
+        token_usage: 0,
+      },
+      ChatMessage::StreamResponse(srvec) => {
+        let mut message = srvec
+          .iter()
+          .skip(1)
+          .try_fold(srvec[0], |acc, sr| concatenate_create_chat_completion_stream_response(&acc, sr))
+          .unwrap();
+
+        let mut choices_idxs = message.choices.iter().map(|c| c.index as usize).collect::<Vec<usize>>();
+        choices_idxs.sort_unstable();
+        choices_idxs.dedup();
         RenderedChatMessage {
           name: None,
           role: Some(Role::Assistant),
-          content: response.message.content.clone().unwrap_or_default(),
+          content,
           wrapped_content: String::new(),
           stylized: Rope::new(),
-          function_call: response.message.function_call.clone().map(|function_call| function_call.into()),
-          finish_reason: response.finish_reason,
-          token_usage: 0,
-        }
-      },
-      ChatMessage::ChatCompletionResponseMessage(ChatResponseSingleMessage::StreamResponse(srvec)) => {
-        let mut message = srvec[0].clone();
-        srvec.iter().skip(1).for_each(|sr| {
-          message = concatenate_stream_response_messages(&message, sr);
-        });
-        RenderedChatMessage {
-          name: None,
-          role: Some(Role::Assistant),
-          content: message.delta.content.unwrap_or_default(),
-          wrapped_content: String::new(),
-          stylized: Rope::new(),
-          function_call: message.delta.function_call.map(|function_call| function_call.into()),
-          finish_reason: message.finish_reason,
+          finished: choices_idxs.iter().all(|choice_idx| {
+            message.choices.iter().any(|c| c.index as usize == *choice_idx && c.finish_reason.is_some())
+          }),
           token_usage: 0,
         }
       },

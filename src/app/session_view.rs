@@ -91,7 +91,7 @@ impl SessionView {
             .as_str(),
         );
         //message.rendered.stylized = Rope::from_str(&message.rendered.content);
-        if message.rendered.finish_reason.is_some() {
+        if message.is_finished() {
           message.finished = true;
           message.rendered.stylized.append(Rope::from_str("\n".to_string().repeat(dividing_newlines_count).as_str()));
         }
