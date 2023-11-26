@@ -1,4 +1,8 @@
-use async_openai::{config::OpenAIConfig, types::ChatCompletionFunctions, Client};
+use async_openai::{
+  config::OpenAIConfig,
+  types::{ChatCompletionFunctions, ChatCompletionTool, ChatCompletionToolType},
+  Client,
+};
 
 use crate::app::types::*;
 
@@ -321,6 +325,24 @@ pub struct GPTConnector {
 //   // commands.push(command);
 //   commands
 // }
+
+pub fn create_chat_completion_tool_args(commands: Vec<Command>) -> Vec<ChatCompletionTool> {
+  commands
+    .iter()
+    .map(|command| ChatCompletionTool {
+      r#type: ChatCompletionToolType::Function,
+      function: ChatCompletionFunctions {
+        name: command.name.clone(),
+        description: command.description.clone(),
+        parameters: match &command.parameters {
+          Some(parameters) => serde_json::to_value(parameters).unwrap(),
+          None => serde_json::from_str("{}").unwrap(),
+        },
+      },
+    })
+    .collect()
+}
+
 pub fn create_chat_completion_function_args(commands: Vec<Command>) -> Vec<ChatCompletionFunctions> {
   let mut chat_completion_functions: Vec<ChatCompletionFunctions> = Vec::new();
   let empty_parameters = "{\"type\": \"object\", \"properties\": {}}";
@@ -328,8 +350,8 @@ pub fn create_chat_completion_function_args(commands: Vec<Command>) -> Vec<ChatC
     let chat_completion_function = ChatCompletionFunctions {
       name: command.name,
       description: command.description,
-      parameters: match command.parameters {
-        parameters => serde_json::to_value(parameters).unwrap(),
+      parameters: match &command.parameters {
+        Some(parameters) => serde_json::to_value(parameters).unwrap(),
         None => serde_json::from_str(empty_parameters).unwrap(),
       },
     };

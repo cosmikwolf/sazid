@@ -1,7 +1,7 @@
 use ansi_to_tui::IntoText;
 use async_openai::types::{
-  ChatCompletionRequestMessage, CreateChatCompletionRequest, CreateEmbeddingRequestArgs, CreateEmbeddingResponse,
-  FunctionCall, Role,
+  ChatCompletionRequestMessage, ChatCompletionRequestUserMessage, ChatCompletionRequestUserMessageContent,
+  CreateChatCompletionRequest, CreateEmbeddingRequestArgs, CreateEmbeddingResponse, FunctionCall, Role,
 };
 
 use color_eyre::owo_colors::OwoColorize;
@@ -19,9 +19,9 @@ use tui_textarea::TextArea;
 use async_openai::{config::OpenAIConfig, Client};
 
 use super::{Component, Frame};
-use crate::app::functions::{all_functions, handle_chat_response_function_call};
+use crate::app::functions::{all_functions, handle_tool_call};
 use crate::app::helpers::list_files_ordered_by_date;
-use crate::app::messages::{ChatMessage, ChatResponse};
+use crate::app::messages::{ChatMessage, MessageContainer, ReceiveBuffer};
 use crate::app::session_config::SessionConfig;
 use crate::app::session_data::SessionData;
 use crate::app::session_view::SessionView;
@@ -32,7 +32,7 @@ use crate::{action::Action, config::Config};
 use backoff::exponential::ExponentialBackoffBuilder;
 use dirs_next::home_dir;
 
-use crate::app::gpt_interface::create_chat_completion_function_args;
+use crate::app::gpt_interface::{create_chat_completion_function_args, create_chat_completion_tool_args};
 use crate::app::tools::utils::ensure_directory_exists;
 use crate::components::home::Mode;
 
@@ -73,7 +73,7 @@ pub struct Session<'a> {
   #[serde(skip)]
   pub fn_args: Option<String>,
   #[serde(skip)]
-  pub request_buffer: Vec<Option<ChatCompletionRequestMessage>>,
+  pub request_buffer: Vec<ChatCompletionRequestMessage>,
   #[serde(skip)]
   pub request_buffer_token_count: usize,
   #[serde(skip)]
@@ -154,16 +154,7 @@ impl Component for Session<'static> {
         //trace_dbg!(level: tracing::Level::INFO, "adding message to session");
         self.data.add_message(chat_message);
         self.view.post_process_new_messages(&mut self.data);
-        for function_call in self.data.get_functions_that_need_calling().drain(..) {
-          let debug_text = format!("calling function: {:?}", function_call);
-          trace_dbg!(level: tracing::Level::INFO, debug_text);
-          handle_chat_response_function_call(
-            tx.clone(),
-            function_call.name,
-            function_call.arguments,
-            self.config.clone(),
-          );
-        }
+        self.execute_tool_calls();
         self.add_new_messages_to_request_buffer();
       },
       Action::ExecuteCommand(command) => {
@@ -284,10 +275,33 @@ impl Session<'static> {
     Self::default()
   }
 
+  pub fn execute_tool_calls(&mut self) {
+    let tx = self.action_tx.clone().unwrap();
+    self
+      .data
+      .messages
+      .iter_mut()
+      .filter(|m| {
+        m.receive_complete
+          && !m.tools_called
+          && match m.message {
+            ChatCompletionRequestMessage::Assistant(_) => true,
+            _ => false,
+          }
+      })
+      .for_each(|m| {
+        m.tool_calls.iter().for_each(|tc| {
+          let debug_text = format!("calling tool: {:?}", tc);
+          trace_dbg!(level: tracing::Level::INFO, debug_text);
+          handle_tool_call(tx.clone(), tc, self.config.clone());
+        });
+        m.tools_called = true;
+      })
+  }
   fn redraw_messages(&mut self) {
     trace_dbg!("redrawing messages");
     self.data.messages.iter_mut().for_each(|m| {
-      m.finished = false;
+      m.stylize_complete = false;
     });
     self.view.post_process_new_messages(&mut self.data);
   }
@@ -349,18 +363,15 @@ impl Session<'static> {
     _name: &str,
     role: Role,
     model: &Model,
-    function_call: Option<FunctionCall>,
   ) -> Result<(), SazidError> {
     match parse_input(content, CHUNK_TOKEN_LIMIT as usize, model.token_limit as usize) {
       Ok(chunks) => {
         chunks.iter().for_each(|chunk| {
           // explicitly calling update because we need this to be blocking, since it can't move on until the input is processed
           self
-            .update(Action::AddMessage(ChatMessage::ChatCompletionRequestMessage(ChatCompletionRequestMessage {
+            .update(Action::AddMessage(ChatMessage::User(ChatCompletionRequestUserMessage {
               role,
-              name: None,
-              content: Some(chunk.clone()),
-              function_call: function_call.clone(),
+              content: Some(ChatCompletionRequestUserMessageContent::Text(chunk.clone())),
             })))
             .unwrap();
         });
@@ -372,23 +383,16 @@ impl Session<'static> {
 
   pub fn add_new_messages_to_request_buffer(&mut self) {
     // add new request messages to the request buffer
-    let new_requests: Vec<Option<ChatCompletionRequestMessage>> = self
+    let new_requests: Vec<ChatCompletionRequestMessage> = self
       .data
       .messages
       .iter()
-      .filter(|m| match m.message {
-        ChatMessage::ChatCompletionRequestMessage(_) => true,
-        ChatMessage::PromptMessage(_) => true,
-        ChatMessage::ChatCompletionResponseMessage(_) => true,
-        ChatMessage::FunctionResult(_) => true,
-        ChatMessage::SazidSystemMessage(_) => false,
-      })
       .skip(self.request_buffer.len())
-      .filter(|m| m.finished)
+      .filter(|m| m.receive_complete)
       .map(|m| {
         let debug = format!("message: {:#?}", m.message).bright_red().to_string();
         trace_dbg!(debug);
-        <Option<ChatCompletionRequestMessage>>::from(&m.message)
+        m.message.clone()
       })
       .collect();
     self.request_buffer.extend(new_requests);
@@ -396,10 +400,10 @@ impl Session<'static> {
   }
 
   pub fn construct_request(&mut self) -> CreateChatCompletionRequest {
-    let functions = match self.config.available_functions.is_empty() {
+    let tools = match self.config.available_functions.is_empty() {
       true => None,
       false => {
-        Some(create_chat_completion_function_args(self.config.available_functions.iter().map(|f| f.into()).collect()))
+        Some(create_chat_completion_tool_args(self.config.available_functions.iter().map(|f| f.into()).collect()))
       },
     };
     self.add_new_messages_to_request_buffer();
@@ -409,15 +413,17 @@ impl Session<'static> {
 
     CreateChatCompletionRequest {
       model: self.config.model.name.clone(),
-      functions,
-      messages: self.request_buffer.clone().into_iter().flatten().collect(),
+      functions: None,
+      messages: self.request_buffer.clone().into_iter().collect(),
       stream: Some(self.config.stream_response),
       max_tokens: Some(self.config.response_max_tokens as u16),
       // todo: put the user information in here
       user: Some("testing testing".to_string()),
+      tools,
       ..Default::default()
     }
   }
+
   fn filter_non_ascii(s: &str) -> String {
     s.chars().filter(|c| c.is_ascii()).collect()
   }
@@ -430,7 +436,6 @@ impl Session<'static> {
       config.name.as_str(),
       Role::User,
       &config.model,
-      None,
     ) {
       Ok(_) => {
         tx.send(Action::RequestChatCompletion()).unwrap();
@@ -467,7 +472,8 @@ impl Session<'static> {
             match response_result {
               Ok(response) => {
                 //tx.send(Action::UpdateStatus(Some(format!("Received responses: {}", count).to_string()))).unwrap();
-                Self::response_handler(tx.clone(), ChatResponse::StreamResponse(response)).await;
+                tx.send(Action::AddMessage(ChatMessage::StreamResponse(vec![response]))).unwrap();
+                tx.send(Action::Update).unwrap();
               },
               Err(e) => {
                 trace_dbg!("Error: {:?} -- check https://status.openai.com", e);
@@ -483,7 +489,8 @@ impl Session<'static> {
         },
         false => match client.chat().create(request).await {
           Ok(response) => {
-            Self::response_handler(tx.clone(), ChatResponse::Response(response)).await;
+            tx.send(Action::AddMessage(ChatMessage::Response(response))).unwrap();
+            tx.send(Action::Update).unwrap();
           },
           Err(e) => {
             trace_dbg!("Error: {}", e);
@@ -495,13 +502,6 @@ impl Session<'static> {
       tx.send(Action::SaveSession).unwrap();
       tx.send(Action::ExitProcessing).unwrap();
     });
-  }
-
-  pub async fn response_handler(tx: UnboundedSender<Action>, response: ChatResponse) {
-    for choice in <Vec<ChatMessage>>::from(response) {
-      tx.send(Action::AddMessage(choice)).unwrap();
-    }
-    tx.send(Action::Update).unwrap();
   }
 
   pub fn get_session_filepath(session_id: String) -> PathBuf {
@@ -527,7 +527,7 @@ impl Session<'static> {
     self.data = incoming_session.data;
     self.config = incoming_session.config;
     self.data.messages.iter_mut().for_each(|m| {
-      m.finished = false;
+      m.stylize_complete = false;
     });
     Ok(())
   }

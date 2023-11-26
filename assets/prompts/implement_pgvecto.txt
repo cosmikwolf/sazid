@@ -1,4 +1,6 @@
-The intent of this prompt is to generate a vectordb interface for the current application.
+
+
+intent of this prompt is to generate a vectordb interface for the current application.
 The current application is a GPT interfacing CLI written in rust.
 We are going to be using pgvecto.rs in combination with a postgres database to provide the vector database.
 

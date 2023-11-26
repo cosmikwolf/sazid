@@ -1,4 +1,4 @@
-use crate::app::{messages::ChatMessage, types::Model};
+use crate::app::{types::Model, messages::ChatMessage};
 use serde::{
   de::{self, Deserializer, Visitor},
   Deserialize, Serialize,

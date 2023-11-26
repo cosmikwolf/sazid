@@ -1,7 +1,8 @@
 use async_openai::types::{
-  ChatCompletionMessageToolCall, ChatCompletionMessageToolCallChunk, ChatCompletionResponseStreamMessage,
-  ChatCompletionStreamResponseDelta, CreateChatCompletionStreamResponse, FinishReason, FunctionCall,
-  FunctionCallStream,
+  ChatCompletionMessageToolCall, ChatCompletionMessageToolCallChunk, ChatCompletionRequestAssistantMessage,
+  ChatCompletionResponseStreamMessage, ChatCompletionStreamResponseDelta, ChatCompletionToolType,
+  CreateChatCompletionResponse, CreateChatCompletionStreamResponse, FinishReason, FunctionCall, FunctionCallStream,
+  Role,
 };
 
 use super::errors::ParseError;
@@ -76,12 +77,12 @@ pub fn concatenate_create_chat_completion_stream_response(
     combined_choices.extend(sr1.choices.clone());
     combined_choices.extend(sr2.choices.clone());
     Ok(CreateChatCompletionStreamResponse {
-      id: sr1.id,
+      id: sr1.id.clone(),
       choices: combined_choices,
       created: sr2.created,
-      model: sr2.model,
-      system_fingerprint: sr2.system_fingerprint,
-      object: sr2.object,
+      model: sr2.model.clone(),
+      system_fingerprint: sr2.system_fingerprint.clone(),
+      object: sr2.object.clone(),
     })
   }
 }
@@ -101,32 +102,107 @@ pub fn concatenate_finish_reason(
 pub fn concatenate_stream_response_messages(
   sr1: &ChatCompletionResponseStreamMessage,
   sr2: &ChatCompletionResponseStreamMessage,
-) -> ChatCompletionResponseStreamMessage {
-  ChatCompletionResponseStreamMessage {
-    index: sr1.index,
-    delta: concatenate_stream_delta(sr1.delta.clone(), sr2.delta.clone()),
-    finish_reason: concatenate_finish_reason(sr1.finish_reason, sr2.finish_reason).unwrap(),
+) -> Result<ChatCompletionResponseStreamMessage, ParseError> {
+  if sr1.index != sr2.index {
+    return Err(ParseError::new("Cannot concatenate two stream responses with different indexes"));
+  } else {
+    Ok(ChatCompletionResponseStreamMessage {
+      index: sr1.index,
+      delta: concatenate_stream_delta(sr1.delta.clone(), sr2.delta.clone()),
+      finish_reason: concatenate_finish_reason(sr1.finish_reason, sr2.finish_reason).unwrap(),
+    })
   }
 }
 
-pub fn collate_stream_response_vec(
-  new_srvec: Vec<ChatCompletionResponseStreamMessage>,
-  existing_srvec: &mut Vec<ChatCompletionResponseStreamMessage>,
-) {
-  // trace_dbg!("add_message: supplimental delta \n{:?}\n{:?}", new_srvec, existing_srvec);
-  new_srvec.iter().for_each(|new_sr| {
-    if !existing_srvec.iter_mut().any(|existing_sr| {
-      if existing_sr.index == new_sr.index {
-        *existing_sr = concatenate_stream_response_messages(existing_sr, new_sr);
-        true
-      } else {
-        false
-      }
-    }) {
-      existing_srvec.push(new_sr.clone());
-    }
-  });
+pub fn append_tool_call_chunk_to_tool_call(
+  call: ChatCompletionMessageToolCall,
+  chunk: &ChatCompletionMessageToolCallChunk,
+) -> ChatCompletionMessageToolCall {
+  let (name, arguments) = match &chunk.function {
+    Some(fc) => (fc.name.clone().unwrap_or("".to_string()), fc.arguments.clone().unwrap_or("".to_string())),
+    None => ("".to_string(), "".to_string()),
+  };
+  ChatCompletionMessageToolCall {
+    id: call.id + &chunk.id.clone().unwrap_or("".to_string()),
+    r#type: call.r#type,
+    function: FunctionCall {
+      name: call.function.name + name.as_str(),
+      arguments: call.function.arguments + arguments.as_str(),
+    },
+  }
 }
+
+pub fn collate_tool_call_chunks_into_tool_calls(
+  tc_chunks: Vec<ChatCompletionMessageToolCallChunk>,
+) -> Vec<ChatCompletionMessageToolCall> {
+  let mut tc_calls: Vec<ChatCompletionMessageToolCall> = Vec::new();
+  let default_tool_call = ChatCompletionMessageToolCall {
+    id: "".to_string(),
+    r#type: ChatCompletionToolType::Function,
+    function: FunctionCall { name: "".to_string(), arguments: "".to_string() },
+  };
+  tc_chunks.iter().for_each(|tc_chunk| {
+    if tc_chunk.index as usize > tc_calls.len() {
+      tc_calls.push(default_tool_call.clone())
+    }
+    tc_calls[tc_chunk.index as usize] =
+      append_tool_call_chunk_to_tool_call(tc_calls[tc_chunk.index as usize].clone(), tc_chunk);
+  });
+  tc_calls
+}
+
+pub fn get_assistant_message_from_create_chat_completion_stream_response(
+  choice_index: usize,
+  srvec: &Vec<CreateChatCompletionStreamResponse>,
+) -> Result<ChatCompletionRequestAssistantMessage, ParseError> {
+  let mut smvec = Vec::new();
+  srvec.iter().map(|sr| {
+    sr.choices
+      .iter()
+      .filter(|choice| choice.index as usize == choice_index)
+      .for_each(|choice| smvec.push(choice.clone()))
+  });
+  fold_stream_responses_into_assistant_message(smvec)
+}
+
+pub fn get_assistant_message_from_create_chat_completion_response(
+  choice_index: usize,
+  response: &CreateChatCompletionResponse,
+) -> Result<ChatCompletionRequestAssistantMessage, ParseError> {
+  if choice_index >= response.choices.len() {
+    Err(ParseError::new(format!("Choice index {} out of range", choice_index).as_str()))
+  } else {
+    Ok(ChatCompletionRequestAssistantMessage {
+      role: Role::Assistant,
+      content: response.choices[choice_index].message.content.clone(),
+      function_call: None,
+      tool_calls: response.choices[choice_index].message.tool_calls.clone(),
+    })
+  }
+}
+pub fn fold_stream_responses_into_assistant_message(
+  smvec: Vec<ChatCompletionResponseStreamMessage>,
+) -> Result<ChatCompletionRequestAssistantMessage, ParseError> {
+  let concatenated_message =
+    smvec.iter().skip(1).try_fold(smvec[0].clone(), |acc, sr| concatenate_stream_response_messages(&acc, sr))?;
+
+  let function_call = match concatenated_message.delta.function_call {
+    Some(fc) => {
+      Some(FunctionCall { name: fc.name.unwrap_or("".to_string()), arguments: fc.arguments.unwrap_or("".to_string()) })
+    },
+    None => None,
+  };
+
+  Ok(ChatCompletionRequestAssistantMessage {
+    role: Role::Assistant,
+    content: concatenated_message.delta.content,
+    function_call,
+    tool_calls: Some(collate_tool_call_chunks_into_tool_calls(
+      concatenated_message.delta.tool_calls.unwrap_or(Vec::new()),
+    )),
+  })
+}
+
 use std::fs::{self, DirEntry};
 use std::io;
 use std::path::Path;

@@ -1,15 +1,10 @@
 use crate::app::functions::function_call::ModelFunction;
-use crate::{
-  action::Action,
-  app::messages::{ChatMessage, FunctionResult},
-  trace_dbg,
-};
-use async_openai::types::ChatCompletionRequestFunctionMessage;
+use crate::{action::Action, app::messages::ChatMessage, trace_dbg};
+use async_openai::types::{ChatCompletionMessageToolCall, ChatCompletionRequestFunctionMessage};
 use serde_derive::{Deserialize, Serialize};
 use std::collections::HashMap;
 use tokio::sync::mpsc::UnboundedSender;
 
-use self::pcre2grep_function::Pcre2GrepFunction;
 use self::{
   create_file_function::CreateFileFunction, errors::ModelFunctionError, file_search_function::FileSearchFunction,
   patch_files_function::PatchFileFunction, read_file_lines_function::ReadFileLinesFunction, types::Command,
@@ -68,16 +63,16 @@ pub fn all_functions() -> Vec<CallableFunction> {
   ]
 }
 
-pub fn handle_chat_response_function_call(
+pub fn handle_tool_call(
   tx: UnboundedSender<Action>,
-  fn_name: String,
-  fn_args: String,
+  tool_call: &ChatCompletionMessageToolCall,
   session_config: SessionConfig,
 ) {
+  let fn_name = tool_call.function.name.clone();
+  let fn_name_clone = tool_call.function.name.clone();
+  let fn_args = tool_call.function.arguments.clone();
   tokio::spawn(async move {
     match {
-      let fn_name = fn_name.clone();
-      let fn_args = fn_args.clone();
       async move {
         let function_args_result: Result<HashMap<String, serde_json::Value>, serde_json::Error> =
           serde_json::from_str(fn_args.as_str());
@@ -107,7 +102,7 @@ pub fn handle_chat_response_function_call(
         //self.data.add_message(ChatMessage::FunctionResult(FunctionResult { name: fn_name, response: output }));
         trace_dbg!("function output:\n{}", output);
         tx.send(Action::AddMessage(ChatMessage::Function(ChatCompletionRequestFunctionMessage {
-          name: fn_name,
+          name: fn_name_clone,
           content: Some(output),
           ..Default::default()
         })))
@@ -120,7 +115,7 @@ pub fn handle_chat_response_function_call(
         //   response: format!("Error: {:?}", e),
         // }));
         tx.send(Action::AddMessage(ChatMessage::Function(ChatCompletionRequestFunctionMessage {
-          name: fn_name,
+          name: fn_name_clone,
           content: Some(format!("Error: {:?}", e)),
           ..Default::default()
         })))

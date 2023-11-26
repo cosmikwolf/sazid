@@ -59,15 +59,14 @@ impl SessionView {
   pub fn post_process_new_messages(&mut self, session_data: &mut SessionData) {
     let dividing_newlines_count = 2;
     session_data.messages.iter_mut().for_each(|message| {
-      let rendered_text_message_start_index = self.rendered_text.len_chars() - message.rendered.stylized.len_chars();
+      let rendered_text_message_start_index = self.rendered_text.len_chars() - message.stylized.len_chars();
 
       // let previously_rendered_bytecount = message.rendered.stylized.len_bytes();
-      if !message.finished {
-        message.render_message(self.window_width);
+      if !message.stylize_complete {
         let text_width = self.window_width.min(80);
         let left_padding = self.window_width.saturating_sub(text_width) / 2;
         trace_dbg!("left_padding: {}\ttext_width: {}, window_width: {}", left_padding, text_width, self.window_width);
-        let stylized = self.renderer.render_message_bat(&message.rendered.content);
+        let stylized = self.renderer.render_message_bat(format!("{}", &message).as_str());
         let options = Options::new(text_width)
           //.break_words(false)
           .word_splitter(WordSplitter::NoHyphenation)
@@ -75,7 +74,7 @@ impl SessionView {
         .wrap_algorithm(WrapAlgorithm::new_optimal_fit());
         let wrapped = textwrap::wrap(stylized.as_str(), options);
 
-        message.rendered.stylized = Rope::from_str(
+        message.stylized = Rope::from_str(
           wrapped
             .iter()
             .enumerate()
@@ -91,14 +90,14 @@ impl SessionView {
             .as_str(),
         );
         //message.rendered.stylized = Rope::from_str(&message.rendered.content);
-        if message.is_finished() {
-          message.finished = true;
-          message.rendered.stylized.append(Rope::from_str("\n".to_string().repeat(dividing_newlines_count).as_str()));
+        if message.receive_complete {
+          message.stylized.append(Rope::from_str("\n".to_string().repeat(dividing_newlines_count).as_str()));
+          message.stylize_complete = true;
         }
 
         self.new_data = true;
         self.rendered_text.remove(rendered_text_message_start_index..);
-        self.rendered_text.append(message.rendered.stylized.clone());
+        self.rendered_text.append(message.stylized.clone());
         // message.rendered.stylized.bytes_at(previously_rendered_bytecount).for_each(|b| {
         //   self.renderer.rendered_bytes.push(b);
         // });
