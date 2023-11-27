@@ -1,6 +1,9 @@
 use crate::app::functions::function_call::ModelFunction;
 use crate::{action::Action, app::messages::ChatMessage, trace_dbg};
-use async_openai::types::{ChatCompletionMessageToolCall, ChatCompletionRequestFunctionMessage};
+use async_openai::types::{
+  ChatCompletionMessageToolCall, ChatCompletionRequestFunctionMessage, ChatCompletionRequestToolMessage,
+  ChatCompletionRequestToolMessageArgs, Role,
+};
 use serde_derive::{Deserialize, Serialize};
 use std::collections::HashMap;
 use tokio::sync::mpsc::UnboundedSender;
@@ -71,6 +74,7 @@ pub fn handle_tool_call(
   let fn_name = tool_call.function.name.clone();
   let fn_name_clone = tool_call.function.name.clone();
   let fn_args = tool_call.function.arguments.clone();
+  let tc_clone = tool_call.clone();
   tokio::spawn(async move {
     match {
       async move {
@@ -100,11 +104,11 @@ pub fn handle_tool_call(
     {
       Ok(Some(output)) => {
         //self.data.add_message(ChatMessage::FunctionResult(FunctionResult { name: fn_name, response: output }));
-        trace_dbg!("function output:\n{}", output);
-        tx.send(Action::AddMessage(ChatMessage::Function(ChatCompletionRequestFunctionMessage {
-          name: fn_name_clone,
+        trace_dbg!("tool output:\n{}", output);
+        tx.send(Action::AddMessage(ChatMessage::Tool(ChatCompletionRequestToolMessage {
+          tool_call_id: tc_clone.id,
           content: Some(output),
-          ..Default::default()
+          role: Role::Tool,
         })))
         .unwrap();
       },
@@ -114,10 +118,10 @@ pub fn handle_tool_call(
         //   name: fn_name,
         //   response: format!("Error: {:?}", e),
         // }));
-        tx.send(Action::AddMessage(ChatMessage::Function(ChatCompletionRequestFunctionMessage {
-          name: fn_name_clone,
+        tx.send(Action::AddMessage(ChatMessage::Tool(ChatCompletionRequestToolMessage {
+          tool_call_id: tc_clone.id,
           content: Some(format!("Error: {:?}", e)),
-          ..Default::default()
+          role: Role::Tool,
         })))
         .unwrap();
       },

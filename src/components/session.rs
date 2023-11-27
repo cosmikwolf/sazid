@@ -1,7 +1,8 @@
 use ansi_to_tui::IntoText;
 use async_openai::types::{
-  ChatCompletionRequestMessage, ChatCompletionRequestUserMessage, ChatCompletionRequestUserMessageContent,
-  CreateChatCompletionRequest, CreateEmbeddingRequestArgs, CreateEmbeddingResponse, FunctionCall, Role,
+  ChatCompletionRequestAssistantMessage, ChatCompletionRequestMessage, ChatCompletionRequestUserMessage,
+  ChatCompletionRequestUserMessageContent, CreateChatCompletionRequest, CreateEmbeddingRequestArgs,
+  CreateEmbeddingResponse, Role,
 };
 
 use color_eyre::owo_colors::OwoColorize;
@@ -21,7 +22,8 @@ use async_openai::{config::OpenAIConfig, Client};
 use super::{Component, Frame};
 use crate::app::functions::{all_functions, handle_tool_call};
 use crate::app::helpers::list_files_ordered_by_date;
-use crate::app::messages::{ChatMessage, MessageContainer, ReceiveBuffer};
+use crate::app::messages::ChatMessage;
+use crate::app::request_validation::debug_request_validation;
 use crate::app::session_config::SessionConfig;
 use crate::app::session_data::SessionData;
 use crate::app::session_view::SessionView;
@@ -32,7 +34,7 @@ use crate::{action::Action, config::Config};
 use backoff::exponential::ExponentialBackoffBuilder;
 use dirs_next::home_dir;
 
-use crate::app::gpt_interface::{create_chat_completion_function_args, create_chat_completion_tool_args};
+use crate::app::gpt_interface::create_chat_completion_tool_args;
 use crate::app::tools::utils::ensure_directory_exists;
 use crate::components::home::Mode;
 
@@ -115,9 +117,7 @@ impl Component for Session<'static> {
     //Session::select_model(model_preference, create_openai_client(self.config.openai_config.clone()));
     trace_dbg!("init session");
     self.config.prompt =
-        vec![
-    //"- act as a high value rust development consultant that takes pride in completing jobs the first try",
-    "- make your responses conscise and terse",
+        ["- make your responses conscise and terse",
     "- Use the functions available to execute with the user inquiry.",
     "- Provide your responses as markdown formatted text.",
     "- Make sure to properly entabulate any code blocks",
@@ -129,8 +129,7 @@ impl Component for Session<'static> {
     "- Before you respond, consider if your response is applicable to the current query, ",
     "- Before you respond, consider if your response is appropriate to further the intent of the request",
     "- If you require additional information about the codebase, you can use pcre2grep to gather information about the codebase",
-    "- When evaluating function tests, make it a priority to determine if the problems exist in the source code, or if the test code itself is not properly designed"
-        ].join("\n").to_string();
+    "- When evaluating function tests, make it a priority to determine if the problems exist in the source code, or if the test code itself is not properly designed"].join("\n").to_string();
     // self.config.prompt = "act as a very terse assistant".into();
     self.view.set_window_width(area.width as usize, &mut self.data.messages);
     tx.send(Action::AddMessage(ChatMessage::System(self.config.prompt_message()))).unwrap();
@@ -282,22 +281,25 @@ impl Session<'static> {
       .messages
       .iter_mut()
       .filter(|m| {
-        m.receive_complete
-          && !m.tools_called
-          && match m.message {
-            ChatCompletionRequestMessage::Assistant(_) => true,
-            _ => false,
-          }
+        m.receive_complete && !m.tools_called && matches!(m.message, ChatCompletionRequestMessage::Assistant(_))
       })
       .for_each(|m| {
-        m.tool_calls.iter().for_each(|tc| {
-          let debug_text = format!("calling tool: {:?}", tc);
-          trace_dbg!(level: tracing::Level::INFO, debug_text);
-          handle_tool_call(tx.clone(), tc, self.config.clone());
-        });
-        m.tools_called = true;
+        trace_dbg!("executing tool calls");
+        if let ChatCompletionRequestMessage::Assistant(ChatCompletionRequestAssistantMessage {
+          tool_calls: Some(tool_calls),
+          ..
+        }) = &m.message
+        {
+          tool_calls.iter().for_each(|tc| {
+            let debug_text = format!("calling tool: {:?}", tc);
+            trace_dbg!(level: tracing::Level::INFO, debug_text);
+            handle_tool_call(tx.clone(), tc, self.config.clone());
+          });
+          m.tools_called = true;
+        }
       })
   }
+
   fn redraw_messages(&mut self) {
     trace_dbg!("redrawing messages");
     self.data.messages.iter_mut().for_each(|m| {
@@ -305,6 +307,7 @@ impl Session<'static> {
     });
     self.view.post_process_new_messages(&mut self.data);
   }
+
   pub fn scroll_up(&mut self) -> Result<Option<Action>, SazidError> {
     self.vertical_scroll = self.vertical_scroll.saturating_sub(1);
     self.scroll_sticky_end = false;
@@ -390,13 +393,13 @@ impl Session<'static> {
       .skip(self.request_buffer.len())
       .filter(|m| m.receive_complete)
       .map(|m| {
-        let debug = format!("message: {:#?}", m.message).bright_red().to_string();
-        trace_dbg!(debug);
+        // let debug = format!("message: {:#?}", m.message).bright_red().to_string();
+        // trace_dbg!(debug);
         m.message.clone()
       })
       .collect();
     self.request_buffer.extend(new_requests);
-    // trace_dbg!("request_buffer: {:#?}", self.request_buffer);
+    trace_dbg!("request_buffer: {:#?}", self.request_buffer);
   }
 
   pub fn construct_request(&mut self) -> CreateChatCompletionRequest {
@@ -408,12 +411,11 @@ impl Session<'static> {
     };
     self.add_new_messages_to_request_buffer();
     let _token_count = 0;
-    let debug = format!("{:#?}", self.request_buffer).bright_cyan().to_string();
-    trace_dbg!("constructing request {}", debug);
+    // let debug = format!("{:#?}", self.request_buffer).bright_cyan().to_string();
+    // trace_dbg!("constructing request {}", debug);
 
-    CreateChatCompletionRequest {
+    let request = CreateChatCompletionRequest {
       model: self.config.model.name.clone(),
-      functions: None,
       messages: self.request_buffer.clone().into_iter().collect(),
       stream: Some(self.config.stream_response),
       max_tokens: Some(self.config.response_max_tokens as u16),
@@ -421,7 +423,9 @@ impl Session<'static> {
       user: Some("testing testing".to_string()),
       tools,
       ..Default::default()
-    }
+    };
+    // trace_dbg!("request:\n{:#?}", request);
+    request
   }
 
   fn filter_non_ascii(s: &str) -> String {
@@ -452,6 +456,7 @@ impl Session<'static> {
     let openai_config = self.config.openai_config.clone();
 
     let request = self.construct_request();
+    debug_request_validation(&request);
     // let request = self.request_message_buffer.clone().unwrap();
     // let token_count = self.request_buffer_token_count;
     tx.send(Action::UpdateStatus(Some("Assembling request...".to_string()))).unwrap();
@@ -471,16 +476,17 @@ impl Session<'static> {
           while let Some(response_result) = stream.next().await {
             match response_result {
               Ok(response) => {
+                trace_dbg!("Response: {:#?}", response.bright_yellow());
                 //tx.send(Action::UpdateStatus(Some(format!("Received responses: {}", count).to_string()))).unwrap();
                 tx.send(Action::AddMessage(ChatMessage::StreamResponse(vec![response]))).unwrap();
                 tx.send(Action::Update).unwrap();
               },
               Err(e) => {
-                trace_dbg!("Error: {:?} -- check https://status.openai.com", e);
+                trace_dbg!("Error: {:#?} -- check https://status.openai.com", e.bright_red());
+
                 // let reqtext =
                 //   format!("Request: \n{}", to_string_pretty(&request).unwrap_or("can't prettify result".to_string()));
                 // trace_dbg!(&reqtext);
-                // debug_request_validation(&request);
                 // tx.send(Action::AddMessage(ChatMessage::SazidSystemMessage(reqtext))).unwrap();
                 tx.send(Action::Error(format!("Error: {:?} -- check https://status.openai.com/", e))).unwrap();
               },

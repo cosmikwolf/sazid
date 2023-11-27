@@ -1,6 +1,6 @@
 use bat::{assets::HighlightingAssets, config::Config, controller::Controller, style::StyleComponents, Input};
-use pulldown_cmark_mdcat::terminal::{TerminalProgram, TerminalSize};
-use textwrap::wrap_algorithms::{wrap_optimal_fit, OverflowError, Penalties};
+
+use color_eyre::owo_colors::OwoColorize;
 use textwrap::{self, Options, WordSeparator, WordSplitter, WrapAlgorithm};
 
 use crate::trace_dbg;
@@ -19,7 +19,7 @@ pub struct SessionView {
 }
 
 impl SessionView {
-  pub fn set_window_width(&mut self, width: usize, messages: &mut [MessageContainer]) {
+  pub fn set_window_width(&mut self, width: usize, _messages: &mut [MessageContainer]) {
     let new_value = width - 6;
     if self.window_width != new_value {
       trace_dbg!("setting window width to {}", new_value);
@@ -60,7 +60,7 @@ impl SessionView {
     let dividing_newlines_count = 2;
     session_data.messages.iter_mut().for_each(|message| {
       let rendered_text_message_start_index = self.rendered_text.len_chars() - message.stylized.len_chars();
-
+      // trace_dbg!("message: {:#?}", message.bright_blue());
       // let previously_rendered_bytecount = message.rendered.stylized.len_bytes();
       if !message.stylize_complete {
         let text_width = self.window_width.min(80);

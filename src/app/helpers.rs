@@ -5,6 +5,8 @@ use async_openai::types::{
   Role,
 };
 
+use crate::trace_dbg;
+
 use super::errors::ParseError;
 
 pub fn concatenate_option_strings(a: Option<String>, b: Option<String>) -> Option<String> {
@@ -35,7 +37,7 @@ pub fn concatenate_function_call_streams(
 
 pub fn concatenate_option_vecs<T>(a: Option<Vec<T>>, b: Option<Vec<T>>) -> Option<Vec<T>> {
   match (a, b) {
-    (Some(a_vec), Some(b_vec)) => Some(a_vec.into_iter().chain(b_vec.into_iter()).collect()),
+    (Some(a_vec), Some(b_vec)) => Some(a_vec.into_iter().chain(b_vec).collect()),
     (Some(a_vec), None) => Some(a_vec),
     (None, Some(b_vec)) => Some(b_vec),
     (None, None) => None,
@@ -71,7 +73,7 @@ pub fn concatenate_create_chat_completion_stream_response(
   sr2: &CreateChatCompletionStreamResponse,
 ) -> Result<CreateChatCompletionStreamResponse, ParseError> {
   if sr1.id != sr2.id {
-    return Err(ParseError::new("Cannot concatenate two stream responses with different ids"));
+    Err(ParseError::new("Cannot concatenate two stream responses with different ids"))
   } else {
     let mut combined_choices = Vec::new();
     combined_choices.extend(sr1.choices.clone());
@@ -104,7 +106,7 @@ pub fn concatenate_stream_response_messages(
   sr2: &ChatCompletionResponseStreamMessage,
 ) -> Result<ChatCompletionResponseStreamMessage, ParseError> {
   if sr1.index != sr2.index {
-    return Err(ParseError::new("Cannot concatenate two stream responses with different indexes"));
+    Err(ParseError::new("Cannot concatenate two stream responses with different indexes"))
   } else {
     Ok(ChatCompletionResponseStreamMessage {
       index: sr1.index,
@@ -114,49 +116,54 @@ pub fn concatenate_stream_response_messages(
   }
 }
 
+pub fn convert_tool_chunk_to_tool_call(chunk: &ChatCompletionMessageToolCallChunk) -> ChatCompletionMessageToolCall {
+  ChatCompletionMessageToolCall {
+    id: chunk.id.clone().unwrap_or("".to_string()),
+    r#type: chunk.r#type.clone().unwrap_or_default(),
+    function: FunctionCall {
+      name: chunk.function.clone().unwrap().name.unwrap_or("".to_string()),
+      arguments: chunk.function.clone().unwrap().arguments.unwrap_or("".to_string()),
+    },
+  }
+}
 pub fn append_tool_call_chunk_to_tool_call(
-  call: ChatCompletionMessageToolCall,
+  call: &mut ChatCompletionMessageToolCall,
   chunk: &ChatCompletionMessageToolCallChunk,
-) -> ChatCompletionMessageToolCall {
+) {
   let (name, arguments) = match &chunk.function {
     Some(fc) => (fc.name.clone().unwrap_or("".to_string()), fc.arguments.clone().unwrap_or("".to_string())),
     None => ("".to_string(), "".to_string()),
   };
-  ChatCompletionMessageToolCall {
-    id: call.id + &chunk.id.clone().unwrap_or("".to_string()),
-    r#type: call.r#type,
-    function: FunctionCall {
-      name: call.function.name + name.as_str(),
-      arguments: call.function.arguments + arguments.as_str(),
-    },
-  }
+  call.id += &chunk.id.clone().unwrap_or("".to_string());
+  call.function.name += name.as_str();
+  call.function.arguments += arguments.as_str();
 }
 
 pub fn collate_tool_call_chunks_into_tool_calls(
   tc_chunks: Vec<ChatCompletionMessageToolCallChunk>,
-) -> Vec<ChatCompletionMessageToolCall> {
+) -> Option<Vec<ChatCompletionMessageToolCall>> {
   let mut tc_calls: Vec<ChatCompletionMessageToolCall> = Vec::new();
-  let default_tool_call = ChatCompletionMessageToolCall {
-    id: "".to_string(),
-    r#type: ChatCompletionToolType::Function,
-    function: FunctionCall { name: "".to_string(), arguments: "".to_string() },
-  };
   tc_chunks.iter().for_each(|tc_chunk| {
-    if tc_chunk.index as usize > tc_calls.len() {
-      tc_calls.push(default_tool_call.clone())
+    trace_dbg!("tc_chunk: {:?}", tc_chunk);
+    trace_dbg!("tc_calls.len(): {:?}", tc_calls.len());
+    match tc_calls.get_mut(tc_chunk.index as usize) {
+      Some(tc_call) => append_tool_call_chunk_to_tool_call(tc_call, tc_chunk),
+      None => tc_calls.push(convert_tool_chunk_to_tool_call(tc_chunk)),
     }
-    tc_calls[tc_chunk.index as usize] =
-      append_tool_call_chunk_to_tool_call(tc_calls[tc_chunk.index as usize].clone(), tc_chunk);
   });
-  tc_calls
+  if tc_calls.is_empty() {
+    None
+  } else {
+    Some(tc_calls)
+  }
 }
 
 pub fn get_assistant_message_from_create_chat_completion_stream_response(
   choice_index: usize,
-  srvec: &Vec<CreateChatCompletionStreamResponse>,
+  srvec: &[CreateChatCompletionStreamResponse],
 ) -> Result<ChatCompletionRequestAssistantMessage, ParseError> {
   let mut smvec = Vec::new();
-  srvec.iter().map(|sr| {
+  srvec.iter().for_each(|sr| {
     sr.choices
       .iter()
       .filter(|choice| choice.index as usize == choice_index)
@@ -186,20 +193,18 @@ pub fn fold_stream_responses_into_assistant_message(
   let concatenated_message =
     smvec.iter().skip(1).try_fold(smvec[0].clone(), |acc, sr| concatenate_stream_response_messages(&acc, sr))?;
 
-  let function_call = match concatenated_message.delta.function_call {
-    Some(fc) => {
-      Some(FunctionCall { name: fc.name.unwrap_or("".to_string()), arguments: fc.arguments.unwrap_or("".to_string()) })
-    },
-    None => None,
-  };
+  // let function_call = match concatenated_message.delta.function_call {
+  //   Some(fc) => {
+  //     Some(FunctionCall { name: fc.name.unwrap_or("".to_string()), arguments: fc.arguments.unwrap_or("".to_string()) })
+  //   },
+  //   None => None,
+  // };
 
   Ok(ChatCompletionRequestAssistantMessage {
     role: Role::Assistant,
     content: concatenated_message.delta.content,
-    function_call,
-    tool_calls: Some(collate_tool_call_chunks_into_tool_calls(
-      concatenated_message.delta.tool_calls.unwrap_or(Vec::new()),
-    )),
+    function_call: None,
+    tool_calls: collate_tool_call_chunks_into_tool_calls(concatenated_message.delta.tool_calls.unwrap_or(Vec::new())),
   })
 }
 

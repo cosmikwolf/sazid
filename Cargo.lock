@@ -3440,6 +3440,7 @@ dependencies = [
  "serde_derive",
  "serde_json",
  "serde_json_path",
+ "serde_yaml",
  "signal-hook",
  "similar-asserts",
  "strip-ansi-escapes",

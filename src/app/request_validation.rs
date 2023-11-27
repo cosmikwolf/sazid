@@ -39,15 +39,15 @@ impl ValidationError {
     }
   }
 }
-fn validate_json_schema(schema: &str, json: &str) -> Result<(), Box<dyn Error>> {
+fn validate_schema(schema: &str, json: &str) -> Result<(), Box<dyn Error>> {
   // Parse the string of data into serde_json::Value.
-  let schema_json: Value = serde_json::from_str(schema)?;
+  let schema_yaml: Value = serde_yaml::from_str(schema)?;
   let json_data: Value = serde_json::from_str(json)?;
 
   // Build a JSON schema.
   let compiled_schema = JSONSchema::options()
     .with_draft(Draft::Draft7)
-    .compile(&schema_json)
+    .compile(&schema_yaml)
     .map_err(|e| format!("Compilation error: {}", e))?;
 
   // Validate the JSON data.
@@ -64,10 +64,11 @@ fn validate_json_schema(schema: &str, json: &str) -> Result<(), Box<dyn Error>> 
     },
   }
 }
+
 pub fn debug_request_validation(request: &CreateChatCompletionRequest) {
   let request_as_json = serde_json::to_string_pretty(request).unwrap();
-  let schema = include_str!("../../assets/create_chat_completion_request_schema_11_6_23.json");
-  match validate_json_schema(schema, request_as_json.as_str()) {
+  let schema = include_str!("../../assets/openapi.yaml");
+  match validate_schema(schema, request_as_json.as_str()) {
     Ok(_) => {
       trace_dbg!("no errors found");
     },

@@ -30,7 +30,7 @@ pub fn validate_and_extract_boolean_argument(
 ) -> Result<Option<bool>, ModelFunctionError> {
   match function_args.get(argument) {
     Some(argument) => match argument {
-      serde_json::Value::Bool(b) => Ok(Some(b.clone())),
+      serde_json::Value::Bool(b) => Ok(Some(*b)),
       _ => Err(ModelFunctionError::new(format!("{} argument must be a boolean", argument).as_str())),
     },
     None => match required {

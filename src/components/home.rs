@@ -9,7 +9,7 @@ use crate::{
   trace_dbg,
 };
 
-use color_eyre::{eyre::Result, owo_colors::OwoColorize};
+use color_eyre::eyre::Result;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use log::error;
 use rand;
@@ -154,7 +154,7 @@ impl Component for Home<'static> {
     self.last_events.push(key);
 
     //trace_dbg!("key: {:#?}\n{:#?}", key, crossterm::event::Event::Key(key));
-    trace_dbg!("insert key: {:?}\n{:?}", key, self.input.cursor());
+    //trace_dbg!("insert key: {:?}\n{:?}", key, self.input.cursor());
     let action = match self.mode {
       Mode::Command => match key {
         KeyEvent { code: KeyCode::Esc, .. } => {

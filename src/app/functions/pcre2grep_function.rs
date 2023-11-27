@@ -3,12 +3,12 @@ use std::{collections::HashMap, path::PathBuf};
 
 use super::{
   argument_validation::{
-    clap_args_to_json, validate_and_extract_paths_from_argument, validate_and_extract_string_argument,
+    validate_and_extract_paths_from_argument, validate_and_extract_string_argument,
   },
   errors::ModelFunctionError,
   types::{Command, CommandParameters, CommandProperty},
 };
-use clap::Parser;
+
 use serde_derive::{Deserialize, Serialize};
 
 // #[derive(Parser, Debug)]

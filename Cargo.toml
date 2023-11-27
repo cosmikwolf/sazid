@@ -97,6 +97,7 @@ regex = "1.10.2"
 dirs-next = "2.0.0"
 patch = "0.7.0"
 textwrap = { version = "0.16.0", features = ["smawk"] }
+serde_yaml = "0.9.27"
 
 [dev-dependencies]
 insta = { version = "1.34.0", features = [
