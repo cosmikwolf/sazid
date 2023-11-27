@@ -36,7 +36,7 @@ pub enum CallableFunction {
   ReadFileLinesFunction(ReadFileLinesFunction),
   //ModifyFileFunction(ModifyFileFunction),
   CreateFileFunction(CreateFileFunction),
-  PatchFileFunction(PatchFileFunction),
+  //PatchFileFunction(PatchFileFunction),
   //CargoCheckFunction(CargoCheckFunction),
 }
 
@@ -46,9 +46,9 @@ impl From<&CallableFunction> for Command {
       CallableFunction::FileSearchFunction(f) => f.command_definition(),
       //CallableFunction::Pcre2GrepFunction(f) => f.command_definition(),
       CallableFunction::ReadFileLinesFunction(f) => f.command_definition(),
-      // CallableFunction::ModifyFileFunction(f) => f.command_definition(),
+      //CallableFunction::ModifyFileFunction(f) => f.command_definition(),
       CallableFunction::CreateFileFunction(f) => f.command_definition(),
-      CallableFunction::PatchFileFunction(f) => f.command_definition(),
+      //CallableFunction::PatchFileFunction(f) => f.command_definition(),
       // CallableFunction::CargoCheckFunction(f) => f.command_definition(),
     }
   }
@@ -56,7 +56,7 @@ impl From<&CallableFunction> for Command {
 
 pub fn all_functions() -> Vec<CallableFunction> {
   vec![
-    CallableFunction::PatchFileFunction(PatchFileFunction::init()),
+    //CallableFunction::PatchFileFunction(PatchFileFunction::init()),
     CallableFunction::FileSearchFunction(FileSearchFunction::init()),
     //CallableFunction::Pcre2GrepFunction(Pcre2GrepFunction::init()),
     CallableFunction::ReadFileLinesFunction(ReadFileLinesFunction::init()),
@@ -72,7 +72,6 @@ pub fn handle_tool_call(
   session_config: SessionConfig,
 ) {
   let fn_name = tool_call.function.name.clone();
-  let fn_name_clone = tool_call.function.name.clone();
   let fn_args = tool_call.function.arguments.clone();
   let tc_clone = tool_call.clone();
   tokio::spawn(async move {
@@ -80,11 +79,11 @@ pub fn handle_tool_call(
       async move {
         let function_args_result: Result<HashMap<String, serde_json::Value>, serde_json::Error> =
           serde_json::from_str(fn_args.as_str());
-        trace_dbg!("function call: {}\narguments:\n{:#?}", fn_name.clone(), function_args_result);
+        trace_dbg!("tool call: {}\narguments:\n{:#?}", fn_name.clone(), function_args_result);
         match function_args_result {
           Ok(function_args) => match fn_name.as_str() {
             "create_file" => CreateFileFunction::init().call(function_args, session_config),
-            "git_apply" => PatchFileFunction::init().call(function_args, session_config),
+            //"git_apply" => PatchFileFunction::init().call(function_args, session_config),
             //"grep" => GrepFunction::init().call(function_args, session_config),
             "file_search" => FileSearchFunction::init().call(function_args, session_config),
             "read_file" => ReadFileLinesFunction::init().call(function_args, session_config),

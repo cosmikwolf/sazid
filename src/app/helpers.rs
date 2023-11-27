@@ -144,8 +144,8 @@ pub fn collate_tool_call_chunks_into_tool_calls(
 ) -> Option<Vec<ChatCompletionMessageToolCall>> {
   let mut tc_calls: Vec<ChatCompletionMessageToolCall> = Vec::new();
   tc_chunks.iter().for_each(|tc_chunk| {
-    trace_dbg!("tc_chunk: {:?}", tc_chunk);
-    trace_dbg!("tc_calls.len(): {:?}", tc_calls.len());
+    // trace_dbg!("tc_chunk: {:?}", tc_chunk);
+    // trace_dbg!("tc_calls.len(): {:?}", tc_calls.len());
     match tc_calls.get_mut(tc_chunk.index as usize) {
       Some(tc_call) => append_tool_call_chunk_to_tool_call(tc_call, tc_chunk),
       None => tc_calls.push(convert_tool_chunk_to_tool_call(tc_chunk)),

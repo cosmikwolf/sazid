@@ -2,39 +2,12 @@ use crate::app::{functions::function_call::ModelFunction, session_config::Sessio
 use std::{collections::HashMap, path::PathBuf};
 
 use super::{
-  argument_validation::{
-    validate_and_extract_paths_from_argument, validate_and_extract_string_argument,
-  },
+  argument_validation::{validate_and_extract_paths_from_argument, validate_and_extract_string_argument},
   errors::ModelFunctionError,
   types::{Command, CommandParameters, CommandProperty},
 };
 
 use serde_derive::{Deserialize, Serialize};
-
-// #[derive(Parser, Debug)]
-// #[clap(author, version, about, long_about = None)]
-// struct Args {
-//   #[clap(short = 'i', long = "ignore-case", help = "Ignore case distinctions in the pattern.")]
-//   ignore_case: bool,
-//   #[clap(short = 'v', long = "invert-match", help = "Select non-matching lines.")]
-//   invert_match: bool,
-//   #[clap(short = 'l', long = "files-with-matches", help = "Print only file names with matches.")]
-//   files_with_matches: bool,
-//   #[clap(short = 'c', long = "count", help = "Print only a count of matching lines per file.")]
-//   count: bool,
-//   #[clap(short = 'n', long = "line-number", help = "Print line number with output lines.")]
-//   line_number: bool,
-//   #[clap(short = 'e', long = "regexp", help = "Specify a pattern, may be used more than once.", number_of_values = 1)]
-//   regexp: Vec<String>,
-//   #[clap(short = 'r', long = "recursive", help = "Recursively scan sub-directories.")]
-//   recursive: bool,
-//   #[clap(short = 'H', long = "with-filename", help = "Force the prefixing of the file name on output.")]
-//   with_filename: bool,
-//   #[clap(short = 'h', long = "no-filename", help = "Suppress the prefixing of the file name on output.")]
-//   no_filename: bool,
-//   #[clap(short = 'o', long = "only-matching", help = "Show only the part of the line that matched.")]
-//   only_matching: bool,
-// }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Pcre2GrepFunction {

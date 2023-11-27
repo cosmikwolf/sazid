@@ -1,0 +1,16 @@
+[[command]]
+name = "mkdir"
+description = "Prints text to the console"
+required_arguments = ["message"]
+
+[[command]]
+name = "ls"
+description = "Lists directory contents"
+required_arguments = ["path"]
+optional_arguments = { "long_format" = "-l", "all" = "-a" }
+
+[[command]]
+name = "grep"
+description = "Searches for patterns in files"
+required_arguments = ["pattern", "file"]
+optional_arguments = { "ignore_case" = "-i", "count" = "-c" }
