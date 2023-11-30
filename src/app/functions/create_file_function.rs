@@ -9,40 +9,40 @@ use crate::app::session_config::SessionConfig;
 use serde_derive::{Deserialize, Serialize};
 
 use super::{
-  errors::ModelFunctionError,
-  function_call::ModelFunction,
-  types::{Command, CommandParameters, CommandProperty},
+  errors::ToolCallError,
+  tool_call::ToolCallTrait,
+  types::{FunctionCall, FunctionParameters, FunctionProperties},
 };
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct CreateFileFunction {
   name: String,
   description: String,
-  required_properties: Vec<CommandProperty>,
-  optional_properties: Vec<CommandProperty>,
+  required_properties: Vec<FunctionProperties>,
+  optional_properties: Vec<FunctionProperties>,
 }
 
-impl ModelFunction for CreateFileFunction {
+impl ToolCallTrait for CreateFileFunction {
   fn init() -> Self {
     CreateFileFunction {
       name: "create_file".to_string(),
       description: "create a file at path with text. this command cannot overwrite files".to_string(),
       required_properties: vec![
-        CommandProperty {
+        FunctionProperties {
           name: "path".to_string(),
           required: true,
           property_type: "string".to_string(),
           description: Some("path to file".to_string()),
           enum_values: None,
         },
-        CommandProperty {
+        FunctionProperties {
           name: "text".to_string(),
           required: true,
           property_type: "string".to_string(),
           description: Some("text to write to file.".to_string()),
           enum_values: None,
         },
-        CommandProperty {
+        FunctionProperties {
           name: "overwrite".to_string(),
           required: true,
           property_type: "boolean".to_string(),
@@ -58,7 +58,7 @@ impl ModelFunction for CreateFileFunction {
     &self,
     function_args: HashMap<String, serde_json::Value>,
     _session_config: SessionConfig,
-  ) -> Result<Option<String>, ModelFunctionError> {
+  ) -> Result<Option<String>, ToolCallError> {
     let path: Option<&str> = function_args.get("path").and_then(|s| s.as_str());
     let text: Option<&str> = function_args.get("text").and_then(|s| s.as_str());
     let overwrite = function_args.get("overwrite").and_then(|b| b.as_bool()).unwrap_or(false);
@@ -67,15 +67,15 @@ impl ModelFunction for CreateFileFunction {
       if let Some(text) = text {
         create_file(path, text, overwrite)
       } else {
-        Err(ModelFunctionError::new("text argument is required"))
+        Err(ToolCallError::new("text argument is required"))
       }
     } else {
-      Err(ModelFunctionError::new("path argument is required"))
+      Err(ToolCallError::new("path argument is required"))
     }
   }
 
-  fn command_definition(&self) -> Command {
-    let mut properties: HashMap<String, CommandProperty> = HashMap::new();
+  fn function_definition(&self) -> FunctionCall {
+    let mut properties: HashMap<String, FunctionProperties> = HashMap::new();
 
     self.required_properties.iter().for_each(|p| {
       properties.insert(p.name.clone(), p.clone());
@@ -84,10 +84,10 @@ impl ModelFunction for CreateFileFunction {
       properties.insert(p.name.clone(), p.clone());
     });
 
-    Command {
+    FunctionCall {
       name: self.name.clone(),
       description: Some(self.description.clone()),
-      parameters: Some(CommandParameters {
+      parameters: Some(FunctionParameters {
         param_type: "object".to_string(),
         required: self.required_properties.clone().into_iter().map(|p| p.name).collect(),
         properties,
@@ -96,7 +96,7 @@ impl ModelFunction for CreateFileFunction {
   }
 }
 
-pub fn create_file(path: &str, text: &str, overwrite: bool) -> Result<Option<String>, ModelFunctionError> {
+pub fn create_file(path: &str, text: &str, overwrite: bool) -> Result<Option<String>, ToolCallError> {
   // Convert the string path to a `Path` object to manipulate file paths.
   let path = Path::new(path);
 

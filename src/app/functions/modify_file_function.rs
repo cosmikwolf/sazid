@@ -5,10 +5,10 @@ use std::{collections::HashMap, fs::File, io::Write};
 use crate::app::session_config::SessionConfig;
 use crate::trace_dbg;
 
-use super::function_call::ModelFunction;
+use super::tool_call::ToolCallTrait;
 use super::{
-  types::{Command, CommandParameters, CommandProperty},
-  ModelFunctionError,
+  types::{FunctionCall, FunctionParameters, FunctionProperties},
+  ToolCallError,
 };
 use serde_derive::{Deserialize, Serialize};
 
@@ -16,24 +16,24 @@ use serde_derive::{Deserialize, Serialize};
 pub struct ModifyFileFunction {
   name: String,
   description: String,
-  required_properties: Vec<CommandProperty>,
-  optional_properties: Vec<CommandProperty>,
+  required_properties: Vec<FunctionProperties>,
+  optional_properties: Vec<FunctionProperties>,
 }
 
-impl ModelFunction for ModifyFileFunction {
+impl ToolCallTrait for ModifyFileFunction {
   fn init() -> Self {
     ModifyFileFunction {
       name: "modify_file".to_string(),
       description: "modify a file at path with text".to_string(),
       required_properties: vec![
-        CommandProperty {
+        FunctionProperties {
           name: "path".to_string(),
           required: true,
           property_type: "string".to_string(),
           description: Some("path to file".to_string()),
           enum_values: None,
         },
-        CommandProperty {
+        FunctionProperties {
           name: "start_line".to_string(),
           required: true,
           property_type: "number".to_string(),
@@ -42,14 +42,14 @@ impl ModelFunction for ModifyFileFunction {
         },
       ],
       optional_properties: vec![
-        CommandProperty {
+        FunctionProperties {
           name: "end_line".to_string(),
           required: false,
           property_type: "number".to_string(),
           description: Some("line to end modification".to_string()),
           enum_values: None,
         },
-        CommandProperty {
+        FunctionProperties {
           name: "insert_text".to_string(),
           required: false,
           property_type: "string".to_string(),
@@ -64,11 +64,11 @@ impl ModelFunction for ModifyFileFunction {
     &self,
     function_args: HashMap<String, serde_json::Value>,
     _session_config: SessionConfig,
-  ) -> Result<Option<String>, ModelFunctionError> {
+  ) -> Result<Option<String>, ToolCallError> {
     let path: Option<&str> = function_args.get("path").and_then(|s| s.as_str());
     let start_line = match function_args.get("start_line").and_then(|s| s.as_u64().map(|u| u as usize)) {
       Some(start_line) => start_line,
-      None => return Err(ModelFunctionError::new("start_line argument is required")),
+      None => return Err(ToolCallError::new("start_line argument is required")),
     };
 
     let end_line: Option<usize> = function_args.get("end_line").and_then(|s| s.as_u64().map(|u| u as usize));
@@ -76,12 +76,12 @@ impl ModelFunction for ModifyFileFunction {
     if let Some(path) = path {
       modify_file(path, start_line, end_line, insert_text)
     } else {
-      Err(ModelFunctionError::new("path argument is required"))
+      Err(ToolCallError::new("path argument is required"))
     }
   }
 
-  fn command_definition(&self) -> Command {
-    let mut properties: HashMap<String, CommandProperty> = HashMap::new();
+  fn function_definition(&self) -> FunctionCall {
+    let mut properties: HashMap<String, FunctionProperties> = HashMap::new();
 
     self.required_properties.iter().for_each(|p| {
       properties.insert(p.name.clone(), p.clone());
@@ -90,10 +90,10 @@ impl ModelFunction for ModifyFileFunction {
       properties.insert(p.name.clone(), p.clone());
     });
 
-    Command {
+    FunctionCall {
       name: self.name.clone(),
       description: Some(self.description.clone()),
-      parameters: Some(CommandParameters {
+      parameters: Some(FunctionParameters {
         param_type: "object".to_string(),
         required: self.required_properties.clone().into_iter().map(|p| p.name).collect(),
         properties,
@@ -107,7 +107,7 @@ pub fn modify_file(
   start_line: usize,
   end_line: Option<usize>,
   insert_text: Option<&str>,
-) -> Result<Option<String>, ModelFunctionError> {
+) -> Result<Option<String>, ToolCallError> {
   match File::open(path) {
     Ok(file) => {
       let reader = std::io::BufReader::new(file);

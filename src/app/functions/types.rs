@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct CommandProperty {
+pub struct FunctionProperties {
   #[serde(skip)]
   pub name: String,
   #[serde(skip)]
@@ -15,21 +15,21 @@ pub struct CommandProperty {
 }
 
 #[derive(Serialize, Deserialize, Debug)]
-pub struct CommandParameters {
+pub struct FunctionParameters {
   #[serde(rename = "type")]
   pub param_type: String,
   pub required: Vec<String>,
-  pub properties: std::collections::HashMap<String, CommandProperty>,
+  pub properties: std::collections::HashMap<String, FunctionProperties>,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
-pub struct Command {
+pub struct FunctionCall {
   pub name: String,
   pub description: Option<String>,
-  pub parameters: Option<CommandParameters>,
+  pub parameters: Option<FunctionParameters>,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct Commands {
-  pub commands: Vec<Command>,
+  pub commands: Vec<FunctionCall>,
 }

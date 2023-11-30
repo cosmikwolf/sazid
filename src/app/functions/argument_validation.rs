@@ -5,7 +5,7 @@ use clap::Parser;
 use serde_json::json;
 use walkdir::WalkDir;
 
-use super::errors::ModelFunctionError;
+use super::errors::ToolCallError;
 
 pub fn clap_args_to_json<P: Parser>() -> String {
   let app = P::command();
@@ -27,14 +27,14 @@ pub fn validate_and_extract_boolean_argument(
   function_args: &HashMap<String, serde_json::Value>,
   argument: &str,
   required: bool,
-) -> Result<Option<bool>, ModelFunctionError> {
+) -> Result<Option<bool>, ToolCallError> {
   match function_args.get(argument) {
     Some(argument) => match argument {
       serde_json::Value::Bool(b) => Ok(Some(*b)),
-      _ => Err(ModelFunctionError::new(format!("{} argument must be a boolean", argument).as_str())),
+      _ => Err(ToolCallError::new(format!("{} argument must be a boolean", argument).as_str())),
     },
     None => match required {
-      true => Err(ModelFunctionError::new(format!("{} argument is required", argument).as_str())),
+      true => Err(ToolCallError::new(format!("{} argument is required", argument).as_str())),
       false => Ok(None),
     },
   }
@@ -44,14 +44,14 @@ pub fn validate_and_extract_string_argument(
   function_args: &HashMap<String, serde_json::Value>,
   argument: &str,
   required: bool,
-) -> Result<Option<String>, ModelFunctionError> {
+) -> Result<Option<String>, ToolCallError> {
   match function_args.get(argument) {
     Some(argument) => match argument {
       serde_json::Value::String(s) => Ok(Some(s.clone())),
-      _ => Err(ModelFunctionError::new(format!("{} argument must be a string", argument).as_str())),
+      _ => Err(ToolCallError::new(format!("{} argument must be a string", argument).as_str())),
     },
     None => match required {
-      true => Err(ModelFunctionError::new(format!("{} argument is required", argument).as_str())),
+      true => Err(ToolCallError::new(format!("{} argument is required", argument).as_str())),
       false => Ok(None),
     },
   }
@@ -62,22 +62,22 @@ pub fn validate_and_extract_paths_from_argument(
   session_config: SessionConfig,
   required: bool,
   root_dir: Option<PathBuf>,
-) -> Result<Option<Vec<PathBuf>>, ModelFunctionError> {
+) -> Result<Option<Vec<PathBuf>>, ToolCallError> {
   match function_args.get("paths") {
     Some(paths) => {
       if let serde_json::Value::String(paths_str) = paths {
         let accesible_paths = get_accessible_file_paths(session_config.list_file_paths.clone(), root_dir);
-        let paths_vec: Result<Vec<PathBuf>, ModelFunctionError> = paths_str
+        let paths_vec: Result<Vec<PathBuf>, ToolCallError> = paths_str
           .split(',')
           .map(|s| s.trim())
           .map(|path| {
             let path_buf = PathBuf::from(path);
             if accesible_paths
-              .contains_key(path_buf.to_str().ok_or_else(|| ModelFunctionError::new("Path contains invalid Unicode."))?)
+              .contains_key(path_buf.to_str().ok_or_else(|| ToolCallError::new("Path contains invalid Unicode."))?)
             {
               Ok(path_buf)
             } else {
-              Err(ModelFunctionError::new(&format!(
+              Err(ToolCallError::new(&format!(
                 "File path is not accessible: {:?}. Suggest using file_search command",
                 path_buf
               )))
@@ -86,10 +86,10 @@ pub fn validate_and_extract_paths_from_argument(
           .collect(); // Collect into a Result<Vec<PathBuf>, ModelFunctionError>
         paths_vec.map(Some)
       } else {
-        Err(ModelFunctionError::new("Expected a string for 'paths' argument but got a different type."))
+        Err(ToolCallError::new("Expected a string for 'paths' argument but got a different type."))
       }
     },
-    None if required => Err(ModelFunctionError::new("paths argument is required.")),
+    None if required => Err(ToolCallError::new("paths argument is required.")),
     None => Ok(None),
   }
 }

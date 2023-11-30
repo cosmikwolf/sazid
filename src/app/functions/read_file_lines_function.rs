@@ -8,24 +8,24 @@ use crate::trace_dbg;
 use serde_derive::{Deserialize, Serialize};
 
 use super::argument_validation::{count_tokens, get_accessible_file_paths};
-use super::errors::ModelFunctionError;
-use super::function_call::ModelFunction;
-use super::types::{Command, CommandParameters, CommandProperty};
+use super::errors::ToolCallError;
+use super::tool_call::ToolCallTrait;
+use super::types::{FunctionCall, FunctionParameters, FunctionProperties};
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct ReadFileLinesFunction {
   pub name: String,
   pub description: String,
-  pub required_properties: Vec<CommandProperty>,
-  pub optional_properties: Vec<CommandProperty>,
+  pub required_properties: Vec<FunctionProperties>,
+  pub optional_properties: Vec<FunctionProperties>,
 }
 
-impl ModelFunction for ReadFileLinesFunction {
+impl ToolCallTrait for ReadFileLinesFunction {
   fn init() -> Self {
     ReadFileLinesFunction {
       name: "read_file".to_string(),
       description: "read lines from an accesible file path, from optional start_line to end_line".to_string(),
-      required_properties: vec![CommandProperty {
+      required_properties: vec![FunctionProperties {
         name: "path".to_string(),
         required: true,
         property_type: "string".to_string(),
@@ -33,14 +33,14 @@ impl ModelFunction for ReadFileLinesFunction {
         enum_values: None,
       }],
       optional_properties: vec![
-        CommandProperty {
+        FunctionProperties {
           name: "start_line".to_string(),
           required: false,
           property_type: "string".to_string(),
           description: Some("first line to read, default: 1".to_string()),
           enum_values: None,
         },
-        CommandProperty {
+        FunctionProperties {
           name: "end_line".to_string(),
           required: false,
           property_type: "string".to_string(),
@@ -55,14 +55,14 @@ impl ModelFunction for ReadFileLinesFunction {
     &self,
     function_args: HashMap<String, serde_json::Value>,
     session_config: SessionConfig,
-  ) -> Result<Option<String>, ModelFunctionError> {
+  ) -> Result<Option<String>, ToolCallError> {
     let start_line: Option<usize> = function_args.get("start_line").and_then(|s| s.as_u64().map(|u| u as usize));
     let end_line: Option<usize> = function_args.get("end_line").and_then(|s| s.as_u64().map(|u| u as usize));
     if let Some(v) = function_args.get("path") {
       if let Some(file) = v.as_str() {
         let accesible_paths = get_accessible_file_paths(session_config.list_file_paths.clone(), None);
         if !accesible_paths.contains_key(Path::new(file).to_str().unwrap()) {
-          Err(ModelFunctionError::new(
+          Err(ToolCallError::new(
             format!("File path is not accessible: {:?}. Suggest using file_search command", file).as_str(),
           ))
         } else {
@@ -76,15 +76,15 @@ impl ModelFunction for ReadFileLinesFunction {
           )
         }
       } else {
-        Err(ModelFunctionError::new("path argument must be a string"))
+        Err(ToolCallError::new("path argument must be a string"))
       }
     } else {
-      Err(ModelFunctionError::new("path argument is required"))
+      Err(ToolCallError::new("path argument is required"))
     }
   }
 
-  fn command_definition(&self) -> Command {
-    let mut properties: HashMap<String, CommandProperty> = HashMap::new();
+  fn function_definition(&self) -> FunctionCall {
+    let mut properties: HashMap<String, FunctionProperties> = HashMap::new();
 
     self.required_properties.iter().for_each(|p| {
       properties.insert(p.name.clone(), p.clone());
@@ -93,10 +93,10 @@ impl ModelFunction for ReadFileLinesFunction {
       properties.insert(p.name.clone(), p.clone());
     });
 
-    Command {
+    FunctionCall {
       name: self.name.clone(),
       description: Some(self.description.clone()),
-      parameters: Some(CommandParameters {
+      parameters: Some(FunctionParameters {
         param_type: "object".to_string(),
         required: self.required_properties.clone().into_iter().map(|p| p.name).collect(),
         properties,
@@ -111,14 +111,14 @@ pub fn read_file_lines(
   end_line: Option<usize>,
   reply_max_tokens: usize,
   list_file_paths: Vec<PathBuf>,
-) -> Result<Option<String>, ModelFunctionError> {
+) -> Result<Option<String>, ToolCallError> {
   // trace_dbg!("list_file_paths: {:?}", list_file_paths);
   // trace_dbg!("file: {:?} {:#?}", get_accessible_file_paths(list_file_paths.clone()).get(file), file);
   if let Some(file_path) = get_accessible_file_paths(list_file_paths, None).get(file) {
     let file_contents = match read_lines(file_path) {
       Ok(contents) => contents,
       Err(error) => {
-        return Err(ModelFunctionError::new(
+        return Err(ToolCallError::new(
           format!("Error reading file: {}\nare you sure a file exists at the provided path?", error).as_str(),
         ));
       },
@@ -128,13 +128,13 @@ pub fn read_file_lines(
 
     if let Some(start_line) = start_line {
       if start_line > file_contents.len() {
-        return Err(ModelFunctionError::new("Invalid start line number."));
+        return Err(ToolCallError::new("Invalid start line number."));
       }
     }
 
     if let Some(end_line) = end_line {
       if end_line > file_contents.len() {
-        return Err(ModelFunctionError::new("Invalid end line number."));
+        return Err(ToolCallError::new("Invalid end line number."));
       }
     }
     let selected_lines: Vec<String> =
@@ -154,7 +154,7 @@ pub fn read_file_lines(
       token_count
     )))
   } else {
-    Err(ModelFunctionError::new(
+    Err(ToolCallError::new(
       "File not found or not accessible.\nare you sure a file exists at the path you are accessing?",
     ))
   }

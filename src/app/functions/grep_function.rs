@@ -13,33 +13,33 @@ use crate::app::session_config::SessionConfig;
 
 use super::{
   argument_validation::{validate_and_extract_paths_from_argument, validate_and_extract_string_argument},
-  function_call::ModelFunction,
-  types::{Command, CommandParameters, CommandProperty},
-  ModelFunctionError,
+  tool_call::ToolCallTrait,
+  types::{FunctionCall, FunctionParameters, FunctionProperties},
+  ToolCallError,
 };
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct GrepFunction {
   pub name: String,
   pub description: String,
-  pub required_properties: Vec<CommandProperty>,
-  pub optional_properties: Vec<CommandProperty>,
+  pub required_properties: Vec<FunctionProperties>,
+  pub optional_properties: Vec<FunctionProperties>,
 }
 
-impl ModelFunction for GrepFunction {
+impl ToolCallTrait for GrepFunction {
   fn init() -> Self {
     GrepFunction {
       name: "grep".to_string(),
       description: "an implementation of grep".to_string(),
       required_properties: vec![
-        CommandProperty {
+        FunctionProperties {
           name: "pattern".to_string(),
           required: true,
           property_type: "string".to_string(),
           description: Some("a regular expression pattern to match against file contents".to_string()),
           enum_values: None,
         },
-        CommandProperty {
+        FunctionProperties {
           name: "paths".to_string(),
           required: true,
           property_type: "string".to_string(),
@@ -67,14 +67,14 @@ impl ModelFunction for GrepFunction {
     &self,
     function_args: HashMap<String, serde_json::Value>,
     session_config: SessionConfig,
-  ) -> Result<Option<String>, ModelFunctionError> {
+  ) -> Result<Option<String>, ToolCallError> {
     let paths = validate_and_extract_paths_from_argument(&function_args, session_config, true, None)?.unwrap();
     let pattern = validate_and_extract_string_argument(&function_args, "pattern", true)?.unwrap();
     grep(pattern.as_str(), paths)
   }
 
-  fn command_definition(&self) -> Command {
-    let mut properties: HashMap<String, CommandProperty> = HashMap::new();
+  fn function_definition(&self) -> FunctionCall {
+    let mut properties: HashMap<String, FunctionProperties> = HashMap::new();
 
     self.required_properties.iter().for_each(|p| {
       properties.insert(p.name.clone(), p.clone());
@@ -83,10 +83,10 @@ impl ModelFunction for GrepFunction {
       properties.insert(p.name.clone(), p.clone());
     });
 
-    Command {
+    FunctionCall {
       name: self.name.clone(),
       description: Some(self.description.clone()),
-      parameters: Some(CommandParameters {
+      parameters: Some(FunctionParameters {
         param_type: "object".to_string(),
         required: self.required_properties.clone().into_iter().map(|p| p.name).collect(),
         properties,
@@ -95,7 +95,7 @@ impl ModelFunction for GrepFunction {
   }
 }
 
-pub fn grep(pattern: &str, paths: Vec<PathBuf>) -> Result<Option<String>, ModelFunctionError> {
+pub fn grep(pattern: &str, paths: Vec<PathBuf>) -> Result<Option<String>, ToolCallError> {
   //let mut buffer = Cursor::new(Vec::new());
   let buffer: BufWriter<Vec<u8>> = BufWriter::new(Vec::new());
   let mut error_buffer: BufWriter<Vec<u8>> = BufWriter::new(Vec::new());

@@ -178,7 +178,7 @@ mod tests {
         "#;
 
     let schema = include_str!("../../assets/create_chat_completion_request_schema_11_6_23.json");
-    validate_json_schema(schema, json_request)?;
+    validate_schema(schema, json_request)?;
     Ok(())
   }
 
@@ -195,7 +195,7 @@ mod tests {
         "#;
 
     let schema = include_str!("../../assets/create_chat_completion_request_schema_11_6_23.json");
-    let result = validate_json_schema(schema, json_request);
+    let result = validate_schema(schema, json_request);
     if let Err(e) = &result {
       println!("Validation error: {}", e);
     }

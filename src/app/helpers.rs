@@ -1,11 +1,8 @@
 use async_openai::types::{
   ChatCompletionMessageToolCall, ChatCompletionMessageToolCallChunk, ChatCompletionRequestAssistantMessage,
-  ChatCompletionResponseStreamMessage, ChatCompletionStreamResponseDelta, ChatCompletionToolType,
-  CreateChatCompletionResponse, CreateChatCompletionStreamResponse, FinishReason, FunctionCall, FunctionCallStream,
-  Role,
+  ChatCompletionResponseStreamMessage, ChatCompletionStreamResponseDelta, CreateChatCompletionResponse,
+  CreateChatCompletionStreamResponse, FinishReason, FunctionCall, FunctionCallStream, Role,
 };
-
-use crate::trace_dbg;
 
 use super::errors::ParseError;
 

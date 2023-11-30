@@ -6,7 +6,7 @@ use async_openai::{
 
 use crate::app::types::*;
 
-use super::functions::types::Command;
+use super::functions::types::FunctionCall;
 
 #[derive(Clone)]
 pub struct GPTConnector {
@@ -326,7 +326,7 @@ pub struct GPTConnector {
 //   commands
 // }
 
-pub fn create_chat_completion_tool_args(commands: Vec<Command>) -> Vec<ChatCompletionTool> {
+pub fn create_chat_completion_tool_args(commands: Vec<FunctionCall>) -> Vec<ChatCompletionTool> {
   commands
     .iter()
     .map(|command| ChatCompletionTool {
@@ -343,7 +343,7 @@ pub fn create_chat_completion_tool_args(commands: Vec<Command>) -> Vec<ChatCompl
     .collect()
 }
 
-pub fn create_chat_completion_function_args(commands: Vec<Command>) -> Vec<ChatCompletionFunctions> {
+pub fn create_chat_completion_function_args(commands: Vec<FunctionCall>) -> Vec<ChatCompletionFunctions> {
   let mut chat_completion_functions: Vec<ChatCompletionFunctions> = Vec::new();
   let empty_parameters = "{\"type\": \"object\", \"properties\": {}}";
   for command in commands {

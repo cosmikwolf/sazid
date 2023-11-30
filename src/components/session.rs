@@ -117,7 +117,10 @@ impl Component for Session<'static> {
     //Session::select_model(model_preference, create_openai_client(self.config.openai_config.clone()));
     trace_dbg!("init session");
     self.config.prompt =
-        ["- make your responses conscise and terse",
+        [
+    "- act as a rust programming assistant",
+    "- you write full code when requested",
+    "- your responses are conscise and terse",
     "- Use the functions available to execute with the user inquiry.",
     "- Provide your responses as markdown formatted text.",
     "- Make sure to properly entabulate any code blocks",

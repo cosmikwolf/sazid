@@ -1,6 +1,5 @@
 use bat::{assets::HighlightingAssets, config::Config, controller::Controller, style::StyleComponents, Input};
 
-use color_eyre::owo_colors::OwoColorize;
 use textwrap::{self, Options, WordSeparator, WordSplitter, WrapAlgorithm};
 
 use crate::trace_dbg;

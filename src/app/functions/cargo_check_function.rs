@@ -5,20 +5,20 @@ use serde_derive::{Deserialize, Serialize};
 use crate::app::session_config::SessionConfig;
 
 use super::{
-  function_call::ModelFunction,
-  types::{Command, CommandParameters, CommandProperty},
-  ModelFunctionError,
+  tool_call::ToolCallTrait,
+  types::{FunctionCall, FunctionParameters, FunctionProperties},
+  ToolCallError,
 };
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct CargoCheckFunction {
   name: String,
   description: String,
-  required_properties: Vec<CommandProperty>,
-  optional_properties: Vec<CommandProperty>,
+  required_properties: Vec<FunctionProperties>,
+  optional_properties: Vec<FunctionProperties>,
 }
 
-impl ModelFunction for CargoCheckFunction {
+impl ToolCallTrait for CargoCheckFunction {
   fn init() -> Self {
     CargoCheckFunction {
       name: "cargo_check".to_string(),
@@ -32,12 +32,12 @@ impl ModelFunction for CargoCheckFunction {
     &self,
     _function_args: HashMap<String, serde_json::Value>,
     _session_config: SessionConfig,
-  ) -> Result<Option<String>, ModelFunctionError> {
+  ) -> Result<Option<String>, ToolCallError> {
     cargo_check()
   }
 
-  fn command_definition(&self) -> Command {
-    let mut properties: HashMap<String, CommandProperty> = HashMap::new();
+  fn function_definition(&self) -> FunctionCall {
+    let mut properties: HashMap<String, FunctionProperties> = HashMap::new();
 
     self.required_properties.iter().for_each(|p| {
       properties.insert(p.name.clone(), p.clone());
@@ -46,10 +46,10 @@ impl ModelFunction for CargoCheckFunction {
       properties.insert(p.name.clone(), p.clone());
     });
 
-    Command {
+    FunctionCall {
       name: self.name.clone(),
       description: Some(self.description.clone()),
-      parameters: Some(CommandParameters {
+      parameters: Some(FunctionParameters {
         param_type: "object".to_string(),
         required: self.required_properties.clone().into_iter().map(|p| p.name).collect(),
         properties,
@@ -58,7 +58,7 @@ impl ModelFunction for CargoCheckFunction {
   }
 }
 
-pub fn cargo_check() -> Result<Option<String>, ModelFunctionError> {
+pub fn cargo_check() -> Result<Option<String>, ToolCallError> {
   let mut command = std::process::Command::new("cargo");
   command.arg("check");
   command.arg("--message-format");

@@ -5,30 +5,30 @@ use std::path::{Path, PathBuf};
 
 use serde_derive::{Deserialize, Serialize};
 
-use crate::app::functions::types::{Command, CommandProperty};
+use crate::app::functions::types::{FunctionCall, FunctionProperties};
 use crate::app::session_config::SessionConfig;
 use crate::trace_dbg;
 
-use super::function_call::ModelFunction;
-use super::types::CommandParameters;
-use super::{argument_validation::count_tokens, argument_validation::get_accessible_file_paths, ModelFunctionError};
+use super::tool_call::ToolCallTrait;
+use super::types::FunctionParameters;
+use super::{argument_validation::count_tokens, argument_validation::get_accessible_file_paths, ToolCallError};
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct FileSearchFunction {
   pub name: String,
   pub description: String,
-  pub required_properties: Vec<CommandProperty>,
-  pub optional_properties: Vec<CommandProperty>,
+  pub required_properties: Vec<FunctionProperties>,
+  pub optional_properties: Vec<FunctionProperties>,
 }
 
-impl ModelFunction for FileSearchFunction {
+impl ToolCallTrait for FileSearchFunction {
   fn init() -> Self {
     FileSearchFunction {
         name: "file_search".to_string(),
         description: "search accessible file paths. file_search without arguments returns all accessible file paths. results include file line count".to_string(),
         required_properties: vec![],
         optional_properties: vec![
-            CommandProperty {
+            FunctionProperties {
                 name:  "search_term".to_string(),
                 required: true,
                 property_type: "string".to_string(),
@@ -43,12 +43,12 @@ impl ModelFunction for FileSearchFunction {
     &self,
     function_args: HashMap<String, serde_json::Value>,
     session_config: SessionConfig,
-  ) -> Result<Option<String>, ModelFunctionError> {
+  ) -> Result<Option<String>, ToolCallError> {
     if let Some(v) = function_args.get("path") {
       if let Some(pathstr) = v.as_str() {
         let accesible_paths = get_accessible_file_paths(session_config.list_file_paths.clone(), None);
         if !accesible_paths.contains_key(Path::new(pathstr).to_str().unwrap()) {
-          return Err(ModelFunctionError::new(format!("File path is not accessible: {:?}", pathstr).as_str()));
+          return Err(ToolCallError::new(format!("File path is not accessible: {:?}", pathstr).as_str()));
         } else {
           trace_dbg!("path: {:?} exists", pathstr);
         }
@@ -59,8 +59,8 @@ impl ModelFunction for FileSearchFunction {
     file_search(session_config.function_result_max_tokens, session_config.list_file_paths.clone(), search_term)
   }
 
-  fn command_definition(&self) -> Command {
-    let mut properties: HashMap<String, CommandProperty> = HashMap::new();
+  fn function_definition(&self) -> FunctionCall {
+    let mut properties: HashMap<String, FunctionProperties> = HashMap::new();
 
     self.required_properties.iter().for_each(|p| {
       properties.insert(p.name.clone(), p.clone());
@@ -69,10 +69,10 @@ impl ModelFunction for FileSearchFunction {
       properties.insert(p.name.clone(), p.clone());
     });
 
-    Command {
+    FunctionCall {
       name: self.name.clone(),
       description: Some(self.description.clone()),
-      parameters: Some(CommandParameters {
+      parameters: Some(FunctionParameters {
         param_type: "object".to_string(),
         required: self.required_properties.clone().into_iter().map(|p| p.name).collect(),
         properties,
@@ -117,7 +117,7 @@ pub fn file_search(
   reply_max_tokens: usize,
   list_file_paths: Vec<PathBuf>,
   search_term: Option<&str>,
-) -> Result<Option<String>, ModelFunctionError> {
+) -> Result<Option<String>, ToolCallError> {
   let paths = get_accessible_file_paths(list_file_paths, None);
   let accessible_paths = paths.keys().map(|path| path.as_str()).collect::<Vec<&str>>();
   // find the length of the longest string in accessible_paths

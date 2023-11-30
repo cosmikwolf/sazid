@@ -1,16 +1,14 @@
-use crate::app::functions::function_call::ModelFunction;
+use crate::app::functions::tool_call::ToolCallTrait;
 use crate::{action::Action, app::messages::ChatMessage, trace_dbg};
-use async_openai::types::{
-  ChatCompletionMessageToolCall, ChatCompletionRequestFunctionMessage, ChatCompletionRequestToolMessage,
-  ChatCompletionRequestToolMessageArgs, Role,
-};
+use async_openai::types::{ChatCompletionMessageToolCall, ChatCompletionRequestToolMessage, Role};
 use serde_derive::{Deserialize, Serialize};
 use std::collections::HashMap;
 use tokio::sync::mpsc::UnboundedSender;
 
+use self::modify_file_function::ModifyFileFunction;
 use self::{
-  create_file_function::CreateFileFunction, errors::ModelFunctionError, file_search_function::FileSearchFunction,
-  patch_files_function::PatchFileFunction, read_file_lines_function::ReadFileLinesFunction, types::Command,
+  create_file_function::CreateFileFunction, errors::ToolCallError, file_search_function::FileSearchFunction,
+  read_file_lines_function::ReadFileLinesFunction, types::FunctionCall,
 };
 
 use super::session_config::SessionConfig;
@@ -20,12 +18,13 @@ pub mod cargo_check_function;
 pub mod create_file_function;
 pub mod errors;
 pub mod file_search_function;
-pub mod function_call;
 pub mod grep_function;
 pub mod modify_file_function;
 pub mod patch_files_function;
 pub mod pcre2grep_function;
 pub mod read_file_lines_function;
+pub mod tool_call;
+pub mod tool_call_template;
 pub mod types;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -34,20 +33,20 @@ pub enum CallableFunction {
   //Pcre2GrepFunction(Pcre2GrepFunction),
   //GrepFunction(GrepFunction),
   ReadFileLinesFunction(ReadFileLinesFunction),
-  //ModifyFileFunction(ModifyFileFunction),
+  ModifyFileFunction(ModifyFileFunction),
   CreateFileFunction(CreateFileFunction),
   //PatchFileFunction(PatchFileFunction),
   //CargoCheckFunction(CargoCheckFunction),
 }
 
-impl From<&CallableFunction> for Command {
+impl From<&CallableFunction> for FunctionCall {
   fn from(callable_function: &CallableFunction) -> Self {
     match callable_function {
-      CallableFunction::FileSearchFunction(f) => f.command_definition(),
+      CallableFunction::FileSearchFunction(f) => f.function_definition(),
       //CallableFunction::Pcre2GrepFunction(f) => f.command_definition(),
-      CallableFunction::ReadFileLinesFunction(f) => f.command_definition(),
-      //CallableFunction::ModifyFileFunction(f) => f.command_definition(),
-      CallableFunction::CreateFileFunction(f) => f.command_definition(),
+      CallableFunction::ReadFileLinesFunction(f) => f.function_definition(),
+      CallableFunction::ModifyFileFunction(f) => f.function_definition(),
+      CallableFunction::CreateFileFunction(f) => f.function_definition(),
       //CallableFunction::PatchFileFunction(f) => f.command_definition(),
       // CallableFunction::CargoCheckFunction(f) => f.command_definition(),
     }
@@ -92,7 +91,7 @@ pub fn handle_tool_call(
             //"pcre2grep" => Pcre2GrepFunction::init().call(function_args, session_config),
             _ => Ok(Some("function not found".to_string())),
           },
-          Err(e) => Err(ModelFunctionError::new(
+          Err(e) => Err(ToolCallError::new(
             format!("Failed to parse function arguments:\nfunction:{:?}\nargs:{:?}\nerror:{:?}", fn_name, fn_args, e)
               .as_str(),
           )),

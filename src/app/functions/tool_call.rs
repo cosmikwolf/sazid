@@ -2,9 +2,9 @@ use std::collections::HashMap;
 
 use crate::app::session_config::SessionConfig;
 
-use super::{errors::ModelFunctionError, types::Command};
+use super::{errors::ToolCallError, types::FunctionCall};
 
-pub trait ModelFunction {
+pub trait ToolCallTrait {
   fn init() -> Self
   where
     Self: Sized;
@@ -12,6 +12,6 @@ pub trait ModelFunction {
     &self,
     function_args: HashMap<String, serde_json::Value>,
     session_config: SessionConfig,
-  ) -> Result<Option<String>, ModelFunctionError>;
-  fn command_definition(&self) -> Command;
+  ) -> Result<Option<String>, ToolCallError>;
+  fn function_definition(&self) -> FunctionCall;
 }

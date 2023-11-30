@@ -148,7 +148,7 @@ fn format_chat_message(f: &mut std::fmt::Formatter<'_>, role: Role, message: Str
 #[cfg(test)]
 mod tests {
   use crate::app::{
-    functions::types::CommandProperty,
+    functions::types::FunctionProperties,
     helpers::{
       concatenate_function_call_streams, concatenate_option_strings, concatenate_stream_delta,
       concatenate_stream_response_messages,
@@ -164,14 +164,14 @@ mod tests {
   #[test]
   fn test_serialization_command_properties() {
     // Manually construct the expected `CommandProperty` vector
-    let location_property = CommandProperty {
+    let location_property = FunctionProperties {
       name: "location".to_owned(),
       required: true,
       property_type: "string".to_owned(),
       description: Some("The city and state, e.g. San Francisco, CA".to_owned()),
       enum_values: None,
     };
-    let unit_property = CommandProperty {
+    let unit_property = FunctionProperties {
       name: "unit".to_owned(),
       required: false,
       property_type: "string".to_owned(),
