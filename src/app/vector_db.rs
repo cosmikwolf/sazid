@@ -12,9 +12,6 @@ pub struct VectorDBConfig {
   pub optimize_threads: i32,
 }
 
-// Enable the pgvecto extension
-const ENABLE_PGVECTO_EXTENSION: &str = "DROP EXTENSION IF EXISTS vectors; CREATE EXTENSION vectors;";
-
 // Struct to represent the vector database
 pub struct VectorDB {
   pub client: Client,
@@ -34,9 +31,9 @@ impl VectorDB {
     let rows = self.client.query(CHECK_EXTENSION_EXISTS, &[]).await?;
 
     // If it doesn't exist, create it.
-    if rows.is_empty() || rows[0].get::<usize, bool>(0) == false {
+    if rows.is_empty() || !rows[0].get::<usize, bool>(0) {
       self.client.batch_execute(CREATE_EXTENSION).await?;
-    }
+    };
     Ok(())
   }
 
