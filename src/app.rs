@@ -17,6 +17,7 @@ pub mod session_data;
 pub mod session_view;
 pub mod tools;
 pub mod types;
+pub mod vector_db;
 
 use crate::{
   action::Action,

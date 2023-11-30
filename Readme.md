@@ -45,8 +45,15 @@ Before you start, ensure you have the following installed:
 
 adapted from: https://github.com/tensorchord/pgvecto.rs/blob/0efe49d97623656c2e26452df473c6518786dc06/docs/install.md
 
+
 - cargo install cargo-pgrx
 - cargo pgrx init
 - brew install postgresql@15
 - initdb /usr/local/var/postgres
 
+#### drop the database
+rm -rf /usr/local/var/postgres
+dropdb postgres
+#### initialize and start The database
+initdb /usr/local/var/postgres
+pg_ctl -D /usr/local/var/postgres -l /usr/local/var/postgres/server.log start
