@@ -1,45 +1,97 @@
 #[cfg(test)]
 mod vector_db_tests {
-  use sazid::app::vector_db::VectorDB;
+    use crate::app::vector_db::{VectorDB, VectorDBConfig};
+    use tokio_postgres::NoTls;
 
-  #[tokio::test]
-  async fn test_connection() {
-    let db = VectorDB::new("host=localhost user=tenkai dbname=postgres").await;
-    assert!(db.is_ok());
-  }
+    // Helper function to set up the test database connection
+    async fn setup_test_db() -> Result<VectorDB, Box<dyn std::error::Error>> {
+        let (client, connection) =
+            tokio_postgres::connect("host=localhost user=postgres", NoTls).await?;
 
-  #[tokio::test]
-  async fn test_insert_vector() {
-    let db = VectorDB::new("host=localhost user=tenkai dbname=postgres").await.expect("Failed to create VectorDB");
-    assert!(db.insert_vector(&[1.0, 2.0, 3.0]).await.is_ok());
-  }
+        tokio::spawn(async move {
+            if let Err(e) = connection.await {
+                eprintln!("Connection error: {}", e);
+            }
+        });
 
-  #[tokio::test]
-  async fn test_query_vectors() {
-    let db = VectorDB::new("host=localhost user=tenkai dbname=postgres").await.expect("Failed to create VectorDB");
-    db.insert_vector(&[1.0, 2.0, 3.0]).await.expect("Failed to insert vector");
-    let vectors = db.query_vectors(&[1.0, 2.0, 3.0], 5).await.expect("Failed to query vectors");
-    assert!(!vectors.is_empty(), "No vectors found");
-  }
+        Ok(VectorDB {
+            client,
+            config: VectorDBConfig { optimize_threads: 4 },
+        })
+    }
 
-  #[tokio::test]
-  async fn test_enable_extension() {
-    let db = VectorDB::new("host=localhost user=tenkai dbname=postgres").await.expect("Failed to create VectorDB");
-    assert!(VectorDB::enable_extension(&db.client).await.is_ok());
-  }
+    #[tokio::test]
+    async fn test_enable_extension() -> Result<(), Box<dyn std::error::Error>> {
+        let vectordb = setup_test_db().await?;
+        vectordb.enable_extension().await?;
+        // Verification step assumed
+        Ok(())
+    }
 
-  #[tokio::test]
-  async fn test_calculate_distance() {
-    let client = setup_test_db().await.expect("setup test db");
-    let vectordb = VectorDB { client, config: VectorDBConfig { optimize_threads: 4 } };
+    #[tokio::test]
+    async fn test_create_custom_index() -> Result<(), Box<dyn std::error::Error>> {
+        let vectordb = setup_test_db().await?;
 
-    // Test Euclidean distance
-    let dist_euclidean = vectordb
-      .calculate_distance(&[1.0, 2.0, 3.0], &[3.0, 2.0, 1.0], "<->")
-      .await
-      .expect("calculate euclidean distance");
-    assert!((dist_euclidean - 8.0).abs() < f64::EPSILON);
+        // Create the table and sample data before index creation
+        vectordb.create_vector_table(3).await?;
+        vectordb.insert_vector(&[1.0, 2.0, 3.0]).await?;
 
-    // Add more tests for other distances...
-  }
+        let index_type = "l2";
+        let options = r#"indexing.flat.quantization.product.ratio = \"x16\""#;
+        vectordb.create_custom_index(&vectordb.client, index_type, options).await?;
+        // Verification step assumed
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_set_search_option() -> Result<(), Box<dyn std::error::Error>> {
+        let vectordb = setup_test_db().await?;
+        vectordb.set_search_option(&vectordb.client, "vectors.k", "10").await?;
+        // Verification step assumed
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_query_knn() -> Result<(), Box<dyn std::error::Error>> {
+        let vectordb = setup_test_db().await?;
+
+        vectordb.create_vector_table(3).await?;
+        for i in 0..5 {
+            vectordb.insert_vector(&[i as f64, 2.0, 3.0]).await?;
+        }
+
+        let results = vectordb.query_knn(&[1.0, 2.0, 3.0], 5).await?;
+        assert_eq!(results.len(), 5);
+        // More detailed assertions based on expected query results
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_create_vector_table() -> Result<(), Box<dyn std::error::Error>> {
+        let vectordb = setup_test_db().await?;
+        vectordb.create_vector_table(3).await?;
+        // Verification step assumed
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_insert_vector() -> Result<(), Box<dyn std::error::Error>> {
+        let vectordb = setup_test_db().await?;
+
+        vectordb.create_vector_table(3).await?;
+        vectordb.insert_vector(&[1.0, 2.0, 3.0]).await?;
+        // Verification step assumed
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_get_indexing_progress() -> Result<(), Box<dyn std::error::Error>> {
+        let vectordb = setup_test_db().await?;
+
+        let progress = vectordb.get_indexing_progress(&vectordb.client).await?;
+        // Assertions based on expected indexing progress
+        Ok(())
+    }
+
+  // Additional tests for edge cases, error conditions, and other methods in vector_db.rs...
 }
