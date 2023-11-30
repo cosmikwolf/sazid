@@ -1,7 +1,7 @@
 // vector_db.rs
 
 // A Rust module for database interactions with tokio_postgres and pgvecto.rs.
-use tokio_postgres::{Client, Error};
+use tokio_postgres::{error::SqlState, types::ToSql, Client, Error};
 
 use super::errors::SazidError;
 
@@ -22,19 +22,15 @@ impl VectorDB {
   // Methods to interact with pgvecto.rs...
 
   // Create the pgvecto extension to enable vector functionality
-  // Updated method to enable the pgvecto extension
   pub async fn enable_extension(&self) -> Result<(), Error> {
-    const CHECK_EXTENSION_EXISTS: &str = "SELECT EXISTS(SELECT * FROM pg_extension WHERE extname = 'vectors');";
-    const CREATE_EXTENSION: &str = "CREATE EXTENSION IF NOT EXISTS vectors;"; // Enhanced to use 'IF NOT EXISTS'
+    const CREATE_EXTENSION_QUERY: &str = "CREATE EXTENSION IF NOT EXISTS vectors;";
 
-    // First, check if the extension already exists.
-    let rows = self.client.query(CHECK_EXTENSION_EXISTS, &[]).await?;
-
-    // If it doesn't exist, create it.
-    if rows.is_empty() || !rows[0].get::<usize, bool>(0) {
-      self.client.batch_execute(CREATE_EXTENSION).await?;
-    };
-    Ok(())
+    // Attempt to create the extension, handling any potential unique constraint errors.
+    match self.client.batch_execute(CREATE_EXTENSION_QUERY).await {
+      Ok(_) => Ok(()),                                                   // If successful, return Ok
+      Err(e) if e.code() == Some(&SqlState::UNIQUE_VIOLATION) => Ok(()), // If the extension already exists, ignore the error
+      Err(e) => Err(e),                                                  // For other errors, return the error
+    }
   }
 
   // Method to create index with custom options
@@ -70,11 +66,17 @@ impl VectorDB {
 
   // Insert a vector
   pub async fn insert_vector(&self, vector: &[f64]) -> Result<(), Error> {
-    let query = "INSERT INTO items (embedding) VALUES ($1);";
-    self.client.execute(query, &[&vector]).await?;
+    // Convert &[f64] to a string representation of a vector
+    let vector_string = format!("'[{}]'", vector.iter().map(ToString::to_string).collect::<Vec<String>>().join(","));
+    // Prepare the SQL query to insert the vector
+    println!("{}", vector_string);
+    let query = "INSERT INTO items (embedding) VALUES ($1), ($1);";
+
+    // Execute the query using the string representation
+    self.client.query_one(query, &[&vector_string]).await?;
+
     Ok(())
   }
-
   // Calculate distance between vectors using specified operator
   pub async fn calculate_distance(
     &self,
