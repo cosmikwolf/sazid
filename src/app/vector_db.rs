@@ -25,6 +25,7 @@ impl VectorDB {
   // Methods to interact with pgvecto.rs...
 
   // Create the pgvecto extension to enable vector functionality
+  // Updated method to enable the pgvecto extension
   pub async fn enable_extension(&self) -> Result<(), Error> {
     self.client.batch_execute(ENABLE_PGVECTO_EXTENSION).await
   }
@@ -50,6 +51,15 @@ impl VectorDB {
     let mut results = Vec::new();
     for row in rows {
       results.push(row.get(1));
+    const CHECK_EXTENSION_EXISTS: &str = "SELECT EXISTS(SELECT * FROM pg_extension WHERE extname = 'vectors');";
+    const CREATE_EXTENSION: &str = "CREATE EXTENSION IF NOT EXISTS vectors;"; // Enhanced to use 'IF NOT EXISTS'
+
+    // First, check if the extension already exists.
+    let rows = self.client.query(CHECK_EXTENSION_EXISTS, &[]).await?;
+    
+    // If it doesn't exist, create it.
+    if rows.is_empty() || rows[0].get::<usize, bool>(0) == false {
+        self.client.batch_execute(CREATE_EXTENSION).await?;
     }
     Ok(results)
   }
