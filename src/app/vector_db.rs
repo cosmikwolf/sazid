@@ -67,13 +67,13 @@ impl VectorDB {
   // Insert a vector
   pub async fn insert_vector(&self, vector: &[f64]) -> Result<(), Error> {
     // Convert &[f64] to a string representation of a vector
-    let vector_string = format!("'[{}]'", vector.iter().map(ToString::to_string).collect::<Vec<String>>().join(","));
+    let vector_string = format!(
+      "INSERT INTO items (embedding) VALUES ('[{}]');",
+      vector.iter().map(ToString::to_string).collect::<Vec<String>>().join(",")
+    );
     // Prepare the SQL query to insert the vector
-    println!("{}", vector_string);
-    let query = "INSERT INTO items (embedding) VALUES ($1), ($1);";
+    self.client.batch_execute(vector_string.as_str()).await?;
 
-    // Execute the query using the string representation
-    self.client.query_one(query, &[&vector_string]).await?;
 
     Ok(())
   }
