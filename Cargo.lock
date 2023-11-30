@@ -2823,6 +2823,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "postgres"
+version = "0.19.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7915b33ed60abc46040cbcaa25ffa1c7ec240668e0477c4f3070786f5916d451"
+dependencies = [
+ "bytes",
+ "fallible-iterator",
+ "futures-util",
+ "log",
+ "tokio",
+ "tokio-postgres",
+]
+
+[[package]]
 name = "postgres-protocol"
 version = "0.6.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3506,6 +3520,7 @@ dependencies = [
  "nu-ansi-term 0.49.0",
  "once_cell",
  "patch",
+ "postgres",
  "pretty_assertions",
  "pulldown-cmark",
  "pulldown-cmark-mdcat",
