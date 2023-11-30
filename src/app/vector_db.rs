@@ -17,8 +17,8 @@ const ENABLE_PGVECTO_EXTENSION: &str = "DROP EXTENSION IF EXISTS vectors; CREATE
 
 // Struct to represent the vector database
 pub struct VectorDB {
-  pub(crate) client: Client,
-  pub(crate) config: VectorDBConfig,
+  pub client: Client,
+  pub config: VectorDBConfig,
 }
 
 impl VectorDB {
