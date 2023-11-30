@@ -27,4 +27,19 @@ mod vector_db_tests {
     let db = VectorDB::new("host=localhost user=tenkai dbname=postgres").await.expect("Failed to create VectorDB");
     assert!(VectorDB::enable_extension(&db.client).await.is_ok());
   }
+
+  #[tokio::test]
+  async fn test_calculate_distance() {
+    let client = setup_test_db().await.expect("setup test db");
+    let vectordb = VectorDB { client, config: VectorDBConfig { optimize_threads: 4 } };
+
+    // Test Euclidean distance
+    let dist_euclidean = vectordb
+      .calculate_distance(&[1.0, 2.0, 3.0], &[3.0, 2.0, 1.0], "<->")
+      .await
+      .expect("calculate euclidean distance");
+    assert!((dist_euclidean - 8.0).abs() < f64::EPSILON);
+
+    // Add more tests for other distances...
+  }
 }
