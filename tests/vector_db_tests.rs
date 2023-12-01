@@ -1,7 +1,38 @@
 #[cfg(test)]
 mod vector_db_tests {
-  use sazid::app::vector_db::*;
+  use sazid::app::embeddings::vector_db::*;
   use tokio_postgres::{Client, NoTls};
+
+  #[tokio::test]
+  async fn test_insert_text_embedding() -> Result<(), Box<dyn std::error::Error>> {
+    let db = setup_test_db().await?;
+    let text = "Example text";
+    let embedding = vec![0.1, 0.2, 0.3]; // Example embedding
+    db.insert_text_embedding(text, &embedding).await?;
+    // To validate the insertion, you might query the database and compare the result
+    // This requires implementing a query function in VectorDB
+    Ok(())
+  }
+
+  #[tokio::test]
+  async fn test_search_similar_texts() -> Result<(), Box<dyn std::error::Error>> {
+    let db = setup_test_db().await?;
+    let query_embedding = vec![0.1, 0.2, 0.3]; // Example embedding
+    let similar_text_ids = db.search_similar_texts(&query_embedding, 5).await?;
+    assert_eq!(similar_text_ids.len(), 5);
+    // You would also verify that the IDs correspond to texts similar to the query_embedding
+    Ok(())
+  }
+
+  #[tokio::test]
+  async fn test_get_text_by_id() -> Result<(), Box<dyn std::error::Error>> {
+    let db = setup_test_db().await?;
+    let text_id = 1; // Example text ID
+    let text = db.get_text_by_id(text_id).await?;
+    assert!(!text.is_empty(), "Retrieved text should not be empty");
+    // Verify that the text matches the expected result based on the ID
+    Ok(())
+  }
 
   // Helper function to set up the test database connection
   async fn setup_test_db() -> Result<VectorDB, Box<dyn std::error::Error>> {
