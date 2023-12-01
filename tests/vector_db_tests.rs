@@ -1,16 +1,34 @@
 #[cfg(test)]
+
 mod vector_db_tests {
   use sazid::app::embeddings::vector_db::*;
   use tokio_postgres::{Client, NoTls};
 
-  #[tokio::test]
-  async fn test_insert_text_embedding() -> Result<(), Box<dyn std::error::Error>> {
-    let db = setup_test_db().await?;
-    let text = "Example text";
-    let embedding = vec![0.1, 0.2, 0.3]; // Example embedding
-    db.insert_text_embedding(text, &embedding).await?;
-    // To validate the insertion, you might query the database and compare the result
-    // This requires implementing a query function in VectorDB
+  // Helper function to set up the test database connection
+  async fn setup_test_db() -> Result<VectorDB, Box<dyn std::error::Error>> {
+    let (client, connection) =
+      tokio_postgres::connect("host=localhost user=postgres password=postgres-one-two-three-password", NoTls).await?;
+
+    tokio::spawn(async move {
+      if let Err(e) = connection.await {
+        eprintln!("Connection error: {}", e);
+      }
+    });
+
+    let vectordb = VectorDB { client, config: VectorDBConfig { optimize_threads: 4 } };
+
+    // Ensure the extension is added
+    vectordb.enable_extension().await?;
+    // Ensure the test table exists; adjust dimensions as needed
+    vectordb.create_category_table("test", 768).await?;
+
+    Ok(vectordb)
+  }
+
+  // Shared cleanup function to be called after each test
+  async fn cleanup_test_db(client: &Client) -> Result<(), Box<dyn std::error::Error>> {
+    // Drop the sequence and table if they exist. The CASCADE option will take care of any dependent objects.
+    client.batch_execute("DROP TABLE IF EXISTS items CASCADE;").await?;
     Ok(())
   }
 
@@ -25,33 +43,19 @@ mod vector_db_tests {
   }
 
   #[tokio::test]
-  async fn test_get_text_by_id() -> Result<(), Box<dyn std::error::Error>> {
+  async fn test_insert_text_and_get_by_id() -> Result<(), Box<dyn std::error::Error>> {
     let db = setup_test_db().await?;
-    let text_id = 1; // Example text ID
-    let text = db.get_text_by_id(text_id).await?;
-    assert!(!text.is_empty(), "Retrieved text should not be empty");
-    // Verify that the text matches the expected result based on the ID
-    Ok(())
-  }
+    db.enable_extension().await?;
+    let text = "Example text";
+    let embedding = vec![0.1, 0.2, 0.3]; // Example embedding
+    db.insert_text_embedding("text", text, &embedding).await?;
 
-  // Helper function to set up the test database connection
-  async fn setup_test_db() -> Result<VectorDB, Box<dyn std::error::Error>> {
-    let (client, connection) =
-      tokio_postgres::connect("host=localhost user=postgres password=postgres-one-two-three-password", NoTls).await?;
+    // Assuming the embedding insertion returns the ID of the inserted record,
+    // or you retrieve it via another query after insertion
+    let inserted_id = 1; // This ID should be retrieved after insertion
+    let retrieved_text = db.get_text_by_id(inserted_id).await?;
+    assert_eq!(text, retrieved_text, "Retrieved text does not match inserted text");
 
-    tokio::spawn(async move {
-      if let Err(e) = connection.await {
-        eprintln!("Connection error: {}", e);
-      }
-    });
-
-    Ok(VectorDB { client, config: VectorDBConfig { optimize_threads: 4 } })
-  }
-
-  // Shared cleanup function to be called after each test
-  async fn cleanup_test_db(client: &Client) -> Result<(), Box<dyn std::error::Error>> {
-    // Drop the sequence and table if they exist. The CASCADE option will take care of any dependent objects.
-    client.batch_execute("DROP TABLE IF EXISTS items CASCADE;").await?;
     Ok(())
   }
 
@@ -103,7 +107,7 @@ mod vector_db_tests {
     }
 
     // Convert &[f64] to a string representation PostgreSQL can understand
-    let vector_as_string = vec![1.0, 2.0, 3.0].iter().map(|val| val.to_string()).collect::<Vec<String>>().join(",");
+    let vector_as_string = [1.0, 2.0, 3.0].iter().map(|val| val.to_string()).collect::<Vec<String>>().join(",");
     let query = format!(
       "SELECT id, embedding::text FROM items ORDER BY embedding <-> ARRAY[{}]::real[] LIMIT $1;",
       vector_as_string
@@ -114,7 +118,7 @@ mod vector_db_tests {
 
     let mut results = Vec::new();
     for row in rows {
-      let id: i64 = row.get(0);
+      let _id: i64 = row.get(0);
       let embedding_text: String = row.get(1);
       // Parse the text back into a vector or an appropriate format for further use
       results.push(embedding_text);
@@ -152,7 +156,7 @@ mod vector_db_tests {
   async fn test_get_indexing_progress() -> Result<(), Box<dyn std::error::Error>> {
     let vectordb = setup_test_db().await?;
     vectordb.enable_extension().await?;
-    let progress = VectorDB::get_indexing_progress(&vectordb.client).await?;
+    let _progress = VectorDB::get_indexing_progress(&vectordb.client).await?;
     // Assertions based on expected indexing progress
     vectordb.client.batch_execute("DROP TABLE IF EXISTS items;").await?;
     Ok(())

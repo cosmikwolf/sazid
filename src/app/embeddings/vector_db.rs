@@ -29,10 +29,10 @@ impl VectorDB {
     let table_name = format!("{}_embeddings", sanitized_category_name);
     let create_table_query = format!(
       "CREATE TABLE IF NOT EXISTS {} (
-                id SERIAL PRIMARY KEY,
-                text TEXT NOT NULL,
-                embedding vector({}) NOT NULL
-            );",
+        id SERIAL PRIMARY KEY,
+        text TEXT NOT NULL,
+        embedding vector({}) NOT NULL
+      );",
       table_name, dimensions
     );
     self.client.batch_execute(&create_table_query).await
@@ -61,22 +61,23 @@ impl VectorDB {
     }
   }
 
-  // Method to insert text with its embedding into the correct category table using execute
+  // Method to insert text with its embedding into the correct category table using batch_execute
   pub async fn insert_text_embedding(&self, category_name: &str, text: &str, embedding: &[f64]) -> Result<(), Error> {
+    // Ensure the category table exists before attempting to insert
+    self.create_category_table(category_name, embedding.len()).await?;
+
     let sanitized_category_name = Self::sanitize_category_name(category_name);
     let table_name = format!("{}_embeddings", sanitized_category_name);
-    let query = format!("INSERT INTO {} (text, embedding) VALUES ($1, $2::real[])", table_name);
+    let embedding_as_string = embedding.iter().map(|e| e.to_string()).collect::<Vec<_>>().join(",");
 
-    // Convert &[f64] to a string representation acceptable by PostgreSQL
-    let embedding_as_sql_array = embedding.iter().map(ToString::to_string).collect::<Vec<String>>().join(",");
-    let embedding_as_sql_text = format!("ARRAY[{}]", embedding_as_sql_array);
+    // Concatenate full SQL command as one string
+    let command = format!(
+      "INSERT INTO {} (text, embedding) VALUES ('{}', ARRAY[{}]::real[]);",
+      table_name, text, embedding_as_string
+    );
 
-    // Prepare the SQL statement
-    let statement: Statement = self.client.prepare(&query).await?;
-
-    // Execute the SQL statement with the parameters
-    self.client.execute(&statement, &[&text, &embedding_as_sql_text]).await?;
-    Ok(())
+    // Use batch_execute for SQL command without parameterized query
+    self.client.batch_execute(&command).await
   }
 
   // Utility function to sanitize category names for table creation
@@ -92,7 +93,7 @@ impl VectorDB {
       "SELECT id FROM text_embeddings ORDER BY embedding <=> ARRAY[{}]::real[] LIMIT $1",
       embedding_as_sql_array
     );
-    let rows = self.client.query(&query, &[&limit]).await?;
+    let rows = self.client.query(&query, &[&(limit as i64)]).await?;
 
     let mut ids = Vec::new();
     for row in rows {
@@ -218,4 +219,3 @@ pub struct IndexProgress {
   pub idx_write: i32,
   pub idx_config: String,
 }
-
