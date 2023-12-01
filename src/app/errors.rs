@@ -14,11 +14,13 @@ pub enum SazidError {
   IoError(io::Error),
   Other(String),
   ChunkifierError(ChunkifierError),
+  TokioPosgresError(tokio_postgres::Error),
 }
 
 impl fmt::Display for SazidError {
   fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
     match self {
+      SazidError::TokioPosgresError(err) => write!(f, "TokioPosgresError: {}", err),
       SazidError::ChunkifierError(err) => write!(f, "ChunkifierError: {}", err),
       SazidError::ParseError(err) => write!(f, "ParseError: {}", err),
       SazidError::ConfigError(err) => write!(f, "ConfigError: {}", err),
@@ -30,6 +32,16 @@ impl fmt::Display for SazidError {
   }
 }
 
+impl From<tokio_postgres::Error> for SazidError {
+  fn from(err: tokio_postgres::Error) -> SazidError {
+    SazidError::TokioPosgresError(err)
+  }
+}
+impl From<OpenAIError> for SazidError {
+  fn from(err: OpenAIError) -> SazidError {
+    SazidError::OpenAiError(err)
+  }
+}
 // Implement TryFrom with FromResidual for the custom error type
 impl TryFrom<Result<(), config::ConfigError>> for SazidError {
   type Error = config::ConfigError;

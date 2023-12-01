@@ -1,9 +1,13 @@
 // vector_db.rs
 
+use regex::Regex;
 // A Rust module for database interactions with tokio_postgres and pgvecto.rs.
-use tokio_postgres::{error::SqlState, types::ToSql, Client, Error};
+use tokio_postgres::{error::SqlState, Client, Error, Statement};
 
-use super::errors::SazidError;
+use super::{
+  super::errors::SazidError,
+  openai_embeddings::{create_embedding, EmbeddingModel},
+};
 
 // Struct to represent vector_db configuration
 #[derive(Debug)]
@@ -19,7 +23,90 @@ pub struct VectorDB {
 }
 
 impl VectorDB {
-  // Methods to interact with pgvecto.rs...
+  // Function to create a dynamic table for text embeddings based on category
+  pub async fn create_category_table(&self, category_name: &str, dimensions: usize) -> Result<(), Error> {
+    let sanitized_category_name = Self::sanitize_category_name(category_name);
+    let table_name = format!("{}_embeddings", sanitized_category_name);
+    let create_table_query = format!(
+      "CREATE TABLE IF NOT EXISTS {} (
+                id SERIAL PRIMARY KEY,
+                text TEXT NOT NULL,
+                embedding vector({}) NOT NULL
+            );",
+      table_name, dimensions
+    );
+    self.client.batch_execute(&create_table_query).await
+  }
+
+  // Function to insert text and generate its embedding into the correct category table
+  pub async fn insert_text_and_generate_embedding(
+    &self,
+    category_name: &str,
+    text: &str,
+    model: EmbeddingModel,
+  ) -> Result<(), SazidError> {
+    let embedding_response = create_embedding(text.to_string(), model).await.map_err(SazidError::from)?;
+    let embeddings: Vec<Vec<f64>> = embedding_response
+      .data
+      .into_iter()
+      .map(|d| d.embedding.iter().map(|e| *e as f64).collect::<Vec<f64>>())
+      .collect();
+    if let Some(embedding) = embeddings.first() {
+      match self.insert_text_embedding(category_name, text, embedding).await {
+        Ok(_) => Ok(()),
+        Err(e) => Err(SazidError::from(e)),
+      }
+    } else {
+      Err(SazidError::Other("Failed to generate embedding".to_string()))
+    }
+  }
+
+  // Method to insert text with its embedding into the correct category table using execute
+  pub async fn insert_text_embedding(&self, category_name: &str, text: &str, embedding: &[f64]) -> Result<(), Error> {
+    let sanitized_category_name = Self::sanitize_category_name(category_name);
+    let table_name = format!("{}_embeddings", sanitized_category_name);
+    let query = format!("INSERT INTO {} (text, embedding) VALUES ($1, $2::real[])", table_name);
+
+    // Convert &[f64] to a string representation acceptable by PostgreSQL
+    let embedding_as_sql_array = embedding.iter().map(ToString::to_string).collect::<Vec<String>>().join(",");
+    let embedding_as_sql_text = format!("ARRAY[{}]", embedding_as_sql_array);
+
+    // Prepare the SQL statement
+    let statement: Statement = self.client.prepare(&query).await?;
+
+    // Execute the SQL statement with the parameters
+    self.client.execute(&statement, &[&text, &embedding_as_sql_text]).await?;
+    Ok(())
+  }
+
+  // Utility function to sanitize category names for table creation
+  fn sanitize_category_name(category_name: &str) -> String {
+    let regex = Regex::new(r"[^a-zA-Z0-9_]+").unwrap();
+    regex.replace_all(category_name, "_").into_owned()
+  }
+
+  // Method to perform a cosine similarity search and return the IDs of the most similar text objects
+  pub async fn search_similar_texts(&self, query_embedding: &[f64], limit: i32) -> Result<Vec<i32>, Error> {
+    let embedding_as_sql_array = query_embedding.iter().map(|val| val.to_string()).collect::<Vec<String>>().join(",");
+    let query = format!(
+      "SELECT id FROM text_embeddings ORDER BY embedding <=> ARRAY[{}]::real[] LIMIT $1",
+      embedding_as_sql_array
+    );
+    let rows = self.client.query(&query, &[&limit]).await?;
+
+    let mut ids = Vec::new();
+    for row in rows {
+      ids.push(row.get(0));
+    }
+    Ok(ids)
+  }
+
+  // Method to retrieve the original text based on its ID
+  pub async fn get_text_by_id(&self, text_id: i32) -> Result<String, Error> {
+    let query = "SELECT text FROM text_embeddings WHERE id = $1";
+    let row = self.client.query_one(query, &[&text_id]).await?;
+    Ok(row.get(0))
+  }
 
   // Create the pgvecto extension to enable vector functionality
   pub async fn enable_extension(&self) -> Result<(), Error> {
@@ -73,7 +160,6 @@ impl VectorDB {
     );
     // Prepare the SQL query to insert the vector
     self.client.batch_execute(vector_string.as_str()).await?;
-
 
     Ok(())
   }
@@ -132,3 +218,4 @@ pub struct IndexProgress {
   pub idx_write: i32,
   pub idx_config: String,
 }
+
