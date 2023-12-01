@@ -17,11 +17,8 @@ mod vector_db_tests {
 
     let vectordb = VectorDB { client, config: VectorDBConfig { optimize_threads: 4 } };
 
-    // Ensure the extension is added
     vectordb.enable_extension().await?;
-    // Ensure the test table exists; adjust dimensions as needed
-    vectordb.create_category_table("test", 768).await?;
-
+    vectordb.create_category_table("test", 3).await?;
     Ok(vectordb)
   }
 
@@ -31,31 +28,34 @@ mod vector_db_tests {
     client.batch_execute("DROP TABLE IF EXISTS items CASCADE;").await?;
     Ok(())
   }
-
   #[tokio::test]
   async fn test_search_similar_texts() -> Result<(), Box<dyn std::error::Error>> {
     let db = setup_test_db().await?;
-    let query_embedding = vec![0.1, 0.2, 0.3]; // Example embedding
+    db.create_vector_table(3).await?;
+    for i in 1..5 {
+      db.insert_vector(&[i as f64, i as f64, i as f64]).await?;
+    }
+    let query_embedding = vec![0.0, 0.0, 0.0];
     let similar_text_ids = db.search_similar_texts(&query_embedding, 5).await?;
-    assert_eq!(similar_text_ids.len(), 5);
-    // You would also verify that the IDs correspond to texts similar to the query_embedding
+    // Assuming the query vector itself is not inserted, expecting one less than the number of inserted vectors
+    assert_eq!(similar_text_ids.len(), 4, "Should retrieve 4 similar texts");
     Ok(())
   }
 
   #[tokio::test]
-  async fn test_insert_text_and_get_by_id() -> Result<(), Box<dyn std::error::Error>> {
+  async fn test_insert_text_and_retrieve_by_id() -> Result<(), Box<dyn std::error::Error>> {
     let db = setup_test_db().await?;
-    db.enable_extension().await?;
     let text = "Example text";
     let embedding = vec![0.1, 0.2, 0.3]; // Example embedding
-    db.insert_text_embedding("text", text, &embedding).await?;
+    db.insert_text_embedding("test", text, &embedding).await?;
 
-    // Assuming the embedding insertion returns the ID of the inserted record,
-    // or you retrieve it via another query after insertion
-    let inserted_id = 1; // This ID should be retrieved after insertion
-    let retrieved_text = db.get_text_by_id(inserted_id).await?;
+    // Retrieve the inserted text and embedding by ID
+    let text_id: i32 =
+      db.client.query_one("SELECT id FROM test_embeddings ORDER BY id DESC LIMIT 1", &[]).await?.get(0);
+    let retrieved_text = db.get_text_by_id("test", text_id).await?;
     assert_eq!(text, retrieved_text, "Retrieved text does not match inserted text");
 
+    cleanup_test_db(&db.client).await?;
     Ok(())
   }
 

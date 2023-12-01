@@ -2,7 +2,7 @@
 
 use regex::Regex;
 // A Rust module for database interactions with tokio_postgres and pgvecto.rs.
-use tokio_postgres::{error::SqlState, Client, Error, Statement};
+use tokio_postgres::{error::SqlState, Client, Error};
 
 use super::{
   super::errors::SazidError,
@@ -103,10 +103,14 @@ impl VectorDB {
   }
 
   // Method to retrieve the original text based on its ID
-  pub async fn get_text_by_id(&self, text_id: i32) -> Result<String, Error> {
-    let query = "SELECT text FROM text_embeddings WHERE id = $1";
-    let row = self.client.query_one(query, &[&text_id]).await?;
-    Ok(row.get(0))
+  pub async fn get_text_by_id(&self, category_name: &str, text_id: i32) -> Result<String, Error> {
+    let sanitized_category_name = Self::sanitize_category_name(category_name);
+    let table_name = format!("{}_embeddings", sanitized_category_name);
+    let query = format!("SELECT text FROM {} WHERE id = $1", table_name);
+
+    let rows = self.client.query(&query, &[&text_id]).await?;
+    let text: String = rows.get(0).expect("failed to get text").get(0);
+    Ok(text)
   }
 
   // Create the pgvecto extension to enable vector functionality
