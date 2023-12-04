@@ -4,12 +4,7 @@ use regex::Regex;
 // A Rust module for database interactions with tokio_postgres and pgvecto.rs.
 use tokio_postgres::{error::SqlState, types::ToSql, Client, Error};
 
-use super::{
-  super::errors::SazidError,
-  openai_embeddings::{create_embedding, EmbeddingModel},
-  types::EmbeddingVector,
-};
-
+use super::{super::errors::SazidError, types::EmbeddingVector};
 // Struct to represent vector_db configuration
 #[derive(Debug)]
 pub struct VectorDBConfig {
@@ -31,7 +26,7 @@ impl VectorDB {
     dimensions: usize,
     include_filename: bool,
   ) -> Result<(), Error> {
-    let table_name = Self::sanitize_category_name(category_name);
+    let table_name = Self::get_table_name(category_name);
     let create_table_query = format!(
       "CREATE TABLE IF NOT EXISTS {} (
         id bigserial PRIMARY KEY,
@@ -50,54 +45,41 @@ impl VectorDB {
     self.client.batch_execute(&create_table_query).await
   }
 
-  // Function to insert text and generate its embedding into the correct category table
-  pub async fn insert_text_and_generate_embedding(
-    &self,
-    category_name: &str,
-    text: &str,
-    model: EmbeddingModel,
-  ) -> Result<(), SazidError> {
-    let embedding_response = create_embedding(text.to_string(), model).await.map_err(SazidError::from)?;
-    let embeddings: Vec<Vec<f64>> = embedding_response
-      .data
-      .into_iter()
-      .map(|d| d.embedding.iter().map(|e| *e as f64).collect::<Vec<f64>>())
-      .collect();
-
-    if let Some(embedding) = embeddings.first() {
-      match self.insert_text_embedding(category_name, EmbeddingVector::new(embedding.to_vec(), text.to_string())).await
-      {
-        Ok(_) => Ok(()),
-        Err(e) => Err(SazidError::from(e)),
-      }
-    } else {
-      Err(SazidError::Other("Failed to generate embedding".to_string()))
+  pub async fn list_embeddings_categories(&self) -> Result<Vec<String>, SazidError> {
+    // a method to query the database for all table names that have a suffix of _embedding
+    let query = "SELECT table_name FROM information_schema.tables WHERE table_name LIKE '%_embedding';";
+    let rows = self.client.query(query, &[]).await?;
+    println!("rows: {:?}", rows);
+    let mut categories = Vec::new();
+    for row in rows {
+      categories.push(row.get(0));
     }
+    Ok(categories)
   }
-
   // Method to insert text with its embedding into the correct category table using batch_execute
   pub async fn insert_text_embedding(&self, category_name: &str, embedding: EmbeddingVector) -> Result<u64, Error> {
     // Ensure the category table exists before attempting to insert
     self.create_category_table(category_name, embedding.len(), false).await?;
 
-    let table_name = Self::sanitize_category_name(category_name);
-
+    let table_name = Self::get_table_name(category_name);
     // Concatenate full SQL command as one string
     let command = format!("INSERT INTO {} (text, embedding) VALUES ($1, $2);", table_name);
-
+    println!("command: {:?}", command);
     // Create a slice of references to trait objects
     let text_params: &(dyn ToSql + Sync) = &embedding.data.as_str();
+    println!("text_params: {:?}", text_params);
     let embedding_params: &(dyn ToSql + Sync) = &embedding;
+    println!("embedding_params: {:?}", embedding_params);
 
     // Pass the parameters as a slice of trait objects implementing ToSql
     self.client.execute(&command, &[text_params, embedding_params]).await
   }
 
   // Utility function to sanitize category names for table creation
-  fn sanitize_category_name(category_name: &str) -> String {
+  pub fn get_table_name(category_name: &str) -> String {
     let regex = Regex::new(r"[^a-zA-Z0-9_]+").unwrap();
     let table_name = regex.replace_all(category_name, "_").into_owned();
-    format!("{}_embeddings", table_name)
+    format!("{}_embedding", table_name)
   }
 
   // Method to perform a cosine similarity search and return the IDs of the most similar text objects
@@ -107,7 +89,7 @@ impl VectorDB {
     query_embedding: &[f64],
     limit: i32,
   ) -> Result<Vec<EmbeddingVector>, SazidError> {
-    let table_name = Self::sanitize_category_name(category_name);
+    let table_name = Self::get_table_name(category_name);
     let embedding_as_sql_array = query_embedding.iter().map(|val| val.to_string()).collect::<Vec<String>>().join(",");
     let query = format!(
       // "SELECT * ORDER BY embedding <=> {}::vector LIMIT {}", table_name, embedding_as_sql_array
@@ -115,17 +97,20 @@ impl VectorDB {
       table_name, embedding_as_sql_array, limit
     );
     let rows = self.client.simple_query(&query).await?;
-    let vectors = EmbeddingVector::from_simple_query_messages(&rows)?;
+    let vectors = EmbeddingVector::from_simple_query_messages(&rows, category_name)?;
     Ok(vectors)
   }
 
   // Method to retrieve the original text based on its ID
-  pub async fn get_text_by_id(&self, category_name: &str, text_id: i32) -> Result<String, Error> {
-    let table_name = Self::sanitize_category_name(category_name);
+  pub async fn get_text_by_id(&self, category_name: &str, text_id: i64) -> Result<String, Error> {
+    let table_name = Self::get_table_name(category_name);
     let query = format!("SELECT text FROM {} WHERE id = $1", table_name);
 
     let rows = self.client.query(&query, &[&text_id]).await?;
-    let text: String = rows.get(0).expect("failed to get text").get(0);
+    let text: String = rows.get(0).expect("failed to get text").get("text");
+
+    println!("text: {:?}", text);
+
     Ok(text)
   }
 
@@ -142,9 +127,17 @@ impl VectorDB {
   }
 
   // Method to create index with custom options
-  pub async fn create_custom_index(client: &Client, index_type: &str, options: &str) -> Result<(), Error> {
-    let create_index_query =
-      format!("CREATE INDEX ON items USING vectors (embedding {}_ops) WITH (options = $$ {} $$);", index_type, options);
+  pub async fn create_custom_index(
+    client: &Client,
+    category_name: &str,
+    index_type: &str,
+    options: &str,
+  ) -> Result<(), Error> {
+    let table_name = Self::get_table_name(category_name);
+    let create_index_query = format!(
+      "CREATE INDEX ON {} USING vectors (embedding {}_ops) WITH (options = $$ {} $$);",
+      table_name, index_type, options
+    );
     client.batch_execute(&create_index_query).await
   }
 
@@ -166,17 +159,13 @@ impl VectorDB {
     Ok(results)
   }
 
-  // Create a table with a vector column of specified dimensions
-  pub async fn create_vector_table(&self, dimensions: i32) -> Result<(), Error> {
-    let query = format!("CREATE TABLE items (id bigserial PRIMARY KEY, embedding vector({}) NOT NULL);", dimensions);
-    self.client.batch_execute(&query).await
-  }
-
   // Insert a vector
-  pub async fn insert_vector(&self, vector: &[f64]) -> Result<(), Error> {
+  pub async fn insert_vector(&self, category_name: &str, vector: &[f64]) -> Result<(), Error> {
+    let table_name = Self::get_table_name(category_name);
     // Convert &[f64] to a string representation of a vector
     let vector_string = format!(
-      "INSERT INTO items (embedding) VALUES ('[{}]');",
+      "INSERT INTO {} (embedding) VALUES ('[{}]');",
+      table_name,
       vector.iter().map(ToString::to_string).collect::<Vec<String>>().join(",")
     );
     // Prepare the SQL query to insert the vector

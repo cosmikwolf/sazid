@@ -20,6 +20,14 @@ async fn tokio_main() -> Result<()> {
   initialize_panic_handler()?;
   trace_dbg!("app start");
   let args = Cli::parse();
+
+  if args.list_embeddings {
+    //"host=localhost user=postgres password=postgres-one-two-three-password"
+    // let embeddings = sazid::app::embeddings::list_embeddings().await?;
+    // println!("embeddings: {:?}", embeddings);
+    return Ok(());
+  }
+
   let mut app = App::new(args.tick_rate, args.frame_rate, args.local_api).unwrap();
   app.run().await.unwrap();
 

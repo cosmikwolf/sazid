@@ -466,7 +466,7 @@ impl Session<'static> {
     tokio::spawn(async move {
       tx.send(Action::UpdateStatus(Some("Establishing Client Connection".to_string()))).unwrap();
       tx.send(Action::EnterProcessing).unwrap();
-      let client = create_openai_client(openai_config);
+      let client = create_openai_client(&openai_config);
       trace_dbg!("client connection established");
       // tx.send(Action::AddMessage(ChatMessage::SazidSystemMessage(format!("Request Token Count: {}", token_count))))
       //   .unwrap();
@@ -613,11 +613,11 @@ impl Session<'static> {
   }
 }
 
-pub fn create_openai_client(openai_config: OpenAIConfig) -> async_openai::Client<OpenAIConfig> {
+pub fn create_openai_client(openai_config: &OpenAIConfig) -> async_openai::Client<OpenAIConfig> {
   let backoff = ExponentialBackoffBuilder::new() // Ensure backoff crate is added to Cargo.toml
     .with_max_elapsed_time(Some(std::time::Duration::from_secs(60)))
     .build();
-  Client::with_config(openai_config).with_backoff(backoff)
+  Client::with_config(openai_config.clone()).with_backoff(backoff)
 }
 
 pub async fn create_embedding_request(

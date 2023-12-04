@@ -9,6 +9,7 @@ use tokio_util::bytes::{BufMut, BytesMut};
 pub struct EmbeddingVector {
   pub embedding: Vec<f64>,
   pub data: String,
+  pub category: String,
   pub fileinfo: Option<EmbeddingFileInfo>,
 }
 
@@ -17,9 +18,10 @@ pub struct EmbeddingFileInfo {
   pub filename: String,
   pub md5sum: String,
 }
+
 impl EmbeddingVector {
-  pub fn new(embedding: Vec<f64>, data: String) -> Self {
-    EmbeddingVector { embedding, data, fileinfo: None }
+  pub fn new(embedding: Vec<f64>, data: String, category: String) -> Self {
+    EmbeddingVector { embedding, data, category, fileinfo: None }
   }
 
   pub fn len(&self) -> usize {
@@ -35,20 +37,29 @@ impl EmbeddingVector {
     format!("'[{}]'", vec_str)
   }
 
+  pub fn table_name(&self) -> String {
+    format!("{}_embedding", self.category)
+  }
   pub fn from_simple_query_messages(
     simple_query_messages: &[SimpleQueryMessage],
+    category: &str,
   ) -> Result<Vec<EmbeddingVector>, std::io::Error> {
     println!("simple_query_messages: {:#?}", simple_query_messages);
     simple_query_messages
       .iter()
       .filter_map(|simple_query_message| match simple_query_message {
-        SimpleQueryMessage::Row(simple_query_row) => Some(EmbeddingVector::from_simple_query_row(simple_query_row)),
+        SimpleQueryMessage::Row(simple_query_row) => {
+          Some(EmbeddingVector::from_simple_query_row(simple_query_row, category))
+        },
         _ => None,
       })
       .collect::<Result<Vec<EmbeddingVector>, std::io::Error>>()
   }
 
-  pub fn from_simple_query_row(simple_query_row: &SimpleQueryRow) -> Result<EmbeddingVector, std::io::Error> {
+  pub fn from_simple_query_row(
+    simple_query_row: &SimpleQueryRow,
+    category: &str,
+  ) -> Result<EmbeddingVector, std::io::Error> {
     println!("----simple_query_row: {:#?}", simple_query_row);
 
     let text = simple_query_row.get("text").unwrap();
@@ -61,7 +72,7 @@ impl EmbeddingVector {
       .collect::<Result<Vec<f64>, _>>()
       .unwrap();
 
-    Ok(EmbeddingVector::new(embedding, text.to_string()))
+    Ok(EmbeddingVector::new(embedding, text.to_string(), category.to_string()))
   }
 }
 
@@ -73,7 +84,7 @@ impl<'a> FromSql<'a> for EmbeddingVector {
       .split(',')
       .map(|num_str| num_str.parse())
       .collect::<Result<Vec<f64>, _>>()?;
-    Ok(EmbeddingVector { embedding: data_strs, data: String::new(), fileinfo: None })
+    Ok(EmbeddingVector { embedding: data_strs, data: String::new(), category: "".to_string(), fileinfo: None })
   }
 
   fn accepts(ty: &Type) -> bool {
@@ -89,7 +100,6 @@ impl ToSql for EmbeddingVector {
   fn to_sql(&self, _: &Type, out: &mut BytesMut) -> Result<IsNull, Box<dyn Error + Sync + Send>> {
     let vec_str = self.embedding.iter().map(|elem| elem.to_string()).collect::<Vec<String>>().join(",");
     let vec_formatted = format!("[{}]", vec_str);
-    println!("vec_formatted: {:?}", vec_formatted);
     out.put_slice(vec_formatted.as_bytes());
     Ok(IsNull::No)
   }
