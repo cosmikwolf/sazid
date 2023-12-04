@@ -25,15 +25,26 @@ pub struct VectorDB {
 
 impl VectorDB {
   // Function to create a dynamic table for text embeddings based on category
-  pub async fn create_category_table(&self, category_name: &str, dimensions: usize) -> Result<(), Error> {
+  pub async fn create_category_table(
+    &self,
+    category_name: &str,
+    dimensions: usize,
+    include_filename: bool,
+  ) -> Result<(), Error> {
     let table_name = Self::sanitize_category_name(category_name);
     let create_table_query = format!(
       "CREATE TABLE IF NOT EXISTS {} (
         id bigserial PRIMARY KEY,
         text TEXT NOT NULL,
+        {}
         embedding vector({}) NOT NULL
       );",
-      table_name, dimensions
+      table_name,
+      match include_filename {
+        true => "filename TEXT NOT NULL, md5sum TEXT NOT NULL,",
+        false => "",
+      },
+      dimensions
     );
     // println!("create_table_query: {:?}", create_table_query);
     self.client.batch_execute(&create_table_query).await
@@ -67,7 +78,7 @@ impl VectorDB {
   // Method to insert text with its embedding into the correct category table using batch_execute
   pub async fn insert_text_embedding(&self, category_name: &str, embedding: EmbeddingVector) -> Result<u64, Error> {
     // Ensure the category table exists before attempting to insert
-    self.create_category_table(category_name, embedding.len()).await?;
+    self.create_category_table(category_name, embedding.len(), false).await?;
 
     let table_name = Self::sanitize_category_name(category_name);
 

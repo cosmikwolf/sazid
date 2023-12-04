@@ -9,11 +9,17 @@ use tokio_util::bytes::{BufMut, BytesMut};
 pub struct EmbeddingVector {
   pub embedding: Vec<f64>,
   pub data: String,
+  pub fileinfo: Option<EmbeddingFileInfo>,
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub struct EmbeddingFileInfo {
+  pub filename: String,
+  pub md5sum: String,
+}
 impl EmbeddingVector {
   pub fn new(embedding: Vec<f64>, data: String) -> Self {
-    EmbeddingVector { embedding, data }
+    EmbeddingVector { embedding, data, fileinfo: None }
   }
 
   pub fn len(&self) -> usize {
@@ -43,6 +49,8 @@ impl EmbeddingVector {
   }
 
   pub fn from_simple_query_row(simple_query_row: &SimpleQueryRow) -> Result<EmbeddingVector, std::io::Error> {
+    println!("----simple_query_row: {:#?}", simple_query_row);
+
     let text = simple_query_row.get("text").unwrap();
     let embedding = simple_query_row
       .get("embedding")

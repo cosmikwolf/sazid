@@ -19,7 +19,6 @@ mod vector_db_tests {
     let vectordb = VectorDB { client, config: VectorDBConfig { optimize_threads: 4 } };
 
     vectordb.enable_extension().await?;
-    vectordb.create_category_table("test", 3).await?;
     Ok(vectordb)
   }
 

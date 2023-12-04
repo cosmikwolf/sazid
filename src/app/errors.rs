@@ -1,11 +1,11 @@
 use async_openai::error::OpenAIError;
 use std::{fmt, io};
 
-use crate::trace_dbg;
-
 use super::functions::errors::ToolCallError;
+use crate::trace_dbg;
+use thiserror::Error;
 
-#[derive(Debug)]
+#[derive(Debug, Error)]
 pub enum SazidError {
   ParseError(ParseError),
   OpenAiError(OpenAIError),
@@ -31,7 +31,11 @@ impl fmt::Display for SazidError {
     }
   }
 }
-
+impl From<std::io::Error> for SazidError {
+  fn from(err: std::io::Error) -> SazidError {
+    SazidError::IoError(err)
+  }
+}
 impl From<tokio_postgres::Error> for SazidError {
   fn from(err: tokio_postgres::Error) -> SazidError {
     SazidError::TokioPosgresError(err)
@@ -76,6 +80,11 @@ pub struct ParseError {
   message: String,
 }
 
+impl std::error::Error for ParseError {
+  fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+    None
+  }
+}
 impl ParseError {
   pub fn new(message: &str) -> Self {
     trace_dbg!("ParseError: {}", message);
@@ -96,6 +105,15 @@ pub enum ChunkifierError {
   Other(String),
 }
 
+impl std::error::Error for ChunkifierError {
+  fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+    match self {
+      ChunkifierError::IO(err) => Some(err),
+      ChunkifierError::Utf8(err) => Some(err),
+      ChunkifierError::Other(_) => None,
+    }
+  }
+}
 #[derive(Debug)]
 pub enum GPTConnectorError {
   Reqwest(reqwest::Error),

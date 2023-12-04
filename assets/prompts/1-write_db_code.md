@@ -10,7 +10,7 @@ To create an iterative development process for the Rust file `./src/app/vector_d
 4. Check the written code for completeness and accuracy.
 5. If the code is incomplete, prepare the next iteration of code to add; if it is complete, finalize the file content.
 6. During each iteration, consider implementing new functions, improving existing code, and adding or refining tests.
-7. When implementing functionality, utilize the tokio-postgres crate to interface with the database. Example code is below
+7. When implementing functionality, utilize the tokio-postgres crate to interface with the database. Example code is belowH
 8. When implementing SQL code, since we are using a postgres extension called pgvecto.rs, we will need to use special SQL queries. Instructions on using this database are below.
 9. The vector_db.rs file should provide functionality to leverage all of the functionality that pgvecto.rs provides, as exampled below.
 10. Ensure that when you overwrite a file, you include all code in the new file. Omitting any code will result in an incomplete source file
