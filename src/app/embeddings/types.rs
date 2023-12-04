@@ -73,7 +73,7 @@ impl<'a> FromSql<'a> for EmbeddingVector {
       .split(',')
       .map(|num_str| num_str.parse())
       .collect::<Result<Vec<f64>, _>>()?;
-    Ok(EmbeddingVector { embedding: data_strs, data: String::new() })
+    Ok(EmbeddingVector { embedding: data_strs, data: String::new(), fileinfo: None })
   }
 
   fn accepts(ty: &Type) -> bool {
