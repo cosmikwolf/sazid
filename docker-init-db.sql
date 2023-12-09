@@ -1,0 +1,2 @@
+CREATE DATABASE embeddings;
+CREATE DATABASE test;

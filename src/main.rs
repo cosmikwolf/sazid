@@ -21,7 +21,7 @@ async fn tokio_main() -> Result<(), SazidError> {
   trace_dbg!("app start");
   let args = Cli::parse();
   let config = Config::new(args.local_api).unwrap();
-  let db_config = "host=localhost user=postgres password=postgres-one-two-three-password";
+  let db_config = "host=localhost user=docker password=docker database=sazid";
 
   match EmbeddingsManager::run(db_config, args.clone(), config.clone()).await {
     Ok(Some(output)) => {

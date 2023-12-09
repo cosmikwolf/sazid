@@ -37,12 +37,9 @@ color-eyre = "0.6.2"
 config = "0.13.3"
 console-subscriber = "0.2.0"
 # diesel = "2.1.4"
-diesel = { version = "2.1.4", features = [
-  "postgres",
-  "i-implement-a-third-party-backend-and-opt-into-breaking-changes",
-] }
+diesel = { version = "2.1.4", features = ["postgres", "numeric"] }
 pgvector = { version = "0.3.2", features = ["diesel"] }
-# diesel-async = { version = "0.4.1", features = ["postgres"] }
+diesel-async = { version = "0.4.1", features = ["postgres"] }
 crossterm = { version = "0.27.0", features = ["serde", "event-stream"] }
 derive_deref = "1.1.1"
 directories = "5.0.1"
