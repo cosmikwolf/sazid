@@ -45,10 +45,9 @@ pub struct App {
 }
 
 impl App {
-  pub fn new(tick_rate: f64, frame_rate: f64, local_api: bool) -> Result<Self, SazidError> {
+  pub fn new(tick_rate: f64, frame_rate: f64, config: Config) -> Result<Self, SazidError> {
     let home = Home::new();
     let session = Session::new();
-    let config = Config::new(local_api).unwrap();
     let mode = Mode::Home;
     Ok(Self {
       tick_rate,

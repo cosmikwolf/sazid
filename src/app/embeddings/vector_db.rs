@@ -1,10 +1,10 @@
 // vector_db.rs
 
+use futures_util::future::join_all;
 use regex::Regex;
-// A Rust module for database interactions with tokio_postgres and pgvecto.rs.
-use tokio_postgres::{error::SqlState, types::ToSql, Client, Error};
+use tokio_postgres::{error::SqlState, types::ToSql, Client, Error, Row};
 
-use super::{super::errors::SazidError, types::EmbeddingVector};
+use super::{super::errors::SazidError, types::Embedding};
 // Struct to represent vector_db configuration
 #[derive(Debug)]
 pub struct VectorDBConfig {
@@ -45,31 +45,77 @@ impl VectorDB {
     self.client.batch_execute(&create_table_query).await
   }
 
-  pub async fn list_embeddings_categories(&self) -> Result<Vec<String>, SazidError> {
-    // a method to query the database for all table names that have a suffix of _embedding
+  // a type that represents  Vec<Pin<Box<dyn Future<Output = Result<Vec<String>, SazidError>>>>>
+
+  pub async fn get_embeddings_by_category(&self, categories: Vec<String>) -> Result<Vec<Embedding>, SazidError> {
+    let futures_vec: Vec<_> = categories
+      .iter()
+      .map(|category| async move {
+        let table_name = VectorDB::get_table_name(category);
+        self
+          .get_table_rows(&table_name)
+          .await
+          .into_iter()
+          .flat_map(|rows| {
+            rows.into_iter().map(|row| Embedding::try_from_row(row, category).unwrap()).collect::<Vec<Embedding>>()
+          })
+          .collect::<Vec<Embedding>>()
+      })
+      .collect();
+
+    Ok(join_all(futures_vec).await.into_iter().flatten().collect())
+  }
+
+  pub async fn list_categories(&self) -> Result<Vec<String>, SazidError> {
     let query = "SELECT table_name FROM information_schema.tables WHERE table_name LIKE '%_embedding';";
     let rows = self.client.query(query, &[]).await?;
     println!("rows: {:?}", rows);
-    let mut categories = Vec::new();
-    for row in rows {
-      categories.push(row.get(0));
-    }
+    let categories =
+      rows.into_iter().map(|row| row.try_get::<&str, &str>("table_name").unwrap().to_string()).collect::<Vec<String>>();
     Ok(categories)
   }
+
+  pub async fn list_embeddings(&self) -> Result<Vec<Embedding>, SazidError> {
+    let categories = self.list_categories().await?;
+    Ok(
+      join_all(
+        categories
+          .iter()
+          .map(|category| {
+            println!("category: {:?}", category);
+            self.get_embeddings_by_category(vec![category.to_string()])
+          })
+          .collect::<Vec<Embedding>>(),
+      )
+      .await,
+    )
+  }
+
+  pub async fn get_table_rows(&self, table_name: &str) -> Result<Vec<Row>, SazidError> {
+    let query = format!("SELECT * from {};", table_name);
+    Ok(self.client.query(&query, &[]).await?)
+  }
+
+  async fn list_embeddings_in_table(&self, table_name: &str) -> Result<Vec<String>, SazidError> {
+    let query = format!("SELECT * from {};", table_name);
+    let rows = self.client.query(&query, &[]).await?;
+    Ok(rows.iter().map(|row| row.get(0)).collect::<Vec<String>>())
+  }
+
   // Method to insert text with its embedding into the correct category table using batch_execute
-  pub async fn insert_text_embedding(&self, category_name: &str, embedding: EmbeddingVector) -> Result<u64, Error> {
+  pub async fn insert_embedding(&self, category_name: &str, embedding: Embedding) -> Result<u64, Error> {
     // Ensure the category table exists before attempting to insert
     self.create_category_table(category_name, embedding.len(), false).await?;
 
     let table_name = Self::get_table_name(category_name);
+    println!("table_name: {:?}", table_name);
     // Concatenate full SQL command as one string
     let command = format!("INSERT INTO {} (text, embedding) VALUES ($1, $2);", table_name);
-    println!("command: {:?}", command);
     // Create a slice of references to trait objects
-    let text_params: &(dyn ToSql + Sync) = &embedding.data.as_str();
-    println!("text_params: {:?}", text_params);
+    let text_params: &(dyn ToSql + Sync) = &embedding.content();
+    // println!("text_params: {:?}", text_params);
     let embedding_params: &(dyn ToSql + Sync) = &embedding;
-    println!("embedding_params: {:?}", embedding_params);
+    // println!("embedding_params: {:?}", embedding_params);
 
     // Pass the parameters as a slice of trait objects implementing ToSql
     self.client.execute(&command, &[text_params, embedding_params]).await
@@ -88,7 +134,7 @@ impl VectorDB {
     category_name: &str,
     query_embedding: &[f64],
     limit: i32,
-  ) -> Result<Vec<EmbeddingVector>, SazidError> {
+  ) -> Result<Vec<Embedding>, SazidError> {
     let table_name = Self::get_table_name(category_name);
     let embedding_as_sql_array = query_embedding.iter().map(|val| val.to_string()).collect::<Vec<String>>().join(",");
     let query = format!(
@@ -97,7 +143,7 @@ impl VectorDB {
       table_name, embedding_as_sql_array, limit
     );
     let rows = self.client.simple_query(&query).await?;
-    let vectors = EmbeddingVector::from_simple_query_messages(&rows, category_name)?;
+    let vectors = Embedding::from_simple_query_messages(&rows, category_name)?;
     Ok(vectors)
   }
 

@@ -2,7 +2,7 @@
 
 mod vector_db_tests {
   use sazid::app::embeddings::vector_db::*;
-  use sazid::app::{embeddings::types::EmbeddingVector, errors::SazidError};
+  use sazid::app::{embeddings::types::Embedding, errors::SazidError};
   use tokio_postgres::{Client, NoTls};
 
   // Helper function to set up the test database connection
@@ -46,12 +46,10 @@ mod vector_db_tests {
       db.client.batch_execute(&drop_string).await?;
     }
     // Insert texts with embeddings
-    let embedding1 =
-      EmbeddingVector::new(vec![1.0_f64, 2.0_f64, 3.0_f64], "test".to_string(), category_names[0].into());
-    let embedding2 =
-      EmbeddingVector::new(vec![2.0_f64, 2.0_f64, 3.0_f64], "test2".to_string(), category_names[1].into());
-    db.insert_text_embedding(category_names[0], embedding1).await?;
-    db.insert_text_embedding(category_names[1], embedding2).await?;
+    let embedding1 = Embedding::new(vec![1.0_f64, 2.0_f64, 3.0_f64], "test".to_string(), category_names[0].into());
+    let embedding2 = Embedding::new(vec![2.0_f64, 2.0_f64, 3.0_f64], "test2".to_string(), category_names[1].into());
+    db.insert_embedding(category_names[0], embedding1).await?;
+    db.insert_embedding(category_names[1], embedding2).await?;
     let mut categories = db.list_embeddings_categories().await?;
     println!("categories: {:#?}", categories);
     cleanup_test_db(&db.client, category_names[0]).await?;
@@ -74,8 +72,8 @@ mod vector_db_tests {
     for i in 1..=5 {
       let text = format!("Example texxxxt {}", i);
       let embedding =
-        EmbeddingVector::new(vec![1.0_f64, 2.0_f64, 3.0_f64 + i as f64 / 1000000_f64], text, category_name.into());
-      db.insert_text_embedding(category_name, embedding).await?;
+        Embedding::new(vec![1.0_f64, 2.0_f64, 3.0_f64 + i as f64 / 1000000_f64], text, category_name.into());
+      db.insert_embedding(category_name, embedding).await?;
     }
 
     // Query for a vector that is similar to the inserted vectors
@@ -95,13 +93,13 @@ mod vector_db_tests {
     let category = "items_test";
     cleanup_test_db(&db.client, category).await?;
     let table_name = VectorDB::get_table_name(category);
-    let vector = EmbeddingVector::new(vec![1.0, 2.0, 3.0], "testtext".into(), category.into());
+    let vector = Embedding::new(vec![1.0, 2.0, 3.0], "testtext".into(), category.into());
 
-    db.insert_text_embedding(category, vector.clone()).await?;
+    db.insert_embedding(category, vector.clone()).await?;
     let query = format!("SELECT * FROM {} ORDER BY id DESC LIMIT 1", table_name);
     let rows = db.client.simple_query(&query).await?;
     println!("rows: {:?}", rows);
-    let vectors = EmbeddingVector::from_simple_query_messages(&rows, category)?;
+    let vectors = Embedding::from_simple_query_messages(&rows, category)?;
     println!("vectors: {:#?}", vectors);
     assert_eq!(vector, vectors[0]);
     cleanup_test_db(&db.client, category).await?;
@@ -120,8 +118,8 @@ mod vector_db_tests {
     cleanup_test_db(&db.client, category_name).await?;
     let text = get_current_time_string();
     let embedding = vec![0.1, 0.2, 0.3]; // Example embedding
-    let vector = EmbeddingVector::new(embedding, text.clone(), category_name.to_string());
-    db.insert_text_embedding(category_name, vector).await?;
+    let vector = Embedding::new(embedding, text.clone(), category_name.to_string());
+    db.insert_embedding(category_name, vector).await?;
 
     // Retrieve the inserted text and embedding by ID
     let query = format!("SELECT id FROM {} ORDER BY id DESC LIMIT 1", VectorDB::get_table_name(category_name));
@@ -150,8 +148,8 @@ mod vector_db_tests {
     cleanup_test_db(&db.client, category_name).await?;
     let text = get_current_time_string();
     let embedding = vec![0.1, 0.2, 0.3]; // Example embedding
-    let vector = EmbeddingVector::new(embedding, text.clone(), category_name.to_string());
-    db.insert_text_embedding(category_name, vector).await?;
+    let vector = Embedding::new(embedding, text.clone(), category_name.to_string());
+    db.insert_embedding(category_name, vector).await?;
 
     let index_type = "l2";
     // Corrected TOML configuration string
@@ -184,8 +182,8 @@ mod vector_db_tests {
     for i in 0..5 {
       let text = get_current_time_string();
       let vector = vec![0.1 + i as f64, 0.2, 0.3]; // Example embedding
-      let embedding = EmbeddingVector::new(vector, text.clone(), category_name.to_string());
-      db.insert_text_embedding(category_name, embedding).await?;
+      let embedding = Embedding::new(vector, text.clone(), category_name.to_string());
+      db.insert_embedding(category_name, embedding).await?;
     }
 
     // Convert &[f64] to a string representation PostgreSQL can understand

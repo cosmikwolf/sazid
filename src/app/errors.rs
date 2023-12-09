@@ -7,6 +7,9 @@ use thiserror::Error;
 
 #[derive(Debug, Error)]
 pub enum SazidError {
+  DialoguerError(dialoguer::Error),
+  LoggingError(color_eyre::eyre::Report),
+  PanicHandlerError(color_eyre::eyre::Report),
   ParseError(ParseError),
   OpenAiError(OpenAIError),
   FunctionCallError(ToolCallError),
@@ -20,6 +23,9 @@ pub enum SazidError {
 impl fmt::Display for SazidError {
   fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
     match self {
+      SazidError::DialoguerError(err) => write!(f, "DialoguerError: {}", err),
+      SazidError::LoggingError(err) => write!(f, "LoggingError: {}", err),
+      SazidError::PanicHandlerError(err) => write!(f, "PanicHandlerError: {}", err),
       SazidError::TokioPosgresError(err) => write!(f, "TokioPosgresError: {}", err),
       SazidError::ChunkifierError(err) => write!(f, "ChunkifierError: {}", err),
       SazidError::ParseError(err) => write!(f, "ParseError: {}", err),
@@ -31,14 +37,28 @@ impl fmt::Display for SazidError {
     }
   }
 }
+
+impl From<dialoguer::Error> for SazidError {
+  fn from(err: dialoguer::Error) -> SazidError {
+    SazidError::DialoguerError(err)
+  }
+}
+
 impl From<std::io::Error> for SazidError {
   fn from(err: std::io::Error) -> SazidError {
     SazidError::IoError(err)
   }
 }
+
 impl From<tokio_postgres::Error> for SazidError {
   fn from(err: tokio_postgres::Error) -> SazidError {
     SazidError::TokioPosgresError(err)
+  }
+}
+
+impl From<ParseError> for SazidError {
+  fn from(err: ParseError) -> SazidError {
+    SazidError::ParseError(err)
   }
 }
 impl From<OpenAIError> for SazidError {

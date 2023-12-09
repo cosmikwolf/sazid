@@ -2,11 +2,11 @@ use clap::Parser;
 
 use crate::utils::version;
 
-#[derive(Parser, Debug)]
+#[derive(Parser, Debug, Clone)]
 #[command(author, version = version(), about)]
 pub struct Cli {
   #[arg(
-    short,
+    short = 'l',
     long = "list-embeddings",
     value_name = "bool",
     help = "list embeddings loaded into the database",
@@ -15,31 +15,34 @@ pub struct Cli {
   pub list_embeddings: bool,
 
   #[arg(
-    short,
-    long = "parse-source-embeddings",
+    short = 'c',
+    long = "code-embeddings",
     value_name = "STRING",
     help = "parse a source file using treesitter and load ast into vector database"
   )]
   pub parse_source_embeddings: Option<String>,
 
   #[arg(
-    short,
-    long = "load-text-file-embeddings",
+    short = 'f',
+    long = "textfile",
     value_name = "STRING",
     help = "read a text file, generate embeddings, and load into vector database"
   )]
   pub load_text_file_embeddings: Option<String>,
 
+  #[arg(short, long, value_name = "BOOL", help = "delete all embeddings from the database")]
+  pub delete_all_embeddings: bool,
+
   #[arg(
-    short,
-    long = "load-text-embeddings",
+    short = 't',
+    long = "text",
     value_name = "STRING",
     help = "read text argument, generate embeddings, and load into vector database"
   )]
   pub load_text_embeddings: Option<String>,
 
   #[arg(
-    short,
+    short = 'i',
     long,
     value_name = "FLOAT",
     help = "Tick rate, i.e. number of ticks per second",
@@ -48,7 +51,7 @@ pub struct Cli {
   pub tick_rate: f64,
 
   #[arg(
-    short,
+    short = 'r',
     long,
     value_name = "FLOAT",
     help = "Frame rate, i.e. number of frames per second",
@@ -56,6 +59,6 @@ pub struct Cli {
   )]
   pub frame_rate: f64,
 
-  #[arg(short, long, help = "Connect to localhost LLVM API endpoint", default_value_t = false)]
+  #[arg(short = 'a', long, help = "Connect to localhost LLVM API endpoint", default_value_t = false)]
   pub local_api: bool,
 }
