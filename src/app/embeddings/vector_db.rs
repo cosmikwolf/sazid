@@ -78,16 +78,14 @@ impl VectorDB {
   pub async fn list_embeddings(&self) -> Result<Vec<Embedding>, SazidError> {
     let categories = self.list_categories().await?;
     Ok(
-      join_all(
-        categories
-          .iter()
-          .map(|category| {
-            println!("category: {:?}", category);
-            self.get_embeddings_by_category(vec![category.to_string()])
-          })
-          .collect::<Vec<Embedding>>(),
-      )
-      .await,
+      // categories
+      //   .iter()
+      //   .map(|category| {
+      //     println!("category: {:?}", category);
+      //     self.get_embeddings_by_category(vec![category.to_string()])
+      //   })
+      //   .collect::<Vec<Embedding>>(),
+      vec![],
     )
   }
 
