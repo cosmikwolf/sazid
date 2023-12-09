@@ -36,10 +36,13 @@ clap = { version = "4.4.5", features = [
 color-eyre = "0.6.2"
 config = "0.13.3"
 console-subscriber = "0.2.0"
-# crossterm = { version = "0.27.0", path = "lib/crossterm", features = [
-#   "serde",
-#   "event-stream",
-# ] }
+# diesel = "2.1.4"
+diesel = { version = "2.1.4", features = [
+  "postgres",
+  "i-implement-a-third-party-backend-and-opt-into-breaking-changes",
+] }
+pgvector = { version = "0.3.2", features = ["diesel"] }
+# diesel-async = { version = "0.4.1", features = ["postgres"] }
 crossterm = { version = "0.27.0", features = ["serde", "event-stream"] }
 derive_deref = "1.1.1"
 directories = "5.0.1"
@@ -105,6 +108,7 @@ thiserror = "1.0.50"
 md5 = "0.7.0"
 blake3 = "1.5.0"
 dialoguer = "0.11.0"
+dotenv = "0.15.0"
 
 [dev-dependencies]
 insta = { version = "1.34.0", features = [

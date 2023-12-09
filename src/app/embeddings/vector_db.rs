@@ -1,6 +1,7 @@
 // vector_db.rs
 
 use futures_util::future::join_all;
+use pgvector::Vector;
 use regex::Regex;
 use tokio_postgres::{error::SqlState, types::ToSql, Client, Error, Row};
 
@@ -47,25 +48,25 @@ impl VectorDB {
 
   // a type that represents  Vec<Pin<Box<dyn Future<Output = Result<Vec<String>, SazidError>>>>>
 
-  pub async fn get_embeddings_by_category(&self, categories: Vec<String>) -> Result<Vec<Embedding>, SazidError> {
-    let futures_vec: Vec<_> = categories
-      .iter()
-      .map(|category| async move {
-        let table_name = VectorDB::get_table_name(category);
-        self
-          .get_table_rows(&table_name)
-          .await
-          .into_iter()
-          .flat_map(|rows| {
-            rows.into_iter().map(|row| Embedding::try_from_row(row, category).unwrap()).collect::<Vec<Embedding>>()
-          })
-          .collect::<Vec<Embedding>>()
-      })
-      .collect();
-
-    Ok(join_all(futures_vec).await.into_iter().flatten().collect())
-  }
-
+  // pub async fn get_embeddings_by_category(&self, categories: Vec<String>) -> Result<Vec<Embedding>, SazidError> {
+  //   let futures_vec: Vec<_> = categories
+  //     .iter()
+  //     .map(|category| async move {
+  //       let table_name = VectorDB::get_table_name(category);
+  //       self
+  //         .get_table_rows(&table_name)
+  //         .await
+  //         .into_iter()
+  //         .flat_map(|rows| {
+  //           rows.into_iter().map(|row| Embedding::try_from_row(row, category).unwrap()).collect::<Vec<Embedding>>()
+  //         })
+  //         .collect::<Vec<Embedding>>()
+  //     })
+  //     .collect();
+  //
+  //   Ok(join_all(futures_vec).await.into_iter().flatten().collect())
+  // }
+  //
   pub async fn list_categories(&self) -> Result<Vec<String>, SazidError> {
     let query = "SELECT table_name FROM information_schema.tables WHERE table_name LIKE '%_embedding';";
     let rows = self.client.query(query, &[]).await?;
@@ -141,8 +142,9 @@ impl VectorDB {
       table_name, embedding_as_sql_array, limit
     );
     let rows = self.client.simple_query(&query).await?;
-    let vectors = Embedding::from_simple_query_messages(&rows, category_name)?;
-    Ok(vectors)
+    // let vectors = Embedding::from_simple_query_messages(&rows, category_name)?;
+    // Ok(vectors)
+    Ok(vec![])
   }
 
   // Method to retrieve the original text based on its ID

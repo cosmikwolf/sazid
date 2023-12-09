@@ -1,12 +1,14 @@
+use crate::{app::errors::SazidError, schema::plaintext_embeddings::SqlType};
 use async_openai::types::CreateEmbeddingResponse;
+use diesel::prelude::*;
+use pgvector::Vector;
+use serde::{Deserialize, Serialize};
 use std::{error::Error, str};
 use tokio_postgres::{
   types::{to_sql_checked, FromSql, IsNull, ToSql, Type},
   Row, SimpleQueryMessage, SimpleQueryRow,
 };
 use tokio_util::bytes::{BufMut, BytesMut};
-
-use crate::app::errors::SazidError;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Embedding {
@@ -73,46 +75,46 @@ impl Embedding {
     format!("{}_embedding", self.category)
   }
 
-  pub fn from_simple_query_messages(
-    simple_query_messages: &[SimpleQueryMessage],
-    category: &str,
-  ) -> Result<Vec<Embedding>, SazidError> {
-    simple_query_messages
-      .iter()
-      .filter_map(|simple_query_message| match simple_query_message {
-        SimpleQueryMessage::Row(simple_query_row) => Some(Embedding::from_simple_query_row(simple_query_row, category)),
-        _ => None,
-      })
-      .collect::<Result<Vec<Embedding>, SazidError>>()
-  }
+  // pub fn from_simple_query_messages(
+  //   simple_query_messages: &[SimpleQueryMessage],
+  //   category: &str,
+  // ) -> Result<Vec<Embedding>, SazidError> {
+  //   simple_query_messages
+  //     .iter()
+  //     .filter_map(|simple_query_message| match simple_query_message {
+  //       SimpleQueryMessage::Row(simple_query_row) => Some(Embedding::from_simple_query_row(simple_query_row, category)),
+  //       _ => None,
+  //     })
+  //     .collect::<Result<Vec<Embedding>, SazidError>>()
+  // }
 
-  pub fn try_from_row(row: Row, category: &str) -> Result<Embedding, SazidError> {
-    let embedding = row.try_get("embedding")?;
-    let data = EmbeddingData::try_from_row(row, category)?;
-    Ok(Embedding::new(embedding, data, category.to_string()))
-  }
-  pub fn from_simple_query_row(simple_query_row: &SimpleQueryRow, category: &str) -> Result<Embedding, SazidError> {
-    let embedding = simple_query_row
-      .get("embedding")
-      .unwrap()
-      .trim_matches(|c| c == '[' || c == ']')
-      .split(',')
-      .map(|num_str| num_str.trim().parse())
-      .collect::<Result<Vec<f64>, _>>()
-      .unwrap();
-
-    let data = match EmbeddingData::variant_from_category(category) {
-      Ok(EmbeddingData::PlainTextEmbedding(_)) => {
-        EmbeddingData::PlainTextEmbedding(PlainTextEmbedding::try_from(simple_query_row).unwrap())
-      },
-      Ok(EmbeddingData::TextFileEmbedding(_)) => {
-        EmbeddingData::TextFileEmbedding(TextFileEmbeddingData::try_from(simple_query_row).unwrap())
-      },
-      Err(e) => return Err(e),
-    };
-
-    Ok(Embedding::new(embedding.into(), data, category.to_string()))
-  }
+  // pub fn try_from_row(row: Row, category: &str) -> Result<Embedding, SazidError> {
+  //   let embedding = row.try_get("embedding")?;
+  //   let data = EmbeddingData::try_from_row(row, category)?;
+  //   Ok(Embedding::new(embedding, data, category.to_string()))
+  // }
+  // pub fn from_simple_query_row(simple_query_row: &SimpleQueryRow, category: &str) -> Result<Embedding, SazidError> {
+  //   let embedding = simple_query_row
+  //     .get("embedding")
+  //     .unwrap()
+  //     .trim_matches(|c| c == '[' || c == ']')
+  //     .split(',')
+  //     .map(|num_str| num_str.trim().parse())
+  //     .collect::<Result<Vec<f64>, _>>()
+  //     .unwrap();
+  //
+  //   let data = match EmbeddingData::variant_from_category(category) {
+  //     Ok(EmbeddingData::PlainTextEmbedding(_)) => {
+  //       EmbeddingData::PlainTextEmbedding(PlainTextEmbedding::try_from(simple_query_row).unwrap())
+  //     },
+  //     Ok(EmbeddingData::TextFileEmbedding(_)) => {
+  //       EmbeddingData::TextFileEmbedding(TextFileEmbeddingData::try_from(simple_query_row).unwrap())
+  //     },
+  //     Err(e) => return Err(e),
+  //   };
+  //
+  //   Ok(Embedding::new(embedding.into(), data, category.to_string()))
+  // }
 }
 impl From<CreateEmbeddingResponse> for EmbeddingVector {
   fn from(data: CreateEmbeddingResponse) -> Self {
@@ -172,8 +174,8 @@ impl Iterator for EmbeddingData {
 impl EmbeddingData {
   fn content(&self) -> &str {
     match self {
-      EmbeddingData::PlainTextEmbedding(plain_text) => plain_text.content(),
-      EmbeddingData::TextFileEmbedding(text_file) => text_file.content(),
+      EmbeddingData::PlainTextEmbedding(plain_text) => &plain_text.content,
+      EmbeddingData::TextFileEmbedding(text_file) => &text_file.content,
     }
   }
   fn variants() -> Vec<EmbeddingData> {
@@ -189,31 +191,31 @@ impl EmbeddingData {
       EmbeddingData::TextFileEmbedding(_) => "text_file",
     }
   }
-  pub fn new_from_row_with_category(row: Row, category: &str) -> Result<Self, SazidError> {
-    match Self::variant_from_category(category) {
-      Ok(EmbeddingData::PlainTextEmbedding(_)) => {
-        Ok(EmbeddingData::PlainTextEmbedding(PlainTextEmbedding::try_from(row)?))
-      },
-      Ok(EmbeddingData::TextFileEmbedding(_)) => {
-        Ok(EmbeddingData::TextFileEmbedding(TextFileEmbeddingData::try_from(row)?))
-      },
-      Err(e) => Err(e),
-    }
-  }
-
-  pub fn new_plaintext(content: &str) -> Self {
-    EmbeddingData::PlainTextEmbedding(PlainTextEmbedding { id: None, content: content.to_string() })
-  }
-
-  pub fn new_textfile(content: &str, filename: &str, checksum: &str) -> Self {
-    EmbeddingData::TextFileEmbedding(TextFileEmbeddingData {
-      id: None,
-      content: content.to_string(),
-      filename: filename.to_string(),
-      checksum: checksum.to_string(),
-    })
-  }
-
+  // pub fn new_from_row_with_category(row: Row, category: &str) -> Result<Self, SazidError> {
+  //   match Self::variant_from_category(category) {
+  //     Ok(EmbeddingData::PlainTextEmbedding(_)) => {
+  //       Ok(EmbeddingData::PlainTextEmbedding(PlainTextEmbedding::try_from(row)?))
+  //     },
+  //     Ok(EmbeddingData::TextFileEmbedding(_)) => {
+  //       Ok(EmbeddingData::TextFileEmbedding(TextFileEmbeddingData::try_from(row)?))
+  //     },
+  //     Err(e) => Err(e),
+  //   }
+  // }
+  //
+  // pub fn new_plaintext(content: &str) -> Self {
+  //   EmbeddingData::PlainTextEmbedding(PlainTextEmbedding { id: None, content: content.to_string() })
+  // }
+  //
+  // pub fn new_textfile(content: &str, filename: &str, checksum: &str) -> Self {
+  //   EmbeddingData::TextFileEmbedding(TextFileEmbeddingData {
+  //     id: None,
+  //     content: content.to_string(),
+  //     filename: filename.to_string(),
+  //     checksum: checksum.to_string(),
+  //   })
+  // }
+  //
   pub fn variant_from_category(category: &str) -> Result<EmbeddingData, SazidError> {
     Ok(
       Self::variants()
@@ -224,115 +226,91 @@ impl EmbeddingData {
     )
   }
 
-  fn try_from_row(row: Row, category: &str) -> Result<Self, SazidError> {
-    match Self::variant_from_category(category) {
-      Ok(EmbeddingData::PlainTextEmbedding(_)) => {
-        Ok(EmbeddingData::PlainTextEmbedding(PlainTextEmbedding::try_from(row)?))
-      },
-      Ok(EmbeddingData::TextFileEmbedding(_)) => {
-        Ok(EmbeddingData::TextFileEmbedding(TextFileEmbeddingData::try_from(row)?))
-      },
-      Err(e) => Err(e),
-    }
-  }
-
-  pub fn try_from_simple_query_row(row: &SimpleQueryRow, category: &str) -> Result<Self, SazidError> {
-    match Self::variant_from_category(category) {
-      Ok(EmbeddingData::PlainTextEmbedding(_)) => {
-        Ok(EmbeddingData::PlainTextEmbedding(PlainTextEmbedding::try_from(row)?))
-      },
-      Ok(EmbeddingData::TextFileEmbedding(_)) => {
-        Ok(EmbeddingData::TextFileEmbedding(TextFileEmbeddingData::try_from(row)?))
-      },
-      Err(e) => Err(e),
-    }
-  }
+  // fn try_from_row(row: Row, category: &str) -> Result<Self, SazidError> {
+  //   match Self::variant_from_category(category) {
+  //     Ok(EmbeddingData::PlainTextEmbedding(_)) => {
+  //       Ok(EmbeddingData::PlainTextEmbedding(PlainTextEmbedding::try_from(row)?))
+  //     },
+  //     Ok(EmbeddingData::TextFileEmbedding(_)) => {
+  //       Ok(EmbeddingData::TextFileEmbedding(TextFileEmbeddingData::try_from(row)?))
+  //     },
+  //     Err(e) => Err(e),
+  //   }
+  // }
+  //
+  // pub fn try_from_simple_query_row(row: &SimpleQueryRow, category: &str) -> Result<Self, SazidError> {
+  //   match Self::variant_from_category(category) {
+  //     Ok(EmbeddingData::PlainTextEmbedding(_)) => {
+  //       Ok(EmbeddingData::PlainTextEmbedding(PlainTextEmbedding::try_from(row)?))
+  //     },
+  //     Ok(EmbeddingData::TextFileEmbedding(_)) => {
+  //       Ok(EmbeddingData::TextFileEmbedding(TextFileEmbeddingData::try_from(row)?))
+  //     },
+  //     Err(e) => Err(e),
+  //   }
+  // }
 }
+use crate::schema::*;
 
-trait EmbeddingDataType: TryFrom<Row> {
-  fn content(&self) -> &str;
-  //fn try_from(row: &'a SimpleQueryRow) -> Result<Self, SazidError>;
-}
-
-#[derive(Debug, Clone, PartialEq, Default)]
+#[derive(Debug, Clone, PartialEq, Default, Queryable, Selectable)]
+#[diesel(table_name = plaintext_embeddings)]
 pub struct PlainTextEmbedding {
   id: Option<i32>,
   content: String,
+  embedding: Option<Vector>,
 }
 
-impl PlainTextEmbedding {
-  pub fn new(content: &str) -> Self {
-    PlainTextEmbedding { id: None, content: content.to_string() }
-  }
-}
-impl EmbeddingDataType for PlainTextEmbedding {
-  fn content(&self) -> &str {
-    &self.content
-  }
+#[derive(Insertable)]
+#[diesel(table_name = plaintext_embeddings)]
+pub struct NewPlainTextEmbedding {
+  pub content: String,
+  // pub embedding: Option<pgvector::Vector>,
 }
 
-impl TryFrom<&SimpleQueryRow> for PlainTextEmbedding {
-  type Error = SazidError;
-  fn try_from(row: &SimpleQueryRow) -> Result<Self, SazidError> {
-    Ok(PlainTextEmbedding {
-      id: Some(row.get("id").unwrap().parse::<i32>().unwrap()),
-      content: row.get("content").unwrap().into(),
-    })
-  }
-}
-
-impl TryFrom<Row> for PlainTextEmbedding {
-  type Error = SazidError;
-
-  fn try_from(row: Row) -> Result<Self, SazidError> {
-    Ok(PlainTextEmbedding { id: Some(row.try_get("id")?), content: row.try_get("content")? })
-  }
-}
-
-#[derive(Debug, Clone, PartialEq, Default)]
+#[derive(Queryable, Selectable, Debug, Clone, PartialEq, Default)]
+#[diesel(table_name = textfile_embeddings)]
 pub struct TextFileEmbeddingData {
   id: Option<i32>,
   content: String,
   filename: String,
   checksum: String,
+  embedding: Option<Vector>,
 }
+
+#[derive(Insertable)]
+#[diesel(table_name = textfile_embeddings)]
+pub struct NewTextFileEmbedding {
+  pub content: String,
+  pub embedding: textfile_embeddings::embedding,
+}
+
+impl PlainTextEmbedding {
+  pub fn new(content: &str) -> Self {
+    PlainTextEmbedding { id: None, content: content.to_string(), embedding: None }
+  }
+}
+
+// impl EmbeddingDataType for PlainTextEmbedding {
+//   fn content(&self) -> &str {
+//     &self.content
+//   }
+// }
 
 impl TextFileEmbeddingData {
   pub fn new(content: &str, filepath: &str) -> Self {
     let filename = filepath.split('/').last().unwrap();
     let checksum = blake3::hash(content.as_bytes()).to_hex().to_string();
 
-    TextFileEmbeddingData { id: None, content: content.to_string(), filename: filename.to_string(), checksum }
+    TextFileEmbeddingData {
+      id: None,
+      content: content.to_string(),
+      filename: filename.to_string(),
+      checksum,
+      embedding: None,
+    }
   }
 }
 
-impl EmbeddingDataType for TextFileEmbeddingData {
-  fn content(&self) -> &str {
-    &self.content
-  }
-}
-
-impl TryFrom<&SimpleQueryRow> for TextFileEmbeddingData {
-  type Error = SazidError;
-  fn try_from(row: &SimpleQueryRow) -> Result<Self, SazidError> {
-    Ok(TextFileEmbeddingData {
-      id: Some(row.get("id").unwrap().parse::<i32>().unwrap()),
-      content: row.get("content").unwrap().into(),
-      filename: row.get("filename").unwrap().into(),
-      checksum: row.get("checksum").unwrap().into(),
-    })
-  }
-}
-
-impl TryFrom<Row> for TextFileEmbeddingData {
-  type Error = SazidError;
-
-  fn try_from(row: Row) -> Result<Self, SazidError> {
-    Ok(TextFileEmbeddingData {
-      id: Some(row.try_get("id")?),
-      content: row.try_get("content")?,
-      filename: row.try_get("filename")?,
-      checksum: row.try_get("checksum")?,
-    })
-  }
-}
+// impl EmbeddingDataType for TextFileEmbeddingData {
+//   fn content(&self) -> &str {
+//     &self.content

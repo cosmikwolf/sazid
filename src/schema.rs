@@ -13,7 +13,7 @@ diesel::table! {
 
     plaintext_embeddings (id) {
         id -> Int8,
-        text -> Text,
+        content -> Text,
         embedding -> Vector,
     }
 }
@@ -25,7 +25,7 @@ diesel::table! {
 
     textfile_embeddings (id) {
         id -> Int8,
-        text -> Text,
+        content -> Text,
         filename -> Text,
         checksum -> Text,
         embedding -> Vector,
