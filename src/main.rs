@@ -23,7 +23,7 @@ async fn tokio_main() -> Result<(), SazidError> {
   let config = Config::new(args.local_api).unwrap();
   let db_config = "host=localhost user=docker password=docker database=sazid";
 
-  match EmbeddingsManager::run(db_config, args.clone(), config.clone()).await {
+  match EmbeddingsManager::run(args.clone(), config.clone()).await {
     Ok(Some(output)) => {
       println!("{}", output);
       Ok(())

@@ -1,28 +1,25 @@
-use tokio_postgres::NoTls;
-
 use crate::{cli::Cli, config::Config};
 
-use self::{
-  embeddings_models::EmbeddingModel,
-  types::{Embedding, EmbeddingData, PlainTextEmbedding, TextFileEmbeddingData},
-  vector_db::{VectorDB, VectorDBConfig},
-};
+use self::{db_interface::VectorDb, db_model::*, embeddings_models::EmbeddingModel, types::Embedding};
 use super::errors::SazidError;
 use dialoguer;
 
+pub mod db_interface;
+pub mod db_model;
 pub mod embeddings_models;
+pub mod schema;
 pub mod types;
 pub mod vector_db;
 
 pub struct EmbeddingsManager {
-  db: VectorDB,
+  db: VectorDb,
   model: EmbeddingModel,
 }
 
 impl EmbeddingsManager {
-  pub async fn run(db_config: &str, args: Cli, config: Config) -> Result<Option<String>, SazidError> {
+  pub async fn run(args: Cli, config: Config) -> Result<Option<String>, SazidError> {
     let model = EmbeddingModel::Ada002(config.session_config.openai_config);
-    let embeddings_manager = Self::init(db_config, model).await?;
+    let embeddings_manager = Self::init(model).await?;
     println!("args: {:#?}", args);
     Ok(match args {
       Cli { list_embeddings: true, .. } => {
@@ -64,32 +61,8 @@ impl EmbeddingsManager {
     })
   }
 
-  async fn init(db_config: &str, model: EmbeddingModel) -> Result<Self, SazidError> {
-    let (client, connection) = tokio_postgres::connect(db_config, NoTls).await?;
-
-    tokio::spawn(async move {
-      if let Err(e) = connection.await {
-        eprintln!("Connection error: {}", e);
-      }
-    });
-
-    let db = VectorDB { client, config: VectorDBConfig { optimize_threads: 4 } };
-
-    db.enable_extension().await?;
-    Ok(EmbeddingsManager { db, model })
-  }
-
-  pub async fn drop_all_embeddings_tables(&self) -> Result<(), SazidError> {
-    // a method that will drop all tables that have a suffix of _embeddings
-    let query = "SELECT table_name FROM information_schema.tables WHERE table_name LIKE '%_embeddings';";
-    let rows = self.db.client.query(query, &[]).await?;
-    println!("rows: {:?}", rows);
-    for row in rows {
-      let category: String = row.get(0);
-      self.db.client.batch_execute(format!("DROP TABLE IF EXISTS {}_embeddings CASCADE;", category).as_str()).await?;
-    }
-
-    Ok(())
+  async fn init(model: EmbeddingModel) -> Result<Self, SazidError> {
+    Ok(EmbeddingsManager { db: VectorDb::init().await.unwrap(), model })
   }
 
   pub async fn list_embeddings(&self) -> Result<Vec<String>, SazidError> {
@@ -106,7 +79,7 @@ impl EmbeddingsManager {
     let texts = texts.iter().map(|t| t.as_str()).collect::<Vec<&str>>();
     let content = texts.join("");
     //create an md5sum of the file
-    let data = TextFileEmbeddingData::new(&content, filepath);
+    let data = TextFileEmbedding::new(&content, filepath);
     let vector = self.model.create_embedding_vector(&content).await?;
     let embedding = Embedding::new(vector, EmbeddingData::TextFileEmbedding(data), category_name.into());
     self.add_embedding(category_name, embedding).await

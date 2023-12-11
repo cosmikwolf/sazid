@@ -27,10 +27,9 @@ mod vector_db_tests {
           embedding -> Nullable<Vector>,
       }
   }
-  use plaintext_embeddings as plaintext;
 
   #[derive(Queryable, Selectable)]
-  #[diesel(table_name = plaintext)]
+  #[diesel(table_name = plaintext_embeddings)]
   pub struct PlainTextEmbedding {
     id: i64,
     content: String,
@@ -38,7 +37,7 @@ mod vector_db_tests {
   }
 
   #[derive(Insertable)]
-  #[diesel(table_name = plaintext)]
+  #[diesel(table_name = plaintext_embeddings)]
   pub struct NewPlainTextEmbedding {
     pub content: String,
     pub embedding: Option<pgvector::Vector>,
@@ -66,25 +65,25 @@ mod vector_db_tests {
       NewPlainTextEmbedding { content: "hello world".to_string(), embedding: None },
     ];
 
-    diesel::insert_into(plaintext::table)
+    diesel::insert_into(plaintext_embeddings::table)
       .values(&new_items)
       // .returning(PlainTextEmbedding::as_returning())
       .get_result::<PlainTextEmbedding>(&mut conn).await?;
 
     // use ordinary diesel query dsl to construct your query
-    let one = plaintext::table
-      .filter(plaintext::id.eq(1))
+    let one = plaintext_embeddings::table
+      .filter(plaintext_embeddings::id.eq(1))
       .select(PlainTextEmbedding::as_select())
       .load::<PlainTextEmbedding>(&mut conn)
       .await?;
 
     assert_eq!(1, one.len());
 
-    let all = plaintext::table.load::<PlainTextEmbedding>(&mut conn).await?;
+    let all = plaintext_embeddings::table.load::<PlainTextEmbedding>(&mut conn).await?;
     assert_eq!(4, all.len());
 
-    let neighbors = plaintext::table
-      .order(plaintext::embedding.cosine_distance(Vector::from(vec![1.0, 1.0, 1.0])))
+    let neighbors = plaintext_embeddings::table
+      .order(plaintext_embeddings::embedding.cosine_distance(Vector::from(vec![1.0, 1.0, 1.0])))
       .limit(5)
       .load::<PlainTextEmbedding>(&mut conn)
       .await?;

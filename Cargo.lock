@@ -3619,6 +3619,7 @@ dependencies = [
  "anstyle",
  "async-openai 0.16.3",
  "async-recursion",
+ "async-trait",
  "backoff",
  "bat",
  "better-panic",

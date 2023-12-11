@@ -1,5 +1,3 @@
-// vector_db.rs
-
 use futures_util::future::join_all;
 use pgvector::Vector;
 use regex::Regex;
@@ -20,31 +18,31 @@ pub struct VectorDB {
 }
 
 impl VectorDB {
-  // Function to create a dynamic table for text embeddings based on category
-  pub async fn create_category_table(
-    &self,
-    category_name: &str,
-    dimensions: usize,
-    include_filename: bool,
-  ) -> Result<(), Error> {
-    let table_name = Self::get_table_name(category_name);
-    let create_table_query = format!(
-      "CREATE TABLE IF NOT EXISTS {} (
-        id bigserial PRIMARY KEY,
-        text TEXT NOT NULL,
-        {}
-        embedding vector({}) NOT NULL
-      );",
-      table_name,
-      match include_filename {
-        true => "filename TEXT NOT NULL, md5sum TEXT NOT NULL,",
-        false => "",
-      },
-      dimensions
-    );
-    // println!("create_table_query: {:?}", create_table_query);
-    self.client.batch_execute(&create_table_query).await
-  }
+  // // Function to create a dynamic table for text embeddings based on category
+  // pub async fn create_category_table(
+  //   &self,
+  //   category_name: &str,
+  //   dimensions: usize,
+  //   include_filename: bool,
+  // ) -> Result<(), Error> {
+  //   let table_name = Self::get_table_name(category_name);
+  //   let create_table_query = format!(
+  //     "CREATE TABLE IF NOT EXISTS {} (
+  //       id bigserial PRIMARY KEY,
+  //       text TEXT NOT NULL,
+  //       {}
+  //       embedding vector({}) NOT NULL
+  //     );",
+  //     table_name,
+  //     match include_filename {
+  //       true => "filename TEXT NOT NULL, md5sum TEXT NOT NULL,",
+  //       false => "",
+  //     },
+  //     dimensions
+  //   );
+  //   // println!("create_table_query: {:?}", create_table_query);
+  //   self.client.batch_execute(&create_table_query).await
+  // }
 
   // a type that represents  Vec<Pin<Box<dyn Future<Output = Result<Vec<String>, SazidError>>>>>
 
@@ -67,29 +65,29 @@ impl VectorDB {
   //   Ok(join_all(futures_vec).await.into_iter().flatten().collect())
   // }
   //
-  pub async fn list_categories(&self) -> Result<Vec<String>, SazidError> {
-    let query = "SELECT table_name FROM information_schema.tables WHERE table_name LIKE '%_embedding';";
-    let rows = self.client.query(query, &[]).await?;
-    println!("rows: {:?}", rows);
-    let categories =
-      rows.into_iter().map(|row| row.try_get::<&str, &str>("table_name").unwrap().to_string()).collect::<Vec<String>>();
-    Ok(categories)
-  }
+  // pub async fn list_categories(&self) -> Result<Vec<String>, SazidError> {
+  //   let query = "SELECT table_name FROM information_schema.tables WHERE table_name LIKE '%_embedding';";
+  //   let rows = self.client.query(query, &[]).await?;
+  //   println!("rows: {:?}", rows);
+  //   let categories =
+  //     rows.into_iter().map(|row| row.try_get::<&str, &str>("table_name").unwrap().to_string()).collect::<Vec<String>>();
+  //   Ok(categories)
+  // }
 
-  pub async fn list_embeddings(&self) -> Result<Vec<Embedding>, SazidError> {
-    let categories = self.list_categories().await?;
-    Ok(
-      // categories
-      //   .iter()
-      //   .map(|category| {
-      //     println!("category: {:?}", category);
-      //     self.get_embeddings_by_category(vec![category.to_string()])
-      //   })
-      //   .collect::<Vec<Embedding>>(),
-      vec![],
-    )
-  }
-
+  // pub async fn list_embeddings(&self) -> Result<Vec<Embedding>, SazidError> {
+  //   let categories = self.list_categories().await?;
+  //   Ok(
+  //     // categories
+  //     //   .iter()
+  //     //   .map(|category| {
+  //     //     println!("category: {:?}", category);
+  //     //     self.get_embeddings_by_category(vec![category.to_string()])
+  //     //   })
+  //     //   .collect::<Vec<Embedding>>(),
+  //     vec![],
+  //   )
+  // }
+  //
   pub async fn get_table_rows(&self, table_name: &str) -> Result<Vec<Row>, SazidError> {
     let query = format!("SELECT * from {};", table_name);
     Ok(self.client.query(&query, &[]).await?)
@@ -100,78 +98,78 @@ impl VectorDB {
     let rows = self.client.query(&query, &[]).await?;
     Ok(rows.iter().map(|row| row.get(0)).collect::<Vec<String>>())
   }
+  //
+  // // Method to insert text with its embedding into the correct category table using batch_execute
+  // pub async fn insert_embedding(&self, category_name: &str, embedding: Embedding) -> Result<u64, Error> {
+  //   // Ensure the category table exists before attempting to insert
+  //   self.create_category_table(category_name, embedding.len(), false).await?;
+  //
+  //   let table_name = Self::get_table_name(category_name);
+  //   println!("table_name: {:?}", table_name);
+  //   // Concatenate full SQL command as one string
+  //   let command = format!("INSERT INTO {} (text, embedding) VALUES ($1, $2);", table_name);
+  //   // Create a slice of references to trait objects
+  //   let text_params: &(dyn ToSql + Sync) = &embedding.content();
+  //   // println!("text_params: {:?}", text_params);
+  //   let embedding_params: &(dyn ToSql + Sync) = &embedding;
+  //   // println!("embedding_params: {:?}", embedding_params);
+  //
+  //   // Pass the parameters as a slice of trait objects implementing ToSql
+  //   self.client.execute(&command, &[text_params, embedding_params]).await
+  // }
 
-  // Method to insert text with its embedding into the correct category table using batch_execute
-  pub async fn insert_embedding(&self, category_name: &str, embedding: Embedding) -> Result<u64, Error> {
-    // Ensure the category table exists before attempting to insert
-    self.create_category_table(category_name, embedding.len(), false).await?;
-
-    let table_name = Self::get_table_name(category_name);
-    println!("table_name: {:?}", table_name);
-    // Concatenate full SQL command as one string
-    let command = format!("INSERT INTO {} (text, embedding) VALUES ($1, $2);", table_name);
-    // Create a slice of references to trait objects
-    let text_params: &(dyn ToSql + Sync) = &embedding.content();
-    // println!("text_params: {:?}", text_params);
-    let embedding_params: &(dyn ToSql + Sync) = &embedding;
-    // println!("embedding_params: {:?}", embedding_params);
-
-    // Pass the parameters as a slice of trait objects implementing ToSql
-    self.client.execute(&command, &[text_params, embedding_params]).await
-  }
-
-  // Utility function to sanitize category names for table creation
-  pub fn get_table_name(category_name: &str) -> String {
-    let regex = Regex::new(r"[^a-zA-Z0-9_]+").unwrap();
-    let table_name = regex.replace_all(category_name, "_").into_owned();
-    format!("{}_embedding", table_name)
-  }
-
-  // Method to perform a cosine similarity search and return the IDs of the most similar text objects
-  pub async fn search_similar_texts(
-    &self,
-    category_name: &str,
-    query_embedding: &[f64],
-    limit: i32,
-  ) -> Result<Vec<Embedding>, SazidError> {
-    let table_name = Self::get_table_name(category_name);
-    let embedding_as_sql_array = query_embedding.iter().map(|val| val.to_string()).collect::<Vec<String>>().join(",");
-    let query = format!(
-      // "SELECT * ORDER BY embedding <=> {}::vector LIMIT {}", table_name, embedding_as_sql_array
-      "SELECT * FROM {} ORDER BY embedding <-> '[{}]' LIMIT {}",
-      table_name, embedding_as_sql_array, limit
-    );
-    let rows = self.client.simple_query(&query).await?;
-    // let vectors = Embedding::from_simple_query_messages(&rows, category_name)?;
-    // Ok(vectors)
-    Ok(vec![])
-  }
-
-  // Method to retrieve the original text based on its ID
-  pub async fn get_text_by_id(&self, category_name: &str, text_id: i64) -> Result<String, Error> {
-    let table_name = Self::get_table_name(category_name);
-    let query = format!("SELECT text FROM {} WHERE id = $1", table_name);
-
-    let rows = self.client.query(&query, &[&text_id]).await?;
-    let text: String = rows.get(0).expect("failed to get text").get("text");
-
-    println!("text: {:?}", text);
-
-    Ok(text)
-  }
-
-  // Create the pgvecto extension to enable vector functionality
-  pub async fn enable_extension(&self) -> Result<(), Error> {
-    const CREATE_EXTENSION_QUERY: &str = "CREATE EXTENSION IF NOT EXISTS vectors;";
-
-    // Attempt to create the extension, handling any potential unique constraint errors.
-    match self.client.batch_execute(CREATE_EXTENSION_QUERY).await {
-      Ok(_) => Ok(()),                                                   // If successful, return Ok
-      Err(e) if e.code() == Some(&SqlState::UNIQUE_VIOLATION) => Ok(()), // If the extension already exists, ignore the error
-      Err(e) => Err(e),                                                  // For other errors, return the error
-    }
-  }
-
+  // // Utility function to sanitize category names for table creation
+  // pub fn get_table_name(category_name: &str) -> String {
+  //   let regex = Regex::new(r"[^a-zA-Z0-9_]+").unwrap();
+  //   let table_name = regex.replace_all(category_name, "_").into_owned();
+  //   format!("{}_embedding", table_name)
+  // }
+  //
+  // // Method to perform a cosine similarity search and return the IDs of the most similar text objects
+  // pub async fn search_similar_texts(
+  //   &self,
+  //   category_name: &str,
+  //   query_embedding: &[f64],
+  //   limit: i32,
+  // ) -> Result<Vec<Embedding>, SazidError> {
+  //   let table_name = Self::get_table_name(category_name);
+  //   let embedding_as_sql_array = query_embedding.iter().map(|val| val.to_string()).collect::<Vec<String>>().join(",");
+  //   let query = format!(
+  //     // "SELECT * ORDER BY embedding <=> {}::vector LIMIT {}", table_name, embedding_as_sql_array
+  //     "SELECT * FROM {} ORDER BY embedding <-> '[{}]' LIMIT {}",
+  //     table_name, embedding_as_sql_array, limit
+  //   );
+  //   let rows = self.client.simple_query(&query).await?;
+  //   // let vectors = Embedding::from_simple_query_messages(&rows, category_name)?;
+  //   // Ok(vectors)
+  //   Ok(vec![])
+  // }
+  //
+  // // Method to retrieve the original text based on its ID
+  // pub async fn get_text_by_id(&self, category_name: &str, text_id: i64) -> Result<String, Error> {
+  //   let table_name = Self::get_table_name(category_name);
+  //   let query = format!("SELECT text FROM {} WHERE id = $1", table_name);
+  //
+  //   let rows = self.client.query(&query, &[&text_id]).await?;
+  //   let text: String = rows.get(0).expect("failed to get text").get("text");
+  //
+  //   println!("text: {:?}", text);
+  //
+  //   Ok(text)
+  // }
+  //
+  // // Create the pgvecto extension to enable vector functionality
+  // pub async fn enable_extension(&self) -> Result<(), Error> {
+  //   const CREATE_EXTENSION_QUERY: &str = "CREATE EXTENSION IF NOT EXISTS vectors;";
+  //
+  //   // Attempt to create the extension, handling any potential unique constraint errors.
+  //   match self.client.batch_execute(CREATE_EXTENSION_QUERY).await {
+  //     Ok(_) => Ok(()),                                                   // If successful, return Ok
+  //     Err(e) if e.code() == Some(&SqlState::UNIQUE_VIOLATION) => Ok(()), // If the extension already exists, ignore the error
+  //     Err(e) => Err(e),                                                  // For other errors, return the error
+  //   }
+  // }
+  //
   // Method to create index with custom options
   pub async fn create_custom_index(
     client: &Client,

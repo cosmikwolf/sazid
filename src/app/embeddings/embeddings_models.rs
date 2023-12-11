@@ -1,8 +1,5 @@
-use async_openai::{
-  config::OpenAIConfig,
-  types::{CreateEmbeddingRequestArgs, CreateEmbeddingResponse},
-};
-use tokio_postgres::Row;
+use async_openai::{config::OpenAIConfig, types::CreateEmbeddingRequestArgs};
+use pgvector::Vector;
 
 use crate::{
   app::{
@@ -11,8 +8,6 @@ use crate::{
   },
   components::session::create_openai_client,
 };
-
-use super::types::EmbeddingVector;
 
 #[derive(Clone)]
 pub enum EmbeddingModel {
@@ -57,28 +52,32 @@ impl EmbeddingModel {
     texts.iter().map(|s| count_tokens(s)).sum::<usize>() > self.token_limit()
   }
 
-  pub async fn create_embedding_vector(&self, text: &str) -> Result<EmbeddingVector, SazidError> {
+  pub async fn create_embedding_vector(&self, text: &str) -> Result<Vector, SazidError> {
     if self.exceeds_token_limit(text) {
-      Err(
+      return Err(
         ParseError::new(&format!(
           "The total number of tokens in the input texts exceeds the limit of {} for the {} model",
           self.token_limit(),
           self.model_string()
         ))
         .into(),
-      )
-    } else {
-      match self {
-        Self::Ada002(openai_config) => {
-          let client = create_openai_client(openai_config);
-          let request = CreateEmbeddingRequestArgs::default().model(self.model_string()).input(text).build()?;
-          let embedding_response = client.embeddings().create(request).await?;
-          // embedding_response.data.iter().map(|e| e.embedding.clone()).collect::<Vec<Vec<f32>>>();
-          //let embedding = embedding_response.data.first().unwrap().embedding.clone();
-          Ok(embedding_response)
-        },
-      }
+      );
     }
-    .map(EmbeddingVector::from)
+
+    let vector = match self {
+      Self::Ada002(openai_config) => {
+        let client = create_openai_client(openai_config);
+        let request = CreateEmbeddingRequestArgs::default().model(self.model_string()).input(text).build().unwrap();
+        let embedding_response = client.embeddings().create(request).await.unwrap();
+        // embedding_response.data.iter().map(|e| e.embedding.clone()).collect::<Vec<Vec<f32>>>();
+        //let embedding = embedding_response.data.first().unwrap().embedding.clone();
+        embedding_response
+      },
+    }
+    .data
+    .iter()
+    .flat_map(|e| e.embedding.clone())
+    .collect::<Vec<f32>>();
+    Ok(vector.into())
   }
 }
