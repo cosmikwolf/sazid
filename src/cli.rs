@@ -15,6 +15,14 @@ pub struct Cli {
   pub list_embeddings: bool,
 
   #[arg(
+    short = 's',
+    long = "search-embeddings",
+    value_name = "STRING",
+    help = "perform a vector similarity search on all embeddings"
+  )]
+  pub search_embeddings: Option<String>,
+
+  #[arg(
     short = 'c',
     long = "code-embeddings",
     value_name = "STRING",
@@ -28,7 +36,7 @@ pub struct Cli {
     value_name = "STRING",
     help = "read a text file, generate embeddings, and load into vector database"
   )]
-  pub load_text_file_embeddings: Option<String>,
+  pub add_text_file_embeddings: Option<String>,
 
   #[arg(short, long, value_name = "BOOL", help = "delete all embeddings from the database")]
   pub delete_all_embeddings: bool,
@@ -39,7 +47,7 @@ pub struct Cli {
     value_name = "STRING",
     help = "read text argument, generate embeddings, and load into vector database"
   )]
-  pub load_text_embeddings: Option<String>,
+  pub add_text_embeddings: Option<String>,
 
   #[arg(
     short = 'i',

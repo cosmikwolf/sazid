@@ -6,7 +6,7 @@ services:
       PG_MAJOR: '16'
       POSTGRES_USER: docker
       POSTGRES_PASSWORD: docker
-      POSTGRES_DB: sazid_vector
+      POSTGRES_DB: embeddings
     volumes:
       - ./docker-init-db.sql:/docker-entrypoint-initdb.d/init-db.sql
     ports:

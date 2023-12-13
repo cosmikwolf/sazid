@@ -1,12 +1,12 @@
-use async_openai::error::OpenAIError;
-use std::{fmt, io};
-
 use super::functions::errors::ToolCallError;
 use crate::trace_dbg;
+use async_openai::error::OpenAIError;
+use std::{fmt, io};
 use thiserror::Error;
 
 #[derive(Debug, Error)]
 pub enum SazidError {
+  DieselError(diesel::result::Error),
   DialoguerError(dialoguer::Error),
   LoggingError(color_eyre::eyre::Report),
   PanicHandlerError(color_eyre::eyre::Report),
@@ -23,6 +23,7 @@ pub enum SazidError {
 impl fmt::Display for SazidError {
   fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
     match self {
+      SazidError::DieselError(err) => write!(f, "DieselError: {}", err),
       SazidError::DialoguerError(err) => write!(f, "DialoguerError: {}", err),
       SazidError::LoggingError(err) => write!(f, "LoggingError: {}", err),
       SazidError::PanicHandlerError(err) => write!(f, "PanicHandlerError: {}", err),
@@ -38,6 +39,11 @@ impl fmt::Display for SazidError {
   }
 }
 
+impl From<diesel::result::Error> for SazidError {
+  fn from(err: diesel::result::Error) -> SazidError {
+    SazidError::DieselError(err)
+  }
+}
 impl From<dialoguer::Error> for SazidError {
   fn from(err: dialoguer::Error) -> SazidError {
     SazidError::DialoguerError(err)

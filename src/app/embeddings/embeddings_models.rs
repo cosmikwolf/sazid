@@ -29,7 +29,7 @@ impl EmbeddingModel {
         model_string: "text-embedding-ada-002".to_string(),
         embedding_suffix: "ada-002".to_string(),
         token_limit: 8192,
-        vector_dimensions: 768,
+        vector_dimensions: 1536,
       },
     }
   }
@@ -78,6 +78,8 @@ impl EmbeddingModel {
     .iter()
     .flat_map(|e| e.embedding.clone())
     .collect::<Vec<f32>>();
+    println!("embedding: {:?}", vector.len());
+
     Ok(vector.into())
   }
 }

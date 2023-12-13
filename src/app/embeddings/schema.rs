@@ -18,10 +18,13 @@ diesel::table! {
     textfile_embeddings (id) {
         id -> Int8,
         content -> Text,
-        filename -> Text,
+        filepath -> Text,
         checksum -> Text,
         embedding -> Vector,
     }
 }
 
-diesel::allow_tables_to_appear_in_same_query!(plaintext_embeddings, textfile_embeddings,);
+diesel::allow_tables_to_appear_in_same_query!(
+    plaintext_embeddings,
+    textfile_embeddings,
+);

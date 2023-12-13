@@ -4,11 +4,18 @@
 
 extern crate lazy_static;
 
+use std::env;
+
+use async_openai::config::OpenAIConfig;
 use clap::Parser;
 use color_eyre::eyre::Result;
 
 use sazid::{
-  app::{embeddings::EmbeddingsManager, errors::SazidError, App},
+  app::{
+    embeddings::{embeddings_models::EmbeddingModel, EmbeddingsManager},
+    errors::SazidError,
+    App,
+  },
   cli::Cli,
   config::Config,
   trace_dbg,
@@ -21,9 +28,11 @@ async fn tokio_main() -> Result<(), SazidError> {
   trace_dbg!("app start");
   let args = Cli::parse();
   let config = Config::new(args.local_api).unwrap();
-  let db_config = "host=localhost user=docker password=docker database=sazid";
+  let api_key: String = env::var("OPENAI_API_KEY").expect("OPENAI_API_KEY not set");
+  let openai_config = OpenAIConfig::new().with_api_key(api_key).with_org_id("org-WagBLu0vLgiuEL12dylmcPFj");
+  let mut embeddings_manager = EmbeddingsManager::init(config.clone(), EmbeddingModel::Ada002(openai_config)).await?;
 
-  match EmbeddingsManager::run(args.clone(), config.clone()).await {
+  match embeddings_manager.run(args.clone()).await {
     Ok(Some(output)) => {
       println!("{}", output);
       Ok(())
