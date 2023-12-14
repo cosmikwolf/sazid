@@ -1,6 +1,6 @@
 #[cfg(test)]
 mod vector_custom_type_tests {
-  use sazid::app::embeddings::types::Embedding;
+  use sazid::app::embeddings::types::FileEmbedding;
   use tokio_postgres::{Client, Error, NoTls};
 
   async fn setup_db() -> Result<Client, Box<dyn std::error::Error>> {
@@ -35,7 +35,7 @@ mod vector_custom_type_tests {
     let drop_query = format!("DROP TABLE IF EXISTS {};", table_name);
     client.batch_execute(&drop_query).await?;
     client.batch_execute(&create_table_query).await?;
-    let vector = Embedding::new(vec![1.0, 2.0, 3.0], "textomg".into());
+    let vector = FileEmbedding::new(vec![1.0, 2.0, 3.0], "textomg".into());
     let batch = format!(
       "INSERT INTO {} (text, embedding) VALUES ('{}',{});",
       table_name,
@@ -47,10 +47,10 @@ mod vector_custom_type_tests {
     let query = format!("SELECT * FROM {} ORDER BY id DESC LIMIT 1", table_name);
     let rows = client.simple_query(&query).await?;
     println!("rows: {:?}", rows);
-    let vectors = Embedding::from_simple_query_messages(&rows)?;
+    let vectors = FileEmbedding::from_simple_query_messages(&rows)?;
 
     teardown(&client).await?;
-    assert_eq!(vectors, vec![Embedding { data: "textomg".into(), embedding: vec![1.0, 2.0, 3.0] }]);
+    assert_eq!(vectors, vec![FileEmbedding { data: "textomg".into(), embedding: vec![1.0, 2.0, 3.0] }]);
     Ok(())
   }
 }

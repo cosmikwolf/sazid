@@ -52,11 +52,9 @@ mod vector_db_tests {
 
     diesel::sql_query("CREATE EXTENSION IF NOT EXISTS vector").execute(&mut conn).await?;
     diesel::sql_query("DROP TABLE IF EXISTS plaintexts").execute(&mut conn).await?;
-    diesel::sql_query(
-      "CREATE TABLE plaintexts (id BigSerial PRIMARY KEY, content TEXT, embedding vector(3))",
-    )
-    .execute(&mut conn)
-    .await?;
+    diesel::sql_query("CREATE TABLE plaintexts (id BigSerial PRIMARY KEY, content TEXT, embedding vector(3))")
+      .execute(&mut conn)
+      .await?;
     // create an async connection
     let new_items = vec![
       NewPlainTextEmbedding { content: "hello world".to_string(), embedding: Some(Vector::from(vec![1.0, 1.0, 1.0])) },

@@ -7,8 +7,6 @@ use dotenv::dotenv;
 use pgvector::{Vector, VectorExpressionMethods};
 
 use self::embeddings_models::EmbeddingModel;
-use self::schema::plaintexts::dsl::plaintexts;
-use self::schema::embeddings::dsl::files;
 use self::types::*;
 use dialoguer;
 
@@ -28,19 +26,18 @@ impl EmbeddingsManager {
     Ok(match args {
       Cli { list_embeddings: true, .. } => {
         // let categories = self.list_embeddings_categories().await?;
+        let embeddings = self.get_all_embeddings().await?;
 
-        let variants = Embedding::variants();
-        let mut embeddings: Vec<Embedding> = vec![];
-        for variant in variants {
-          let new_embeddings = self.get_embeddings_by_type(&variant).await?;
-          for embedding in new_embeddings {
-            embeddings.push(embedding)
-          }
-        }
         if embeddings.len() == 0 {
           Some("No embeddings found".to_string())
         } else {
-          Some(embeddings.into_iter().map(|e| format!("{}", e)).collect::<Vec<String>>().join("\n"))
+          Some(
+            embeddings
+              .into_iter()
+              .map(|(fe, vec_ep)| format!("{} -- {} pages", fe.filepath, vec_ep.len()))
+              .collect::<Vec<String>>()
+              .join("\n"),
+          )
         }
       },
       Cli { delete_all_embeddings: true, .. } => {
@@ -78,18 +75,15 @@ impl EmbeddingsManager {
           Err(e) => Some(format!("Error adding embedding for file at {}: {}", filepath, e)),
         }
       },
-      Cli { add_text_embeddings: Some(text), .. } => {
-        self.add_plaintext(&text).await?;
-        Some("load_text_embeddings".to_string())
-      },
+      Cli { add_text_embeddings: Some(_text), .. } => Some("deprecated".to_string()),
       _ => None,
     })
   }
 
-  pub async fn search_all_embeddings(&mut self, text: &str) -> Result<Vec<Embedding>, SazidError> {
+  pub async fn search_all_embeddings(&mut self, text: &str) -> Result<Vec<EmbeddingPage>, SazidError> {
     // create a vector of text, and then do a search for a similar vector
     let vector = self.model.create_embedding_vector(text).await?;
-    self.get_similar_embeddings(vector, Embedding::variants(), 10).await
+    self.get_similar_embeddings(vector, 10).await
   }
 
   pub async fn init(_config: Config, model: EmbeddingModel) -> Result<Self, SazidError> {
@@ -98,101 +92,76 @@ impl EmbeddingsManager {
     Ok(EmbeddingsManager { client: AsyncPgConnection::establish(&database_url).await.unwrap(), model })
   }
 
-  pub async fn add_embedding(&mut self, embedding: &InsertableEmbedding) -> Result<i64, SazidError> {
-    Ok(
-      match embedding {
-        InsertableEmbedding::PlainText(embedding) => diesel::insert_into(plaintexts)
-          .values(embedding)
-          .returning(self::schema::plaintexts::id)
-          .get_result(&mut self.client),
+  pub async fn add_embedding(
+    &mut self,
+    embedding: &InsertableFileEmbedding,
+    pages: Vec<&InsertablePage>,
+  ) -> Result<i64, SazidError> {
+    let embedding_id = diesel::insert_into(self::schema::file_embeddings::table)
+      .values(embedding)
+      .on_conflict(self::schema::file_embeddings::dsl::checksum)
+      .do_update()
+      .set(embedding)
+      .returning(self::schema::file_embeddings::id)
+      .get_result(&mut self.client)
+      .await?;
+    println!("embedding_id: {}", embedding_id);
 
-        InsertableEmbedding::TextFile(embedding) => diesel::insert_into(files)
-          .values(embedding)
-          .on_conflict(self::schema::embeddings::dsl::checksum)
-          .do_update()
-          .set(embedding)
-          .returning(self::schema::embeddings::id)
-          .get_result(&mut self.client),
-      }
-      .await?,
+    for p in pages {
+      diesel::insert_into(self::schema::embedding_pages::table)
+        .values((
+          schema::embedding_pages::content.eq(p.content.clone()),
+          schema::embedding_pages::page_number.eq(p.page_number.clone()),
+          schema::embedding_pages::checksum.eq(p.checksum.clone()),
+          schema::embedding_pages::file_embedding_id.eq(embedding_id),
+          schema::embedding_pages::embedding.eq(p.embedding.clone()),
+        ))
+        .execute(&mut self.client)
+        .await?;
+    }
+    Ok(embedding_id)
+  }
+
+  pub async fn get_all_embeddings(&mut self) -> Result<Vec<(FileEmbedding, Vec<EmbeddingPage>)>, SazidError> {
+    // use schema::embedding_pages::dsl::*;
+    use schema::file_embeddings::dsl::*;
+
+    let all_files = file_embeddings.select(FileEmbedding::as_select()).load(&mut self.client).await?;
+
+    let pages =
+      EmbeddingPage::belonging_to(&all_files).select(EmbeddingPage::as_select()).load(&mut self.client).await?;
+
+    Ok(
+      pages
+        .grouped_by(&all_files)
+        .into_iter()
+        .zip(all_files)
+        .map(|(pages, file)| (file, pages.into_iter().map(|page| page).collect()))
+        .collect::<Vec<(FileEmbedding, Vec<EmbeddingPage>)>>(),
     )
   }
 
-  pub async fn get_embeddings_by_type(&mut self, embedding_type: &Embedding) -> Result<Vec<Embedding>, SazidError> {
-    Ok(match embedding_type {
-      Embedding::PlainTextEmbedding(_) => plaintexts
-        .load::<PlainTextEmbedding>(&mut self.client)
-        .await?
-        .iter()
-        .map(|e| Embedding::PlainTextEmbedding(e.clone()))
-        .collect(),
-      Embedding::TextFileEmbedding(_) => files
-        .load::<TextFileEmbedding>(&mut self.client)
-        .await?
-        .iter()
-        .map(|e| Embedding::TextFileEmbedding(e.clone()))
-        .collect(),
-    })
-  }
-  pub async fn get_embedding_by_id(&mut self, id: i64, embedding_type: &Embedding) -> Result<Embedding, SazidError> {
-    match embedding_type {
-      Embedding::PlainTextEmbedding(_) => Ok(Embedding::PlainTextEmbedding(
-        plaintexts.find(id).first::<PlainTextEmbedding>(&mut self.client).await?,
-      )),
-      Embedding::TextFileEmbedding(_) => Ok(Embedding::TextFileEmbedding(
-        files.find(id).first::<TextFileEmbedding>(&mut self.client).await?,
-      )),
-    }
+  pub async fn get_similar_embeddings(&mut self, vector: Vector, limit: i64) -> Result<Vec<EmbeddingPage>, SazidError> {
+    let query = self::schema::embedding_pages::table
+      .select(EmbeddingPage::as_select())
+      .order(schema::embedding_pages::embedding.cosine_distance(&vector))
+      .limit(limit);
+    let embeddings = query.load::<EmbeddingPage>(&mut self.client).await?;
+    Ok(embeddings)
   }
 
-  pub async fn get_similar_embeddings(
-    &mut self,
-    vector: Vector,
-    embedding_variants: Vec<Embedding>,
-    limit: i64,
-  ) -> Result<Vec<Embedding>, SazidError> {
-    let mut similar_embeddings = Vec::new();
-    for variant in embedding_variants {
-      match variant {
-        Embedding::TextFileEmbedding(_) => {
-          let query = files
-            .select(self::schema::embeddings::all_columns)
-            .order(self::schema::embeddings::embedding.cosine_distance(&vector))
-            .limit(limit);
-          let embeddings = query.load::<TextFileEmbedding>(&mut self.client).await?;
-          embeddings.into_iter().for_each(|e| similar_embeddings.push(Embedding::TextFileEmbedding(e)))
-        },
-        Embedding::PlainTextEmbedding(_) => {
-          let query = plaintexts
-            .select(self::schema::plaintexts::all_columns)
-            .order(self::schema::plaintexts::embedding.cosine_distance(&vector))
-            .limit(limit);
-          let embeddings = query.load::<PlainTextEmbedding>(&mut self.client).await?;
-          embeddings.into_iter().for_each(|e| similar_embeddings.push(Embedding::PlainTextEmbedding(e)))
-        },
-      }
-    }
-    Ok(similar_embeddings)
-  }
-
-  pub async fn add_plaintext(&mut self, content: &str) -> Result<i64, SazidError> {
-    let embedding = self.model.create_embedding_vector(content).await?;
-    let new_embedding = InsertablePlainTextEmbedding { content: content.to_string(), embedding };
-    Ok(self.add_embedding(&InsertableEmbedding::PlainText(new_embedding)).await?)
+  pub async fn add_embedding_tag(&mut self, tag_name: &str) -> Result<usize, SazidError> {
+    Ok(diesel::insert_into(schema::tags::table).values(schema::tags::tag.eq(tag_name)).execute(&mut self.client).await?)
   }
 
   pub async fn add_textfile_embedding(&mut self, filepath: &str) -> Result<i64, SazidError> {
     let content = std::fs::read_to_string(filepath)?;
-    let checksum = blake3::hash(content.as_bytes()).to_hex();
+    let checksum = blake3::hash(content.as_bytes()).to_hex().to_string();
     let vector_content = vec![filepath.to_string(), content.to_string()].join("\n");
     let embedding = self.model.create_embedding_vector(&vector_content).await?;
-    let new_embedding = InsertableTextFileEmbedding {
-      content: content.to_string(),
-      filepath: filepath.to_string(),
-      checksum: checksum.to_string(),
-      embedding: embedding.clone(),
-    };
-    Ok(self.add_embedding(&InsertableEmbedding::TextFile(new_embedding)).await?)
+    let new_embedding = InsertableFileEmbedding { filepath: filepath.to_string(), checksum: checksum.clone() };
+    let new_page = InsertablePage { content, page_number: 0, checksum, embedding };
+    Ok(self.add_embedding(&new_embedding, vec![&new_page]).await?)
   }
   // Method to retrieve indexing progress information
   pub async fn get_indexing_progress(&mut self) -> Result<Vec<PgVectorIndexInfo>, SazidError> {
