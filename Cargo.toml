@@ -112,6 +112,9 @@ dialoguer = "0.11.0"
 dotenv = "0.15.0"
 async-trait = "0.1.74"
 dsync = { version = "0.0.16", features = ["async"] }
+tree-sitter = "0.20.10"
+tree-sitter-rust = "0.20.4"
+rust-sitter = "0.4.1"
 
 [dev-dependencies]
 insta = { version = "1.34.0", features = [

@@ -3,41 +3,95 @@ use std::fmt;
 use crate::app::errors::SazidError;
 
 use super::schema::*;
-use diesel::prelude::*;
+use diesel::{prelude::*, query_dsl::methods::FindDsl};
+use diesel_async::{AsyncConnection, AsyncPgConnection, RunQueryDsl};
 use pgvector::Vector;
 
-#[derive(Clone, Debug, PartialEq, Queryable, Selectable, Identifiable, AsChangeset)]
-#[diesel(table_name = plaintext_embeddings)]
-pub struct PlainTextEmbedding {
-  pub id: i64,
-  pub content: String,
-  pub embedding: Vector,
-}
-
-#[derive(Queryable, Identifiable, Selectable, Debug, Clone, PartialEq)]
-#[diesel(table_name = textfile_embeddings)]
-pub struct TextFileEmbedding {
+#[derive(Queryable, Selectable, Debug, Clone, Identifiable, PartialEq, Associations)]
+#[diesel(belongs_to(Embedding))]
+#[diesel(table_name = pages)]
+pub struct Page {
   id: i64,
+  embedding_id: i64,
   content: String,
-  filepath: String,
   checksum: String,
+  page_number: i32,
   pub embedding: Vector,
 }
 
 #[derive(Insertable, Debug, Clone, PartialEq, AsChangeset)]
-#[diesel(table_name = plaintext_embeddings)]
-pub struct InsertablePlainTextEmbedding {
+#[diesel(table_name = pages)]
+pub struct InsertablePage {
   pub content: String,
-  pub embedding: Vector,
-}
-
-#[derive(Insertable, Debug, Clone, PartialEq, AsChangeset)]
-#[diesel(table_name = textfile_embeddings)]
-pub struct InsertableTextFileEmbedding {
-  pub content: String,
-  pub filepath: String,
+  pub page_number: i32,
   pub checksum: String,
   pub embedding: Vector,
+}
+#[derive(Queryable, Selectable, Debug, Clone, PartialEq, Identifiable, AsChangeset)]
+#[diesel(table_name = embeddings)]
+pub struct Embedding {
+  id: i64,
+  filepath: String,
+  checksum: String,
+}
+
+#[derive(Insertable, Debug, Clone, PartialEq, AsChangeset)]
+#[diesel(table_name = embeddings)]
+pub struct InsertableEmbedding {
+  filepath: String,
+  checksum: String,
+}
+#[derive(Queryable, Selectable, Debug, Clone, PartialEq, Identifiable, AsChangeset)]
+#[diesel(table_name = tags)]
+pub struct Tag {
+  id: i64,
+  tag: String,
+}
+
+#[derive(Queryable, Selectable, Debug, Clone, PartialEq, AsChangeset)]
+#[diesel(table_name = tags)]
+pub struct InsertableTag {
+  tag: String,
+}
+
+#[derive(Queryable, Selectable, Debug, Clone, PartialEq, AsChangeset)]
+#[diesel(table_name = embedding_tags)]
+pub struct EmbeddingTag {
+  embedding_id: i64,
+  tag_id: i64,
+}
+
+impl Embedding {
+  pub async fn page_count(&self, conn: &mut AsyncPgConnection) -> Result<usize, SazidError> {
+    let all_pages = FindDsl::find(pages::table, self.id).select(Embedding::as_select()).load::<Embedding>(conn).await?;
+    Ok(all_pages.len())
+  }
+}
+
+impl Page {
+  pub async fn get_next_page(&self, conn: &mut AsyncPgConnection) -> Result<Option<Page>, SazidError> {
+    let next_page = pages::table
+      .filter(pages::embedding_id.eq(self.embedding_id))
+      .filter(pages::page_number.gt(self.page_number))
+      .order_by(pages::page_number.asc())
+      .select(Page::as_select())
+      .first::<Page>(conn)
+      .await
+      .optional()?;
+    Ok(next_page)
+  }
+
+  pub async fn get_previous_page(&self, conn: &mut AsyncPgConnection) -> Result<Option<Page>, SazidError> {
+    let previous_page = pages::table
+      .filter(pages::embedding_id.eq(self.embedding_id))
+      .filter(pages::page_number.lt(self.page_number))
+      .order_by(pages::page_number.desc())
+      .select(Page::as_select())
+      .first::<Page>(conn)
+      .await
+      .optional()?;
+    Ok(previous_page)
+  }
 }
 
 use diesel::sql_types::{Bool, Int4, Text};
@@ -61,73 +115,9 @@ pub struct PgVectorIndexInfo {
   pub idx_config: String,
 }
 
-#[derive(Debug, Clone, PartialEq)]
-pub enum InsertableEmbedding {
-  PlainText(InsertablePlainTextEmbedding),
-  TextFile(InsertableTextFileEmbedding),
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub enum Embedding {
-  PlainTextEmbedding(PlainTextEmbedding),
-  TextFileEmbedding(TextFileEmbedding),
-}
-
 impl fmt::Display for Embedding {
   fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-    match self {
-      Embedding::PlainTextEmbedding(plain_text) => {
-        write!(
-          f,
-          "PlainTextEmbedding({} chars, {} lines) : {}",
-          plain_text.content.chars().count(),
-          plain_text.content.lines().count(),
-          plain_text.content.lines().next().unwrap_or(&""),
-        )
-      },
-      Embedding::TextFileEmbedding(text_file) => {
-        write!(
-          f,
-          "TextFileEmbedding(filename: {}\tchecksum: {}): {} ",
-          text_file.filepath,
-          text_file.checksum,
-          text_file.content.lines().next().unwrap_or(&""),
-        )
-      },
-    }
-  }
-}
-
-pub enum EmbeddingTables {
-  PlainText(plaintext_embeddings::table),
-  TextFile(textfile_embeddings::table),
-}
-
-pub enum EmbeddingColumn {
-  PlainTextId(plaintext_embeddings::id),
-  PlainTextEmbedding(plaintext_embeddings::embedding),
-  TextFileId(textfile_embeddings::id),
-  TextFileEmbedding(textfile_embeddings::embedding),
-}
-
-impl InsertableEmbedding {
-  pub fn get_table(&self) -> EmbeddingTables {
-    match self {
-      InsertableEmbedding::PlainText(_) => EmbeddingTables::PlainText(plaintext_embeddings::table),
-      InsertableEmbedding::TextFile(_) => EmbeddingTables::TextFile(textfile_embeddings::table),
-    }
-  }
-  pub fn get_id_column(&self) -> EmbeddingColumn {
-    match self {
-      InsertableEmbedding::PlainText(_) => EmbeddingColumn::PlainTextId(plaintext_embeddings::id),
-      InsertableEmbedding::TextFile(_) => EmbeddingColumn::TextFileId(textfile_embeddings::id),
-    }
-  }
-  pub fn get_embedding_column(&self) -> EmbeddingColumn {
-    match self {
-      InsertableEmbedding::PlainText(_) => EmbeddingColumn::PlainTextEmbedding(plaintext_embeddings::embedding),
-      InsertableEmbedding::TextFile(_) => EmbeddingColumn::TextFileEmbedding(textfile_embeddings::embedding),
-    }
+    write!(f, "TextFileEmbedding(filename: {}\tchecksum: {}) ", self.filepath, self.checksum,)
   }
 }
 
@@ -149,10 +139,9 @@ impl Embedding {
   pub fn variants() -> Vec<Embedding> {
     vec![
       Embedding::PlainTextEmbedding(PlainTextEmbedding { id: 0, content: "".to_string(), embedding: vec![].into() }),
-      Embedding::TextFileEmbedding(TextFileEmbedding {
+      Embedding::TextFileEmbedding(Page {
         id: 0,
         content: "".to_string(),
-        filepath: "".to_string(),
         checksum: "".to_string(),
         embedding: vec![].into(),
       }),

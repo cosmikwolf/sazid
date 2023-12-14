@@ -7,13 +7,14 @@ use dotenv::dotenv;
 use pgvector::{Vector, VectorExpressionMethods};
 
 use self::embeddings_models::EmbeddingModel;
-use self::schema::plaintext_embeddings::dsl::plaintext_embeddings;
-use self::schema::textfile_embeddings::dsl::textfile_embeddings;
+use self::schema::plaintexts::dsl::plaintexts;
+use self::schema::embeddings::dsl::files;
 use self::types::*;
 use dialoguer;
 
 pub mod embeddings_models;
 pub mod schema;
+pub mod treesitter_extraction;
 pub mod types;
 
 pub struct EmbeddingsManager {
@@ -78,7 +79,7 @@ impl EmbeddingsManager {
         }
       },
       Cli { add_text_embeddings: Some(text), .. } => {
-        self.add_plaintext_embedding(&text).await?;
+        self.add_plaintext(&text).await?;
         Some("load_text_embeddings".to_string())
       },
       _ => None,
@@ -90,6 +91,7 @@ impl EmbeddingsManager {
     let vector = self.model.create_embedding_vector(text).await?;
     self.get_similar_embeddings(vector, Embedding::variants(), 10).await
   }
+
   pub async fn init(_config: Config, model: EmbeddingModel) -> Result<Self, SazidError> {
     dotenv().ok();
     let database_url = std::env::var("DATABASE_URL").unwrap();
@@ -99,17 +101,17 @@ impl EmbeddingsManager {
   pub async fn add_embedding(&mut self, embedding: &InsertableEmbedding) -> Result<i64, SazidError> {
     Ok(
       match embedding {
-        InsertableEmbedding::PlainText(embedding) => diesel::insert_into(plaintext_embeddings)
+        InsertableEmbedding::PlainText(embedding) => diesel::insert_into(plaintexts)
           .values(embedding)
-          .returning(self::schema::plaintext_embeddings::id)
+          .returning(self::schema::plaintexts::id)
           .get_result(&mut self.client),
 
-        InsertableEmbedding::TextFile(embedding) => diesel::insert_into(textfile_embeddings)
+        InsertableEmbedding::TextFile(embedding) => diesel::insert_into(files)
           .values(embedding)
-          .on_conflict(self::schema::textfile_embeddings::dsl::checksum)
+          .on_conflict(self::schema::embeddings::dsl::checksum)
           .do_update()
           .set(embedding)
-          .returning(self::schema::textfile_embeddings::id)
+          .returning(self::schema::embeddings::id)
           .get_result(&mut self.client),
       }
       .await?,
@@ -118,13 +120,13 @@ impl EmbeddingsManager {
 
   pub async fn get_embeddings_by_type(&mut self, embedding_type: &Embedding) -> Result<Vec<Embedding>, SazidError> {
     Ok(match embedding_type {
-      Embedding::PlainTextEmbedding(_) => plaintext_embeddings
+      Embedding::PlainTextEmbedding(_) => plaintexts
         .load::<PlainTextEmbedding>(&mut self.client)
         .await?
         .iter()
         .map(|e| Embedding::PlainTextEmbedding(e.clone()))
         .collect(),
-      Embedding::TextFileEmbedding(_) => textfile_embeddings
+      Embedding::TextFileEmbedding(_) => files
         .load::<TextFileEmbedding>(&mut self.client)
         .await?
         .iter()
@@ -135,10 +137,10 @@ impl EmbeddingsManager {
   pub async fn get_embedding_by_id(&mut self, id: i64, embedding_type: &Embedding) -> Result<Embedding, SazidError> {
     match embedding_type {
       Embedding::PlainTextEmbedding(_) => Ok(Embedding::PlainTextEmbedding(
-        plaintext_embeddings.find(id).first::<PlainTextEmbedding>(&mut self.client).await?,
+        plaintexts.find(id).first::<PlainTextEmbedding>(&mut self.client).await?,
       )),
       Embedding::TextFileEmbedding(_) => Ok(Embedding::TextFileEmbedding(
-        textfile_embeddings.find(id).first::<TextFileEmbedding>(&mut self.client).await?,
+        files.find(id).first::<TextFileEmbedding>(&mut self.client).await?,
       )),
     }
   }
@@ -153,17 +155,17 @@ impl EmbeddingsManager {
     for variant in embedding_variants {
       match variant {
         Embedding::TextFileEmbedding(_) => {
-          let query = textfile_embeddings
-            .select(self::schema::textfile_embeddings::all_columns)
-            .order(self::schema::textfile_embeddings::embedding.cosine_distance(&vector))
+          let query = files
+            .select(self::schema::embeddings::all_columns)
+            .order(self::schema::embeddings::embedding.cosine_distance(&vector))
             .limit(limit);
           let embeddings = query.load::<TextFileEmbedding>(&mut self.client).await?;
           embeddings.into_iter().for_each(|e| similar_embeddings.push(Embedding::TextFileEmbedding(e)))
         },
         Embedding::PlainTextEmbedding(_) => {
-          let query = plaintext_embeddings
-            .select(self::schema::plaintext_embeddings::all_columns)
-            .order(self::schema::plaintext_embeddings::embedding.cosine_distance(&vector))
+          let query = plaintexts
+            .select(self::schema::plaintexts::all_columns)
+            .order(self::schema::plaintexts::embedding.cosine_distance(&vector))
             .limit(limit);
           let embeddings = query.load::<PlainTextEmbedding>(&mut self.client).await?;
           embeddings.into_iter().for_each(|e| similar_embeddings.push(Embedding::PlainTextEmbedding(e)))
@@ -173,7 +175,7 @@ impl EmbeddingsManager {
     Ok(similar_embeddings)
   }
 
-  pub async fn add_plaintext_embedding(&mut self, content: &str) -> Result<i64, SazidError> {
+  pub async fn add_plaintext(&mut self, content: &str) -> Result<i64, SazidError> {
     let embedding = self.model.create_embedding_vector(content).await?;
     let new_embedding = InsertablePlainTextEmbedding { content: content.to_string(), embedding };
     Ok(self.add_embedding(&InsertableEmbedding::PlainText(new_embedding)).await?)

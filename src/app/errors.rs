@@ -3,7 +3,6 @@ use crate::trace_dbg;
 use async_openai::error::OpenAIError;
 use std::{fmt, io};
 use thiserror::Error;
-
 #[derive(Debug, Error)]
 pub enum SazidError {
   DieselError(diesel::result::Error),

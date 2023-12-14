@@ -21,7 +21,7 @@ mod vector_db_tests {
       use diesel::sql_types::*;
        use pgvector::sql_types::*;
 
-      plaintext_embeddings (id) {
+      plaintexts (id) {
           id -> BigInt,
           content -> Text,
           embedding -> Nullable<Vector>,
@@ -29,7 +29,7 @@ mod vector_db_tests {
   }
 
   #[derive(Queryable, Selectable)]
-  #[diesel(table_name = plaintext_embeddings)]
+  #[diesel(table_name = plaintexts)]
   pub struct PlainTextEmbedding {
     id: i64,
     content: String,
@@ -37,7 +37,7 @@ mod vector_db_tests {
   }
 
   #[derive(Insertable)]
-  #[diesel(table_name = plaintext_embeddings)]
+  #[diesel(table_name = plaintexts)]
   pub struct NewPlainTextEmbedding {
     pub content: String,
     pub embedding: Option<pgvector::Vector>,
@@ -51,9 +51,9 @@ mod vector_db_tests {
       AsyncPgConnection::establish(&std::env::var("TEST_DATABASE_URL").expect("TEST_DATABASE_URL must be set")).await?;
 
     diesel::sql_query("CREATE EXTENSION IF NOT EXISTS vector").execute(&mut conn).await?;
-    diesel::sql_query("DROP TABLE IF EXISTS plaintext_embeddings").execute(&mut conn).await?;
+    diesel::sql_query("DROP TABLE IF EXISTS plaintexts").execute(&mut conn).await?;
     diesel::sql_query(
-      "CREATE TABLE plaintext_embeddings (id BigSerial PRIMARY KEY, content TEXT, embedding vector(3))",
+      "CREATE TABLE plaintexts (id BigSerial PRIMARY KEY, content TEXT, embedding vector(3))",
     )
     .execute(&mut conn)
     .await?;
@@ -65,25 +65,25 @@ mod vector_db_tests {
       NewPlainTextEmbedding { content: "hello world".to_string(), embedding: None },
     ];
 
-    diesel::insert_into(plaintext_embeddings::table)
+    diesel::insert_into(plaintexts::table)
       .values(&new_items)
       // .returning(PlainTextEmbedding::as_returning())
       .get_result::<PlainTextEmbedding>(&mut conn).await?;
 
     // use ordinary diesel query dsl to construct your query
-    let one = plaintext_embeddings::table
-      .filter(plaintext_embeddings::id.eq(1))
+    let one = plaintexts::table
+      .filter(plaintexts::id.eq(1))
       .select(PlainTextEmbedding::as_select())
       .load::<PlainTextEmbedding>(&mut conn)
       .await?;
 
     assert_eq!(1, one.len());
 
-    let all = plaintext_embeddings::table.load::<PlainTextEmbedding>(&mut conn).await?;
+    let all = plaintexts::table.load::<PlainTextEmbedding>(&mut conn).await?;
     assert_eq!(4, all.len());
 
-    let neighbors = plaintext_embeddings::table
-      .order(plaintext_embeddings::embedding.cosine_distance(Vector::from(vec![1.0, 1.0, 1.0])))
+    let neighbors = plaintexts::table
+      .order(plaintexts::embedding.cosine_distance(Vector::from(vec![1.0, 1.0, 1.0])))
       .limit(5)
       .load::<PlainTextEmbedding>(&mut conn)
       .await?;

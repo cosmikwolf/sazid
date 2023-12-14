@@ -601,6 +601,26 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a3e368af43e418a04d52505cf3dbc23dda4e3407ae2fa99fd0e4f308ce546acc"
 
 [[package]]
+name = "c2rust-bitfields"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "eb34f0c0ace43530b2df7f18bc69ee0c4082158aa451ece29602f8c841e73764"
+dependencies = [
+ "c2rust-bitfields-derive",
+]
+
+[[package]]
+name = "c2rust-bitfields-derive"
+version = "0.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3dd1601a7b828ab874d890e5a895563ca8ad485bdd3d2a359f148c8b72537241"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 1.0.109",
+]
+
+[[package]]
 name = "cassowary"
 version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3558,6 +3578,38 @@ dependencies = [
 ]
 
 [[package]]
+name = "rust-sitter"
+version = "0.4.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e9740bfc968b639729ae72acf0bcacacc8dfee136db6ac11a0c27baa7ccfab13"
+dependencies = [
+ "rust-sitter-macro",
+ "tree-sitter-c2rust",
+]
+
+[[package]]
+name = "rust-sitter-common"
+version = "0.4.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "49fd04db2e36bf681c70f293db3162105c02d64d7af66827bc639bb1e26827e2"
+dependencies = [
+ "quote",
+ "syn 1.0.109",
+]
+
+[[package]]
+name = "rust-sitter-macro"
+version = "0.4.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "611081d5efb786ea1864f4f8ca3ebde7a4218a84aedee4b1fbb5be2bb60e6bae"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "rust-sitter-common",
+ "syn 1.0.109",
+]
+
+[[package]]
 name = "rustc-demangle"
 version = "0.1.23"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3724,6 +3776,7 @@ dependencies = [
  "reqwest",
  "ropey",
  "rust-fuzzy-search",
+ "rust-sitter",
  "serde",
  "serde_derive",
  "serde_json",
@@ -3747,6 +3800,8 @@ dependencies = [
  "tracing",
  "tracing-error",
  "tracing-subscriber",
+ "tree-sitter",
+ "tree-sitter-rust",
  "tui-input",
  "tui-textarea",
  "url",
@@ -4819,6 +4874,37 @@ dependencies = [
  "tracing",
  "tracing-core",
  "tracing-log",
+]
+
+[[package]]
+name = "tree-sitter"
+version = "0.20.10"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e747b1f9b7b931ed39a548c1fae149101497de3c1fc8d9e18c62c1a66c683d3d"
+dependencies = [
+ "cc",
+ "regex",
+]
+
+[[package]]
+name = "tree-sitter-c2rust"
+version = "0.20.10"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ee40a4d9cf5a30c199935f346887588239daceae4d1418d81b789276fffb8d91"
+dependencies = [
+ "c2rust-bitfields",
+ "once_cell",
+ "regex",
+]
+
+[[package]]
+name = "tree-sitter-rust"
+version = "0.20.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b0832309b0b2b6d33760ce5c0e818cb47e1d72b468516bfe4134408926fa7594"
+dependencies = [
+ "cc",
+ "tree-sitter",
 ]
 
 [[package]]
