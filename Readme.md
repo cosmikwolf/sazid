@@ -4,7 +4,7 @@
 
 [![CI](https://github.com/cosmikwolf/sazid/workflows/CI/badge.svg)](https://github.com/cosmikwolf/sazid/actions)
 
-** Current a work in progress **
+** Currently a work in progress **
 
 Sazid is an interactive LLM interface written in Rust that provides:
 
