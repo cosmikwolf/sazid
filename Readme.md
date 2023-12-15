@@ -1,14 +1,17 @@
 
 ![Project Banner or Logo](docs/sazid_banner_image.png)
-# **Sazid: Ascended Rust Development**
+# Sazid: A Semantically Aware Programming Assistant
 
 [![CI](https://github.com/cosmikwolf/sazid/workflows/CI/badge.svg)](https://github.com/cosmikwolf/sazid/actions)
 
-Sazid is an interactive GPT interface written in Rust that
+** Current a work in progress **
 
-- TUI using Ratatui
+Sazid is an interactive LLM interface written in Rust that provides:
+
+- a full color Terminal User Interface
 - Full Async Support
 - Embeddings database implemented using postgres, pgvector and diesel-async
+- Function Call tools that enable LLM to read and modify code
 
 ## **Table of Contents**
 
