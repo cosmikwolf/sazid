@@ -15,16 +15,15 @@ Sazid is an interactive LLM interface written in Rust that provides:
 
 ## **Table of Contents**
 
-- [**Sazid: Ascended Rust Development**](#sazid-ascended-rust-development)
-  - [**Table of Contents**](#table-of-contents)
-  - [**Features**](#features)
-  - [**Getting Started**](#getting-started)
-    - [**Prerequisites**](#prerequisites)
-    - [**Installation**](#installation)
-  - [**Usage**](#usage)
-  - [**Contributing**](#contributing)
-  - [**License**](#license)
-  - [**Acknowledgements**](#acknowledgements)
+- [**Table of Contents**](#table-of-contents)
+- [**Features**](#features)
+- [**Getting Started**](#getting-started)
+  - [**Prerequisites**](#prerequisites)
+  - [**Installation**](#installation)
+- [**Usage**](#usage)
+- [**Contributing**](#contributing)
+- [**License**](#license)
+- [**Acknowledgements**](#acknowledgements)
 
 ## **Feature Roadmap**
 
