@@ -8,9 +8,9 @@
 
 Sazid is an interactive LLM interface written in Rust that provides:
 
-- a full color Terminal User Interface
-- Full Async Support
+- Full Color Terminal User Interface
 - Embeddings database implemented using postgres, pgvector and diesel-async
+- Async Enabled UI, API, and Database
 - Function Call tools that enable LLM to read and modify code
 
 ## **Table of Contents**
@@ -34,7 +34,7 @@ Sazid is an interactive LLM interface written in Rust that provides:
 - [x] **Text File Embeddings**: Generate embeddings from text files and load them into the vector database
 - [ ] **Treesitter Integration**: Allow GPT to traverse and modify your codebase syntax tree
 - [ ] **Chat Session Management**: Start new sessions or continue previous ones with ease.
-- [ ] **Retrieval Augmented Generation**: Improve the quality of your LLM responses by sending customizable and relevant context
+- [ ] **[Retrieval Augmented Generation](https://arxiv.org/pdf/2005.11401.pdf)**: Improve the quality of your LLM responses by sending customizable and relevant context
 - [ ] **Prompt Manager**: Manage a set of reliable prompts that have specific tasks and rate their effectiveness
 - [ ] **Recursive Prompt Functions** Allow GPT to achieve complex goals by breaking it down into smaller tasks using managed prompts
 - [ ] **nvim + vscode plugin** Interact with Sazid directly in neovim or vscode
