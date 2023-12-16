@@ -1,0 +1,3 @@
+[submodule "lib/tui-textarea"]
+	path = lib/tui-textarea
+	url = https://github.com/cosmikwolf/tui-textarea
