@@ -4,13 +4,15 @@ use async_openai::types::{
   ChatCompletionRequestUserMessageContent, CreateChatCompletionRequest, CreateEmbeddingRequestArgs,
   CreateEmbeddingResponse, Role,
 };
-
 use color_eyre::owo_colors::OwoColorize;
-use crossterm::event::{KeyCode, KeyEvent, MouseEvent, MouseEventKind};
+use crossterm::event::{KeyCode, KeyEvent, MouseButton, MouseEvent, MouseEventKind};
 use futures::StreamExt;
+use nu_ansi_term::Color::*;
+use nu_ansi_term::Style;
 use ratatui::layout::Rect;
 use ratatui::{prelude::*, widgets::block::*, widgets::*};
 use serde_derive::{Deserialize, Serialize};
+use std::default::Default;
 use std::path::{Path, PathBuf};
 use std::result::Result;
 use std::{fs, io};
@@ -43,15 +45,13 @@ pub struct Session<'a> {
   pub data: SessionData,
   pub config: SessionConfig,
   #[serde(skip)]
-  pub view: SessionView,
+  pub view: SessionView<'a>,
   #[serde(skip)]
   pub action_tx: Option<UnboundedSender<Action>>,
   #[serde(skip)]
   pub mode: Mode,
   #[serde(skip)]
   pub last_events: Vec<KeyEvent>,
-  #[serde(skip)]
-  pub text_area: TextArea<'a>,
   #[serde(skip)]
   pub vertical_scroll_state: ScrollbarState,
   #[serde(skip)]
@@ -80,6 +80,12 @@ pub struct Session<'a> {
   pub request_buffer_token_count: usize,
   #[serde(skip)]
   pub input_vsize: u16,
+  #[serde(skip)]
+  pub cursor_coords: Option<(usize, usize)>,
+  #[serde(skip)]
+  pub select_start_coords: Option<(usize, usize)>,
+  #[serde(skip)]
+  pub select_end_coords: Option<(usize, usize)>,
 }
 
 impl<'a> Default for Session<'a> {
@@ -90,7 +96,6 @@ impl<'a> Default for Session<'a> {
       action_tx: None,
       mode: Mode::Normal,
       last_events: vec![],
-      text_area: TextArea::default(),
       vertical_scroll_state: ScrollbarState::default(),
       view: SessionView::default(),
       horizontal_scroll_state: ScrollbarState::default(),
@@ -106,6 +111,9 @@ impl<'a> Default for Session<'a> {
       request_buffer: Vec::new(),
       request_buffer_token_count: 0,
       input_vsize: 1,
+      cursor_coords: None,
+      select_start_coords: None,
+      select_end_coords: None,
     }
   }
 }
@@ -137,6 +145,7 @@ impl Component for Session<'static> {
     self.view.set_window_width(area.width as usize, &mut self.data.messages);
     tx.send(Action::AddMessage(ChatMessage::System(self.config.prompt_message()))).unwrap();
     self.view.post_process_new_messages(&mut self.data);
+    // self.text_area = TextArea::new(self.view.rendered_text.lines().map(|l| l.to_string()).collect());
     self.config.available_functions = all_functions();
     Ok(())
   }
@@ -200,6 +209,22 @@ impl Component for Session<'static> {
     match mouse_event {
       MouseEvent { kind: MouseEventKind::ScrollUp, .. } => self.scroll_up(),
       MouseEvent { kind: MouseEventKind::ScrollDown, .. } => self.scroll_down(),
+      MouseEvent { kind: MouseEventKind::Drag(MouseButton::Left), column, row, modifiers } => {
+        // translate mouse click coordinates to text column and row
+        self.select_end_coords = Some((column as usize, row as usize));
+        // self.select_coords = Some((column as usize, row as usize));
+        self.cursor_coords = Some((column as usize, row as usize));
+        self.view.new_data = true;
+        trace_dbg!("mouse drag: column: {}, row: {}, modifiers: {:?}", column, row, modifiers);
+        Ok(Some(Action::Update))
+      },
+      MouseEvent { kind: MouseEventKind::Down(MouseButton::Left), column, row, modifiers } => {
+        // translate mouse click coordinates to text column and row
+        self.select_start_coords = Some((column as usize, row as usize));
+        self.cursor_coords = Some((column as usize, row as usize));
+        self.view.new_data = true;
+        Ok(Some(Action::Update))
+      },
       _ => Ok(None),
     }
   }
@@ -246,18 +271,24 @@ impl Component for Session<'static> {
       self.vertical_scroll_state = self.vertical_scroll_state.position(self.vertical_scroll);
     }
 
-    let text =
-      self.view.get_stylized_rendered_slice(self.vertical_scroll, self.vertical_viewport_height, self.vertical_scroll);
-    let paragraph = Paragraph::new(text.into_text().unwrap())
-      .block(block)
-      //.wrap(Wrap { trim: false })
-      .scroll((self.vertical_scroll as u16, 0));
+    // let text = self.view.get_stylized_rendered_slice(
+    //   self.vertical_scroll,
+    //   self.vertical_viewport_height,
+    //   self.vertical_scroll,
+    //   self.get_select_coords(),
+    // );
+
+    // let paragraph = Paragraph::new(text.0.into_text().unwrap())
+    //   .block(block)
+    //   //.wrap(Wrap { trim: false })
+    //   .scroll((self.vertical_scroll as u16, 0));
     // let scrollbar = Scrollbar::default()
     //   .orientation(ScrollbarOrientation::VerticalRight)
     //   .thumb_symbol("󱁨")
     //   .begin_symbol(Some("󰶼"))
     //   .end_symbol(Some("󰶹"));
-    f.render_widget(paragraph, inner[1]);
+    // f.render_widget(paragraph, inner[1]);
+    f.render_widget(self.view.text_area.widget(), inner[1]);
     // f.render_stateful_widget(scrollbar, inner[2], &mut self.vertical_scroll_state);
     //self.render = false;
     Ok(())
@@ -277,6 +308,15 @@ impl Session<'static> {
     Self::default()
   }
 
+  pub fn get_select_coords(&self) -> Option<((usize, usize), (usize, usize))> {
+    match self.select_start_coords {
+      Some((x1, y1)) => match self.select_end_coords {
+        Some((x2, y2)) => Some(((x1, y1), (x2, y2))),
+        None => None,
+      },
+      None => None,
+    }
+  }
   pub fn execute_tool_calls(&mut self) {
     let tx = self.action_tx.clone().unwrap();
     self

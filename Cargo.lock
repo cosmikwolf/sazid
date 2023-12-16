@@ -94,7 +94,8 @@ dependencies = [
 [[package]]
 name = "ansi-to-tui"
 version = "3.1.0"
-source = "git+https://github.com/cosmikwolf/ansi-to-tui?branch=update#1dc761d83280bf7342658314c3deeb1cafa6979b"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0b0e348dcd256ba06d44d5deabc88a7c0e80ee7303158253ca069bcd9e9b7f57"
 dependencies = [
  "nom",
  "ratatui 0.24.0",
@@ -4939,11 +4940,11 @@ dependencies = [
 [[package]]
 name = "tui-textarea"
 version = "0.4.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a3e38ced1f941a9cfc923fbf2fe6858443c42cc5220bfd35bdd3648371e7bd8e"
 dependencies = [
+ "ansi-to-tui",
  "crossterm 0.27.0",
  "ratatui 0.24.0",
+ "tracing",
  "unicode-width",
 ]
 
