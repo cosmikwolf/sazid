@@ -1,6 +1,10 @@
 use bat::{assets::HighlightingAssets, config::Config, controller::Controller, style::StyleComponents, Input};
-
+use color_eyre::owo_colors::OwoColorize;
+use nu_ansi_term::Color::*;
+use nu_ansi_term::Style;
+use std::default::Default;
 use textwrap::{self, Options, WordSeparator, WordSplitter, WrapAlgorithm};
+use tui_textarea::TextArea;
 
 use crate::trace_dbg;
 
@@ -8,16 +12,18 @@ use super::{messages::MessageContainer, session_data::SessionData};
 use ropey::Rope;
 
 #[derive(Default, Debug)]
-pub struct SessionView {
+pub struct SessionView<'a> {
   pub renderer: BatRenderer<'static>,
   pub window_width: usize,
   pub render_conditions: (usize, usize, usize, usize, bool),
   pub rendered_view: String,
+  pub text_area: TextArea<'a>,
+  pub selected_text: Option<String>,
   pub new_data: bool,
   pub rendered_text: Rope,
 }
 
-impl SessionView {
+impl<'a> SessionView<'a> {
   pub fn set_window_width(&mut self, width: usize, _messages: &mut [MessageContainer]) {
     let new_value = width - 6;
     if self.window_width != new_value {
@@ -48,6 +54,7 @@ impl SessionView {
       //let rendered_text = &self.renderer.render_message_bat(start_line, line_count, &self.rendered_text);
       let rendered_text =
         &self.rendered_text.lines_at(start_line).take(line_count + 1).map(|l| l.to_string()).collect::<String>();
+
       //let debug = format!("{}\n", rendered_text);
       //trace_dbg!(debug);
       self.rendered_view = "-\n".repeat(vertical_scroll) + rendered_text.as_str()
@@ -59,6 +66,7 @@ impl SessionView {
     let dividing_newlines_count = 2;
     session_data.messages.iter_mut().for_each(|message| {
       let rendered_text_message_start_index = self.rendered_text.len_chars() - message.stylized.len_chars();
+      let original_message_length = message.stylized.len_chars();
       // trace_dbg!("message: {:#?}", message.bright_blue());
       // let previously_rendered_bytecount = message.rendered.stylized.len_bytes();
       if !message.stylize_complete {
@@ -95,8 +103,12 @@ impl SessionView {
         }
 
         self.new_data = true;
+        self.text_area.replace_at_end(message.stylized.to_string(), original_message_length);
+        trace_dbg!("stylized {}\n\n{}", message.stylized.red(), self.rendered_text.len_chars());
+
         self.rendered_text.remove(rendered_text_message_start_index..);
         self.rendered_text.append(message.stylized.clone());
+
         // message.rendered.stylized.bytes_at(previously_rendered_bytecount).for_each(|b| {
         //   self.renderer.rendered_bytes.push(b);
         // });
@@ -175,4 +187,56 @@ impl<'a> BatRenderer<'a> {
     //trace_dbg!("render_message_bat: {:?}", buffer);
     buffer
   }
+}
+
+fn visual_char_coord_to_index(rope: &Rope, line_number: usize, x_coord: usize) -> usize {
+  // Clamp line_number within the number of lines in rope
+  let line_number = line_number.min(rope.len_lines());
+  // Get the character offset of the line
+  let line_offset = rope.line_to_char(line_number);
+  // Get the line as a slice
+  let line = rope.line(line_number);
+  // Clamp x_coord within the number of characters in line
+  let x_coord = x_coord.min(line.len_chars());
+
+  let mut visual_char_index = 0;
+  let mut actual_char_index = 0;
+
+  // Iterate over the characters of the line
+  while actual_char_index < line.len_chars() {
+    let c = line.char(actual_char_index);
+
+    if c == '\\' {
+      // Detect ASCII escape sequences
+      if actual_char_index + 1 < line.len_chars() {
+        let next_c = line.char(actual_char_index + 1);
+        if matches!(next_c, 'n' | 'r' | 't' | '\\' | '0') {
+          actual_char_index += 2; // Skip the escape sequence
+          continue;
+        }
+      }
+    } else if c == '\x1B' {
+      // Detect ANSI escape codes
+      if actual_char_index + 1 < line.len_chars() && line.char(actual_char_index + 1) == '[' {
+        actual_char_index += 2; // Skip the escape character and '['
+                                // Loop until we find a character that is not part of the code
+        while actual_char_index < line.len_chars() && !line.char(actual_char_index).is_alphabetic() {
+          actual_char_index += 1;
+        }
+        actual_char_index += 1; // Skip the final character of the ANSI code
+        continue;
+      }
+    }
+
+    // If we've reached the x_coord, return the index
+    if visual_char_index == x_coord {
+      return line_offset + actual_char_index;
+    }
+
+    visual_char_index += 1;
+    actual_char_index += 1;
+  }
+
+  // If x_coord was not found, return the end of the line offset
+  line_offset + line.len_chars()
 }
