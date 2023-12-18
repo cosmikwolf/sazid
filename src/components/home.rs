@@ -115,20 +115,16 @@ impl Component for Home<'static> {
       },
       Action::EnterCommand => {
         self.mode = Mode::Command;
-        self.session.mode = Mode::Command;
       },
       Action::EnterNormal => {
         self.mode = Mode::Normal;
-        self.session.mode = Mode::Normal;
       },
       Action::EnterVisual => {
         self.mode = Mode::Visual;
-        self.session.mode = Mode::Visual;
       },
       Action::EnterInsert => {
         trace_dbg!("enter insert mode");
         self.mode = Mode::Insert;
-        self.session.mode = Mode::Insert;
       },
       Action::CommandResult(result) => {
         self.replace_input(result);
@@ -137,12 +133,10 @@ impl Component for Home<'static> {
       Action::EnterProcessing => {
         self.clear_input();
         self.mode = Mode::Processing;
-        self.session.mode = Mode::Processing;
       },
       Action::ExitProcessing => {
         // TODO: Make this go to previous mode instead
         self.mode = Mode::Normal;
-        self.session.mode = Mode::Normal;
       },
       _ => (),
     }

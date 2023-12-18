@@ -4,7 +4,9 @@ use async_openai::types::{
   ChatCompletionRequestUserMessageContent, CreateChatCompletionRequest, CreateEmbeddingRequestArgs,
   CreateEmbeddingResponse, Role,
 };
+use clipboard::{ClipboardContext, ClipboardProvider};
 use color_eyre::owo_colors::OwoColorize;
+use crossterm::event::KeyModifiers;
 use crossterm::event::{KeyCode, KeyEvent, MouseButton, MouseEvent, MouseEventKind};
 use futures::StreamExt;
 use nu_ansi_term::Color::*;
@@ -18,6 +20,7 @@ use std::result::Result;
 use std::{fs, io};
 use tokio::sync::mpsc::UnboundedSender;
 use tui_textarea::TextArea;
+use tui_textarea::{CursorMove, Scrolling};
 
 use async_openai::{config::OpenAIConfig, Client};
 
@@ -130,7 +133,7 @@ impl Component for Session<'static> {
     "- you write full code when requested",
     "- your responses are conscise and terse",
     "- Use the functions available to execute with the user inquiry.",
-    "- Provide your responses as markdown formatted text.",
+    "- Provide ==your responses== as markdown formatted text.",
     "- Make sure to properly entabulate any code blocks",
     "- Do not try and execute arbitrary python code.",
     "- Do not try to infer a path to a file, if you have not been provided a path with the root ./, use the file_search function to verify the file path before you execute a function call.",
@@ -190,6 +193,30 @@ impl Component for Session<'static> {
       Action::SetInputVsize(vsize) => {
         self.input_vsize = vsize;
       },
+      Action::EnterCommand => {
+        self.view.unfocus_textarea();
+        self.mode = Mode::Command;
+      },
+      Action::EnterNormal => {
+        self.view.focus_textarea();
+        self.mode = Mode::Normal;
+      },
+      Action::EnterVisual => {
+        self.view.unfocus_textarea();
+        self.mode = Mode::Visual;
+      },
+      Action::EnterInsert => {
+        self.view.unfocus_textarea();
+        self.mode = Mode::Insert;
+      },
+      Action::EnterProcessing => {
+        self.view.unfocus_textarea();
+        self.mode = Mode::Processing;
+      },
+      Action::ExitProcessing => {
+        self.view.focus_textarea();
+        self.mode = Mode::Normal;
+      },
       _ => (),
     }
     //self.action_tx.clone().unwrap().send(Action::Render).unwrap();
@@ -231,14 +258,88 @@ impl Component for Session<'static> {
 
   fn handle_key_events(&mut self, key: KeyEvent) -> Result<Option<Action>, SazidError> {
     self.last_events.push(key);
-    match self.mode {
-      Mode::Normal => match key.code {
-        KeyCode::Char('j') => self.scroll_down(),
-        KeyCode::Char('k') => self.scroll_up(),
-        _ => Ok(None),
+    Ok(match self.mode {
+      Mode::Normal => match key {
+        KeyEvent { code: KeyCode::Char('d'), modifiers: KeyModifiers::CONTROL, .. } => {
+          self.view.text_area.scroll(Scrolling::HalfPageDown);
+          Some(Action::Update)
+        },
+        KeyEvent { code: KeyCode::Char('u'), modifiers: KeyModifiers::CONTROL, .. } => {
+          self.view.text_area.scroll(Scrolling::HalfPageUp);
+          Some(Action::Update)
+        },
+        KeyEvent { code: KeyCode::Char('f'), modifiers: KeyModifiers::CONTROL, .. } => {
+          self.view.text_area.scroll(Scrolling::PageDown);
+          Some(Action::Update)
+        },
+        KeyEvent { code: KeyCode::Char('b'), modifiers: KeyModifiers::CONTROL, .. } => {
+          self.view.text_area.scroll(Scrolling::PageUp);
+          Some(Action::Update)
+        },
+        KeyEvent { code: KeyCode::Char('h'), .. } => {
+          self.view.text_area.move_cursor(CursorMove::Back);
+          Some(Action::Update)
+        },
+        KeyEvent { code: KeyCode::Char('j'), .. } => {
+          self.view.text_area.move_cursor(CursorMove::Down);
+          trace_dbg!("cursor: {:#?}", self.view.text_area.cursor());
+          Some(Action::Update)
+        },
+        KeyEvent { code: KeyCode::Char('k'), .. } => {
+          self.view.text_area.move_cursor(CursorMove::Up);
+          trace_dbg!("cursor: {:#?}", self.view.text_area.cursor());
+          Some(Action::Update)
+        },
+        KeyEvent { code: KeyCode::Char('l'), .. } => {
+          self.view.text_area.move_cursor(CursorMove::Forward);
+          Some(Action::Update)
+        },
+        KeyEvent { code: KeyCode::Char('w'), .. } => {
+          self.view.text_area.move_cursor(CursorMove::WordForward);
+          Some(Action::Update)
+        },
+        KeyEvent { code: KeyCode::Char('b'), .. } => {
+          self.view.text_area.move_cursor(CursorMove::WordBack);
+          Some(Action::Update)
+        },
+        KeyEvent { code: KeyCode::Char('^'), .. } => {
+          self.view.text_area.move_cursor(CursorMove::Head);
+          Some(Action::Update)
+        },
+        KeyEvent { code: KeyCode::Char('$'), .. } => {
+          self.view.text_area.move_cursor(CursorMove::End);
+          Some(Action::Update)
+        },
+        KeyEvent { code: KeyCode::Char('v'), .. } => {
+          self.view.text_area.start_selection();
+          Some(Action::Update)
+        },
+        KeyEvent { code: KeyCode::Char('y'), .. } => {
+          self.view.text_area.copy();
+          let mut ctx: ClipboardContext = ClipboardProvider::new().unwrap();
+          ctx.set_contents(self.view.text_area.yank_text()).unwrap();
+          Some(Action::Update)
+        },
+        KeyEvent { code: KeyCode::Esc, .. } => {
+          self.view.text_area.cancel_selection();
+          Some(Action::Update)
+        },
+        KeyEvent { code: KeyCode::Char('V'), modifiers: KeyModifiers::SHIFT, .. } => {
+          self.view.text_area.start_selection();
+          self.view.text_area.move_cursor(CursorMove::Head);
+          self.view.text_area.start_selection();
+          self.view.text_area.move_cursor(CursorMove::End);
+          Some(Action::Update)
+        },
+        _ => None,
       },
-      _ => Ok(None),
-    }
+      _ => None,
+      //     KeyCode::Char('j') => self.scroll_down(),
+      //     KeyCode::Char('k') => self.scroll_up(),
+      //     _ => Ok(None),
+      //   },
+      //   _ => Ok(None),
+    })
   }
 
   fn draw(&mut self, f: &mut Frame<'_>, area: Rect) -> Result<(), SazidError> {

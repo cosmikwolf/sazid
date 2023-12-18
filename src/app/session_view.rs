@@ -1,13 +1,22 @@
-use bat::{assets::HighlightingAssets, config::Config, controller::Controller, style::StyleComponents, Input};
+use bat::{assets::HighlightingAssets, config::Config, controller::Controller, style::StyleComponents};
 use color_eyre::owo_colors::OwoColorize;
+use crossterm::event::KeyCode;
+use crossterm::event::KeyEvent;
+use crossterm::event::KeyModifiers;
 use nu_ansi_term::Color::*;
 use nu_ansi_term::Style;
+use ratatui::style::Modifier;
+use ratatui::widgets::Block;
+use ratatui::widgets::Borders;
 use std::default::Default;
+use std::path::Path;
 use textwrap::{self, Options, WordSeparator, WordSplitter, WrapAlgorithm};
-use tui_textarea::TextArea;
 
+use crate::action::Action;
 use crate::trace_dbg;
+use tui_textarea::{CursorMove, Input, Key, Scrolling, TextArea};
 
+use super::errors::SazidError;
 use super::{messages::MessageContainer, session_data::SessionData};
 use ropey::Rope;
 
@@ -24,13 +33,36 @@ pub struct SessionView<'a> {
 }
 
 impl<'a> SessionView<'a> {
+  pub fn unfocus_textarea(&mut self) {
+    use ratatui::style::{Color, Style};
+    self.text_area.set_cursor_line_style(Style::default());
+    self.text_area.set_cursor_style(Style::default());
+    self.text_area.set_block(
+      Block::default()
+        .borders(Borders::ALL)
+        .style(Style::default().fg(Color::DarkGray))
+        .title(" Inactive (^X to switch) "),
+    );
+  }
+
+  pub fn focus_textarea(&mut self) {
+    use ratatui::style::{Color, Style};
+    self.text_area.move_cursor(CursorMove::Top);
+    self.text_area.move_cursor(CursorMove::Head);
+    self
+      .text_area
+      .set_cursor_line_style(Style::default().add_modifier(Modifier::UNDERLINED).add_modifier(Modifier::SLOW_BLINK));
+    self.text_area.set_cursor_style(Style::default().bg(Color::Yellow));
+    self.text_area.set_block(Block::default().borders(Borders::ALL).style(Style::default()).title(" Active "));
+  }
+
   pub fn set_window_width(&mut self, width: usize, _messages: &mut [MessageContainer]) {
     let new_value = width - 6;
     if self.window_width != new_value {
       trace_dbg!("setting window width to {}", new_value);
 
       self.window_width = new_value;
-      self.renderer.config.term_width = 10000;
+      self.renderer.config.term_width = new_value;
       //self.renderer.config.term_width = new_value;
     }
   }
@@ -74,7 +106,7 @@ impl<'a> SessionView<'a> {
         let left_padding = self.window_width.saturating_sub(text_width) / 2;
         trace_dbg!("left_padding: {}\ttext_width: {}, window_width: {}", left_padding, text_width, self.window_width);
         let stylized = self.renderer.render_message_bat(format!("{}", &message).as_str());
-        let options = Options::new(text_width)
+        let options = Options::new(text_width-10)
           //.break_words(false)
           .word_splitter(WordSplitter::NoHyphenation)
           .word_separator(WordSeparator::AsciiSpace)
@@ -104,7 +136,10 @@ impl<'a> SessionView<'a> {
 
         self.new_data = true;
         self.text_area.replace_at_end(message.stylized.to_string(), original_message_length);
-        trace_dbg!("stylized {}\n\n{}", message.stylized.red(), self.rendered_text.len_chars());
+
+        message.stylized.to_string().lines().for_each(|l| {
+          trace_dbg!("line: {:#?}", l);
+        });
 
         self.rendered_text.remove(rendered_text_message_start_index..);
         self.rendered_text.append(message.stylized.clone());
@@ -149,7 +184,7 @@ impl<'a> BatRenderer<'a> {
     ]);
     let config: Config<'static> = Config {
       colored_output: true,
-      language: Some("markdown"),
+      language: Some("Markdown Extended"),
       style_components,
       show_nonprintable: false,
       tab_width: 2,
@@ -161,7 +196,8 @@ impl<'a> BatRenderer<'a> {
       use_custom_assets: true,
       ..Default::default()
     };
-    let assets = HighlightingAssets::from_binary();
+    // let assets = HighlightingAssets::from_binary();
+    let assets = HighlightingAssets::from_cache(&Path::new("./lib/bat/assets")).unwrap();
     let _buffer: Vec<u8> = Vec::new();
     BatRenderer { config, assets }
   }
@@ -181,7 +217,7 @@ impl<'a> BatRenderer<'a> {
     //trace_dbg!("render_message_bat: {:?}", self.rendered_bytes);
 
     //text.bytes().skip(self.buffer.len()).for_each(|b| self.buffer.push(b));
-    let input = Input::from_bytes(text.as_bytes());
+    let input = bat::Input::from_bytes(text.as_bytes());
     //trace_dbg!("render_message_bat: {:?}", self.rendered_bytes);
     controller.run_with_error_handler(vec![input.into()], Some(&mut buffer), Self::render_error).unwrap();
     //trace_dbg!("render_message_bat: {:?}", buffer);

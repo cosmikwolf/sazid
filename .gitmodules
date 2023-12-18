@@ -1,3 +1,9 @@
 [submodule "lib/tui-textarea"]
 	path = lib/tui-textarea
 	url = https://github.com/cosmikwolf/tui-textarea
+[submodule "lib/ansi-to-tui"]
+	path = lib/ansi-to-tui
+	url = https://github.com/cosmikwolf/ansi-to-tui
+[submodule "lib/bat"]
+	path = lib/bat
+	url = git@github.com:sharkdp/bat.git

@@ -141,7 +141,7 @@ macro_rules! trace_dbg {
         match $ex {
             value => {
                 //tracing::event!(target: $target, $level, ?value, ?formatted);
-                tracing::event!(target: $target, $level, %value, stringify!($ex));
+                tracing::event!(target: $target, $level, ?value, stringify!($ex));
                 //tracing::event!(target: $target, $level, ?value, stringify!($ex));
                 value
             }
