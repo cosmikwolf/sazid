@@ -35,6 +35,7 @@ use crate::app::session_view::SessionView;
 use crate::app::{consts::*, errors::*, tools::chunkifier::*, types::*};
 use crate::trace_dbg;
 use crate::tui::Event;
+use crate::utils::ansi_to_plain_text;
 use crate::{action::Action, config::Config};
 use backoff::exponential::ExponentialBackoffBuilder;
 use dirs_next::home_dir;
@@ -261,74 +262,74 @@ impl Component for Session<'static> {
     Ok(match self.mode {
       Mode::Normal => match key {
         KeyEvent { code: KeyCode::Char('d'), modifiers: KeyModifiers::CONTROL, .. } => {
-          self.view.text_area.scroll(Scrolling::HalfPageDown);
+          self.view.textarea.scroll(Scrolling::HalfPageDown);
           Some(Action::Update)
         },
         KeyEvent { code: KeyCode::Char('u'), modifiers: KeyModifiers::CONTROL, .. } => {
-          self.view.text_area.scroll(Scrolling::HalfPageUp);
+          self.view.textarea.scroll(Scrolling::HalfPageUp);
           Some(Action::Update)
         },
         KeyEvent { code: KeyCode::Char('f'), modifiers: KeyModifiers::CONTROL, .. } => {
-          self.view.text_area.scroll(Scrolling::PageDown);
+          self.view.textarea.scroll(Scrolling::PageDown);
           Some(Action::Update)
         },
         KeyEvent { code: KeyCode::Char('b'), modifiers: KeyModifiers::CONTROL, .. } => {
-          self.view.text_area.scroll(Scrolling::PageUp);
+          self.view.textarea.scroll(Scrolling::PageUp);
           Some(Action::Update)
         },
         KeyEvent { code: KeyCode::Char('h'), .. } => {
-          self.view.text_area.move_cursor(CursorMove::Back);
+          self.view.textarea.move_cursor(CursorMove::Back);
           Some(Action::Update)
         },
         KeyEvent { code: KeyCode::Char('j'), .. } => {
-          self.view.text_area.move_cursor(CursorMove::Down);
-          trace_dbg!("cursor: {:#?}", self.view.text_area.cursor());
+          self.view.textarea.move_cursor(CursorMove::Down);
+          trace_dbg!("cursor: {:#?}", self.view.textarea.cursor());
           Some(Action::Update)
         },
         KeyEvent { code: KeyCode::Char('k'), .. } => {
-          self.view.text_area.move_cursor(CursorMove::Up);
-          trace_dbg!("cursor: {:#?}", self.view.text_area.cursor());
+          self.view.textarea.move_cursor(CursorMove::Up);
+          trace_dbg!("cursor: {:#?}", self.view.textarea.cursor());
           Some(Action::Update)
         },
         KeyEvent { code: KeyCode::Char('l'), .. } => {
-          self.view.text_area.move_cursor(CursorMove::Forward);
+          self.view.textarea.move_cursor(CursorMove::Forward);
           Some(Action::Update)
         },
         KeyEvent { code: KeyCode::Char('w'), .. } => {
-          self.view.text_area.move_cursor(CursorMove::WordForward);
+          self.view.textarea.move_cursor(CursorMove::WordForward);
           Some(Action::Update)
         },
         KeyEvent { code: KeyCode::Char('b'), .. } => {
-          self.view.text_area.move_cursor(CursorMove::WordBack);
+          self.view.textarea.move_cursor(CursorMove::WordBack);
           Some(Action::Update)
         },
         KeyEvent { code: KeyCode::Char('^'), .. } => {
-          self.view.text_area.move_cursor(CursorMove::Head);
+          self.view.textarea.move_cursor(CursorMove::Head);
           Some(Action::Update)
         },
         KeyEvent { code: KeyCode::Char('$'), .. } => {
-          self.view.text_area.move_cursor(CursorMove::End);
+          self.view.textarea.move_cursor(CursorMove::End);
           Some(Action::Update)
         },
         KeyEvent { code: KeyCode::Char('v'), .. } => {
-          self.view.text_area.start_selection();
+          self.view.textarea.start_selection();
           Some(Action::Update)
         },
         KeyEvent { code: KeyCode::Char('y'), .. } => {
-          self.view.text_area.copy();
+          self.view.textarea.copy();
           let mut ctx: ClipboardContext = ClipboardProvider::new().unwrap();
-          ctx.set_contents(self.view.text_area.yank_text()).unwrap();
+          ctx.set_contents(ansi_to_plain_text(&self.view.textarea.yank_text())).unwrap();
           Some(Action::Update)
         },
         KeyEvent { code: KeyCode::Esc, .. } => {
-          self.view.text_area.cancel_selection();
+          self.view.textarea.cancel_selection();
           Some(Action::Update)
         },
         KeyEvent { code: KeyCode::Char('V'), modifiers: KeyModifiers::SHIFT, .. } => {
-          self.view.text_area.start_selection();
-          self.view.text_area.move_cursor(CursorMove::Head);
-          self.view.text_area.start_selection();
-          self.view.text_area.move_cursor(CursorMove::End);
+          self.view.textarea.start_selection();
+          self.view.textarea.move_cursor(CursorMove::Head);
+          self.view.textarea.start_selection();
+          self.view.textarea.move_cursor(CursorMove::End);
           Some(Action::Update)
         },
         _ => None,
@@ -343,6 +344,15 @@ impl Component for Session<'static> {
   }
 
   fn draw(&mut self, f: &mut Frame<'_>, area: Rect) -> Result<(), SazidError> {
+    let margin_width;
+    let session_width;
+    if area.width <= 81 {
+      margin_width = 0u16;
+      session_width = area.width
+    } else {
+      session_width = 82;
+      margin_width = (area.width - session_width) / 2;
+    }
     let rects = Layout::default()
       .direction(Direction::Vertical)
       .constraints([Constraint::Percentage(100), Constraint::Min(self.input_vsize)].as_ref())
@@ -351,17 +361,21 @@ impl Component for Session<'static> {
       .direction(Direction::Vertical)
       .constraints(vec![Constraint::Length(1), Constraint::Min(10), Constraint::Length(0)])
       .split(rects[0]);
-    // let inner = Layout::default()
-    //   .direction(Direction::Horizontal)
-    //   .constraints(vec![Constraint::Length(3), Constraint::Min(10), Constraint::Length(3)])
-    //   .split(inner_a[1]);
+    let inner = Layout::default()
+      .direction(Direction::Horizontal)
+      .constraints(vec![
+        Constraint::Length(margin_width),
+        Constraint::Length(session_width),
+        Constraint::Length(margin_width),
+      ])
+      .split(inner[1]);
 
     let block = Block::default().borders(Borders::NONE).gray();
 
     self.vertical_viewport_height = inner[1].height as usize;
     self.vertical_content_height = self.view.rendered_text.len_lines();
     self.vertical_scroll_state = self.vertical_scroll_state.content_length(self.vertical_content_height);
-    self.view.set_window_width(inner[1].width as usize, &mut self.data.messages);
+    self.view.set_window_width(session_width as usize, &mut self.data.messages);
     self.scroll_max = self.view.rendered_text.len_lines().saturating_sub(self.vertical_viewport_height);
     // + self.vertical_viewport_height.min(3);
     self.vertical_scroll_state = self.vertical_scroll_state.viewport_content_length(self.vertical_content_height);
@@ -389,7 +403,7 @@ impl Component for Session<'static> {
     //   .begin_symbol(Some("󰶼"))
     //   .end_symbol(Some("󰶹"));
     // f.render_widget(paragraph, inner[1]);
-    f.render_widget(self.view.text_area.widget(), inner[1]);
+    f.render_widget(self.view.textarea.widget(), inner[1]);
     // f.render_stateful_widget(scrollbar, inner[2], &mut self.vertical_scroll_state);
     //self.render = false;
     Ok(())
@@ -418,6 +432,7 @@ impl Session<'static> {
       None => None,
     }
   }
+
   pub fn execute_tool_calls(&mut self) {
     let tx = self.action_tx.clone().unwrap();
     self

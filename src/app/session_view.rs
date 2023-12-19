@@ -26,7 +26,7 @@ pub struct SessionView<'a> {
   pub window_width: usize,
   pub render_conditions: (usize, usize, usize, usize, bool),
   pub rendered_view: String,
-  pub text_area: TextArea<'a>,
+  pub textarea: TextArea<'a>,
   pub selected_text: Option<String>,
   pub new_data: bool,
   pub rendered_text: Rope,
@@ -35,9 +35,9 @@ pub struct SessionView<'a> {
 impl<'a> SessionView<'a> {
   pub fn unfocus_textarea(&mut self) {
     use ratatui::style::{Color, Style};
-    self.text_area.set_cursor_line_style(Style::default());
-    self.text_area.set_cursor_style(Style::default());
-    self.text_area.set_block(
+    self.textarea.set_cursor_line_style(Style::default());
+    self.textarea.set_cursor_style(Style::default());
+    self.textarea.set_block(
       Block::default()
         .borders(Borders::ALL)
         .style(Style::default().fg(Color::DarkGray))
@@ -47,17 +47,17 @@ impl<'a> SessionView<'a> {
 
   pub fn focus_textarea(&mut self) {
     use ratatui::style::{Color, Style};
-    self.text_area.move_cursor(CursorMove::Top);
-    self.text_area.move_cursor(CursorMove::Head);
+    self.textarea.move_cursor(CursorMove::Top);
+    self.textarea.move_cursor(CursorMove::Head);
     self
-      .text_area
+      .textarea
       .set_cursor_line_style(Style::default().add_modifier(Modifier::UNDERLINED).add_modifier(Modifier::SLOW_BLINK));
-    self.text_area.set_cursor_style(Style::default().bg(Color::Yellow));
-    self.text_area.set_block(Block::default().borders(Borders::ALL).style(Style::default()).title(" Active "));
+    self.textarea.set_cursor_style(Style::default().bg(Color::Yellow));
+    self.textarea.set_block(Block::default().borders(Borders::ALL).style(Style::default()).title(" Active "));
   }
 
   pub fn set_window_width(&mut self, width: usize, _messages: &mut [MessageContainer]) {
-    let new_value = width - 6;
+    let new_value = width;
     if self.window_width != new_value {
       trace_dbg!("setting window width to {}", new_value);
 
@@ -106,28 +106,32 @@ impl<'a> SessionView<'a> {
         let left_padding = self.window_width.saturating_sub(text_width) / 2;
         trace_dbg!("left_padding: {}\ttext_width: {}, window_width: {}", left_padding, text_width, self.window_width);
         let stylized = self.renderer.render_message_bat(format!("{}", &message).as_str());
-        let options = Options::new(text_width-10)
+        let options = Options::new(text_width)
           //.break_words(false)
-          .word_splitter(WordSplitter::NoHyphenation)
-          .word_separator(WordSeparator::AsciiSpace)
+            .initial_indent("")
+            .subsequent_indent("  ")
+        .word_splitter(WordSplitter::NoHyphenation)
+        .word_separator(WordSeparator::AsciiSpace)
         .wrap_algorithm(WrapAlgorithm::new_optimal_fit());
         let wrapped = textwrap::wrap(stylized.as_str(), options);
+        message.stylized =
+          Rope::from_str(wrapped.iter().map(|c| c.to_string()).collect::<Vec<String>>().join("\n").as_str());
 
-        message.stylized = Rope::from_str(
-          wrapped
-            .iter()
-            .enumerate()
-            .map(|(i, l)| {
-              if i == 0 {
-                format!("{}{}", " ".repeat(left_padding + 2), l)
-              } else {
-                format!("{}{}", " ".repeat(left_padding + 4), l)
-              }
-            })
-            .collect::<Vec<String>>()
-            .join("\n")
-            .as_str(),
-        );
+        // message.stylized = Rope::from_str(
+        //   wrapped
+        //     .iter()
+        //     .enumerate()
+        //     .map(|(i, l)| {
+        //       if i == 0 {
+        //         format!("{}{}", " ".repeat(left_padding + 2), l)
+        //       } else {
+        //         format!("{}{}", " ".repeat(left_padding + 4), l)
+        //       }
+        //     })
+        //     .collect::<Vec<String>>()
+        //     .join("\n")
+        //     .as_str(),
+        // );
         //message.rendered.stylized = Rope::from_str(&message.rendered.content);
         if message.receive_complete {
           message.stylized.append(Rope::from_str("\n".to_string().repeat(dividing_newlines_count).as_str()));
@@ -135,7 +139,7 @@ impl<'a> SessionView<'a> {
         }
 
         self.new_data = true;
-        self.text_area.replace_at_end(message.stylized.to_string(), original_message_length);
+        self.textarea.replace_at_end(message.stylized.to_string(), original_message_length);
 
         message.stylized.to_string().lines().for_each(|l| {
           trace_dbg!("line: {:#?}", l);
@@ -184,20 +188,21 @@ impl<'a> BatRenderer<'a> {
     ]);
     let config: Config<'static> = Config {
       colored_output: true,
-      language: Some("Markdown Extended"),
+      language: Some("Markdown"),
       style_components,
       show_nonprintable: false,
       tab_width: 2,
-      wrapping_mode: bat::WrappingMode::NoWrapping(false),
+      wrapping_mode: bat::WrappingMode::Character,
+      // wrapping_mode: bat::WrappingMode::NoWrapping(false),
       use_italic_text: true,
       term_width,
       paging_mode: bat::PagingMode::Never,
       true_color: true,
-      use_custom_assets: true,
+      use_custom_assets: false,
       ..Default::default()
     };
-    // let assets = HighlightingAssets::from_binary();
-    let assets = HighlightingAssets::from_cache(&Path::new("./lib/bat/assets")).unwrap();
+    let assets = HighlightingAssets::from_binary();
+    // let assets = HighlightingAssets::from_cache(&Path::new("./lib/bat/assets")).unwrap();
     let _buffer: Vec<u8> = Vec::new();
     BatRenderer { config, assets }
   }
