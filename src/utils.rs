@@ -26,6 +26,23 @@ fn project_directory() -> Option<ProjectDirs> {
   ProjectDirs::from("com", "kdheepak", env!("CARGO_PKG_NAME"))
 }
 
+pub fn ansi_to_plain_text(text: &str) -> String {
+  let mut plain_text = String::new();
+  let mut in_escape_sequence = false;
+  for c in text.chars() {
+    if c == '\x1b' {
+      in_escape_sequence = true;
+    } else if in_escape_sequence {
+      if c == 'm' {
+        in_escape_sequence = false;
+      }
+    } else {
+      plain_text.push(c);
+    }
+  }
+  plain_text
+}
+
 pub fn initialize_panic_handler() -> Result<()> {
   let (panic_hook, eyre_hook) = color_eyre::config::HookBuilder::default()
     .panic_section(format!("This is a bug. Consider reporting it at {}", env!("CARGO_PKG_REPOSITORY")))
