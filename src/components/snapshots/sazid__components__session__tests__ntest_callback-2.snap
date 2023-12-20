@@ -1,6 +1,0 @@
----
-source: src/components/session.rs
-expression: "&session.data.stylized_text()"
----
-"Prompt: \n\ntest response data\n\ntwothree\n\nfunction call: file_search { src }"
-

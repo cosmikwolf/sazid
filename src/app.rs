@@ -1,3 +1,6 @@
+use std::env;
+
+use async_openai::config::OpenAIConfig;
 use crossterm::event::KeyEvent;
 use ratatui::prelude::Rect;
 use serde::{Deserialize, Serialize};
@@ -5,7 +8,7 @@ use tokio::sync::mpsc;
 
 pub mod color_math;
 pub mod consts;
-pub mod embeddings;
+pub mod database;
 pub mod errors;
 pub mod functions;
 pub mod gpt_interface;
@@ -13,7 +16,6 @@ pub mod helpers;
 pub mod messages;
 pub mod request_validation;
 pub mod session_config;
-pub mod session_data;
 pub mod session_view;
 pub mod tools;
 pub mod types;
@@ -25,7 +27,7 @@ use crate::{
   tui,
 };
 
-use self::errors::SazidError;
+use self::{database::embeddings_manager::EmbeddingsManager, errors::SazidError};
 
 #[derive(Default, Debug, Copy, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum Mode {
@@ -45,14 +47,19 @@ pub struct App {
 }
 
 impl App {
-  pub fn new(tick_rate: f64, frame_rate: f64, config: Config) -> Result<Self, SazidError> {
+  pub fn new(
+    tick_rate: f64,
+    frame_rate: f64,
+    config: Config,
+    embeddings_manager: EmbeddingsManager,
+  ) -> Result<Self, SazidError> {
     let home = Home::new();
     let session = Session::new();
     let mode = Mode::Home;
     Ok(Self {
       tick_rate,
       frame_rate,
-      components: vec![Box::new(home), Box::new(session)],
+      components: vec![Box::new(home), Box::new(session), Box::new(embeddings_manager)],
       should_quit: false,
       should_suspend: false,
       config,

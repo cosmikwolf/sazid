@@ -7,7 +7,7 @@ CREATE TABLE sessions (
 );
 
 CREATE TABLE  messages (
-  id bigserial PRIMARY KEY NOT NULL,
+  id TEXT UNIQUE PRIMARY KEY NOT NULL,
   session_id BIGINT NOT NULL REFERENCES sessions(id),
   data JSONB NOT NULL,
   embedding VECTOR(1536) NOT NULL,

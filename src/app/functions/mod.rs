@@ -101,7 +101,7 @@ pub fn handle_tool_call(
     .await
     {
       Ok(Some(output)) => {
-        //self.data.add_message(ChatMessage::FunctionResult(FunctionResult { name: fn_name, response: output }));
+        //self.add_message(ChatMessage::FunctionResult(FunctionResult { name: fn_name, response: output }));
         trace_dbg!("tool output:\n{}", output);
         tx.send(Action::AddMessage(ChatMessage::Tool(ChatCompletionRequestToolMessage {
           tool_call_id: tc_clone.id,
@@ -112,7 +112,7 @@ pub fn handle_tool_call(
       },
       Ok(None) => {},
       Err(e) => {
-        // self.data.add_message(ChatMessage::FunctionResult(FunctionResult {
+        // self.add_message(ChatMessage::FunctionResult(FunctionResult {
         //   name: fn_name,
         //   response: format!("Error: {:?}", e),
         // }));

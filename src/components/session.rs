@@ -1,4 +1,3 @@
-use ansi_to_tui::IntoText;
 use async_openai::types::{
   ChatCompletionRequestAssistantMessage, ChatCompletionRequestMessage, ChatCompletionRequestUserMessage,
   ChatCompletionRequestUserMessageContent, CreateChatCompletionRequest, CreateEmbeddingRequestArgs,
@@ -9,28 +8,24 @@ use color_eyre::owo_colors::OwoColorize;
 use crossterm::event::KeyModifiers;
 use crossterm::event::{KeyCode, KeyEvent, MouseButton, MouseEvent, MouseEventKind};
 use futures::StreamExt;
-use nu_ansi_term::Color::*;
-use nu_ansi_term::Style;
 use ratatui::layout::Rect;
 use ratatui::{prelude::*, widgets::block::*, widgets::*};
 use serde_derive::{Deserialize, Serialize};
 use std::default::Default;
+use std::fs;
 use std::path::{Path, PathBuf};
 use std::result::Result;
-use std::{fs, io};
 use tokio::sync::mpsc::UnboundedSender;
-use tui_textarea::TextArea;
 use tui_textarea::{CursorMove, Scrolling};
 
 use async_openai::{config::OpenAIConfig, Client};
 
 use super::{Component, Frame};
+use crate::app::database::embeddings_manager::EmbeddingsManager;
 use crate::app::functions::{all_functions, handle_tool_call};
-use crate::app::helpers::list_files_ordered_by_date;
-use crate::app::messages::ChatMessage;
+use crate::app::messages::{ChatMessage, MessageContainer, ReceiveBuffer};
 use crate::app::request_validation::debug_request_validation;
 use crate::app::session_config::SessionConfig;
-use crate::app::session_data::SessionData;
 use crate::app::session_view::SessionView;
 use crate::app::{consts::*, errors::*, tools::chunkifier::*, types::*};
 use crate::trace_dbg;
@@ -38,16 +33,19 @@ use crate::tui::Event;
 use crate::utils::ansi_to_plain_text;
 use crate::{action::Action, config::Config};
 use backoff::exponential::ExponentialBackoffBuilder;
-use dirs_next::home_dir;
 
 use crate::app::gpt_interface::create_chat_completion_tool_args;
 use crate::app::tools::utils::ensure_directory_exists;
 use crate::components::home::Mode;
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize)]
 pub struct Session<'a> {
-  pub data: SessionData,
+  pub id: i64,
+  pub messages: Vec<MessageContainer>,
+  pub window_width: usize,
   pub config: SessionConfig,
+  #[serde(skip)]
+  pub embeddings_manager: Option<EmbeddingsManager>,
   #[serde(skip)]
   pub view: SessionView<'a>,
   #[serde(skip)]
@@ -95,8 +93,11 @@ pub struct Session<'a> {
 impl<'a> Default for Session<'a> {
   fn default() -> Self {
     Session {
-      data: SessionData::default(),
+      id: 0,
+      messages: vec![],
+      window_width: 80,
       config: SessionConfig::default(),
+      embeddings_manager: None,
       action_tx: None,
       mode: Mode::Normal,
       last_events: vec![],
@@ -146,9 +147,9 @@ impl Component for Session<'static> {
     "- If you require additional information about the codebase, you can use pcre2grep to gather information about the codebase",
     "- When evaluating function tests, make it a priority to determine if the problems exist in the source code, or if the test code itself is not properly designed"].join("\n").to_string();
     // self.config.prompt = "act as a very terse assistant".into();
-    self.view.set_window_width(area.width as usize, &mut self.data.messages);
+    self.view.set_window_width(area.width as usize, &mut self.messages);
     tx.send(Action::AddMessage(ChatMessage::System(self.config.prompt_message()))).unwrap();
-    self.view.post_process_new_messages(&mut self.data);
+    self.view.post_process_new_messages(&mut self.messages);
     // self.text_area = TextArea::new(self.view.rendered_text.lines().map(|l| l.to_string()).collect());
     self.config.available_functions = all_functions();
     Ok(())
@@ -167,16 +168,16 @@ impl Component for Session<'static> {
     match action {
       Action::AddMessage(chat_message) => {
         //trace_dbg!(level: tracing::Level::INFO, "adding message to session");
-        self.data.add_message(chat_message);
-        self.view.post_process_new_messages(&mut self.data);
+        self.add_message(chat_message);
+        self.view.post_process_new_messages(&mut self.messages);
         self.execute_tool_calls();
         self.add_new_messages_to_request_buffer();
       },
       Action::ExecuteCommand(command) => {
-        tx.send(Action::CommandResult(self.execute_command(command).unwrap())).unwrap();
+        // tx.send(Action::CommandResult(self.execute_command(command).unwrap())).unwrap();
       },
       Action::SaveSession => {
-        self.save_session().unwrap();
+        // self.save_session().unwrap();
       },
       Action::SubmitInput(s) => {
         self.scroll_sticky_end = true;
@@ -187,7 +188,7 @@ impl Component for Session<'static> {
         self.request_chat_completion(tx.clone())
       },
       Action::Resize(width, _height) => {
-        self.view.set_window_width(width.into(), &mut self.data.messages);
+        self.view.set_window_width(width.into(), &mut self.messages);
         self.redraw_messages()
       },
       Action::SelectModel(model) => self.config.model = model,
@@ -246,7 +247,7 @@ impl Component for Session<'static> {
         trace_dbg!("mouse drag: column: {}, row: {}, modifiers: {:?}", column, row, modifiers);
         Ok(Some(Action::Update))
       },
-      MouseEvent { kind: MouseEventKind::Down(MouseButton::Left), column, row, modifiers } => {
+      MouseEvent { kind: MouseEventKind::Down(MouseButton::Left), column, row, .. } => {
         // translate mouse click coordinates to text column and row
         self.select_start_coords = Some((column as usize, row as usize));
         self.cursor_coords = Some((column as usize, row as usize));
@@ -375,7 +376,7 @@ impl Component for Session<'static> {
     self.vertical_viewport_height = inner[1].height as usize;
     self.vertical_content_height = self.view.rendered_text.len_lines();
     self.vertical_scroll_state = self.vertical_scroll_state.content_length(self.vertical_content_height);
-    self.view.set_window_width(session_width as usize, &mut self.data.messages);
+    self.view.set_window_width(session_width as usize, &mut self.messages);
     self.scroll_max = self.view.rendered_text.len_lines().saturating_sub(self.vertical_viewport_height);
     // + self.vertical_viewport_height.min(3);
     self.vertical_scroll_state = self.vertical_scroll_state.viewport_content_length(self.vertical_content_height);
@@ -386,26 +387,7 @@ impl Component for Session<'static> {
       self.vertical_scroll_state = self.vertical_scroll_state.position(self.vertical_scroll);
     }
 
-    // let text = self.view.get_stylized_rendered_slice(
-    //   self.vertical_scroll,
-    //   self.vertical_viewport_height,
-    //   self.vertical_scroll,
-    //   self.get_select_coords(),
-    // );
-
-    // let paragraph = Paragraph::new(text.0.into_text().unwrap())
-    //   .block(block)
-    //   //.wrap(Wrap { trim: false })
-    //   .scroll((self.vertical_scroll as u16, 0));
-    // let scrollbar = Scrollbar::default()
-    //   .orientation(ScrollbarOrientation::VerticalRight)
-    //   .thumb_symbol("󱁨")
-    //   .begin_symbol(Some("󰶼"))
-    //   .end_symbol(Some("󰶹"));
-    // f.render_widget(paragraph, inner[1]);
     f.render_widget(self.view.textarea.widget(), inner[1]);
-    // f.render_stateful_widget(scrollbar, inner[2], &mut self.vertical_scroll_state);
-    //self.render = false;
     Ok(())
   }
 }
@@ -423,6 +405,32 @@ impl Session<'static> {
     Self::default()
   }
 
+  pub fn add_message(&mut self, message: ChatMessage) {
+    let tx = self.action_tx.clone().unwrap();
+    match message {
+      ChatMessage::User(_) => self.messages.push(message.into()),
+      ChatMessage::StreamResponse(new_srvec) => {
+        new_srvec.iter().for_each(|sr| {
+          if let Some(message) = self.messages.iter_mut().find(|m| {
+            m.stream_id == Some(sr.id.clone()) && matches!(m.receive_buffer, Some(ReceiveBuffer::StreamResponse(_)))
+          }) {
+            message.update_stream_response(sr.clone()).unwrap();
+            tx.send(Action::AddMessageEmbedding(self.id, message.clone())).unwrap();
+          } else {
+            let message = ChatMessage::StreamResponse(vec![sr.clone()]).into();
+            self.messages.push(message);
+            tx.send(Action::AddMessageEmbedding(self.id, message)).unwrap();
+          }
+        });
+      },
+      _ => {
+        let message: MessageContainer = message.into();
+        tx.send(Action::AddMessageEmbedding(self.id, message.clone())).unwrap();
+        self.messages.push(message);
+      },
+    };
+    // return a vec of any functions that need to be called
+  }
   pub fn get_select_coords(&self) -> Option<((usize, usize), (usize, usize))> {
     match self.select_start_coords {
       Some((x1, y1)) => match self.select_end_coords {
@@ -436,7 +444,6 @@ impl Session<'static> {
   pub fn execute_tool_calls(&mut self) {
     let tx = self.action_tx.clone().unwrap();
     self
-      .data
       .messages
       .iter_mut()
       .filter(|m| {
@@ -461,10 +468,10 @@ impl Session<'static> {
 
   fn redraw_messages(&mut self) {
     trace_dbg!("redrawing messages");
-    self.data.messages.iter_mut().for_each(|m| {
+    self.messages.iter_mut().for_each(|m| {
       m.stylize_complete = false;
     });
-    self.view.post_process_new_messages(&mut self.data);
+    self.view.post_process_new_messages(&mut self.messages);
   }
 
   pub fn scroll_up(&mut self) -> Result<Option<Action>, SazidError> {
@@ -502,22 +509,22 @@ impl Session<'static> {
     Ok(Some(Action::Update))
   }
 
-  pub fn execute_command(&mut self, command: String) -> Result<String, SazidError> {
-    let args = command.split_whitespace().collect::<Vec<&str>>();
-    match args[0] {
-      "exit" => std::process::exit(0),
-      "load" => {
-        if args.len() > 1 {
-          self.load_session_by_id(args[1].to_string())?;
-          Ok(format!("session {} loaded successfully!", args[1]))
-        } else {
-          self.load_last_session()?;
-          Ok("last session loaded successfully!".to_string())
-        }
-      },
-      _ => Ok("invalid command".to_string()),
-    }
-  }
+  // pub fn execute_command(&mut self, command: String) -> Result<String, SazidError> {
+  //   let args = command.split_whitespace().collect::<Vec<&str>>();
+  //   match args[0] {
+  //     "exit" => std::process::exit(0),
+  //     "load" => {
+  //       if args.len() > 1 {
+  //         self.load_session_by_id(args[1].to_string())?;
+  //         Ok(format!("session {} loaded successfully!", args[1]))
+  //       } else {
+  //         self.load_last_session()?;
+  //         Ok("last session loaded successfully!".to_string())
+  //       }
+  //     },
+  //     _ => Ok("invalid command".to_string()),
+  //   }
+  // }
 
   pub fn add_chunked_chat_completion_request_messages(
     &mut self,
@@ -546,7 +553,6 @@ impl Session<'static> {
   pub fn add_new_messages_to_request_buffer(&mut self) {
     // add new request messages to the request buffer
     let new_requests: Vec<ChatCompletionRequestMessage> = self
-      .data
       .messages
       .iter()
       .skip(self.request_buffer.len())
@@ -685,63 +691,6 @@ impl Session<'static> {
     } else {
       None
     }
-  }
-
-  fn load_session(&mut self, session_serde: String) -> Result<(), SazidError> {
-    let incoming_session: Session = serde_json::from_str(session_serde.as_str()).unwrap();
-    self.data = incoming_session.data;
-    self.config = incoming_session.config;
-    self.data.messages.iter_mut().for_each(|m| {
-      m.stylize_complete = false;
-    });
-    Ok(())
-  }
-  pub fn load_session_by_id(&mut self, session_id: String) -> Result<(), SazidError> {
-    Self::get_session_filepath(session_id.clone());
-    let load_result = fs::read_to_string(Self::get_session_filepath(session_id.clone()));
-    match load_result {
-      Ok(load_session) => self.load_session(load_session),
-      Err(e) => Err(SazidError::Other(format!("Failed to load session data: {:?}", e))),
-    }
-  }
-  pub fn load_last_session(&mut self) -> Result<(), SazidError> {
-    let home_dir = home_dir().unwrap();
-    let save_dir = home_dir.join(SESSIONS_DIR);
-    let session_files = list_files_ordered_by_date(save_dir).unwrap();
-    let last_session_file = session_files.iter().last().unwrap();
-    if last_session_file.path().is_file() {
-      self.load_session_by_path(last_session_file.path().to_str().unwrap().to_string())
-    } else {
-      Err(SazidError::Other(format!("Failed to load session data: {:?}", last_session_file)))
-    }
-  }
-
-  fn load_session_by_path(&mut self, session_file_path: String) -> Result<(), SazidError> {
-    trace_dbg!("loading session from {}", session_file_path);
-
-    let load_result = fs::read_to_string(session_file_path);
-    match load_result {
-      Ok(load_session) => self.load_session(load_session),
-      Err(e) => Err(SazidError::Other(format!("Failed to load session data: {:?}", e))),
-    }
-  }
-  fn save_session(&self) -> io::Result<()> {
-    let home_dir = home_dir().unwrap();
-    let save_dir = home_dir.join(SESSIONS_DIR);
-    if !save_dir.exists() {
-      fs::create_dir_all(save_dir.clone())?;
-    }
-    let session_file_path = save_dir.join(Self::get_session_filename(self.config.session_id.clone()));
-    let data = serde_json::to_string(&self)?;
-    fs::write(session_file_path.clone(), data)?;
-    trace_dbg!("session saved to {}", &session_file_path.clone().display());
-    Ok(())
-  }
-
-  pub fn save_last_session_id(&self) {
-    ensure_directory_exists(SESSIONS_DIR).unwrap();
-    let last_session_path = Path::new(SESSIONS_DIR).join("last_session.txt");
-    fs::write(last_session_path, self.config.session_id.clone()).unwrap();
   }
 
   pub fn select_model(model_preference_list: Vec<Model>, client: Client<OpenAIConfig>) {

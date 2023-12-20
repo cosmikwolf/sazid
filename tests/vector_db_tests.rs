@@ -1,8 +1,8 @@
 #[cfg(test)]
 
 mod vector_db_tests {
-  use sazid::app::embeddings::vector_db::*;
-  use sazid::app::{embeddings::types::FileEmbedding, errors::SazidError};
+  use sazid::app::database::vector_db::*;
+  use sazid::app::{database::types::FileEmbedding, errors::SazidError};
   use tokio_postgres::{Client, NoTls};
 
   // Helper function to set up the test database connection

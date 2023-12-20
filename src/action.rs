@@ -1,4 +1,7 @@
-use crate::app::{types::Model, messages::ChatMessage};
+use crate::app::{
+  messages::{ChatMessage, MessageContainer},
+  types::Model,
+};
 use serde::{
   de::{self, Deserializer, Visitor},
   Deserialize, Serialize,
@@ -16,6 +19,13 @@ pub enum Action {
   Refresh,
   Error(String),
   Help,
+
+  // embeddings manager actions
+  CreateSession(Option<String>, String, String, bool),
+  CreateSessionResponse(i64),
+  LoadSession(i64),
+  AddMessageEmbedding(i64, MessageContainer),
+
   SubmitInput(String),
   ExecuteCommand(String),
   CommandResult(String),
@@ -25,7 +35,6 @@ pub enum Action {
   UpdateStatus(Option<String>),
   SetInputVsize(u16),
   SaveSession,
-  LoadSession(String),
   EnterVisual,
   EnterNormal,
   EnterCommand,

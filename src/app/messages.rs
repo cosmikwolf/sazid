@@ -61,12 +61,33 @@ pub enum ReceiveBuffer {
   StreamResponse(Vec<CreateChatCompletionStreamResponse>),
 }
 
+impl From<ReceiveBuffer> for ChatCompletionRequestMessage {
+  fn from(buffer: ReceiveBuffer) -> Self {
+    match buffer {
+      ReceiveBuffer::Response(response) => ChatCompletionRequestMessage::Assistant(
+        get_assistant_message_from_create_chat_completion_response(0, &response).unwrap(),
+      ),
+      ReceiveBuffer::StreamResponse(response) => ChatCompletionRequestMessage::Assistant(
+        get_assistant_message_from_create_chat_completion_stream_response(0, &response).unwrap(),
+      ),
+    }
+  }
+}
+
+// impl From<ChatMessage> for ChatCompletionRequestMessage {
+//   fn from(message: ChatMessage) -> Self {
+//     message.into()
+//   }
+// }
+
 impl From<ChatMessage> for MessageContainer {
   fn from(message: ChatMessage) -> Self {
     match message {
-      ChatMessage::Response(response) => MessageContainer::new_from_receive_buffer(ReceiveBuffer::Response(response)),
+      ChatMessage::Response(response) => {
+        MessageContainer::new_from_completed_message(ReceiveBuffer::Response(response).into())
+      },
       ChatMessage::StreamResponse(response) => {
-        MessageContainer::new_from_receive_buffer(ReceiveBuffer::StreamResponse(response))
+        MessageContainer::new_from_completed_message(ReceiveBuffer::StreamResponse(response).into())
       },
       ChatMessage::Tool(message) => {
         MessageContainer::new_from_completed_message(ChatCompletionRequestMessage::Tool(message))
@@ -308,25 +329,25 @@ impl MessageContainer {
     message_container
   }
 
-  pub fn new_from_receive_buffer(receive_buffer: ReceiveBuffer) -> Self {
-    match &receive_buffer {
-      ReceiveBuffer::Response(response) => {
-        let mut message = MessageContainer::new(ChatCompletionRequestMessage::Assistant(
-          get_assistant_message_from_create_chat_completion_response(0, response).unwrap(),
-        ));
-        message.receive_buffer = Some(receive_buffer.clone());
-        message
-      },
-      ReceiveBuffer::StreamResponse(response) => {
-        let mut message = MessageContainer::new(ChatCompletionRequestMessage::Assistant(
-          get_assistant_message_from_create_chat_completion_stream_response(0, response).unwrap(),
-        ));
-        message.receive_buffer = Some(receive_buffer.clone());
-        message.stream_id = Some(response[0].id.clone());
-        message
-      },
-    }
-  }
+  // pub fn new_from_receive_buffer(receive_buffer: ReceiveBuffer) -> Self {
+  //   match &receive_buffer {
+  //     ReceiveBuffer::Response(response) => {
+  //       let mut message = MessageContainer::new(ChatCompletionRequestMessage::Assistant(
+  //         get_assistant_message_from_create_chat_completion_response(0, response).unwrap(),
+  //       ));
+  //       message.receive_buffer = Some(receive_buffer.clone());
+  //       message
+  //     },
+  //     ReceiveBuffer::StreamResponse(response) => {
+  //       let mut message = MessageContainer::new(ChatCompletionRequestMessage::Assistant(
+  //         get_assistant_message_from_create_chat_completion_stream_response(0, response).unwrap(),
+  //       ));
+  //       message.receive_buffer = Some(receive_buffer.clone());
+  //       message.stream_id = Some(response[0].id.clone());
+  //       message
+  //     },
+  //   }
+  // }
 
   pub fn update_stream_response(
     &mut self,

@@ -1,36 +1,34 @@
+use super::embeddings_models::EmbeddingModel;
+use super::types::*;
+use crate::action::Action;
 use crate::app::errors::SazidError;
 use crate::trace_dbg;
 use crate::{cli::Cli, config::Config};
 use async_openai::types::ChatCompletionRequestMessage;
+use dialoguer;
 use diesel::prelude::*;
 use diesel::sql_query;
 use diesel_async::{AsyncConnection, AsyncPgConnection, RunQueryDsl};
 use dotenv::dotenv;
 use pgvector::{Vector, VectorExpressionMethods};
-
-use self::embeddings_models::EmbeddingModel;
-use self::types::*;
-use dialoguer;
-
-pub mod embeddings_models;
-pub mod schema;
-pub mod treesitter_extraction;
-pub mod types;
+use tokio::sync::mpsc::UnboundedSender;
 
 pub struct EmbeddingsManager {
+  pub action_tx: Option<UnboundedSender<Action>>,
+  config: Config,
   client: AsyncPgConnection,
   model: EmbeddingModel,
 }
 
 impl EmbeddingsManager {
-  pub async fn run(&mut self, args: Cli) -> Result<Option<String>, SazidError> {
+  pub async fn run_cli(&mut self, args: Cli) -> Result<Option<String>, SazidError> {
     println!("args: {:#?}", args);
     Ok(match args {
       Cli { list_embeddings: true, .. } => {
         // let categories = self.list_embeddings_categories().await?;
         let embeddings = self.get_all_embeddings().await?;
 
-        if embeddings.len() == 0 {
+        if embeddings.is_empty() {
           Some("No embeddings found".to_string())
         } else {
           Some(
@@ -59,7 +57,7 @@ impl EmbeddingsManager {
       },
       Cli { search_embeddings: Some(text), .. } => {
         let embeddings = self.search_all_embeddings(&text).await?;
-        if embeddings.len() == 0 {
+        if embeddings.is_empty() {
           Some("No embeddings found".to_string())
         } else {
           Some(embeddings.into_iter().map(|e| format!("{}", e)).collect::<Vec<String>>().join("\n"))
@@ -88,16 +86,22 @@ impl EmbeddingsManager {
     self.get_similar_embeddings(vector, 10).await
   }
 
-  pub async fn init(_config: Config, model: EmbeddingModel) -> Result<Self, SazidError> {
+  pub async fn new(config: Config, model: EmbeddingModel) -> Result<Self, SazidError> {
     dotenv().ok();
     let database_url = std::env::var("DATABASE_URL").unwrap();
-    Ok(EmbeddingsManager { client: AsyncPgConnection::establish(&database_url).await.unwrap(), model })
+    Ok(EmbeddingsManager {
+      action_tx: None,
+      config,
+      client: AsyncPgConnection::establish(&database_url).await.unwrap(),
+      model,
+    })
   }
 
   pub async fn create_session(&mut self, model: &str, prompt: &str, rag: bool) -> Result<i64, SazidError> {
-    let session_id = diesel::insert_into(self::schema::sessions::table)
-      .values((schema::sessions::model.eq(model), schema::sessions::prompt.eq(prompt), schema::sessions::rag.eq(rag)))
-      .returning(schema::sessions::id)
+    use super::schema::sessions;
+    let session_id = diesel::insert_into(sessions::table)
+      .values((sessions::model.eq(model), sessions::prompt.eq(prompt), sessions::rag.eq(rag)))
+      .returning(sessions::id)
       .get_result(&mut self.client)
       .await?;
     Ok(session_id)
@@ -105,18 +109,26 @@ impl EmbeddingsManager {
   pub async fn add_message_embedding(
     &mut self,
     session_id: i64,
+    message_id: Option<String>,
     data: ChatCompletionRequestMessage,
-  ) -> Result<i64, SazidError> {
+  ) -> Result<String, SazidError> {
+    let message_id = match message_id {
+      Some(id) => id,
+      None => uuid::Uuid::new_v4().to_string(),
+    };
+
+    use super::schema::messages;
     let data = diesel_json::Json::new(data);
     trace_dbg!("embedding message data: {:#?}", data);
     let embedding = self.model.create_embedding_vector(serde_json::json!(data).as_str().unwrap()).await?;
-    let message_id = diesel::insert_into(self::schema::messages::table)
+    let message_id = diesel::insert_into(messages::table)
       .values((
-        schema::messages::session_id.eq(session_id),
-        schema::messages::data.eq(&data),
-        schema::messages::embedding.eq(embedding),
+        messages::id.eq(message_id),
+        messages::session_id.eq(session_id),
+        messages::data.eq(&data),
+        messages::embedding.eq(embedding),
       ))
-      .returning(schema::messages::id)
+      .returning(messages::id)
       .get_result(&mut self.client)
       .await?;
     Ok(message_id)
@@ -127,13 +139,14 @@ impl EmbeddingsManager {
     session_id: i64,
     text: &str,
   ) -> Result<Vec<ChatCompletionRequestMessage>, SazidError> {
+    use super::schema::messages;
     let search_vector = self.model.create_embedding_vector(text).await?;
-    let messages = self::schema::messages::table
-      .select((schema::messages::id, schema::messages::data))
-      .filter(schema::messages::session_id.eq(session_id))
-      .order(schema::messages::embedding.cosine_distance(&search_vector))
+    let messages = messages::table
+      .select((messages::id, messages::data))
+      .filter(messages::session_id.eq(session_id))
+      .order(messages::embedding.cosine_distance(&search_vector))
       .limit(10)
-      .load::<(i64, diesel_json::Json<ChatCompletionRequestMessage>)>(&mut self.client)
+      .load::<(String, diesel_json::Json<ChatCompletionRequestMessage>)>(&mut self.client)
       .await?
       .into_iter()
       .map(|(_, m)| m.0)
@@ -146,24 +159,26 @@ impl EmbeddingsManager {
     embedding: &InsertableFileEmbedding,
     pages: Vec<&InsertablePage>,
   ) -> Result<i64, SazidError> {
-    let embedding_id = diesel::insert_into(self::schema::file_embeddings::table)
+    use super::schema::embedding_pages;
+    use super::schema::file_embeddings;
+    let embedding_id = diesel::insert_into(file_embeddings::table)
       .values(embedding)
-      .on_conflict(self::schema::file_embeddings::dsl::checksum)
+      .on_conflict(file_embeddings::dsl::checksum)
       .do_update()
       .set(embedding)
-      .returning(self::schema::file_embeddings::id)
+      .returning(file_embeddings::id)
       .get_result(&mut self.client)
       .await?;
     println!("embedding_id: {}", embedding_id);
 
     for p in pages {
-      diesel::insert_into(self::schema::embedding_pages::table)
+      diesel::insert_into(embedding_pages::table)
         .values((
-          schema::embedding_pages::content.eq(p.content.clone()),
-          schema::embedding_pages::page_number.eq(p.page_number),
-          schema::embedding_pages::checksum.eq(p.checksum.clone()),
-          schema::embedding_pages::file_embedding_id.eq(embedding_id),
-          schema::embedding_pages::embedding.eq(p.embedding.clone()),
+          embedding_pages::content.eq(p.content.clone()),
+          embedding_pages::page_number.eq(p.page_number),
+          embedding_pages::checksum.eq(p.checksum.clone()),
+          embedding_pages::file_embedding_id.eq(embedding_id),
+          embedding_pages::embedding.eq(p.embedding.clone()),
         ))
         .execute(&mut self.client)
         .await?;
@@ -172,9 +187,7 @@ impl EmbeddingsManager {
   }
 
   pub async fn get_all_embeddings(&mut self) -> Result<Vec<(FileEmbedding, Vec<EmbeddingPage>)>, SazidError> {
-    // use schema::embedding_pages::dsl::*;
-    use schema::file_embeddings::dsl::*;
-
+    use super::schema::file_embeddings::dsl::file_embeddings;
     let all_files = file_embeddings.select(FileEmbedding::as_select()).load(&mut self.client).await?;
 
     let pages =
@@ -185,32 +198,32 @@ impl EmbeddingsManager {
         .grouped_by(&all_files)
         .into_iter()
         .zip(all_files)
-        .map(|(pages, file)| (file, pages.into_iter().map(|page| page).collect()))
+        .map(|(pages, file)| (file, pages.into_iter().collect()))
         .collect::<Vec<(FileEmbedding, Vec<EmbeddingPage>)>>(),
     )
   }
 
   pub async fn get_similar_embeddings(&mut self, vector: Vector, limit: i64) -> Result<Vec<EmbeddingPage>, SazidError> {
-    let query = self::schema::embedding_pages::table
-      .select(EmbeddingPage::as_select())
-      .order(schema::embedding_pages::embedding.cosine_distance(&vector))
-      .limit(limit);
+    use super::schema::embedding_pages::dsl::*;
+    let query =
+      embedding_pages.select(EmbeddingPage::as_select()).order(embedding.cosine_distance(&vector)).limit(limit);
     let embeddings = query.load::<EmbeddingPage>(&mut self.client).await?;
     Ok(embeddings)
   }
 
   pub async fn add_embedding_tag(&mut self, tag_name: &str) -> Result<usize, SazidError> {
-    Ok(diesel::insert_into(schema::tags::table).values(schema::tags::tag.eq(tag_name)).execute(&mut self.client).await?)
+    use super::schema::tags::dsl::*;
+    Ok(diesel::insert_into(tags).values(tag.eq(tag_name)).execute(&mut self.client).await?)
   }
 
   pub async fn add_textfile_embedding(&mut self, filepath: &str) -> Result<i64, SazidError> {
     let content = std::fs::read_to_string(filepath)?;
     let checksum = blake3::hash(content.as_bytes()).to_hex().to_string();
-    let vector_content = vec![filepath.to_string(), content.to_string()].join("\n");
+    let vector_content = [filepath.to_string(), content.to_string()].join("\n");
     let embedding = self.model.create_embedding_vector(&vector_content).await?;
     let new_embedding = InsertableFileEmbedding { filepath: filepath.to_string(), checksum: checksum.clone() };
     let new_page = InsertablePage { content, page_number: 0, checksum, embedding };
-    Ok(self.add_embedding(&new_embedding, vec![&new_page]).await?)
+    self.add_embedding(&new_embedding, vec![&new_page]).await
   }
   // Method to retrieve indexing progress information
   pub async fn get_indexing_progress(&mut self) -> Result<Vec<PgVectorIndexInfo>, SazidError> {
