@@ -1,6 +1,6 @@
 
 ![Project Banner or Logo](docs/sazid_banner_image.png)
-# Sazid: A Semantically Aware Programming Assistant
+# Sazid
 
 [![CI](https://github.com/cosmikwolf/sazid/workflows/CI/badge.svg)](https://github.com/cosmikwolf/sazid/actions)
 

@@ -44,7 +44,8 @@ diesel::table! {
     messages (id) {
         id -> Int8,
         session_id -> Int8,
-        request -> Jsonb,
+        data -> Jsonb,
+        embedding -> Vector,
         updated_at -> Timestamptz,
     }
 }

@@ -3,13 +3,39 @@ use std::fmt;
 use crate::app::errors::SazidError;
 
 use super::schema::*;
-use diesel::{
-  expression::{AsExpression, ValidGrouping},
-  prelude::*,
-  query_dsl::methods::FindDsl,
-};
-use diesel_async::{AsyncConnection, AsyncPgConnection, RunQueryDsl};
+use async_openai::types::ChatCompletionRequestMessage;
+use diesel::{expression::ValidGrouping, prelude::*};
+use diesel_async::{AsyncPgConnection, RunQueryDsl};
+use diesel_json;
 use pgvector::Vector;
+
+#[derive(Serialize, Queryable, Selectable, Debug, Clone, Identifiable, PartialEq, ValidGrouping)]
+#[diesel(table_name = sessions)]
+pub struct Session {
+  id: i64,
+  model: String,
+  prompt: String,
+  rag: bool,
+}
+
+#[derive(Serialize, Queryable, Selectable, Debug, Clone, Identifiable, PartialEq, ValidGrouping, Associations)]
+#[diesel(table_name = messages)]
+#[diesel(belongs_to(Session))]
+pub struct Message {
+  id: i64,
+  data: diesel_json::Json<ChatCompletionRequestMessage>,
+  #[serde(skip)]
+  embedding: Vector,
+  session_id: i64,
+}
+
+#[derive(Insertable, Debug, Clone, PartialEq, AsChangeset)]
+#[diesel(table_name = sessions)]
+pub struct InsertableSession {
+  model: String,
+  prompt: String,
+  rag: bool,
+}
 
 #[derive(Serialize, Queryable, Selectable, Debug, Clone, Identifiable, PartialEq, Associations, ValidGrouping)]
 #[diesel(belongs_to(FileEmbedding))]
@@ -141,11 +167,11 @@ pub struct PgVectorIndexInfo {
   pub idx_config: String,
 }
 
-impl fmt::Display for FileWithPages {
-  fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-    write!(f, "{}", self)
-  }
-}
+// impl fmt::Display for FileWithPages {
+//   fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+//     write!(f, "{}", self)
+//   }
+// }
 impl fmt::Display for EmbeddingPage {
   fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
     write!(

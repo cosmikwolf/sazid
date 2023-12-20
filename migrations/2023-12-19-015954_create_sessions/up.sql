@@ -1,4 +1,4 @@
-CREATE TABLE  sessions (
+CREATE TABLE sessions (
   id BIGINT PRIMARY KEY NOT NULL,
   model TEXT NOT NULL,
   prompt TEXT NOT NULL,
@@ -9,6 +9,9 @@ CREATE TABLE  sessions (
 CREATE TABLE  messages (
   id bigserial PRIMARY KEY NOT NULL,
   session_id BIGINT NOT NULL REFERENCES sessions(id),
-  request JSONB NOT NULL DEFAULT '{}'::jsonb,
+  data JSONB NOT NULL,
+  embedding VECTOR(1536) NOT NULL,
   updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
 );
+
+CREATE INDEX messages_cosine_index ON messages USING hnsw (embedding vector_cosine_ops);
