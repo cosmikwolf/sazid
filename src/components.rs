@@ -11,6 +11,7 @@ use crate::{
   tui::{Event, Frame},
 };
 
+pub mod embeddings_manager;
 pub mod home;
 pub mod session;
 
@@ -48,4 +49,3 @@ pub trait Component {
   }
   fn draw(&mut self, f: &mut Frame<'_>, area: Rect) -> Result<(), SazidError>;
 }
-

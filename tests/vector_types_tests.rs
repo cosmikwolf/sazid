@@ -1,6 +1,6 @@
 #[cfg(test)]
 mod vector_custom_type_tests {
-  use sazid::app::embeddings::types::FileEmbedding;
+  use sazid::app::database::types::FileEmbedding;
   use tokio_postgres::{Client, Error, NoTls};
 
   async fn setup_db() -> Result<Client, Box<dyn std::error::Error>> {

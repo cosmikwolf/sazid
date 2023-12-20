@@ -1,23 +1,14 @@
 use bat::{assets::HighlightingAssets, config::Config, controller::Controller, style::StyleComponents};
-use color_eyre::owo_colors::OwoColorize;
-use crossterm::event::KeyCode;
-use crossterm::event::KeyEvent;
-use crossterm::event::KeyModifiers;
-use nu_ansi_term::Color::*;
-use nu_ansi_term::Style;
 use ratatui::style::Modifier;
 use ratatui::widgets::Block;
 use ratatui::widgets::Borders;
 use std::default::Default;
-use std::path::Path;
 use textwrap::{self, Options, WordSeparator, WordSplitter, WrapAlgorithm};
 
-use crate::action::Action;
 use crate::trace_dbg;
-use tui_textarea::{CursorMove, Input, Key, Scrolling, TextArea};
+use tui_textarea::{CursorMove, TextArea};
 
-use super::errors::SazidError;
-use super::{messages::MessageContainer, session_data::SessionData};
+use super::messages::MessageContainer;
 use ropey::Rope;
 
 #[derive(Default, Debug)]
@@ -94,9 +85,9 @@ impl<'a> SessionView<'a> {
     &self.rendered_view
   }
 
-  pub fn post_process_new_messages(&mut self, session_data: &mut SessionData) {
+  pub fn post_process_new_messages(&mut self, messages: &mut Vec<MessageContainer>) {
     let dividing_newlines_count = 2;
-    session_data.messages.iter_mut().for_each(|message| {
+    messages.iter_mut().for_each(|message| {
       let rendered_text_message_start_index = self.rendered_text.len_chars() - message.stylized.len_chars();
       let original_message_length = message.stylized.len_chars();
       // trace_dbg!("message: {:#?}", message.bright_blue());

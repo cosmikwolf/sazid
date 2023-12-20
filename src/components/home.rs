@@ -28,7 +28,7 @@ pub enum Mode {
   Command,
 }
 
-#[derive(Debug, Default)]
+#[derive(Default)]
 pub struct Home<'a> {
   pub show_help: bool,
   pub status: Option<String>,

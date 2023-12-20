@@ -1,6 +1,6 @@
 #[cfg(test)]
 mod treesitter_extraction_tests {
-  use sazid::app::embeddings::treesitter_extraction::*;
+  use sazid::app::database::treesitter_extraction::*;
   use serde_json::json;
 
   #[test]

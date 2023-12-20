@@ -2,7 +2,7 @@
 # see https://diesel.rs/guides/configuring-diesel-cli
 
 [print_schema]
-file = "src/app/embeddings/schema.rs"
+file = "src/app/database/schema.rs"
 # custom_type_derives = ["diesel::query_builder::QueryId"]
 generate_missing_sql_type_definitions = false
 import_types = ["diesel::sql_types::*", "pgvector::sql_types::*"]
