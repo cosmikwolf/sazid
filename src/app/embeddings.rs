@@ -1,5 +1,7 @@
 use crate::app::errors::SazidError;
+use crate::trace_dbg;
 use crate::{cli::Cli, config::Config};
+use async_openai::types::ChatCompletionRequestMessage;
 use diesel::prelude::*;
 use diesel::sql_query;
 use diesel_async::{AsyncConnection, AsyncPgConnection, RunQueryDsl};
@@ -92,6 +94,53 @@ impl EmbeddingsManager {
     Ok(EmbeddingsManager { client: AsyncPgConnection::establish(&database_url).await.unwrap(), model })
   }
 
+  pub async fn create_session(&mut self, model: &str, prompt: &str, rag: bool) -> Result<i64, SazidError> {
+    let session_id = diesel::insert_into(self::schema::sessions::table)
+      .values((schema::sessions::model.eq(model), schema::sessions::prompt.eq(prompt), schema::sessions::rag.eq(rag)))
+      .returning(schema::sessions::id)
+      .get_result(&mut self.client)
+      .await?;
+    Ok(session_id)
+  }
+  pub async fn add_message_embedding(
+    &mut self,
+    session_id: i64,
+    data: ChatCompletionRequestMessage,
+  ) -> Result<i64, SazidError> {
+    let data = diesel_json::Json::new(data);
+    trace_dbg!("embedding message data: {:#?}", data);
+    let embedding = self.model.create_embedding_vector(serde_json::json!(data).as_str().unwrap()).await?;
+    let message_id = diesel::insert_into(self::schema::messages::table)
+      .values((
+        schema::messages::session_id.eq(session_id),
+        schema::messages::data.eq(&data),
+        schema::messages::embedding.eq(embedding),
+      ))
+      .returning(schema::messages::id)
+      .get_result(&mut self.client)
+      .await?;
+    Ok(message_id)
+  }
+
+  pub async fn search_related_session_messages(
+    &mut self,
+    session_id: i64,
+    text: &str,
+  ) -> Result<Vec<ChatCompletionRequestMessage>, SazidError> {
+    let search_vector = self.model.create_embedding_vector(text).await?;
+    let messages = self::schema::messages::table
+      .select((schema::messages::id, schema::messages::data))
+      .filter(schema::messages::session_id.eq(session_id))
+      .order(schema::messages::embedding.cosine_distance(&search_vector))
+      .limit(10)
+      .load::<(i64, diesel_json::Json<ChatCompletionRequestMessage>)>(&mut self.client)
+      .await?
+      .into_iter()
+      .map(|(_, m)| m.0)
+      .collect::<Vec<ChatCompletionRequestMessage>>();
+    Ok(messages)
+  }
+
   pub async fn add_embedding(
     &mut self,
     embedding: &InsertableFileEmbedding,
@@ -111,7 +160,7 @@ impl EmbeddingsManager {
       diesel::insert_into(self::schema::embedding_pages::table)
         .values((
           schema::embedding_pages::content.eq(p.content.clone()),
-          schema::embedding_pages::page_number.eq(p.page_number.clone()),
+          schema::embedding_pages::page_number.eq(p.page_number),
           schema::embedding_pages::checksum.eq(p.checksum.clone()),
           schema::embedding_pages::file_embedding_id.eq(embedding_id),
           schema::embedding_pages::embedding.eq(p.embedding.clone()),
