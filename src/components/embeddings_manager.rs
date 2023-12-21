@@ -1,16 +1,19 @@
-use async_openai::config::OpenAIConfig;
-use core::result::Result;
-use futures_util::TryFutureExt;
-use ratatui::prelude::Rect;
-use tokio::sync::mpsc::UnboundedSender;
-
 use crate::{
   action::Action,
-  app::{database::embeddings_manager::EmbeddingsManager, errors::SazidError},
+  app::{
+    database::embeddings_manager::{add_message_embedding, add_session, load_session, EmbeddingsManager},
+    errors::SazidError,
+  },
   config::Config,
   trace_dbg,
   tui::{Event, Frame},
 };
+use async_openai::config::OpenAIConfig;
+use core::result::Result;
+use diesel::prelude::*;
+use futures_util::TryFutureExt;
+use ratatui::prelude::Rect;
+use tokio::sync::mpsc::UnboundedSender;
 
 use super::Component;
 
@@ -38,19 +41,29 @@ impl Component for EmbeddingsManager {
   }
   fn update(&mut self, action: Action) -> Result<Option<Action>, SazidError> {
     let tx = self.action_tx.clone().unwrap();
-
+    let db_url = self.get_database_url();
+    let model = self.model.clone();
     match action {
-      Action::CreateSession(Some(id), model, prompt, rag) => {
+      Action::CreateSession(model, prompt, rag) => {
         tokio::spawn(async move {
-          let id = self.create_session(&model, &prompt, rag).await.unwrap();
+          let id = add_session(&db_url, &model, rag).await.unwrap();
           tx.send(Action::CreateSessionResponse(id)).unwrap()
         });
         Ok(None)
       },
-      Action::AddMessageEmbedding(id, message) => {
-        if message.receive_complete {
+      Action::LoadSession(id) => {
+        tokio::spawn(async move {
+          let session = load_session(&db_url, id).await.unwrap();
+          tx.send(Action::CreateSessionResponse(id)).unwrap()
+        });
+        Ok(None)
+      },
+      Action::AddMessageEmbedding(id, message_container) => {
+        if message_container.receive_complete {
           tokio::spawn(async move {
-            self.add_message_embedding(id, message.stream_id, message.message).await.unwrap();
+            add_message_embedding(&db_url, id, message_container.stream_id, model, message_container.message)
+              .await
+              .unwrap()
           });
         }
         Ok(None)

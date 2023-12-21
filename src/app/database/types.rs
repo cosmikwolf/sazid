@@ -14,14 +14,14 @@ use pgvector::Vector;
 pub struct Session {
   id: i64,
   model: String,
-  prompt: String,
+  summary: Option<String>,
   rag: bool,
 }
 
 #[derive(Serialize, Queryable, Selectable, Debug, Clone, Identifiable, PartialEq, ValidGrouping, Associations)]
 #[diesel(table_name = messages)]
 #[diesel(belongs_to(Session))]
-pub struct Message {
+pub struct QueryableMessage {
   id: i64,
   data: diesel_json::Json<ChatCompletionRequestMessage>,
   #[serde(skip)]
@@ -33,7 +33,6 @@ pub struct Message {
 #[diesel(table_name = sessions)]
 pub struct InsertableSession {
   model: String,
-  prompt: String,
   rag: bool,
 }
 
