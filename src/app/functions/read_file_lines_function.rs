@@ -12,7 +12,7 @@ use super::errors::ToolCallError;
 use super::tool_call::ToolCallTrait;
 use super::types::{FunctionCall, FunctionParameters, FunctionProperties};
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
 pub struct ReadFileLinesFunction {
   pub name: String,
   pub description: String,

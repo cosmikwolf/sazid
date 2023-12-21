@@ -68,15 +68,15 @@ impl Config {
 
     let mut cfg: Self = builder.build()?.try_deserialize()?;
 
-    cfg.session_config = match local_api {
-      true => SessionConfig::default().with_local_api(),
-      false => {
-        let api_key: String = env::var("OPENAI_API_KEY").expect("OPENAI_API_KEY not set");
-
-        trace_dbg!("api_key: {:?}", api_key);
-        SessionConfig::default().with_openai_api_key(api_key)
-      },
-    };
+    // cfg.session_config = match local_api {
+    //   true => SessionConfig::default().with_local_api(),
+    //   false => {
+    //     let api_key: String = env::var("OPENAI_API_KEY").expect("OPENAI_API_KEY not set");
+    //
+    //     trace_dbg!("api_key: {:?}", api_key);
+    //     SessionConfig::default().with_openai_api_key(api_key)
+    //   },
+    // };
     cfg.session_config.list_file_paths = cfg.list_file_paths.clone();
     cfg.session_config.session_dir = cfg.session_dir.clone();
     for (mode, default_bindings) in default_config.keybindings.iter() {

@@ -1,5 +1,7 @@
 use crate::app::{
+  database::types::QueryableSession,
   messages::{ChatMessage, MessageContainer},
+  session_config::SessionConfig,
   types::Model,
 };
 use serde::{
@@ -21,9 +23,9 @@ pub enum Action {
   Help,
 
   // embeddings manager actions
-  CreateSession(String, String, bool),
-  CreateSessionResponse(),
+  CreateSession(SessionConfig),
   LoadSession(i64),
+  CreateLoadSessionResponse(QueryableSession),
   AddMessageEmbedding(i64, MessageContainer),
 
   SubmitInput(String),

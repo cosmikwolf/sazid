@@ -1,6 +1,6 @@
 use std::fmt;
 
-use crate::app::errors::SazidError;
+use crate::app::{errors::SazidError, session_config::SessionConfig};
 
 use super::schema::*;
 use async_openai::types::ChatCompletionRequestMessage;
@@ -11,16 +11,15 @@ use pgvector::Vector;
 
 #[derive(Serialize, Queryable, Selectable, Debug, Clone, Identifiable, PartialEq, ValidGrouping)]
 #[diesel(table_name = sessions)]
-pub struct Session {
-  id: i64,
-  model: String,
-  summary: Option<String>,
-  rag: bool,
+pub struct QueryableSession {
+  pub id: i64,
+  pub config: diesel_json::Json<SessionConfig>,
+  pub summary: Option<String>,
 }
 
 #[derive(Serialize, Queryable, Selectable, Debug, Clone, Identifiable, PartialEq, ValidGrouping, Associations)]
 #[diesel(table_name = messages)]
-#[diesel(belongs_to(Session))]
+#[diesel(belongs_to(QueryableSession, foreign_key = session_id))]
 pub struct QueryableMessage {
   id: i64,
   data: diesel_json::Json<ChatCompletionRequestMessage>,
@@ -32,8 +31,8 @@ pub struct QueryableMessage {
 #[derive(Insertable, Debug, Clone, PartialEq, AsChangeset)]
 #[diesel(table_name = sessions)]
 pub struct InsertableSession {
-  model: String,
-  rag: bool,
+  pub config: diesel_json::Json<SessionConfig>,
+  pub summary: Option<String>,
 }
 
 #[derive(Serialize, Queryable, Selectable, Debug, Clone, Identifiable, PartialEq, Associations, ValidGrouping)]

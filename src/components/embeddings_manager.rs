@@ -44,17 +44,17 @@ impl Component for EmbeddingsManager {
     let db_url = self.get_database_url();
     let model = self.model.clone();
     match action {
-      Action::CreateSession(model, prompt, rag) => {
+      Action::CreateSession(config) => {
         tokio::spawn(async move {
-          let id = add_session(&db_url, &model, rag).await.unwrap();
-          tx.send(Action::CreateSessionResponse(id)).unwrap()
+          let session = add_session(&db_url, config).await.unwrap();
+          tx.send(Action::CreateLoadSessionResponse(session)).unwrap()
         });
         Ok(None)
       },
       Action::LoadSession(id) => {
         tokio::spawn(async move {
           let session = load_session(&db_url, id).await.unwrap();
-          tx.send(Action::CreateSessionResponse(id)).unwrap()
+          tx.send(Action::CreateLoadSessionResponse(session)).unwrap()
         });
         Ok(None)
       },

@@ -56,9 +56,8 @@ diesel::table! {
 
     sessions (id) {
         id -> Int8,
-        model -> Text,
+        config -> Jsonb,
         summary -> Nullable<Text>,
-        rag -> Bool,
         updated_at -> Timestamptz,
     }
 }
