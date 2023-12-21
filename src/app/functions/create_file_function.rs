@@ -14,7 +14,7 @@ use super::{
   types::{FunctionCall, FunctionParameters, FunctionProperties},
 };
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
 pub struct CreateFileFunction {
   name: String,
   description: String,

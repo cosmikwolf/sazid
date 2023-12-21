@@ -19,9 +19,11 @@ use tokio::sync::mpsc::UnboundedSender;
 use tui_textarea::{CursorMove, Scrolling};
 
 use async_openai::{config::OpenAIConfig, Client};
+use dotenv::dotenv;
 
 use super::{Component, Frame};
 use crate::app::database::embeddings_manager::EmbeddingsManager;
+use crate::app::database::types::QueryableSession;
 use crate::app::functions::{all_functions, handle_tool_call};
 use crate::app::messages::{ChatMessage, MessageContainer, ReceiveBuffer};
 use crate::app::request_validation::debug_request_validation;
@@ -38,12 +40,14 @@ use crate::app::gpt_interface::create_chat_completion_tool_args;
 use crate::app::tools::utils::ensure_directory_exists;
 use crate::components::home::Mode;
 
-#[derive(Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct Session<'a> {
   pub id: i64,
   pub messages: Vec<MessageContainer>,
   pub window_width: usize,
   pub config: SessionConfig,
+  #[serde(skip)]
+  pub openai_config: OpenAIConfig,
   #[serde(skip)]
   pub embeddings_manager: Option<EmbeddingsManager>,
   #[serde(skip)]
@@ -97,6 +101,7 @@ impl<'a> Default for Session<'a> {
       messages: vec![],
       window_width: 80,
       config: SessionConfig::default(),
+      openai_config: OpenAIConfig::default(),
       embeddings_manager: None,
       action_tx: None,
       mode: Mode::Normal,
@@ -123,11 +128,21 @@ impl<'a> Default for Session<'a> {
   }
 }
 
+impl<'a> From<QueryableSession> for Session<'a> {
+  fn from(value: QueryableSession) -> Self {
+    dotenv().ok();
+    let api_key = std::env::var("OPENAI_API_KEY").unwrap();
+    let openai_config = OpenAIConfig::new().with_api_key(api_key).with_org_id("org-WagBLu0vLgiuEL12dylmcPFj");
+    // let openai_config = OpenAIConfig::new().with_api_base("http://localhost:1234/v1".to_string());
+    Session { id: value.id, openai_config, config: value.config.0, ..Default::default() }
+  }
+}
+
 impl Component for Session<'static> {
   fn init(&mut self, area: Rect) -> Result<(), SazidError> {
     let tx = self.action_tx.clone().unwrap();
     //let model_preference: Vec<Model> = vec![GPT4.clone(), GPT3_TURBO.clone(), WIZARDLM.clone()];
-    //Session::select_model(model_preference, create_openai_client(self.config.openai_config.clone()));
+    //Session::select_model(model_preference, create_openai_client(self.openai_config.clone()));
     trace_dbg!("init session");
     self.config.prompt =
         [
@@ -417,8 +432,8 @@ impl Session<'static> {
             message.update_stream_response(sr.clone()).unwrap();
             tx.send(Action::AddMessageEmbedding(self.id, message.clone())).unwrap();
           } else {
-            let message = ChatMessage::StreamResponse(vec![sr.clone()]).into();
-            self.messages.push(message);
+            let message: MessageContainer = ChatMessage::StreamResponse(vec![sr.clone()]).into();
+            self.messages.push(message.clone());
             tx.send(Action::AddMessageEmbedding(self.id, message)).unwrap();
           }
         });
@@ -618,7 +633,7 @@ impl Session<'static> {
   pub fn request_chat_completion(&mut self, tx: UnboundedSender<Action>) {
     tx.send(Action::UpdateStatus(Some("Configuring Client".to_string()))).unwrap();
     let stream_response = self.config.stream_response;
-    let openai_config = self.config.openai_config.clone();
+    let openai_config = self.openai_config.clone();
 
     let request = self.construct_request();
     debug_request_validation(&request);

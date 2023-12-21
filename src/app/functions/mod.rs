@@ -27,7 +27,7 @@ pub mod tool_call;
 pub mod tool_call_template;
 pub mod types;
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
 pub enum CallableFunction {
   FileSearchFunction(FileSearchFunction),
   //Pcre2GrepFunction(Pcre2GrepFunction),

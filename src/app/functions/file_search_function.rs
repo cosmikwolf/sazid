@@ -13,7 +13,7 @@ use super::tool_call::ToolCallTrait;
 use super::types::FunctionParameters;
 use super::{argument_validation::count_tokens, argument_validation::get_accessible_file_paths, ToolCallError};
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
 pub struct FileSearchFunction {
   pub name: String,
   pub description: String,

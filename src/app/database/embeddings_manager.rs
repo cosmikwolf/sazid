@@ -2,6 +2,7 @@ use super::embeddings_models::EmbeddingModel;
 use super::types::*;
 use crate::action::Action;
 use crate::app::errors::SazidError;
+use crate::app::session_config::SessionConfig;
 use crate::trace_dbg;
 use crate::{cli::Cli, config::Config};
 use async_openai::types::ChatCompletionRequestMessage;
@@ -13,6 +14,7 @@ use dotenv::dotenv;
 use pgvector::{Vector, VectorExpressionMethods};
 use tokio::sync::mpsc::UnboundedSender;
 
+#[derive(Debug)]
 pub struct EmbeddingsManager {
   pub action_tx: Option<UnboundedSender<Action>>,
   config: Config,
@@ -104,21 +106,23 @@ pub async fn establish_connection(database_url: &str) -> AsyncPgConnection {
   AsyncPgConnection::establish(database_url).await.unwrap()
 }
 
-pub async fn add_session(db_url: &str, model: &str, rag: bool) -> Result<i64, SazidError> {
+pub async fn add_session(db_url: &str, config: SessionConfig) -> Result<QueryableSession, SazidError> {
   let conn = &mut establish_connection(&db_url).await;
   use super::schema::sessions;
-  let session_id = diesel::insert_into(sessions::table)
-    .values((sessions::model.eq(model), sessions::rag.eq(rag)))
-    .returning(sessions::id)
+  let config = diesel_json::Json::new(config);
+  let session = diesel::insert_into(sessions::table)
+    // .values((dsl::model.eq(model.to_string()), dsl::rag.eq(rag)))
+    .values(sessions::config.eq(&config))
+    .returning(QueryableSession::as_returning())
     .get_result(conn)
     .await?;
-  Ok(session_id)
+  Ok(session)
 }
 
-pub async fn load_session(db_url: &str, session_id: i64) -> Result<Session, SazidError> {
+pub async fn load_session(db_url: &str, session_id: i64) -> Result<QueryableSession, SazidError> {
   use super::schema::sessions::dsl::*;
   let conn = &mut establish_connection(&db_url).await;
-  let session = sessions.find(session_id).select(Session::as_select()).first(conn).await?;
+  let session = sessions.find(session_id).select(QueryableSession::as_select()).first(conn).await?;
   Ok(session)
 }
 

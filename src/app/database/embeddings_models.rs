@@ -9,7 +9,7 @@ use crate::{
   components::session::create_openai_client,
 };
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub enum EmbeddingModel {
   Ada002(OpenAIConfig),
 }

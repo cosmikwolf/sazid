@@ -3,15 +3,12 @@ use std::{
   time::{SystemTime, UNIX_EPOCH},
 };
 
-use async_openai::{
-  config::OpenAIConfig,
-  types::{ChatCompletionRequestSystemMessage},
-};
+use async_openai::{config::OpenAIConfig, types::ChatCompletionRequestSystemMessage};
 use serde_derive::{Deserialize, Serialize};
 
 use super::{consts::*, functions::CallableFunction, types::Model};
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct SessionConfig {
   pub prompt: String,
   pub session_id: String,
@@ -24,8 +21,6 @@ pub struct SessionConfig {
   pub stream_response: bool,
   pub function_result_max_tokens: usize,
   pub response_max_tokens: usize,
-  #[serde(skip)]
-  pub openai_config: OpenAIConfig,
 }
 
 impl Default for SessionConfig {
@@ -35,7 +30,6 @@ impl Default for SessionConfig {
       session_id: Self::generate_session_id(),
       session_dir: PathBuf::new(),
       available_functions: vec![],
-      openai_config: OpenAIConfig::default(),
       list_file_paths: vec![],
       model: GPT4_TURBO.clone(),
       name: "Sazid Test".to_string(),
@@ -47,18 +41,6 @@ impl Default for SessionConfig {
   }
 }
 impl SessionConfig {
-  pub fn with_local_api(mut self) -> Self {
-    log::info!("Using local API");
-    self.openai_config = OpenAIConfig::new().with_api_base("http://localhost:1234/v1".to_string());
-    self
-  }
-
-  pub fn with_openai_api_key<S: Into<String>>(mut self, api_key: S) -> Self {
-    log::info!("Using default OpenAI remote API");
-    self.openai_config = OpenAIConfig::new().with_api_key(api_key).with_org_id("org-WagBLu0vLgiuEL12dylmcPFj");
-    self
-  }
-
   pub fn prompt_message(&self) -> ChatCompletionRequestSystemMessage {
     ChatCompletionRequestSystemMessage { content: Some(self.prompt.clone()), ..Default::default() }
   }
