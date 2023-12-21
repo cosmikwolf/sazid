@@ -57,7 +57,7 @@ diesel::table! {
     sessions (id) {
         id -> Int8,
         model -> Text,
-        prompt -> Text,
+        summary -> Nullable<Text>,
         rag -> Bool,
         updated_at -> Timestamptz,
     }

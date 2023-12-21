@@ -21,8 +21,8 @@ pub enum Action {
   Help,
 
   // embeddings manager actions
-  CreateSession(Option<String>, String, String, bool),
-  CreateSessionResponse(i64),
+  CreateSession(String, String, bool),
+  CreateSessionResponse(),
   LoadSession(i64),
   AddMessageEmbedding(i64, MessageContainer),
 
