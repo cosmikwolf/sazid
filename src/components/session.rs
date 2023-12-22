@@ -1,6 +1,6 @@
 use async_openai::types::{
   ChatCompletionRequestAssistantMessage, ChatCompletionRequestMessage, ChatCompletionRequestUserMessage,
-  ChatCompletionRequestUserMessageContent, CreateChatCompletionRequest, CreateEmbeddingRequestArgs,
+  ChatCompletionRequestUserMessageContent, ChatCompletionTool, CreateChatCompletionRequest, CreateEmbeddingRequestArgs,
   CreateEmbeddingResponse, Role,
 };
 use clipboard::{ClipboardContext, ClipboardProvider};
@@ -22,11 +22,12 @@ use async_openai::{config::OpenAIConfig, Client};
 use dotenv::dotenv;
 
 use super::{Component, Frame};
-use crate::app::database::embeddings_manager::EmbeddingsManager;
+use crate::app::database::data_manager::{
+  get_all_embeddings_by_session, search_message_embeddings_by_session, DataManager,
+};
 use crate::app::database::types::QueryableSession;
 use crate::app::functions::{all_functions, handle_tool_call};
 use crate::app::messages::{ChatMessage, MessageContainer, ReceiveBuffer};
-use crate::app::request_validation::debug_request_validation;
 use crate::app::session_config::SessionConfig;
 use crate::app::session_view::SessionView;
 use crate::app::{consts::*, errors::*, tools::chunkifier::*, types::*};
@@ -49,7 +50,7 @@ pub struct Session<'a> {
   #[serde(skip)]
   pub openai_config: OpenAIConfig,
   #[serde(skip)]
-  pub embeddings_manager: Option<EmbeddingsManager>,
+  pub embeddings_manager: DataManager,
   #[serde(skip)]
   pub view: SessionView<'a>,
   #[serde(skip)]
@@ -102,7 +103,7 @@ impl<'a> Default for Session<'a> {
       window_width: 80,
       config: SessionConfig::default(),
       openai_config: OpenAIConfig::default(),
-      embeddings_manager: None,
+      embeddings_manager: DataManager::default(),
       action_tx: None,
       mode: Mode::Normal,
       last_events: vec![],
@@ -181,12 +182,15 @@ impl Component for Session<'static> {
   fn update(&mut self, action: Action) -> Result<Option<Action>, SazidError> {
     let tx = self.action_tx.clone().unwrap();
     match action {
+      Action::Error(e) => {
+        log::error!("Action::Error - {:?}", e);
+      },
       Action::AddMessage(chat_message) => {
         //trace_dbg!(level: tracing::Level::INFO, "adding message to session");
         self.add_message(chat_message);
         self.view.post_process_new_messages(&mut self.messages);
         self.execute_tool_calls();
-        self.add_new_messages_to_request_buffer();
+        self.generate_new_message_embeddings();
       },
       Action::ExecuteCommand(command) => {
         // tx.send(Action::CommandResult(self.execute_command(command).unwrap())).unwrap();
@@ -200,7 +204,10 @@ impl Component for Session<'static> {
       },
       Action::RequestChatCompletion() => {
         trace_dbg!(level: tracing::Level::INFO, "requesting chat completion");
-        self.request_chat_completion(tx.clone())
+        self.request_chat_completion(None, tx.clone())
+      },
+      Action::MessageEmbeddingSuccess(id) => {
+        self.messages.iter_mut().find(|m| m.message_id == id).unwrap().embedding_saved = true;
       },
       Action::Resize(width, _height) => {
         self.view.set_window_width(width.into(), &mut self.messages);
@@ -421,31 +428,36 @@ impl Session<'static> {
   }
 
   pub fn add_message(&mut self, message: ChatMessage) {
-    let tx = self.action_tx.clone().unwrap();
     match message {
-      ChatMessage::User(_) => self.messages.push(message.into()),
+      ChatMessage::User(_) => self.messages.push(message.send_in_next_request()),
       ChatMessage::StreamResponse(new_srvec) => {
         new_srvec.iter().for_each(|sr| {
           if let Some(message) = self.messages.iter_mut().find(|m| {
             m.stream_id == Some(sr.id.clone()) && matches!(m.receive_buffer, Some(ReceiveBuffer::StreamResponse(_)))
           }) {
             message.update_stream_response(sr.clone()).unwrap();
-            tx.send(Action::AddMessageEmbedding(self.id, message.clone())).unwrap();
           } else {
             let message: MessageContainer = ChatMessage::StreamResponse(vec![sr.clone()]).into();
             self.messages.push(message.clone());
-            tx.send(Action::AddMessageEmbedding(self.id, message)).unwrap();
           }
         });
       },
       _ => {
         let message: MessageContainer = message.into();
-        tx.send(Action::AddMessageEmbedding(self.id, message.clone())).unwrap();
         self.messages.push(message);
       },
+      // ChatMessage::Tool(_) => self.messages.push(message.send_in_next_request()),
     };
-    // return a vec of any functions that need to be called
   }
+
+  pub fn generate_new_message_embeddings(&mut self) {
+    let tx = self.action_tx.clone().unwrap();
+    self.messages.iter_mut().filter(|m| m.receive_complete && !m.embedding_saved).for_each(|m| {
+      tx.send(Action::AddMessageEmbedding(self.id, m.clone())).unwrap();
+      m.embedding_saved = true
+    })
+  }
+
   pub fn get_select_coords(&self) -> Option<((usize, usize), (usize, usize))> {
     match self.select_start_coords {
       Some((x1, y1)) => match self.select_end_coords {
@@ -524,88 +536,28 @@ impl Session<'static> {
     Ok(Some(Action::Update))
   }
 
-  // pub fn execute_command(&mut self, command: String) -> Result<String, SazidError> {
-  //   let args = command.split_whitespace().collect::<Vec<&str>>();
-  //   match args[0] {
-  //     "exit" => std::process::exit(0),
-  //     "load" => {
-  //       if args.len() > 1 {
-  //         self.load_session_by_id(args[1].to_string())?;
-  //         Ok(format!("session {} loaded successfully!", args[1]))
-  //       } else {
-  //         self.load_last_session()?;
-  //         Ok("last session loaded successfully!".to_string())
-  //       }
-  //     },
-  //     _ => Ok("invalid command".to_string()),
-  //   }
-  // }
-
   pub fn add_chunked_chat_completion_request_messages(
     &mut self,
     content: &str,
     _name: &str,
     role: Role,
     model: &Model,
-  ) -> Result<(), SazidError> {
+  ) -> Result<Vec<ChatMessage>, SazidError> {
+    let mut new_messages = Vec::new();
     match parse_input(content, CHUNK_TOKEN_LIMIT as usize, model.token_limit as usize) {
       Ok(chunks) => {
         chunks.iter().for_each(|chunk| {
-          // explicitly calling update because we need this to be blocking, since it can't move on until the input is processed
-          self
-            .update(Action::AddMessage(ChatMessage::User(ChatCompletionRequestUserMessage {
-              role,
-              content: Some(ChatCompletionRequestUserMessageContent::Text(chunk.clone())),
-            })))
-            .unwrap();
+          let message = ChatMessage::User(ChatCompletionRequestUserMessage {
+            role,
+            content: Some(ChatCompletionRequestUserMessageContent::Text(chunk.clone())),
+          });
+          self.update(Action::AddMessage(message.clone())).unwrap();
+          new_messages.push(message);
         });
-        Ok(())
+        Ok(new_messages)
       },
       Err(e) => Err(SazidError::ChunkifierError(e)),
     }
-  }
-
-  pub fn add_new_messages_to_request_buffer(&mut self) {
-    // add new request messages to the request buffer
-    let new_requests: Vec<ChatCompletionRequestMessage> = self
-      .messages
-      .iter()
-      .skip(self.request_buffer.len())
-      .filter(|m| m.receive_complete)
-      .map(|m| {
-        // let debug = format!("message: {:#?}", m.message).bright_red().to_string();
-        // trace_dbg!(debug);
-        m.message.clone()
-      })
-      .collect();
-    self.request_buffer.extend(new_requests);
-    trace_dbg!("request_buffer: {:#?}", self.request_buffer);
-  }
-
-  pub fn construct_request(&mut self) -> CreateChatCompletionRequest {
-    let tools = match self.config.available_functions.is_empty() {
-      true => None,
-      false => {
-        Some(create_chat_completion_tool_args(self.config.available_functions.iter().map(|f| f.into()).collect()))
-      },
-    };
-    self.add_new_messages_to_request_buffer();
-    let _token_count = 0;
-    // let debug = format!("{:#?}", self.request_buffer).bright_cyan().to_string();
-    // trace_dbg!("constructing request {}", debug);
-
-    let request = CreateChatCompletionRequest {
-      model: self.config.model.name.clone(),
-      messages: self.request_buffer.clone().into_iter().collect(),
-      stream: Some(self.config.stream_response),
-      max_tokens: Some(self.config.response_max_tokens as u16),
-      // todo: put the user information in here
-      user: Some("testing testing".to_string()),
-      tools,
-      ..Default::default()
-    };
-    // trace_dbg!("request:\n{:#?}", request);
-    request
   }
 
   fn filter_non_ascii(s: &str) -> String {
@@ -617,7 +569,7 @@ impl Session<'static> {
     tx.send(Action::UpdateStatus(Some("submitting input".to_string()))).unwrap();
     match self.add_chunked_chat_completion_request_messages(
       Self::filter_non_ascii(&input).as_str(),
-      config.name.as_str(),
+      config.user.as_str(),
       Role::User,
       &config.model,
     ) {
@@ -630,17 +582,58 @@ impl Session<'static> {
     }
   }
 
-  pub fn request_chat_completion(&mut self, tx: UnboundedSender<Action>) {
+  pub fn request_chat_completion(&mut self, input: Option<String>, tx: UnboundedSender<Action>) {
     tx.send(Action::UpdateStatus(Some("Configuring Client".to_string()))).unwrap();
     let stream_response = self.config.stream_response;
     let openai_config = self.openai_config.clone();
-
-    let request = self.construct_request();
-    debug_request_validation(&request);
+    let db_url = self.embeddings_manager.get_database_url();
+    let model = self.config.model.clone();
+    let embedding_model = self.embeddings_manager.model.clone();
+    let user = self.config.user.clone();
+    let session_id = self.id;
+    let max_tokens = self.config.response_max_tokens;
+    let rag = self.config.retrieval_augmentation_message_count;
+    let stream = Some(self.config.stream_response);
+    let tools = match self.config.available_functions.is_empty() {
+      true => None,
+      false => {
+        Some(create_chat_completion_tool_args(self.config.available_functions.iter().map(|f| f.into()).collect()))
+      },
+    };
+    let new_messages = self
+      .messages
+      .iter_mut()
+      .filter(|m| m.send_in_next_request)
+      .map(|m| {
+        m.send_in_next_request = false;
+        m.message.clone()
+      })
+      .collect::<Vec<ChatCompletionRequestMessage>>();
+    // debug_request_validation(&request);
     // let request = self.request_message_buffer.clone().unwrap();
     // let token_count = self.request_buffer_token_count;
     tx.send(Action::UpdateStatus(Some("Assembling request...".to_string()))).unwrap();
     tokio::spawn(async move {
+      let mut embeddings_and_messages = match (input, rag) {
+        (Some(input), Some(count)) => {
+          search_message_embeddings_by_session(&db_url, session_id, &embedding_model, &input, count).await.unwrap()
+        },
+        (Some(_), None) => get_all_embeddings_by_session(&db_url, session_id).await.unwrap(),
+        (None, _) => Vec::new(),
+      };
+
+      for message in new_messages {
+        embeddings_and_messages.push(message);
+      }
+
+      let request = construct_request(
+        model.name.clone(),
+        embeddings_and_messages,
+        stream,
+        Some(max_tokens as u16),
+        Some(user),
+        tools,
+      );
       tx.send(Action::UpdateStatus(Some("Establishing Client Connection".to_string()))).unwrap();
       tx.send(Action::EnterProcessing).unwrap();
       let client = create_openai_client(&openai_config);
@@ -733,6 +726,18 @@ impl Session<'static> {
   }
 }
 
+pub fn construct_request(
+  model: String,
+  messages: Vec<ChatCompletionRequestMessage>,
+  stream: Option<bool>,
+  max_tokens: Option<u16>,
+  user: Option<String>,
+  tools: Option<Vec<ChatCompletionTool>>,
+) -> CreateChatCompletionRequest {
+  let request = CreateChatCompletionRequest { model, messages, stream, max_tokens, user, tools, ..Default::default() };
+  // trace_dbg!("request:\n{:#?}", request);
+  request
+}
 pub fn create_openai_client(openai_config: &OpenAIConfig) -> async_openai::Client<OpenAIConfig> {
   let backoff = ExponentialBackoffBuilder::new() // Ensure backoff crate is added to Cargo.toml
     .with_max_elapsed_time(Some(std::time::Duration::from_secs(60)))
@@ -745,10 +750,7 @@ pub async fn create_embedding_request(
   input: Vec<&str>,
 ) -> Result<CreateEmbeddingResponse, GPTConnectorError> {
   let client = Client::new();
-
   let request = CreateEmbeddingRequestArgs::default().model(model).input(input).build()?;
-
   let response = client.embeddings().create(request).await?;
-
   Ok(response)
 }

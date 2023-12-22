@@ -1,13 +1,15 @@
+use diesel::sql_types::*;
+use serde::Serialize;
 use std::fmt;
 
-use crate::app::{errors::SazidError, session_config::SessionConfig};
-
 use super::schema::*;
+use crate::app::{errors::SazidError, session_config::SessionConfig};
 use async_openai::types::ChatCompletionRequestMessage;
 use diesel::{expression::ValidGrouping, prelude::*};
 use diesel_async::{AsyncPgConnection, RunQueryDsl};
 use diesel_json;
 use pgvector::Vector;
+use uuid::Uuid;
 
 #[derive(Serialize, Queryable, Selectable, Debug, Clone, Identifiable, PartialEq, ValidGrouping)]
 #[diesel(table_name = sessions)]
@@ -21,7 +23,7 @@ pub struct QueryableSession {
 #[diesel(table_name = messages)]
 #[diesel(belongs_to(QueryableSession, foreign_key = session_id))]
 pub struct QueryableMessage {
-  id: i64,
+  id: Uuid,
   data: diesel_json::Json<ChatCompletionRequestMessage>,
   #[serde(skip)]
   embedding: Vector,
@@ -143,8 +145,6 @@ impl EmbeddingPage {
   }
 }
 
-use diesel::sql_types::{Bool, Int4, Text};
-use serde::Serialize;
 #[derive(QueryableByName, Debug)]
 pub struct PgVectorIndexInfo {
   #[diesel(sql_type = Int4)]

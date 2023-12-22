@@ -20,7 +20,7 @@ name = "chartest"
 path = "bin/crossterm_character_test.rs"
 
 [dependencies]
-uuid = "1.5.0"
+uuid = { version = "1.5.0", features = ["serde", "v4"] }
 ansi-to-tui = { path = "./lib/ansi-to-tui" }
 tui-textarea = { path = "./lib/tui-textarea", features = [
   "crossterm",
@@ -45,9 +45,12 @@ color-eyre = "0.6.2"
 config = "0.13.3"
 console-subscriber = "0.2.0"
 # diesel = "2.1.4"
-diesel = { version = "2.1.4", features = ["postgres", "numeric"] }
+diesel = { version = "2.1.4", features = ["postgres", "numeric", "uuid"] }
 pgvector = { version = "0.3.2", features = ["diesel"] }
-diesel-async = { version = "0.4.1", features = ["postgres"] }
+diesel-async = { version = "0.4.1", features = [
+  "postgres",
+  "async-connection-wrapper",
+] }
 crossterm = { version = "0.27.0", features = ["serde", "event-stream"] }
 derive_deref = "1.1.1"
 directories = "5.0.1"

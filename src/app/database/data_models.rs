@@ -14,6 +14,11 @@ pub enum EmbeddingModel {
   Ada002(OpenAIConfig),
 }
 
+impl Default for EmbeddingModel {
+  fn default() -> Self {
+    Self::Ada002(OpenAIConfig::default())
+  }
+}
 #[derive(Clone)]
 pub struct EmbeddingModelConfig {
   pub model_string: String,
@@ -78,7 +83,6 @@ impl EmbeddingModel {
     .iter()
     .flat_map(|e| e.embedding.clone())
     .collect::<Vec<f32>>();
-    println!("embedding: {:?}", vector.len());
 
     Ok(vector.into())
   }
