@@ -12,7 +12,7 @@ use color_eyre::eyre::Result;
 
 use sazid::{
   app::{
-    database::{embeddings_manager::EmbeddingsManager, embeddings_models::EmbeddingModel},
+    database::{data_manager::DataManager, data_models::EmbeddingModel},
     errors::SazidError,
     App,
   },
@@ -30,7 +30,7 @@ async fn tokio_main() -> Result<(), SazidError> {
   let config = Config::new(args.local_api).unwrap();
   let api_key: String = env::var("OPENAI_API_KEY").expect("OPENAI_API_KEY not set");
   let openai_config = OpenAIConfig::new().with_api_key(api_key).with_org_id("org-WagBLu0vLgiuEL12dylmcPFj");
-  let mut embeddings_manager = EmbeddingsManager::new(config.clone(), EmbeddingModel::Ada002(openai_config)).await?;
+  let mut embeddings_manager = DataManager::new(config.clone(), EmbeddingModel::Ada002(openai_config)).await?;
 
   match embeddings_manager.run_cli(args.clone()).await {
     Ok(Some(output)) => {

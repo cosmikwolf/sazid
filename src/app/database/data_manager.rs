@@ -1,4 +1,4 @@
-use super::embeddings_models::EmbeddingModel;
+use super::data_models::EmbeddingModel;
 use super::types::*;
 use crate::action::Action;
 use crate::app::errors::SazidError;
@@ -7,21 +7,26 @@ use crate::trace_dbg;
 use crate::{cli::Cli, config::Config};
 use async_openai::types::ChatCompletionRequestMessage;
 use dialoguer;
-use diesel::prelude::*;
-use diesel::sql_query;
+use diesel::{prelude::*, sql_query};
 use diesel_async::{AsyncConnection, AsyncPgConnection, RunQueryDsl};
 use dotenv::dotenv;
 use pgvector::{Vector, VectorExpressionMethods};
 use tokio::sync::mpsc::UnboundedSender;
-
+use uuid::Uuid;
 #[derive(Debug)]
-pub struct EmbeddingsManager {
+pub struct DataManager {
   pub action_tx: Option<UnboundedSender<Action>>,
   config: Config,
   pub model: EmbeddingModel,
 }
 
-impl EmbeddingsManager {
+impl Default for DataManager {
+  fn default() -> Self {
+    DataManager { action_tx: None, config: Config::default(), model: EmbeddingModel::default() }
+  }
+}
+
+impl DataManager {
   pub async fn run_cli(&mut self, args: Cli) -> Result<Option<String>, SazidError> {
     let db_url = self.get_database_url();
     println!("args: {:#?}", args);
@@ -88,7 +93,7 @@ impl EmbeddingsManager {
   }
 
   pub async fn new(config: Config, model: EmbeddingModel) -> Result<Self, SazidError> {
-    Ok(EmbeddingsManager { action_tx: None, config, model })
+    Ok(DataManager { action_tx: None, config, model })
   }
 }
 
@@ -106,6 +111,14 @@ pub async fn establish_connection(database_url: &str) -> AsyncPgConnection {
   AsyncPgConnection::establish(database_url).await.unwrap()
 }
 
+/// #
+/// # fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+/// use diesel::prelude::{RunQueryDsl, Connection};
+/// # let database_url = database_url();
+/// let mut conn = AsyncConnectionWrapper::<DbConnection>::establish(&database_url)?;
+///
+/// let all_users = users::table.load::<(i32, String)>(&mut conn)?;
+/// # assert_eq!(all_users.len(), 0);
 pub async fn add_session(db_url: &str, config: SessionConfig) -> Result<QueryableSession, SazidError> {
   let conn = &mut establish_connection(&db_url).await;
   use super::schema::sessions;
@@ -129,21 +142,16 @@ pub async fn load_session(db_url: &str, session_id: i64) -> Result<QueryableSess
 pub async fn add_message_embedding(
   db_url: &str,
   session_id: i64,
-  message_id: Option<String>,
+  message_id: Uuid,
   model: EmbeddingModel,
   data: ChatCompletionRequestMessage,
-) -> Result<String, SazidError> {
+) -> Result<Uuid, SazidError> {
   use super::schema::messages;
-
-  let message_id = match message_id {
-    Some(id) => id,
-    None => uuid::Uuid::new_v4().to_string(),
-  };
 
   let conn = &mut establish_connection(&db_url).await;
   let data = diesel_json::Json::new(data);
-  trace_dbg!("embedding message data: {:#?}", data);
-  let embedding = model.create_embedding_vector(serde_json::json!(data).as_str().unwrap()).await?;
+  let data_json = serde_json::json!(data).to_string();
+  let embedding = model.create_embedding_vector(&data_json.to_string()).await?;
   let message_id = diesel::insert_into(messages::table)
     .values((
       messages::id.eq(message_id),
@@ -157,11 +165,29 @@ pub async fn add_message_embedding(
   Ok(message_id)
 }
 
-pub async fn search_related_session_messages(
+pub async fn get_all_embeddings_by_session(
+  db_url: &str,
+  session_id: i64,
+) -> Result<Vec<ChatCompletionRequestMessage>, SazidError> {
+  use super::schema::messages;
+  let conn = &mut establish_connection(&db_url).await;
+  let messages = messages::table
+    .select((messages::id, messages::data))
+    .filter(messages::session_id.eq(session_id))
+    .load::<(Uuid, diesel_json::Json<ChatCompletionRequestMessage>)>(conn)
+    .await?
+    .into_iter()
+    .map(|(_, m)| m.0)
+    .collect::<Vec<ChatCompletionRequestMessage>>();
+  Ok(messages)
+}
+
+pub async fn search_message_embeddings_by_session(
   db_url: &str,
   session_id: i64,
   model: &EmbeddingModel,
   text: &str,
+  count: i64,
 ) -> Result<Vec<ChatCompletionRequestMessage>, SazidError> {
   use super::schema::messages;
   let conn = &mut establish_connection(&db_url).await;
@@ -170,8 +196,8 @@ pub async fn search_related_session_messages(
     .select((messages::id, messages::data))
     .filter(messages::session_id.eq(session_id))
     .order(messages::embedding.cosine_distance(&search_vector))
-    .limit(10)
-    .load::<(String, diesel_json::Json<ChatCompletionRequestMessage>)>(conn)
+    .limit(count)
+    .load::<(Uuid, diesel_json::Json<ChatCompletionRequestMessage>)>(conn)
     .await?
     .into_iter()
     .map(|(_, m)| m.0)

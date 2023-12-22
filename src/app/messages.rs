@@ -16,6 +16,7 @@ use async_openai::{
     CreateChatCompletionResponse, CreateChatCompletionStreamResponse, FunctionCall, FunctionCallStream, Role,
   },
 };
+use uuid::Uuid;
 
 use crate::trace_dbg;
 
@@ -32,10 +33,13 @@ pub struct MessageContainer {
   pub message: ChatCompletionRequestMessage,
   pub receive_buffer: Option<ReceiveBuffer>,
   pub tool_calls: Vec<ChatCompletionMessageToolCall>,
+  pub message_id: Uuid,
   pub stream_id: Option<String>,
   pub selected_choice: usize,
   pub tools_called: bool,
   pub receive_complete: bool,
+  pub embedding_saved: bool,
+  pub send_in_next_request: bool,
   pub stylize_complete: bool,
   pub response_count: usize,
   pub wrapped_content: String,
@@ -55,6 +59,13 @@ pub enum ChatMessage {
   Function(ChatCompletionRequestFunctionMessage),
 }
 
+impl ChatMessage {
+  pub fn send_in_next_request(self) -> MessageContainer {
+    let mut message: MessageContainer = self.into();
+    message.send_in_next_request = true;
+    message
+  }
+}
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub enum ReceiveBuffer {
   Response(CreateChatCompletionResponse),
@@ -74,11 +85,11 @@ impl From<ReceiveBuffer> for ChatCompletionRequestMessage {
   }
 }
 
-// impl From<ChatMessage> for ChatCompletionRequestMessage {
-//   fn from(message: ChatMessage) -> Self {
-//     message.into()
-//   }
-// }
+impl From<ChatMessage> for ChatCompletionRequestMessage {
+  fn from(message: ChatMessage) -> Self {
+    message.into()
+  }
+}
 
 impl From<ChatMessage> for MessageContainer {
   fn from(message: ChatMessage) -> Self {
@@ -311,10 +322,13 @@ impl MessageContainer {
       message,
       receive_buffer: None,
       tool_calls: Vec::new(),
+      message_id: Uuid::new_v4(),
       stream_id: None,
       selected_choice: 0,
+      embedding_saved: false,
       stylize_complete: false,
       receive_complete: false,
+      send_in_next_request: false,
       wrapped_content: String::new(),
       stylized: Rope::new(),
       tools_called: false,

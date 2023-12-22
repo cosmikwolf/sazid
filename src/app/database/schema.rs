@@ -42,7 +42,7 @@ diesel::table! {
     use pgvector::sql_types::*;
 
     messages (id) {
-        id -> Text,
+        id -> Uuid,
         session_id -> Int8,
         data -> Jsonb,
         embedding -> Vector,

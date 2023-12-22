@@ -27,7 +27,11 @@ use crate::{
   tui,
 };
 
-use self::{database::embeddings_manager::EmbeddingsManager, errors::SazidError};
+use self::{
+  database::data_manager::{add_session, DataManager},
+  errors::SazidError,
+  session_config::SessionConfig,
+};
 
 #[derive(Default, Debug, Copy, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum Mode {
@@ -46,20 +50,38 @@ pub struct App {
   pub last_tick_key_events: Vec<KeyEvent>,
 }
 
+pub fn add_session_sync(db_url: &str, config: SessionConfig) -> Result<database::types::QueryableSession, SazidError> {
+  use diesel::prelude::{Connection, ExpressionMethods, RunQueryDsl, SelectableHelper};
+  let mut conn =
+    diesel_async::async_connection_wrapper::AsyncConnectionWrapper::<diesel_async::AsyncPgConnection>::establish(
+      db_url,
+    )
+    .unwrap();
+  use crate::app::database::schema::sessions;
+  let config = diesel_json::Json::new(config);
+  let session = diesel::insert_into(sessions::table)
+    // .values((dsl::model.eq(model.to_string()), dsl::rag.eq(rag)))
+    .values(sessions::config.eq(&config))
+    .returning(database::types::QueryableSession::as_returning())
+    .get_result::<database::types::QueryableSession>(&mut conn)?;
+  Ok(session)
+}
+
 impl App {
-  pub fn new(
+  pub async fn new(
     tick_rate: f64,
     frame_rate: f64,
     config: Config,
-    embeddings_manager: EmbeddingsManager,
+    data_manager: DataManager,
   ) -> Result<Self, SazidError> {
     let home = Home::new();
-    let session = Session::new();
+    let db_url = data_manager.get_database_url();
+    let session: Session = add_session(&db_url, config.session_config.clone()).await.into();
     let mode = Mode::Home;
     Ok(Self {
       tick_rate,
       frame_rate,
-      components: vec![Box::new(home), Box::new(session), Box::new(embeddings_manager)],
+      components: vec![Box::new(home), Box::new(session), Box::new(data_manager)],
       should_quit: false,
       should_suspend: false,
       config,

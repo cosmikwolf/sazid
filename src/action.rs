@@ -9,6 +9,7 @@ use serde::{
   Deserialize, Serialize,
 };
 use std::fmt;
+use uuid::Uuid;
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub enum Action {
@@ -27,7 +28,8 @@ pub enum Action {
   LoadSession(i64),
   CreateLoadSessionResponse(QueryableSession),
   AddMessageEmbedding(i64, MessageContainer),
-
+  MessageEmbeddingSuccess(Uuid),
+  RequestRelatedMessages(i64, String, bool),
   SubmitInput(String),
   ExecuteCommand(String),
   CommandResult(String),

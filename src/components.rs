@@ -11,7 +11,7 @@ use crate::{
   tui::{Event, Frame},
 };
 
-pub mod embeddings_manager;
+pub mod data_manager;
 pub mod home;
 pub mod session;
 
