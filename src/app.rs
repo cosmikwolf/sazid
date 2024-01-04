@@ -76,7 +76,7 @@ impl App {
   ) -> Result<Self, SazidError> {
     let home = Home::new();
     let db_url = data_manager.get_database_url();
-    let session: Session = add_session(&db_url, config.session_config.clone()).await.into();
+    let session: Session = add_session(&db_url, config.session_config.clone()).await.unwrap().into();
     let mode = Mode::Home;
     Ok(Self {
       tick_rate,

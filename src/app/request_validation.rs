@@ -80,11 +80,11 @@ pub fn debug_request_validation(request: &CreateChatCompletionRequest) {
           Ok(_) => {
             let request_file_path = Path::new(failed_requests_dir).join(timestamp + "_failed.json");
             fs::write(request_file_path.clone(), request_as_json).unwrap();
-            let debugstr = format!(
+            trace_dbg!(
               "request failed. failed request saved to\n{:#?}\nErrors:\n{}",
-              request_file_path, validation_error
+              request_file_path,
+              validation_error
             );
-            trace_dbg!(debugstr);
           },
           Err(e) => {
             trace_dbg!("unable to create failed requests directory {:?}", e);

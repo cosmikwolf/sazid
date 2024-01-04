@@ -484,8 +484,8 @@ impl Session<'static> {
         }) = &m.message
         {
           tool_calls.iter().for_each(|tc| {
-            let debug_text = format!("calling tool: {:?}", tc);
-            trace_dbg!(level: tracing::Level::INFO, debug_text);
+            // let debug_text = format!("calling tool: {:?}", tc);
+            // trace_dbg!(level: tracing::Level::INFO, debug_text);
             handle_tool_call(tx.clone(), tc, self.config.clone());
           });
           m.tools_called = true;
@@ -539,7 +539,7 @@ impl Session<'static> {
   pub fn add_chunked_chat_completion_request_messages(
     &mut self,
     content: &str,
-    _name: &str,
+    name: &str,
     role: Role,
     model: &Model,
   ) -> Result<Vec<ChatMessage>, SazidError> {
@@ -549,6 +549,7 @@ impl Session<'static> {
         chunks.iter().for_each(|chunk| {
           let message = ChatMessage::User(ChatCompletionRequestUserMessage {
             role,
+            name: Some(name.into()),
             content: Some(ChatCompletionRequestUserMessageContent::Text(chunk.clone())),
           });
           self.update(Action::AddMessage(message.clone())).unwrap();
@@ -634,6 +635,7 @@ impl Session<'static> {
         Some(user),
         tools,
       );
+      let request_clone = request.clone();
       tx.send(Action::UpdateStatus(Some("Establishing Client Connection".to_string()))).unwrap();
       tx.send(Action::EnterProcessing).unwrap();
       let client = create_openai_client(&openai_config);
@@ -657,9 +659,9 @@ impl Session<'static> {
               Err(e) => {
                 trace_dbg!("Error: {:#?} -- check https://status.openai.com", e.bright_red());
 
-                // let reqtext =
-                //   format!("Request: \n{}", to_string_pretty(&request).unwrap_or("can't prettify result".to_string()));
-                // trace_dbg!(&reqtext);
+                // let reqtext = format!("Request: \n{:#?}", request_clone.clone());
+                // trace_dbg!(reqtext);
+                trace_dbg!(&request_clone);
                 // tx.send(Action::AddMessage(ChatMessage::SazidSystemMessage(reqtext))).unwrap();
                 tx.send(Action::Error(format!("Error: {:?} -- check https://status.openai.com/", e))).unwrap();
               },
