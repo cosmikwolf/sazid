@@ -177,6 +177,7 @@ pub fn get_assistant_message_from_create_chat_completion_response(
     Err(ParseError::new(format!("Choice index {} out of range", choice_index).as_str()))
   } else {
     Ok(ChatCompletionRequestAssistantMessage {
+      name: None,
       role: Role::Assistant,
       content: response.choices[choice_index].message.content.clone(),
       function_call: None,
@@ -198,6 +199,7 @@ pub fn fold_stream_responses_into_assistant_message(
   // };
 
   Ok(ChatCompletionRequestAssistantMessage {
+    name: None,
     role: Role::Assistant,
     content: concatenated_message.delta.content,
     function_call: None,

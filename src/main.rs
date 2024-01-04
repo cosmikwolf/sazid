@@ -39,7 +39,7 @@ async fn tokio_main() -> Result<(), SazidError> {
     },
     Ok(None) => {
       println!("No output");
-      let mut app = App::new(args.tick_rate, args.frame_rate, config, embeddings_manager).unwrap();
+      let mut app = App::new(args.tick_rate, args.frame_rate, config, embeddings_manager).await.unwrap();
       app.run().await.unwrap();
       Ok(())
     },
