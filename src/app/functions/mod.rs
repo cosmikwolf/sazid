@@ -58,9 +58,9 @@ pub fn all_functions() -> Vec<CallableFunction> {
     //CallableFunction::PatchFileFunction(PatchFileFunction::init()),
     CallableFunction::FileSearchFunction(FileSearchFunction::init()),
     //CallableFunction::Pcre2GrepFunction(Pcre2GrepFunction::init()),
-    // CallableFunction::ReadFileLinesFunction(ReadFileLinesFunction::init()),
-    // CallableFunction::EditFileFunction(EditFileFunction::init()),
-    // CallableFunction::CreateFileFunction(CreateFileFunction::init()),
+    CallableFunction::ReadFileLinesFunction(ReadFileLinesFunction::init()),
+    CallableFunction::EditFileFunction(EditFileFunction::init()),
+    CallableFunction::CreateFileFunction(CreateFileFunction::init()),
     // CallableFunction::CargoCheckFunction(CargoCheckFunction::init()),
   ]
 }
