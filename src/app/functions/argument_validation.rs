@@ -40,6 +40,23 @@ pub fn validate_and_extract_boolean_argument(
   }
 }
 
+pub fn validate_and_extract_numeric_argument(
+  function_args: &HashMap<String, serde_json::Value>,
+  argument: &str,
+  required: bool,
+) -> Result<Option<f64>, ToolCallError> {
+  match function_args.get(argument) {
+    Some(argument) => match argument {
+      serde_json::Value::Number(n) => Ok(Some(n.as_f64().unwrap())),
+      _ => Err(ToolCallError::new(format!("{} argument must be a number", argument).as_str())),
+    },
+    None => match required {
+      true => Err(ToolCallError::new(format!("{} argument is required", argument).as_str())),
+      false => Ok(None),
+    },
+  }
+}
+
 pub fn validate_and_extract_string_argument(
   function_args: &HashMap<String, serde_json::Value>,
   argument: &str,
@@ -54,6 +71,36 @@ pub fn validate_and_extract_string_argument(
       true => Err(ToolCallError::new(format!("{} argument is required", argument).as_str())),
       false => Ok(None),
     },
+  }
+}
+
+pub fn validate_and_extract_path_from_argument(
+  function_args: &HashMap<String, serde_json::Value>,
+  session_config: SessionConfig,
+  required: bool,
+  root_dir: Option<PathBuf>,
+) -> Result<Option<PathBuf>, ToolCallError> {
+  match function_args.get("path") {
+    Some(path) => {
+      if let serde_json::Value::String(path_str) = path {
+        let accesible_paths = get_accessible_file_paths(session_config.list_file_paths.clone(), root_dir);
+        let path_buf = PathBuf::from(path_str);
+        if accesible_paths
+          .contains_key(path_buf.to_str().ok_or_else(|| ToolCallError::new("Path contains invalid Unicode."))?)
+        {
+          Ok(Some(path_buf))
+        } else {
+          Err(ToolCallError::new(&format!(
+            "File path is not accessible: {:?}. Suggest using file_search command",
+            path_buf
+          )))
+        }
+      } else {
+        Err(ToolCallError::new("Expected a string for 'path' argument but got a different type."))
+      }
+    },
+    None if required => Err(ToolCallError::new("path argument is required.")),
+    None => Ok(None),
   }
 }
 

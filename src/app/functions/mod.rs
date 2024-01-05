@@ -5,7 +5,7 @@ use serde_derive::{Deserialize, Serialize};
 use std::collections::HashMap;
 use tokio::sync::mpsc::UnboundedSender;
 
-use self::modify_file_function::ModifyFileFunction;
+use self::edit_file_function::EditFileFunction;
 use self::{
   create_file_function::CreateFileFunction, errors::ToolCallError, file_search_function::FileSearchFunction,
   read_file_lines_function::ReadFileLinesFunction, types::FunctionCall,
@@ -16,10 +16,10 @@ use super::session_config::SessionConfig;
 pub mod argument_validation;
 pub mod cargo_check_function;
 pub mod create_file_function;
+pub mod edit_file_function;
 pub mod errors;
 pub mod file_search_function;
 pub mod grep_function;
-pub mod modify_file_function;
 pub mod patch_files_function;
 pub mod pcre2grep_function;
 pub mod read_file_lines_function;
@@ -33,7 +33,7 @@ pub enum CallableFunction {
   //Pcre2GrepFunction(Pcre2GrepFunction),
   //GrepFunction(GrepFunction),
   ReadFileLinesFunction(ReadFileLinesFunction),
-  ModifyFileFunction(ModifyFileFunction),
+  EditFileFunction(EditFileFunction),
   CreateFileFunction(CreateFileFunction),
   //PatchFileFunction(PatchFileFunction),
   //CargoCheckFunction(CargoCheckFunction),
@@ -45,7 +45,7 @@ impl From<&CallableFunction> for FunctionCall {
       CallableFunction::FileSearchFunction(f) => f.function_definition(),
       //CallableFunction::Pcre2GrepFunction(f) => f.command_definition(),
       CallableFunction::ReadFileLinesFunction(f) => f.function_definition(),
-      CallableFunction::ModifyFileFunction(f) => f.function_definition(),
+      CallableFunction::EditFileFunction(f) => f.function_definition(),
       CallableFunction::CreateFileFunction(f) => f.function_definition(),
       //CallableFunction::PatchFileFunction(f) => f.command_definition(),
       // CallableFunction::CargoCheckFunction(f) => f.command_definition(),
@@ -59,7 +59,7 @@ pub fn all_functions() -> Vec<CallableFunction> {
     CallableFunction::FileSearchFunction(FileSearchFunction::init()),
     //CallableFunction::Pcre2GrepFunction(Pcre2GrepFunction::init()),
     // CallableFunction::ReadFileLinesFunction(ReadFileLinesFunction::init()),
-    // CallableFunction::ModifyFileFunction(ModifyFileFunction::init()),
+    // CallableFunction::EditFileFunction(EditFileFunction::init()),
     // CallableFunction::CreateFileFunction(CreateFileFunction::init()),
     // CallableFunction::CargoCheckFunction(CargoCheckFunction::init()),
   ]
@@ -86,7 +86,7 @@ pub fn handle_tool_call(
             //"grep" => GrepFunction::init().call(function_args, session_config),
             "file_search" => FileSearchFunction::init().call(function_args, session_config),
             "read_file" => ReadFileLinesFunction::init().call(function_args, session_config),
-            //"modify_file" => ModifyFileFunction::init().call(function_args, session_config),
+            //"modify_file" => EditFileFunction::init().call(function_args, session_config),
             //"cargo_check" => CargoCheckFunction::init().call(function_args, session_config),
             //"pcre2grep" => Pcre2GrepFunction::init().call(function_args, session_config),
             _ => Ok(Some("function not found".to_string())),

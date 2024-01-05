@@ -3835,6 +3835,7 @@ dependencies = [
  "diesel",
  "diesel-async",
  "diesel_json",
+ "diff",
  "directories",
  "dirs-next",
  "dotenv",
