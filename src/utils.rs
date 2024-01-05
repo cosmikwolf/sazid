@@ -155,12 +155,7 @@ macro_rules! trace_dbg {
     (target: $target:expr, level: $level:expr, $ex:expr) => {{
         let value = $ex;
         let formatted = format!("{:#?}", value);
-        match $ex {
-            value => {
-                tracing::event!(target: $target, $level, ?value, "{}", formatted);
-                value
-            }
-        }
+        tracing::event!(target: $target, $level, "{}", formatted);
     }};
     (level: $level:expr, $ex:expr) => {
         trace_dbg!(target: module_path!(), level: $level, $ex)

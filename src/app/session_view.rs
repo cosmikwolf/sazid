@@ -95,7 +95,7 @@ impl<'a> SessionView<'a> {
       if !message.stylize_complete {
         let text_width = self.window_width.min(80);
         let left_padding = self.window_width.saturating_sub(text_width) / 2;
-        trace_dbg!("left_padding: {}\ttext_width: {}, window_width: {}", left_padding, text_width, self.window_width);
+        // trace_dbg!("left_padding: {}\ttext_width: {}, window_width: {}", left_padding, text_width, self.window_width);
         let stylized = self.renderer.render_message_bat(format!("{}", &message).as_str());
         let options = Options::new(text_width)
           //.break_words(false)
@@ -132,10 +132,10 @@ impl<'a> SessionView<'a> {
         self.new_data = true;
         self.textarea.replace_at_end(message.stylized.to_string(), original_message_length);
 
-        message.stylized.to_string().lines().for_each(|l| {
-          trace_dbg!("line: {:#?}", l);
-        });
-
+        // message.stylized.to_string().lines().for_each(|l| {
+        //   trace_dbg!("line: {:#?}", l);
+        // });
+        //
         self.rendered_text.remove(rendered_text_message_start_index..);
         self.rendered_text.append(message.stylized.clone());
 

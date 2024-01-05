@@ -142,10 +142,10 @@ pub async fn load_session(db_url: &str, session_id: i64) -> Result<QueryableSess
 pub async fn add_message_embedding(
   db_url: &str,
   session_id: i64,
-  message_id: Uuid,
+  message_id: i64,
   model: EmbeddingModel,
   data: ChatCompletionRequestMessage,
-) -> Result<Uuid, SazidError> {
+) -> Result<i64, SazidError> {
   use super::schema::messages;
 
   let conn = &mut establish_connection(&db_url).await;
@@ -174,7 +174,7 @@ pub async fn get_all_embeddings_by_session(
   let messages = messages::table
     .select((messages::id, messages::data))
     .filter(messages::session_id.eq(session_id))
-    .load::<(Uuid, diesel_json::Json<ChatCompletionRequestMessage>)>(conn)
+    .load::<(i64, diesel_json::Json<ChatCompletionRequestMessage>)>(conn)
     .await?
     .into_iter()
     .map(|(_, m)| m.0)
@@ -197,7 +197,7 @@ pub async fn search_message_embeddings_by_session(
     .filter(messages::session_id.eq(session_id))
     .order(messages::embedding.cosine_distance(&search_vector))
     .limit(count)
-    .load::<(Uuid, diesel_json::Json<ChatCompletionRequestMessage>)>(conn)
+    .load::<(i64, diesel_json::Json<ChatCompletionRequestMessage>)>(conn)
     .await?
     .into_iter()
     .map(|(_, m)| m.0)

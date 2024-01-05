@@ -119,7 +119,7 @@ pub fn get_accessible_file_paths(list_file_paths: Vec<PathBuf>, root_dir: Option
   //   file_paths.insert(path.to_string_lossy().to_string(), path.to_path_buf());
   // });
 
-  trace_dbg!("file_paths: {:?}", file_paths);
+  // trace_dbg!("file_paths: {:?}", file_paths);
   file_paths
 }
 
