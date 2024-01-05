@@ -9,7 +9,6 @@ use diesel::{expression::ValidGrouping, prelude::*};
 use diesel_async::{AsyncPgConnection, RunQueryDsl};
 use diesel_json;
 use pgvector::Vector;
-use uuid::Uuid;
 
 #[derive(Serialize, Queryable, Selectable, Debug, Clone, Identifiable, PartialEq, ValidGrouping)]
 #[diesel(table_name = sessions)]
@@ -23,7 +22,7 @@ pub struct QueryableSession {
 #[diesel(table_name = messages)]
 #[diesel(belongs_to(QueryableSession, foreign_key = session_id))]
 pub struct QueryableMessage {
-  id: Uuid,
+  id: i64,
   data: diesel_json::Json<ChatCompletionRequestMessage>,
   #[serde(skip)]
   embedding: Vector,

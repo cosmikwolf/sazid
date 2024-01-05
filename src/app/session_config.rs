@@ -34,7 +34,7 @@ impl Default for SessionConfig {
       list_file_paths: vec![],
       model: GPT4_TURBO.clone(),
       retrieval_augmentation_message_count: Some(10),
-      user: "Sazid Test".to_string(),
+      user: "sazid_user_1234".to_string(),
       function_result_max_tokens: 8192,
       response_max_tokens: 4095,
       include_functions: true,

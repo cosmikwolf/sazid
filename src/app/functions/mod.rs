@@ -58,9 +58,9 @@ pub fn all_functions() -> Vec<CallableFunction> {
     //CallableFunction::PatchFileFunction(PatchFileFunction::init()),
     CallableFunction::FileSearchFunction(FileSearchFunction::init()),
     //CallableFunction::Pcre2GrepFunction(Pcre2GrepFunction::init()),
-    CallableFunction::ReadFileLinesFunction(ReadFileLinesFunction::init()),
+    // CallableFunction::ReadFileLinesFunction(ReadFileLinesFunction::init()),
     // CallableFunction::ModifyFileFunction(ModifyFileFunction::init()),
-    CallableFunction::CreateFileFunction(CreateFileFunction::init()),
+    // CallableFunction::CreateFileFunction(CreateFileFunction::init()),
     // CallableFunction::CargoCheckFunction(CargoCheckFunction::init()),
   ]
 }
@@ -102,7 +102,7 @@ pub fn handle_tool_call(
     {
       Ok(Some(output)) => {
         //self.add_message(ChatMessage::FunctionResult(FunctionResult { name: fn_name, response: output }));
-        trace_dbg!("tool output:\n{}", output);
+        // trace_dbg!("tool output:\n{}", output);
         tx.send(Action::AddMessage(ChatMessage::Tool(ChatCompletionRequestToolMessage {
           tool_call_id: tc_clone.id,
           content: Some(output),

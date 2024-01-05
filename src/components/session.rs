@@ -28,6 +28,7 @@ use crate::app::database::data_manager::{
 use crate::app::database::types::QueryableSession;
 use crate::app::functions::{all_functions, handle_tool_call};
 use crate::app::messages::{ChatMessage, MessageContainer, ReceiveBuffer};
+use crate::app::request_validation::debug_request_validation;
 use crate::app::session_config::SessionConfig;
 use crate::app::session_view::SessionView;
 use crate::app::{consts::*, errors::*, tools::chunkifier::*, types::*};
@@ -429,22 +430,23 @@ impl Session<'static> {
 
   pub fn add_message(&mut self, message: ChatMessage) {
     match message {
-      ChatMessage::User(_) => self.messages.push(message.send_in_next_request()),
+      ChatMessage::User(_) => self.messages.push(message.set_current_transaction_flag()),
       ChatMessage::StreamResponse(new_srvec) => {
         new_srvec.iter().for_each(|sr| {
           if let Some(message) = self.messages.iter_mut().find(|m| {
+            // trace_dbg!("message: {:#?}", m);
             m.stream_id == Some(sr.id.clone()) && matches!(m.receive_buffer, Some(ReceiveBuffer::StreamResponse(_)))
           }) {
             message.update_stream_response(sr.clone()).unwrap();
           } else {
             let message: MessageContainer = ChatMessage::StreamResponse(vec![sr.clone()]).into();
-            self.messages.push(message.clone());
+            self.messages.push(message.set_current_transaction_flag());
           }
         });
       },
       _ => {
         let message: MessageContainer = message.into();
-        self.messages.push(message);
+        self.messages.push(message.set_current_transaction_flag());
       },
       // ChatMessage::Tool(_) => self.messages.push(message.send_in_next_request()),
     };
@@ -458,15 +460,15 @@ impl Session<'static> {
     })
   }
 
-  pub fn get_select_coords(&self) -> Option<((usize, usize), (usize, usize))> {
-    match self.select_start_coords {
-      Some((x1, y1)) => match self.select_end_coords {
-        Some((x2, y2)) => Some(((x1, y1), (x2, y2))),
-        None => None,
-      },
-      None => None,
-    }
-  }
+  // pub fn get_select_coords(&self) -> Option<((usize, usize), (usize, usize))> {
+  //   match self.select_start_coords {
+  //     Some((x1, y1)) => match self.select_end_coords {
+  //       Some((x2, y2)) => Some(((x1, y1), (x2, y2))),
+  //       None => None,
+  //     },
+  //     None => None,
+  //   }
+  // }
 
   pub fn execute_tool_calls(&mut self) {
     let tx = self.action_tx.clone().unwrap();
@@ -477,7 +479,7 @@ impl Session<'static> {
         m.receive_complete && !m.tools_called && matches!(m.message, ChatCompletionRequestMessage::Assistant(_))
       })
       .for_each(|m| {
-        trace_dbg!("executing tool calls");
+        // trace_dbg!("executing tool calls");
         if let ChatCompletionRequestMessage::Assistant(ChatCompletionRequestAssistantMessage {
           tool_calls: Some(tool_calls),
           ..
@@ -486,6 +488,7 @@ impl Session<'static> {
           tool_calls.iter().for_each(|tc| {
             // let debug_text = format!("calling tool: {:?}", tc);
             // trace_dbg!(level: tracing::Level::INFO, debug_text);
+            trace_dbg!("calling tool: {:?}", tc);
             handle_tool_call(tx.clone(), tc, self.config.clone());
           });
           m.tools_called = true;
@@ -567,6 +570,7 @@ impl Session<'static> {
 
   pub fn submit_chat_completion_request(&mut self, input: String, tx: UnboundedSender<Action>) {
     let config = self.config.clone();
+    self.messages.iter_mut().filter(|m| m.current_transaction_flag).for_each(|m| m.current_transaction_flag = false);
     tx.send(Action::UpdateStatus(Some("submitting input".to_string()))).unwrap();
     match self.add_chunked_chat_completion_request_messages(
       Self::filter_non_ascii(&input).as_str(),
@@ -595,18 +599,20 @@ impl Session<'static> {
     let max_tokens = self.config.response_max_tokens;
     let rag = self.config.retrieval_augmentation_message_count;
     let stream = Some(self.config.stream_response);
+
     let tools = match self.config.available_functions.is_empty() {
       true => None,
       false => {
         Some(create_chat_completion_tool_args(self.config.available_functions.iter().map(|f| f.into()).collect()))
       },
     };
+
     let new_messages = self
       .messages
       .iter_mut()
-      .filter(|m| m.send_in_next_request)
+      .filter(|m| m.current_transaction_flag)
       .map(|m| {
-        m.send_in_next_request = false;
+        // m.current_transaction_flag = false;
         m.message.clone()
       })
       .collect::<Vec<ChatCompletionRequestMessage>>();
@@ -658,7 +664,7 @@ impl Session<'static> {
               },
               Err(e) => {
                 trace_dbg!("Error: {:#?} -- check https://status.openai.com", e.bright_red());
-
+                debug_request_validation(&request_clone);
                 // let reqtext = format!("Request: \n{:#?}", request_clone.clone());
                 // trace_dbg!(reqtext);
                 trace_dbg!(&request_clone);

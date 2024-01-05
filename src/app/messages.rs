@@ -1,6 +1,7 @@
 use std::{
   collections::HashSet,
   fmt::{self, Formatter},
+  sync::mpsc::Receiver,
 };
 
 use color_eyre::owo_colors::OwoColorize;
@@ -16,7 +17,6 @@ use async_openai::{
     CreateChatCompletionResponse, CreateChatCompletionStreamResponse, FunctionCall, FunctionCallStream, Role,
   },
 };
-use uuid::Uuid;
 
 use crate::trace_dbg;
 
@@ -33,13 +33,13 @@ pub struct MessageContainer {
   pub message: ChatCompletionRequestMessage,
   pub receive_buffer: Option<ReceiveBuffer>,
   pub tool_calls: Vec<ChatCompletionMessageToolCall>,
-  pub message_id: Uuid,
+  pub message_id: i64,
   pub stream_id: Option<String>,
   pub selected_choice: usize,
   pub tools_called: bool,
   pub receive_complete: bool,
   pub embedding_saved: bool,
-  pub send_in_next_request: bool,
+  pub current_transaction_flag: bool,
   pub stylize_complete: bool,
   pub response_count: usize,
   pub wrapped_content: String,
@@ -60,9 +60,17 @@ pub enum ChatMessage {
 }
 
 impl ChatMessage {
-  pub fn send_in_next_request(self) -> MessageContainer {
+  pub fn set_current_transaction_flag(self) -> MessageContainer {
     let mut message: MessageContainer = self.into();
-    message.send_in_next_request = true;
+    message.current_transaction_flag = true;
+    message
+  }
+}
+
+impl MessageContainer {
+  pub fn set_current_transaction_flag(self) -> MessageContainer {
+    let mut message: MessageContainer = self;
+    message.current_transaction_flag = true;
     message
   }
 }
@@ -90,16 +98,38 @@ impl From<ChatMessage> for ChatCompletionRequestMessage {
     message.into()
   }
 }
+impl From<ReceiveBuffer> for MessageContainer {
+  fn from(receive_buffer: ReceiveBuffer) -> Self {
+    let message = receive_buffer.clone().into();
+    let (receive_complete, stream_id) = match &receive_buffer {
+      ReceiveBuffer::StreamResponse(srvec) => (false, Some(srvec[0].id.clone())),
+      _ => (true, None),
+    };
+    MessageContainer {
+      selected_choice: 0,
+      receive_buffer: Some(receive_buffer),
+      message_id: rand::random::<i64>(),
+      message,
+      stream_id,
+      receive_complete,
+      tool_calls: Vec::new(),
+      wrapped_content: String::new(),
+      stylized: Rope::new(),
+      tools_called: false,
+      response_count: 0,
+      token_usage: 0,
+      embedding_saved: false,
+      stylize_complete: false,
+      current_transaction_flag: false,
+    }
+  }
+}
 
 impl From<ChatMessage> for MessageContainer {
   fn from(message: ChatMessage) -> Self {
     match message {
-      ChatMessage::Response(response) => {
-        MessageContainer::new_from_completed_message(ReceiveBuffer::Response(response).into())
-      },
-      ChatMessage::StreamResponse(response) => {
-        MessageContainer::new_from_completed_message(ReceiveBuffer::StreamResponse(response).into())
-      },
+      ChatMessage::Response(response) => ReceiveBuffer::Response(response).into(),
+      ChatMessage::StreamResponse(response) => ReceiveBuffer::StreamResponse(response).into(),
       ChatMessage::Tool(message) => {
         MessageContainer::new_from_completed_message(ChatCompletionRequestMessage::Tool(message))
       },
@@ -322,13 +352,13 @@ impl MessageContainer {
       message,
       receive_buffer: None,
       tool_calls: Vec::new(),
-      message_id: Uuid::new_v4(),
+      message_id: rand::random::<i64>(),
       stream_id: None,
       selected_choice: 0,
       embedding_saved: false,
       stylize_complete: false,
       receive_complete: false,
-      send_in_next_request: false,
+      current_transaction_flag: false,
       wrapped_content: String::new(),
       stylized: Rope::new(),
       tools_called: false,
