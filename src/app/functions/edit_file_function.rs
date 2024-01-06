@@ -26,7 +26,7 @@ impl ToolCallTrait for EditFileFunction {
   fn init() -> Self {
     EditFileFunction {
       name: "edit_file".to_string(),
-      description: "insert text into a file at a row and column".to_string(),
+      description: "insert text into a file at a line and column".to_string(),
       required_properties: vec![
         FunctionProperties {
           name: "path".to_string(),
@@ -36,17 +36,17 @@ impl ToolCallTrait for EditFileFunction {
           enum_values: None,
         },
         FunctionProperties {
-          name: "row".to_string(),
+          name: "line_num".to_string(),
           required: true,
           property_type: "number".to_string(),
-          description: Some("row of text to begin edit".to_string()),
+          description: Some("line number in file to start edit, 1 indexed".to_string()),
           enum_values: None,
         },
         FunctionProperties {
           name: "col".to_string(),
           required: true,
           property_type: "number".to_string(),
-          description: Some("column of text to begin edit".to_string()),
+          description: Some("column index in line to begin edit, 1 indexed".to_string()),
           enum_values: None,
         },
         FunctionProperties {
@@ -76,11 +76,11 @@ impl ToolCallTrait for EditFileFunction {
     let path =
       validate_and_extract_path_from_argument(&function_args, session_config, true, Some(PathBuf::from("./")))?
         .unwrap();
-    let row = validate_and_extract_numeric_argument(&function_args, "row", true)?.unwrap() as usize;
+    let line = validate_and_extract_numeric_argument(&function_args, "line_num", true)?.unwrap() as usize;
     let col = validate_and_extract_numeric_argument(&function_args, "col", true)?.unwrap() as usize;
     let del_count = validate_and_extract_numeric_argument(&function_args, "del_count", true)?.unwrap() as usize;
     let text = validate_and_extract_string_argument(&function_args, "text", true)?.unwrap();
-    edit_file(&path, row, col, del_count, &text)
+    edit_file(&path, line, col, del_count, &text)
   }
 
   fn function_definition(&self) -> FunctionCall {
@@ -107,7 +107,7 @@ impl ToolCallTrait for EditFileFunction {
 
 pub fn edit_file(
   path: &PathBuf,
-  row: usize,
+  line_num: usize,
   col: usize,
   del_count: usize,
   text: &str,
@@ -117,10 +117,14 @@ pub fn edit_file(
       let reader = std::io::BufReader::new(file);
       let original_lines: Vec<String> = reader.lines().map(|line| line.unwrap_or_default().to_string()).collect();
       let mut new_lines: Vec<String> = original_lines.clone();
-
-      // insert text at row and col
-      for (line_num, line) in original_lines.iter().enumerate() {
-        if line_num == row {
+      if line_num < 1 || col < 1 {
+        return Err(ToolCallError::new("line and col are 1 indexed and must be greater than 0"));
+      }
+      let line_num = line_num.saturating_sub(1);
+      let col = col.saturating_sub(1);
+      // insert text at line and col
+      for (line_index, line) in original_lines.iter().enumerate() {
+        if line_index == line_num {
           let mut new_line = line.clone();
           new_line.replace_range(col..col + del_count, text);
           new_lines[line_num] = new_line;

@@ -86,7 +86,7 @@ pub fn handle_tool_call(
             //"grep" => GrepFunction::init().call(function_args, session_config),
             "file_search" => FileSearchFunction::init().call(function_args, session_config),
             "read_file" => ReadFileLinesFunction::init().call(function_args, session_config),
-            //"modify_file" => EditFileFunction::init().call(function_args, session_config),
+            "edit_file" => EditFileFunction::init().call(function_args, session_config),
             //"cargo_check" => CargoCheckFunction::init().call(function_args, session_config),
             //"pcre2grep" => Pcre2GrepFunction::init().call(function_args, session_config),
             _ => Ok(Some("function not found".to_string())),

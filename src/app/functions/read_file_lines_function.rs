@@ -6,6 +6,7 @@ use std::path::{Path, PathBuf};
 use crate::app::session_config::SessionConfig;
 use crate::trace_dbg;
 use serde_derive::{Deserialize, Serialize};
+use serde_json::json;
 
 use super::argument_validation::{count_tokens, get_accessible_file_paths};
 use super::errors::ToolCallError;
@@ -24,7 +25,7 @@ impl ToolCallTrait for ReadFileLinesFunction {
   fn init() -> Self {
     ReadFileLinesFunction {
       name: "read_file".to_string(),
-      description: "read lines from an accesible file path, from optional start_line to end_line".to_string(),
+      description: "read lines from an accesible file path, from optional 1 indexed start_line to end_line".to_string(),
       required_properties: vec![FunctionProperties {
         name: "path".to_string(),
         required: true,
@@ -139,20 +140,13 @@ pub fn read_file_lines(
     }
     let selected_lines: Vec<String> =
       file_contents[start_line.unwrap_or(0)..end_line.unwrap_or(file_contents.len())].to_vec();
-    let output = selected_lines.join("\n");
+    let contents = selected_lines.join("\n");
 
-    let token_count = count_tokens(&output);
+    let token_count = count_tokens(&contents);
     if token_count > reply_max_tokens {
       return Ok(Some(format!("Function Token limit exceeded: {} tokens.", token_count)));
     }
-
-    Ok(Some(format!(
-      "----------\nFile: {}\nSize: {} lines\n{}\n-----------\n{}",
-      file,
-      file_contents.len(),
-      output,
-      token_count
-    )))
+    Ok(Some(contents))
   } else {
     Err(ToolCallError::new(
       "File not found or not accessible.\nare you sure a file exists at the path you are accessing?",
