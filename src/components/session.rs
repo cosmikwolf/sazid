@@ -295,6 +295,7 @@ impl Component for Session<'static> {
         },
         KeyEvent { code: KeyCode::Char('f'), modifiers: KeyModifiers::CONTROL, .. } => {
           self.view.textarea.scroll(Scrolling::PageDown);
+          self.scroll_sticky_end = self.view.textarea.cursor().0 == self.view.textarea.lines().len();
           Some(Action::Update)
         },
         KeyEvent { code: KeyCode::Char('b'), modifiers: KeyModifiers::CONTROL, .. } => {
@@ -307,6 +308,7 @@ impl Component for Session<'static> {
         },
         KeyEvent { code: KeyCode::Char('j'), .. } => {
           self.view.textarea.move_cursor(CursorMove::Down);
+          self.scroll_sticky_end = self.view.textarea.cursor().0 == self.view.textarea.lines().len();
           trace_dbg!("cursor: {:#?}", self.view.textarea.cursor());
           Some(Action::Update)
         },
@@ -333,6 +335,7 @@ impl Component for Session<'static> {
         },
         KeyEvent { code: KeyCode::Char('$'), .. } => {
           self.view.textarea.move_cursor(CursorMove::End);
+          self.scroll_sticky_end = self.view.textarea.cursor().0 == self.view.textarea.lines().len();
           Some(Action::Update)
         },
         KeyEvent { code: KeyCode::Char('v'), .. } => {
@@ -396,20 +399,22 @@ impl Component for Session<'static> {
 
     let block = Block::default().borders(Borders::NONE).gray();
 
+    let debug_text = Paragraph::new(format!(
+      "--debug--\nsticky end: {}\nscroll: {}\ncontent height: {}\nviewport height: {}",
+      self.scroll_sticky_end, self.vertical_scroll, self.vertical_content_height, self.vertical_viewport_height
+    ))
+    .block(block);
     self.vertical_viewport_height = inner[1].height as usize;
     self.vertical_content_height = self.view.rendered_text.len_lines();
     self.vertical_scroll_state = self.vertical_scroll_state.content_length(self.vertical_content_height);
     self.view.set_window_width(session_width as usize, &mut self.messages);
     self.scroll_max = self.view.rendered_text.len_lines().saturating_sub(self.vertical_viewport_height);
-    // + self.vertical_viewport_height.min(3);
-    self.vertical_scroll_state = self.vertical_scroll_state.viewport_content_length(self.vertical_content_height);
 
     if self.scroll_sticky_end {
-      //self.vertical_scroll_state.last();
-      self.vertical_scroll = self.scroll_max;
-      self.vertical_scroll_state = self.vertical_scroll_state.position(self.vertical_scroll);
+      self.view.textarea.move_cursor(CursorMove::Bottom);
+      self.view.textarea.move_cursor(CursorMove::Head);
     }
-
+    f.render_widget(debug_text, inner[0]);
     f.render_widget(self.view.textarea.widget(), inner[1]);
     Ok(())
   }
