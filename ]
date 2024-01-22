@@ -1,0 +1,31 @@
+use tree_sitter::Node;
+use tree_sitter::Query;
+use tree_sitter::QueryCursor;
+
+use super::treesitter_parser::TreeData;
+
+impl TreeData {
+  pub fn function_nodes(&self) -> Vec<Node> {
+    let query = Query::new(
+      self.tree.language(),
+      "(function_item
+                    name: (identifier) @function.name
+                    parameters: (parameters) @function.parameters
+                ) @function",
+    )
+    .unwrap();
+    let mut cursor = QueryCursor::new();
+    let matches = cursor.matches(&query, self.tree.root_node(), self.source_code.as_slice());
+    matches
+      .flat_map(|m| {
+        m.captures
+          .iter()
+          .map(|c| {
+            println!("c: {:?}", c.node.utf8_text(&self.source_code));
+            c.node
+          })
+          .collect::<Vec<Node>>()
+      })
+      .collect()
+  }
+}

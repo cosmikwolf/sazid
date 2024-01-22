@@ -74,7 +74,7 @@ mod tests {
     let valid_paths = format!("{},{}", file1.to_str().unwrap(), file2.to_str().unwrap());
     function_args.insert("paths".to_string(), serde_json::Value::String(valid_paths.to_string()));
 
-    let session_config = SessionConfig { list_file_paths: vec![temp_dir.path().to_path_buf()], ..Default::default() };
+    let session_config = SessionConfig { accessible_paths: vec![temp_dir.path().to_path_buf()], ..Default::default() };
     let result = validate_and_extract_paths_from_argument(
       &function_args,
       session_config,
@@ -93,7 +93,7 @@ mod tests {
     let mut function_args = HashMap::new();
     function_args.insert("paths".to_string(), serde_json::Value::String(invalid_paths.to_string()));
 
-    let session_config = SessionConfig { list_file_paths: vec![PathBuf::from(".")], ..Default::default() };
+    let session_config = SessionConfig { accessible_paths: vec![PathBuf::from(".")], ..Default::default() };
 
     let result = validate_and_extract_paths_from_argument(&function_args, session_config, true, None);
     assert!(result.is_err());

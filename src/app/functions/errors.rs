@@ -32,7 +32,11 @@ impl Error for ToolCallError {
     self.source.as_ref().map(|e| e.as_ref())
   }
 }
-
+impl From<globset::Error> for ToolCallError {
+  fn from(error: globset::Error) -> Self {
+    ToolCallError { message: format!("Globset Error: {}", error), source: Some(Box::new(error)) }
+  }
+}
 impl From<grep::regex::Error> for ToolCallError {
   fn from(error: grep::regex::Error) -> Self {
     ToolCallError { message: format!("Grep Regex Error: {}", error), source: Some(Box::new(error)) }

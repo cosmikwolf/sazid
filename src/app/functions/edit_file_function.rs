@@ -39,14 +39,14 @@ impl ToolCallTrait for EditFileFunction {
           name: "line_num".to_string(),
           required: true,
           property_type: "number".to_string(),
-          description: Some("line number in file to start edit, 1 indexed".to_string()),
+          description: Some("line number in file to start edit, 0 indexed".to_string()),
           enum_values: None,
         },
         FunctionProperties {
           name: "col".to_string(),
           required: true,
           property_type: "number".to_string(),
-          description: Some("column index in line to begin edit, 1 indexed".to_string()),
+          description: Some("column index in line to begin edit, 0 indexed".to_string()),
           enum_values: None,
         },
         FunctionProperties {
@@ -117,11 +117,6 @@ pub fn edit_file(
       let reader = std::io::BufReader::new(file);
       let original_lines: Vec<String> = reader.lines().map(|line| line.unwrap_or_default().to_string()).collect();
       let mut new_lines: Vec<String> = original_lines.clone();
-      if line_num < 1 || col < 1 {
-        return Err(ToolCallError::new("line and col are 1 indexed and must be greater than 0"));
-      }
-      let line_num = line_num.saturating_sub(1);
-      let col = col.saturating_sub(1);
       // insert text at line and col
       for (line_index, line) in original_lines.iter().enumerate() {
         if line_index == line_num {

@@ -2,6 +2,7 @@ use std::{collections::HashMap, path::PathBuf};
 
 use crate::{app::session_config::SessionConfig, trace_dbg};
 use clap::Parser;
+use globset::{Glob, GlobMatcher};
 use serde_json::json;
 use walkdir::WalkDir;
 
@@ -83,7 +84,7 @@ pub fn validate_and_extract_path_from_argument(
   match function_args.get("path") {
     Some(path) => {
       if let serde_json::Value::String(path_str) = path {
-        let accesible_paths = get_accessible_file_paths(session_config.list_file_paths.clone(), root_dir);
+        let accesible_paths = get_accessible_file_paths(session_config.accessible_paths.clone(), root_dir);
         let path_buf = PathBuf::from(path_str);
         if accesible_paths
           .contains_key(path_buf.to_str().ok_or_else(|| ToolCallError::new("Path contains invalid Unicode."))?)
@@ -104,6 +105,7 @@ pub fn validate_and_extract_path_from_argument(
   }
 }
 
+// a function that checks each accessible path to the supplied list of glob patterns
 pub fn validate_and_extract_paths_from_argument(
   function_args: &HashMap<String, serde_json::Value>,
   session_config: SessionConfig,
@@ -113,25 +115,20 @@ pub fn validate_and_extract_paths_from_argument(
   match function_args.get("paths") {
     Some(paths) => {
       if let serde_json::Value::String(paths_str) = paths {
-        let accesible_paths = get_accessible_file_paths(session_config.list_file_paths.clone(), root_dir);
-        let paths_vec: Result<Vec<PathBuf>, ToolCallError> = paths_str
-          .split(',')
-          .map(|s| s.trim())
-          .map(|path| {
-            let path_buf = PathBuf::from(path);
-            if accesible_paths
-              .contains_key(path_buf.to_str().ok_or_else(|| ToolCallError::new("Path contains invalid Unicode."))?)
-            {
-              Ok(path_buf)
+        let globmatchers: Vec<GlobMatcher> =
+          paths_str.split(',').map(|s| s.trim()).flat_map(Glob::new).map(|g| g.compile_matcher()).collect();
+
+        let paths: Vec<PathBuf> = get_accessible_file_paths(session_config.accessible_paths.clone(), root_dir)
+          .values()
+          .flat_map(|path| {
+            if globmatchers.iter().any(|g| g.is_match(path)) {
+              Ok(path.to_path_buf())
             } else {
-              Err(ToolCallError::new(&format!(
-                "File path is not accessible: {:?}. Suggest using file_search command",
-                path_buf
-              )))
+              Err(ToolCallError::new(&format!("File path is not accessible: {:?}.", path)))
             }
           })
-          .collect(); // Collect into a Result<Vec<PathBuf>, ModelFunctionError>
-        paths_vec.map(Some)
+          .collect();
+        Ok(Some(paths))
       } else {
         Err(ToolCallError::new("Expected a string for 'paths' argument but got a different type."))
       }
