@@ -20,11 +20,11 @@ pub mod edit_file_function;
 pub mod errors;
 pub mod file_search_function;
 pub mod grep_function;
-pub mod patch_files_function;
 pub mod pcre2grep_function;
 pub mod read_file_lines_function;
 pub mod tool_call;
 pub mod tool_call_template;
+pub mod treesitter_function;
 pub mod types;
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]

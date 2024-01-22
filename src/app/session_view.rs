@@ -58,33 +58,6 @@ impl<'a> SessionView<'a> {
     }
   }
 
-  pub fn get_stylized_rendered_slice(&mut self, start_line: usize, line_count: usize, vertical_scroll: usize) -> &str {
-    if (start_line, line_count, vertical_scroll, self.rendered_text.len_chars(), self.new_data)
-      != self.render_conditions
-    {
-      self.render_conditions = (start_line, line_count, vertical_scroll, self.rendered_text.len_chars(), self.new_data);
-      //   trace_dbg!(
-      //   "get_stylized_rendered_slice: start_line: {}, line_count: {}, vertical_scroll: {}, rendered_text.len_lines(): {}",
-      //   start_line,
-      //   line_count,
-      //   vertical_scroll,
-      //   self.rendered_text.len_lines()
-      // );
-      self.new_data = false;
-      // let text =
-      // self.rendered_text.lines().skip(start_line).take(line_count).map(|c| c.to_string()).collect::<String>();
-      // let wrapped_text = bwrap::wrap!(&text, self.window_width);
-      //let rendered_text = &self.renderer.render_message_bat(start_line, line_count, &self.rendered_text);
-      let rendered_text =
-        &self.rendered_text.lines_at(start_line).take(line_count + 1).map(|l| l.to_string()).collect::<String>();
-
-      //let debug = format!("{}\n", rendered_text);
-      //trace_dbg!(debug);
-      self.rendered_view = "-\n".repeat(vertical_scroll) + rendered_text.as_str()
-    }
-    &self.rendered_view
-  }
-
   pub fn post_process_new_messages(&mut self, messages: &mut Vec<MessageContainer>) {
     let dividing_newlines_count = 2;
     messages.iter_mut().for_each(|message| {
@@ -93,9 +66,7 @@ impl<'a> SessionView<'a> {
       // trace_dbg!("message: {:#?}", message.bright_blue());
       // let previously_rendered_bytecount = message.rendered.stylized.len_bytes();
       if !message.stylize_complete {
-        let text_width = self.window_width.min(80);
-        let left_padding = self.window_width.saturating_sub(text_width) / 2;
-        // trace_dbg!("left_padding: {}\ttext_width: {}, window_width: {}", left_padding, text_width, self.window_width);
+        let text_width = self.window_width.min(80 - 4);
         let stylized = self.renderer.render_message_bat(format!("{}", &message).as_str());
         let options = Options::new(text_width)
           //.break_words(false)
@@ -105,6 +76,7 @@ impl<'a> SessionView<'a> {
         .word_separator(WordSeparator::AsciiSpace)
         .wrap_algorithm(WrapAlgorithm::new_optimal_fit());
         let wrapped = textwrap::wrap(stylized.as_str(), options);
+
         message.stylized =
           Rope::from_str(wrapped.iter().map(|c| c.to_string()).collect::<Vec<String>>().join("\n").as_str());
 

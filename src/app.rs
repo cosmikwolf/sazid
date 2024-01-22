@@ -18,6 +18,7 @@ pub mod request_validation;
 pub mod session_config;
 pub mod session_view;
 pub mod tools;
+pub mod treesitter;
 pub mod types;
 
 use crate::{

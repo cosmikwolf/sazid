@@ -61,7 +61,7 @@ impl ToolCallTrait for ReadFileLinesFunction {
     let end_line: Option<usize> = function_args.get("end_line").and_then(|s| s.as_u64().map(|u| u as usize));
     if let Some(v) = function_args.get("path") {
       if let Some(file) = v.as_str() {
-        let accesible_paths = get_accessible_file_paths(session_config.list_file_paths.clone(), None);
+        let accesible_paths = get_accessible_file_paths(session_config.accessible_paths.clone(), None);
         if !accesible_paths.contains_key(Path::new(file).to_str().unwrap()) {
           Err(ToolCallError::new(
             format!("File path is not accessible: {:?}. Suggest using file_search command", file).as_str(),
@@ -73,7 +73,7 @@ impl ToolCallTrait for ReadFileLinesFunction {
             start_line,
             end_line,
             session_config.function_result_max_tokens,
-            session_config.list_file_paths.clone(),
+            session_config.accessible_paths.clone(),
           )
         }
       } else {

@@ -1,0 +1,19 @@
+syntax = "proto3";
+
+package treesitter.ts_proto;
+
+message SyntaxTree { Node root = 1; }
+
+message Node {
+  uint32 id = 1;
+  string type = 2;
+  optional string tag_identifier = 3;
+  uint32 start_byte = 4;
+  uint32 end_byte = 5;
+  bool is_error = 6;
+  bool has_error = 7;
+  uint32 child_count = 8;
+  SourceFile source_file = 9;
+}
+
+message SourceFile { string path = 1; }

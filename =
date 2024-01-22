@@ -1,0 +1,222 @@
+use super::treesitter_parser::node_to_protobuf;
+use super::treesitter_parser::TreeData;
+use super::ts_proto;
+use tree_sitter::Node;
+use tree_sitter::Query;
+use tree_sitter::QueryCursor;
+use tree_sitter::Tree;
+use tree_sitter_tags::TagsConfiguration;
+use tree_sitter_tags::TagsContext;
+
+struct FunctionNode {
+  file_path: String,
+  name: String,
+  parameters: String,
+  return_type: String,
+}
+
+enum RustDeclaration {
+  ConstItems,
+  MacroInvocations,
+  MacroDefinitions,
+  EmptyStatements,
+  AttributeItems,
+  InnerAttributeItems,
+  ModItems,
+  ForeignModItems,
+  StructItems,
+  UnionItems,
+  EnumItems,
+  TypeItems,
+  FunctionItems,
+  FunctionSignatureItems,
+  ImplItems,
+  TraitItems,
+  AssociatedTypes,
+  LetDeclarations,
+  UseDeclarations,
+  ExternCrateDeclarations,
+  StaticItems,
+}
+
+fn declaration_query(declaration: RustDeclaration) -> String {
+  let declaration = match declaration {
+    RustDeclaration::ConstItems => "(const_item)     @const_item",
+    RustDeclaration::MacroInvocations => "(macro_invocation)     @macro_invocation",
+    RustDeclaration::MacroDefinitions => "(macro_definition)     @macro_definition",
+    RustDeclaration::EmptyStatements => "(empty_statement)     @empty_statement",
+    RustDeclaration::AttributeItems => "(attribute_item)     @attribute_item",
+    RustDeclaration::InnerAttributeItems => "(inner_attribute_item)     @inner_attribute_item",
+    RustDeclaration::ModItems => "(mod_item)     @mod_item",
+    RustDeclaration::ForeignModItems => "(foreign_mod_item)     @foreign_mod_item",
+    RustDeclaration::StructItems => "(struct_item)     @struct_item",
+    RustDeclaration::UnionItems => "(union_item)     @union_item",
+    RustDeclaration::EnumItems => "(enum_item)     @enum_item",
+    RustDeclaration::TypeItems => "(type_item)     @type_item",
+    RustDeclaration::FunctionItems => "(function_item)     @function_item",
+    RustDeclaration::FunctionSignatureItems => "(function_signature_item)     @function_signature_item",
+    RustDeclaration::ImplItems => "(impl_item)     @impl_item",
+    RustDeclaration::TraitItems => "(trait_item)     @trait_item",
+    RustDeclaration::AssociatedTypes => "(associated_type)     @associated_type",
+    RustDeclaration::LetDeclarations => "(let_declaration)     @let_declaration",
+    RustDeclaration::UseDeclarations => "(use_declaration)     @use_declaration",
+    RustDeclaration::ExternCrateDeclarations => "(extern_crate_declaration)     @extern_crate_declaration",
+    RustDeclaration::StaticItems => "(static_item)     @static_item",
+  };
+  declaration.to_string()
+}
+
+impl TreeData {
+  pub fn get_tags(&self) {
+    let rust_tag_config = TagsConfiguration::new(self.tree.language(), tree_sitter_rust::TAGGING_QUERY, "").unwrap();
+    let mut context = TagsContext::new();
+    let (tags_iter, _has_error) = context.generate_tags(&rust_tag_config, &self.source_code, None).unwrap();
+    for tag in tags_iter {
+      match tag {
+        Ok(tag) => {
+          println!("tag: {:#?}", tag);
+          print!("{:#?}\tr\t", &self.get_src_range(tag.name_range).unwrap());
+          println!("{:#?}", rust_tag_config.syntax_type_name(tag.syntax_type_id));
+        },
+        Err(e) => println!("error: {:#?}", e),
+      }
+    }
+  }
+
+  pub fn query_tags(&self) -> Vec<Node> {
+    let query = Query::new(self.tree.language(), tree_sitter_rust::TAGGING_QUERY).unwrap();
+    let mut cursor = QueryCursor::new();
+    cursor
+      .matches(
+        //
+        &query,
+        self.tree.root_node(),
+        self.source_code.as_slice(),
+      )
+      .map(|m| {
+        println!("{}", m.captures[1].node.kind());
+        m.captures[0].node
+      })
+      .collect()
+  }
+
+  pub fn query_tree(&self, query: &str) -> Vec<Node> {
+    let query = Query::new(self.tree.language(), query).unwrap();
+    let mut cursor = QueryCursor::new();
+    cursor
+      .matches(&query, self.tree.root_node(), self.source_code.as_slice())
+      .flat_map(|m| m.captures.iter().map(|c| c.node).collect::<Vec<Node>>())
+      .collect()
+  }
+
+  pub fn declarations(&self) -> Vec<Node> {
+    let declarations_query = "
+
+      (const_item) @const_item
+      (macro_invocation) @macro_invocation
+      (macro_definition) @macro_definition
+      (empty_statement) @empty_statement
+      (attribute_item) @attribute_item
+      (inner_attribute_item) @inner_attribute_item
+      (mod_item) @mod_item
+      (foreign_mod_item) @foreign_mod_item
+      (struct_item) @struct_item
+      (union_item) @union_item
+      (enum_item) @enum_item
+      (type_item) @type_item
+      (function_item) @function_item
+      (function_signature_item) @function_signature_item
+      (impl_item) @impl_item
+      (trait_item) @trait_item
+      (associated_type) @associated_type
+      (let_declaration) @let_declaration
+      (use_declaration) @use_declaration
+      (extern_crate_declaration) @extern_crate_declaration
+      (static_item) @static_item";
+    self.query_tree(declarations_query)
+  }
+
+  pub fn const_nodes(&self) -> Vec<Node> {
+    self.query_tree("(const_item) @const_item")
+  }
+
+  pub fn macro_invocation_nodes(&self) -> Vec<Node> {
+    self.query_tree("(macro_invocation) @macro_invocation")
+  }
+
+  pub fn macro_definition_nodes(&self) -> Vec<Node> {
+    self.query_tree("(macro_definition) @macro_definition")
+  }
+
+  pub fn empty_statement_nodes(&self) -> Vec<Node> {
+    self.query_tree("(empty_statement) @empty_statement")
+  }
+
+  pub fn attribute_item_nodes(&self) -> Vec<Node> {
+    self.query_tree("(attribute_item) @attribute_item")
+  }
+
+  pub fn inner_attribute_item_nodes(&self) -> Vec<Node> {
+    self.query_tree("(inner_attribute_item) @inner_attribute_item")
+  }
+
+  pub fn mod_item_nodes(&self) -> Vec<Node> {
+    self.query_tree("(mod_item) @mod_item")
+  }
+
+  pub fn foreign_mod_item_nodes(&self) -> Vec<Node> {
+    self.query_tree("(foreign_mod_item) @foreign_mod_item")
+  }
+
+  pub fn struct_item_nodes(&self) -> Vec<Node> {
+    self.query_tree("(struct_item) @struct_item")
+  }
+
+  pub fn union_item_nodes(&self) -> Vec<Node> {
+    self.query_tree("(union_item) @union_item")
+  }
+
+  pub fn enum_item_nodes(&self) -> Vec<Node> {
+    self.query_tree("(enum_item) @enum_item")
+  }
+
+  pub fn function_nodes(&self) -> Vec<Node> {
+    self.query_tree("(function_item) @function")
+  }
+
+  pub fn function_signature_nodes(&self) -> Vec<Node> {
+    self.query_tree("(function_signature_item) @function_signature")
+  }
+
+  pub fn type_item_nodes(&self) -> Vec<Node> {
+    self.query_tree("(type_item) @type_item")
+  }
+
+  pub fn impl_item_nodes(&self) -> Vec<Node> {
+    self.query_tree("(impl_item) @impl_item")
+  }
+
+  pub fn trait_item_nodes(&self) -> Vec<Node> {
+    self.query_tree("(trait_item) @trait_item")
+  }
+
+  pub fn associated_type_nodes(&self) -> Vec<Node> {
+    self.query_tree("(associated_type) @associated_type")
+  }
+
+  pub fn let_declaration_nodes(&self) -> Vec<Node> {
+    self.query_tree("(let_declaration) @let_declaration")
+  }
+
+  pub fn use_declaration_nodes(&self) -> Vec<Node> {
+    self.query_tree("(use_declaration) @use_declaration")
+  }
+
+  pub fn extern_crate_declaration_nodes(&self) -> Vec<Node> {
+    self.query_tree("(extern_crate_declaration) @extern_crate_declaration")
+  }
+
+  pub fn static_item_nodes(&self) -> Vec<Node> {
+    self.query_tree("(static_item) @static_item")
+  }
+}

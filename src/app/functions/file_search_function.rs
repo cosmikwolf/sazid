@@ -46,7 +46,7 @@ impl ToolCallTrait for FileSearchFunction {
   ) -> Result<Option<String>, ToolCallError> {
     if let Some(v) = function_args.get("path") {
       if let Some(pathstr) = v.as_str() {
-        let accesible_paths = get_accessible_file_paths(session_config.list_file_paths.clone(), None);
+        let accesible_paths = get_accessible_file_paths(session_config.accessible_paths.clone(), None);
         if !accesible_paths.contains_key(Path::new(pathstr).to_str().unwrap()) {
           return Err(ToolCallError::new(format!("File path is not accessible: {:?}", pathstr).as_str()));
         } else {
@@ -56,7 +56,7 @@ impl ToolCallTrait for FileSearchFunction {
     }
     let search_term: Option<&str> = function_args.get("search_term").and_then(|s| s.as_str());
 
-    file_search(session_config.function_result_max_tokens, session_config.list_file_paths.clone(), search_term)
+    file_search(session_config.function_result_max_tokens, session_config.accessible_paths.clone(), search_term)
   }
 
   fn function_definition(&self) -> FunctionCall {

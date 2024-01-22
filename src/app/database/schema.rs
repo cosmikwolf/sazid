@@ -66,6 +66,18 @@ diesel::table! {
     use diesel::sql_types::*;
     use pgvector::sql_types::*;
 
+    source_trees (id) {
+        id -> Int8,
+        filepath -> Text,
+        syntax_tree -> Text,
+        updated_at -> Timestamptz,
+    }
+}
+
+diesel::table! {
+    use diesel::sql_types::*;
+    use pgvector::sql_types::*;
+
     tags (id) {
         id -> Int8,
         tag -> Text,
@@ -84,5 +96,6 @@ diesel::allow_tables_to_appear_in_same_query!(
     file_embeddings,
     messages,
     sessions,
+    source_trees,
     tags,
 );
