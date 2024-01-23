@@ -13,6 +13,7 @@ pub mod errors;
 pub mod functions;
 pub mod gpt_interface;
 pub mod helpers;
+pub mod lsp_integration;
 pub mod messages;
 pub mod request_validation;
 pub mod session_config;
