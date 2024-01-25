@@ -1,4 +1,4 @@
-
+https://stackoverflow.com/questions/12213597/how-to-see-which-plugins-are-making-vim-slow
 
 ## IDEAS
 
