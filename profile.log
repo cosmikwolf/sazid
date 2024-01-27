@@ -1,102 +1,66 @@
-FUNCTION  <SNR>48_get_line_trimmed()
-    Defined: /opt/homebrew/Cellar/neovim/HEAD-367e52c/share/nvim/runtime/indent/rust.vim:41
-Called 9 times
-Total time:   0.000773
- Self time:   0.000773
-
-count  total (s)   self (s)
-                                " Get the line and remove a trailing comment.
-                                " Use syntax highlighting attributes when possible.
-                                " NOTE: this is not accurate; /* */ or a line continuation could trick it
-    9              0.000013     let line = getline(a:lnum)
-    9              0.000011     let line_len = strlen(line)
-    9              0.000012     if has('syntax_items')
-                                    " If the last character in the line is a comment, do a binary search for
-                                    " the start of the comment.  synID() is slow, a linear search would take
-                                    " too long on a long line.
-    9              0.000611         if synIDattr(synID(a:lnum, line_len, 1), "name") =~? 'Comment\|Todo'
-                                        let min = 1
-                                        let max = line_len
-                                        while min < max
-                                            let col = (min + max) / 2
-                                            if synIDattr(synID(a:lnum, col, 1), "name") =~? 'Comment\|Todo'
-                                                let max = col
-                                            else
-                                                let min = col + 1
-                                            endif
-                                        endwhile
-                                        let line = strpart(line, 0, min - 1)
-    9              0.000002         endif
-    9              0.000040         return substitute(line, "\s*$", "", "")
-                                else
-                                    " Sorry, this is not complete, nor fully correct (e.g. string "//").
-                                    " Such is life.
-                                    return substitute(line, "\s*//.*$", "", "")
-                                endif
-
 FUNCTION  <SNR>24_Highlight_Matching_Pair()
     Defined: /opt/homebrew/Cellar/neovim/HEAD-367e52c/share/nvim/runtime/plugin/matchparen.vim:43
-Called 178 times
-Total time:   0.017630
- Self time:   0.015472
+Called 307 times
+Total time:   0.015111
+ Self time:   0.013173
 
 count  total (s)   self (s)
-  178              0.000750   if !exists("w:matchparen_ids")
-   12              0.000011     let w:matchparen_ids = []
-  178              0.000109   endif
+  307              0.000856   if !exists("w:matchparen_ids")
+    2              0.000002     let w:matchparen_ids = []
+  307              0.000125   endif
                               " Remove any previous match.
-  178   0.002331   0.000840   call s:Remove_Matches()
+  307   0.003421   0.001506   call s:Remove_Matches()
                             
                               " Avoid that we remove the popup menu.
                               " Return when there are no colors (looks like the cursor jumps).
-  178              0.000530   if pumvisible() || (&t_Co < 8 && !has("gui_running"))
+  307              0.000662   if pumvisible() || (&t_Co < 8 && !has("gui_running"))
                                 return
-  178              0.000038   endif
+  307              0.000051   endif
                             
                               " Get the character under the cursor and check if it's in 'matchpairs'.
-  178              0.000320   let c_lnum = line('.')
-  178              0.000180   let c_col = col('.')
-  178              0.000092   let before = 0
+  307              0.000453   let c_lnum = line('.')
+  307              0.000261   let c_col = col('.')
+  307              0.000132   let before = 0
                             
-  178              0.000277   let text = getline(c_lnum)
-  178              0.001978   let matches = matchlist(text, '\(.\)\=\%'.c_col.'c\(.\=\)')
-  178              0.000209   if empty(matches)
+  307              0.000370   let text = getline(c_lnum)
+  307              0.002386   let matches = matchlist(text, '\(.\)\=\%'.c_col.'c\(.\=\)')
+  307              0.000273   if empty(matches)
                                 let [c_before, c] = ['', '']
-  178              0.000061   else
-  178              0.000409     let [c_before, c] = matches[1:2]
-  178              0.000042   endif
-  178              0.001419   let plist = split(&matchpairs, '.\zs[:,]')
-  178              0.000265   let i = index(plist, c)
-  178              0.000089   if i < 0
+  307              0.000080   else
+  307              0.000493     let [c_before, c] = matches[1:2]
+  307              0.000059   endif
+  307              0.001837   let plist = split(&matchpairs, '.\zs[:,]')
+  307              0.000344   let i = index(plist, c)
+  307              0.000122   if i < 0
                                 " not found, in Insert mode try character before the cursor
-  171              0.000310     if c_col > 1 && (mode() == 'i' || mode() == 'R')
-   60              0.000070       let before = strlen(c_before)
-   60              0.000030       let c = c_before
-   60              0.000045       let i = index(plist, c)
-  171              0.000043     endif
-  171              0.000064     if i < 0
+  305              0.000337     if c_col > 1 && (mode() == 'i' || mode() == 'R')
+                                  let before = strlen(c_before)
+                                  let c = c_before
+                                  let i = index(plist, c)
+  305              0.000062     endif
+  305              0.000088     if i < 0
                                   " not found, nothing to do
-  171              0.000113       return
+  305              0.000153       return
                                 endif
-    7              0.000002   endif
+    2              0.000000   endif
                             
                               " Figure out the arguments for searchpairpos().
-    7              0.000005   if i % 2 == 0
-    4              0.000003     let s_flags = 'nW'
-    4              0.000004     let c2 = plist[i + 1]
-    3              0.000001   else
-    3              0.000003     let s_flags = 'nbW'
-    3              0.000003     let c2 = c
-    3              0.000004     let c = plist[i - 1]
-    7              0.000002   endif
-    7              0.000006   if c == '['
+    2              0.000001   if i % 2 == 0
+                                let s_flags = 'nW'
+                                let c2 = plist[i + 1]
+    2              0.000000   else
+    2              0.000001     let s_flags = 'nbW'
+    2              0.000001     let c2 = c
+    2              0.000002     let c = plist[i - 1]
+    2              0.000000   endif
+    2              0.000001   if c == '['
                                 let c = '\['
                                 let c2 = '\]'
-    7              0.000001   endif
+    2              0.000000   endif
                             
                               " Find the match.  When it was just before the cursor move it there for a
                               " moment.
-    7              0.000004   if before > 0
+    2              0.000001   if before > 0
                                 let has_getcurpos = exists("*getcurpos")
                                 if has_getcurpos
                                   " getcurpos() is more efficient but doesn't exist before 7.4.313.
@@ -105,49 +69,49 @@ count  total (s)   self (s)
                                   let save_cursor = winsaveview()
                                 endif
                                 call cursor(c_lnum, c_col - before)
-    7              0.000001   endif
+    2              0.000000   endif
                             
-    7              0.000022   if !has("syntax") || !exists("g:syntax_on")
+    2              0.000004   if !has("syntax") || !exists("g:syntax_on")
                                 let s_skip = "0"
-    7              0.000002   else
+    2              0.000000   else
                                 " Build an expression that detects whether the current cursor position is
                                 " in certain syntax types (string, comment, etc.), for use as
                                 " searchpairpos()'s skip argument.
                                 " We match "escape" for special items, such as lispEscapeSpecial, and
                                 " match "symbol" for lispBarSymbol.
-    7              0.000019     let s_skip = 'synstack(".", col("."))' . '->indexof({_, id -> synIDattr(id, "name") =~? ' . '"string\\|character\\|singlequote\\|escape\\|symbol\\|comment"}) >= 0'
+    2              0.000003     let s_skip = 'synstack(".", col("."))' . '->indexof({_, id -> synIDattr(id, "name") =~? ' . '"string\\|character\\|singlequote\\|escape\\|symbol\\|comment"}) >= 0'
                                 " If executing the expression determines that the cursor is currently in
                                 " one of the syntax types, then we want searchpairpos() to find the pair
                                 " within those syntax types (i.e., not skip).  Otherwise, the cursor is
                                 " outside of the syntax types and s_skip should keep its value so we skip
                                 " any matching pair inside the syntax types.
                                 " Catch if this throws E363: pattern uses more memory than 'maxmempattern'.
-    7              0.000005     try
-    7   0.000913   0.000820       execute 'if ' . s_skip . ' | let s_skip = "0" | endif'
+    2              0.000001     try
+    2   0.000077   0.000064       execute 'if ' . s_skip . ' | let s_skip = "0" | endif'
                                 catch /^Vim\%((\a\+)\)\=:E363/
                                   " We won't find anything, so skip searching, should keep Vim responsive.
                                   return
-    7              0.000006     endtry
-    7              0.000002   endif
+    2              0.000001     endtry
+    2              0.000000   endif
                             
                               " Limit the search to lines visible in the window.
-    7              0.000010   let stoplinebottom = line('w$')
-    7              0.000007   let stoplinetop = line('w0')
-    7              0.000004   if i % 2 == 0
-    4              0.000004     let stopline = stoplinebottom
-    3              0.000001   else
-    3              0.000004     let stopline = stoplinetop
-    7              0.000002   endif
+    2              0.000002   let stoplinebottom = line('w$')
+    2              0.000001   let stoplinetop = line('w0')
+    2              0.000001   if i % 2 == 0
+                                let stopline = stoplinebottom
+    2              0.000000   else
+    2              0.000002     let stopline = stoplinetop
+    2              0.000000   endif
                             
                               " Limit the search time to 300 msec to avoid a hang on very long lines.
                               " This fails when a timeout is not supported.
-    7              0.000010   if mode() == 'i' || mode() == 'R'
+    2              0.000002   if mode() == 'i' || mode() == 'R'
                                 let timeout = exists("b:matchparen_insert_timeout") ? b:matchparen_insert_timeout : g:matchparen_insert_timeout
-    7              0.000002   else
-    7              0.000017     let timeout = exists("b:matchparen_timeout") ? b:matchparen_timeout : g:matchparen_timeout
-    7              0.000002   endif
-    7              0.000003   try
-    7   0.004788   0.004214     let [m_lnum, m_col] = searchpairpos(c, '', c2, s_flags, s_skip, stopline, timeout)
+    2              0.000000   else
+    2              0.000003     let timeout = exists("b:matchparen_timeout") ? b:matchparen_timeout : g:matchparen_timeout
+    2              0.000000   endif
+    2              0.000000   try
+    2   0.000175   0.000165     let [m_lnum, m_col] = searchpairpos(c, '', c2, s_flags, s_skip, stopline, timeout)
                               catch /E118/
                                 " Can't use the timeout, restrict the stopline a bit more to avoid taking
                                 " a long time on closed folds and long lines.
@@ -177,520 +141,101 @@ count  total (s)   self (s)
                                   let stoplinetop = stopline
                                 endif
                                 let [m_lnum, m_col] = searchpairpos(c, '', c2, s_flags, s_skip, stopline)
-    7              0.000003   endtry
+    2              0.000001   endtry
                             
-    7              0.000005   if before > 0
+    2              0.000001   if before > 0
                                 if has_getcurpos
                                   call setpos('.', save_cursor)
                                 else
                                   call winrestview(save_cursor)
                                 endif
-    7              0.000002   endif
+    2              0.000000   endif
                             
                               " If a match is found setup match highlighting.
-    7              0.000011   if m_lnum > 0 && m_lnum >= stoplinetop && m_lnum <= stoplinebottom 
-    7              0.000005     if s:has_matchaddpos
-    7              0.000043       call add(w:matchparen_ids, matchaddpos('MatchParen', [[c_lnum, c_col - before], [m_lnum, m_col]], 10))
+    2              0.000002   if m_lnum > 0 && m_lnum >= stoplinetop && m_lnum <= stoplinebottom 
+    2              0.000001     if s:has_matchaddpos
+    2              0.000008       call add(w:matchparen_ids, matchaddpos('MatchParen', [[c_lnum, c_col - before], [m_lnum, m_col]], 10))
                                 else
                                   exe '3match MatchParen /\(\%' . c_lnum . 'l\%' . (c_col - before) . 'c\)\|\(\%' . m_lnum . 'l\%' . m_col . 'c\)/'
                                   call add(w:matchparen_ids, 3)
-    7              0.000002     endif
-    7              0.000006     let w:paren_hl_on = 1
-    7              0.000002   endif
+    2              0.000000     endif
+    2              0.000001     let w:paren_hl_on = 1
+    2              0.000000   endif
 
 FUNCTION  <SNR>24_Remove_Matches()
     Defined: /opt/homebrew/Cellar/neovim/HEAD-367e52c/share/nvim/runtime/plugin/matchparen.vim:205
-Called 180 times
-Total time:   0.001531
- Self time:   0.001531
+Called 307 times
+Total time:   0.001916
+ Self time:   0.001916
 
 count  total (s)   self (s)
-  180              0.000312   if exists('w:paren_hl_on') && w:paren_hl_on
-   14              0.000026     while !empty(w:matchparen_ids)
-    7              0.000035       silent! call remove(w:matchparen_ids, 0)->matchdelete()
-   14              0.000010     endwhile
-    7              0.000012     let w:paren_hl_on = 0
-  180              0.000044   endif
-
-FUNCTION  <SNR>12_KittyIsInStackLayout()
-    Defined: ~/.local/share/nvim/lazy/vim-kitty-navigator/plugin/kitty_navigator.vim:43
-Called 1 time
-Total time:   0.035628
- Self time:   0.000023
-
-count  total (s)   self (s)
-    1   0.035614   0.000009   let layout = s:KittyCommand('kitten get_layout.py')
-    1              0.000014   return layout =~ 'stack'
+  307              0.000389   if exists('w:paren_hl_on') && w:paren_hl_on
+    4              0.000004     while !empty(w:matchparen_ids)
+    2              0.000006       silent! call remove(w:matchparen_ids, 0)->matchdelete()
+    4              0.000002     endwhile
+    2              0.000001     let w:paren_hl_on = 0
+  307              0.000057   endif
 
 FUNCTION  <SNR>1_LoadFTPlugin()
     Defined: /opt/homebrew/Cellar/neovim/HEAD-367e52c/share/nvim/runtime/ftplugin.vim:15
-Called 19 times
-Total time:   0.031689
- Self time:   0.031689
+Called 2 times
+Total time:   0.003196
+ Self time:   0.003196
 
 count  total (s)   self (s)
-   19              0.000068     if exists("b:undo_ftplugin")
+    2              0.000007     if exists("b:undo_ftplugin")
                                   exe b:undo_ftplugin
                                   unlet! b:undo_ftplugin b:did_ftplugin
-   19              0.000011     endif
+    2              0.000001     endif
                             
-   19              0.000067     let s = expand("<amatch>")
-   19              0.000023     if s != ""
-   19              0.000060       if &cpo =~# "S" && exists("b:did_ftplugin")
+    2              0.000006     let s = expand("<amatch>")
+    2              0.000003     if s != ""
+    2              0.000006       if &cpo =~# "S" && exists("b:did_ftplugin")
                             	" In compatible mode options are reset to the global values, need to
                             	" set the local values also when a plugin was already used.
                             	unlet b:did_ftplugin
-   19              0.000005       endif
+    2              0.000001       endif
                             
                                   " When there is a dot it is used to separate filetype names.  Thus for
                                   " "aaa.bbb" load "aaa" and then "bbb".
-   38              0.000078       for name in split(s, '\.')
+    4              0.000008       for name in split(s, '\.')
                                     " Load Lua ftplugins after Vim ftplugins _per directory_
                                     " TODO(clason): use nvim__get_runtime when supports globs and modeline
                                     " XXX: "[.]" in the first pattern makes it a wildcard on Windows
-   19              0.031192         exe $'runtime! ftplugin/{name}[.]{{vim,lua}} ftplugin/{name}_*.{{vim,lua}} ftplugin/{name}/*.{{vim,lua}}'
-   38              0.000029       endfor
-   19              0.000007     endif
-
-FUNCTION  <SNR>25_LocalBrowse()
-    Defined: /opt/homebrew/Cellar/neovim/HEAD-367e52c/share/nvim/runtime/plugin/netrwPlugin.vim:102
-Called 2 times
-Total time:   0.000067
- Self time:   0.000067
-
-count  total (s)   self (s)
-                              " Unfortunate interaction -- only DechoMsg debugging calls can be safely used here.
-                              " Otherwise, the BufEnter event gets triggered when attempts to write to
-                              " the DBG buffer are made.
-                            
-    2              0.000004   if !exists("s:vimentered")
-                               " If s:vimentered doesn't exist, then the VimEnter event hasn't fired.  It will,
-                               " and so s:VimEnter() will then be calling this routine, but this time with s:vimentered defined.
-                            "   call Dfunc("s:LocalBrowse(dirname<".a:dirname.">)  (s:vimentered doesn't exist)")
-                            "   call Dret("s:LocalBrowse")
-                               return
-    2              0.000001   endif
-                            
-                            "  call Dfunc("s:LocalBrowse(dirname<".a:dirname.">)  (s:vimentered=".s:vimentered.")")
-                            
-    2              0.000007   if has("amiga")
-                               " The check against '' is made for the Amiga, where the empty
-                               " string is the current directory and not checking would break
-                               " things such as the help command.
-                            "   call Decho("(LocalBrowse) dirname<".a:dirname.">  (isdirectory, amiga)")
-                               if a:dirname != '' && isdirectory(a:dirname)
-                                sil! call netrw#LocalBrowseCheck(a:dirname)
-                                if exists("w:netrw_bannercnt") && line('.') < w:netrw_bannercnt
-                                 exe w:netrw_bannercnt
-                                endif
-                               endif
-                            
-    2              0.000012   elseif isdirectory(a:dirname)
-                            "   call Decho("(LocalBrowse) dirname<".a:dirname."> ft=".&ft."  (isdirectory, not amiga)")
-                            "   call Dredir("LocalBrowse ft last set: ","verbose set ft")
-                               " Jul 13, 2021: for whatever reason, preceding the following call with
-                               " a   sil!  causes an unbalanced if-endif vim error
-                               call netrw#LocalBrowseCheck(a:dirname)
-                               if exists("w:netrw_bannercnt") && line('.') < w:netrw_bannercnt
-                                exe w:netrw_bannercnt
-                               endif
-                            
-    2              0.000001   else
-                               " not a directory, ignore it
-                            "   call Decho("(LocalBrowse) dirname<".a:dirname."> not a directory, ignoring...")
-    2              0.000001   endif
-                            
-                            "  call Dret("s:LocalBrowse")
-
-FUNCTION  10()
-    Defined: /opt/homebrew/Cellar/neovim/HEAD-367e52c/share/nvim/runtime/autoload/provider/clipboard.vim:183
-Called 2 times
-Total time:   0.023100
- Self time:   0.000066
-
-count  total (s)   self (s)
-    2              0.000003   if a:reg == '"'
-                                call s:clipboard.set(a:lines,a:regtype,'+')
-                                if s:copy['*'] != s:copy['+']
-                                  call s:clipboard.set(a:lines,a:regtype,'*')
-                                end
-                                return 0
-    2              0.000001   end
-                            
-    2              0.000005   if type(s:copy[a:reg]) == v:t_func
-                                call s:copy[a:reg](a:lines, a:regtype)
-                                return 0
-    2              0.000000   end
-                            
-    2              0.000002   if s:cache_enabled == 0
-    2   0.023048   0.000015     call s:try_cmd(s:copy[a:reg], a:lines)
-                                "Cache it anyway we can compare it later to get regtype of the yank
-    2              0.000017     let s:selections[a:reg] = copy(s:selection)
-    2              0.000004     let s:selections[a:reg].data = [a:lines, a:regtype]
-    2              0.000001     return 0
-                              end
-                            
-                              if s:selections[a:reg].owner > 0
-                                let prev_job = s:selections[a:reg].owner
-                              end
-                              let s:selections[a:reg] = copy(s:selection)
-                              let selection = s:selections[a:reg]
-                              let selection.data = [a:lines, a:regtype]
-                              let selection.argv = s:copy[a:reg]
-                              let selection.detach = s:cache_enabled
-                              let selection.cwd = "/"
-                              let jobid = jobstart(selection.argv, selection)
-                              if jobid > 0
-                                call jobsend(jobid, a:lines)
-                                call jobclose(jobid, 'stdin')
-                                " xclip does not close stdout when receiving input via stdin
-                                if selection.argv[0] ==# 'xclip'
-                                  call jobclose(jobid, 'stdout')
-                                endif
-                                let selection.owner = jobid
-                                let ret = 1
-                              else
-                                echohl WarningMsg
-                                echomsg 'clipboard: failed to execute: '.(s:copy[a:reg])
-                                echohl None
-                                let ret = 1
-                              endif
-                            
-                              " The previous provider instance should exit when the new one takes
-                              " ownership, but kill it to be sure we don't fill up the job table.
-                              if exists('prev_job')
-                                call timer_start(1000, {... -> jobwait([prev_job], 0)[0] == -1 && jobstop(prev_job)})
-                              endif
-                            
-                              return ret
+    2              0.003144         exe $'runtime! ftplugin/{name}[.]{{vim,lua}} ftplugin/{name}_*.{{vim,lua}} ftplugin/{name}/*.{{vim,lua}}'
+    4              0.000003       endfor
+    2              0.000001     endif
 
 FUNCTION  <SNR>2_LoadIndent()
     Defined: /opt/homebrew/Cellar/neovim/HEAD-367e52c/share/nvim/runtime/indent.vim:14
-Called 19 times
-Total time:   0.008924
- Self time:   0.008924
+Called 2 times
+Total time:   0.000939
+ Self time:   0.000939
 
 count  total (s)   self (s)
-   19              0.000027     if exists("b:undo_indent")
+    2              0.000003     if exists("b:undo_indent")
                                   exe b:undo_indent
                                   unlet! b:undo_indent b:did_indent
-   19              0.000005     endif
-   19              0.000025     let s = expand("<amatch>")
-   19              0.000012     if s != ""
-   19              0.000014       if exists("b:did_indent")
+    2              0.000001     endif
+    2              0.000003     let s = expand("<amatch>")
+    2              0.000001     if s != ""
+    2              0.000001       if exists("b:did_indent")
                             	unlet b:did_indent
-   19              0.000005       endif
+    2              0.000000       endif
                             
                                   " When there is a dot it is used to separate filetype names.  Thus for
                                   " "aaa.bbb" load "indent/aaa.vim" and then "indent/bbb.vim".
-   38              0.000045       for name in split(s, '\.')
+    4              0.000005       for name in split(s, '\.')
                                     " XXX: "[.]" in the pattern makes it a wildcard on Windows
-   19              0.008693         exe $'runtime! indent/{name}[.]{{vim,lua}}'
-   38              0.000018       endfor
-   19              0.000005     endif
-
-FUNCTION  <SNR>12_KittyAwareNavigate()
-    Defined: ~/.local/share/nvim/lazy/vim-kitty-navigator/plugin/kitty_navigator.vim:48
-Called 1 time
-Total time:   0.063097
- Self time:   0.000102
-
-count  total (s)   self (s)
-    1              0.000005   let nr = winnr()
-    1              0.000003   let kitty_last_pane = (a:direction == 'p' && s:kitty_is_last_pane)
-    1              0.000001   if !kitty_last_pane
-    1   0.000017   0.000006     call s:VimNavigate(a:direction)
-    1              0.000000   endif
-    1              0.000002   let at_tab_page_edge = (nr == winnr())
-                            
-    1   0.035673   0.000045   let kitty_is_in_stack_layout = s:KittyIsInStackLayout()
-    1              0.000004   let stack_layout_enabled = get(g:, 'kitty_navigator_enable_stack_layout', 0)
-                            
-    1              0.000002   let can_navigate_in_layout = !kitty_is_in_stack_layout || stack_layout_enabled 
-                              
-                            
-    1              0.000002   if (kitty_last_pane || at_tab_page_edge) && can_navigate_in_layout 
-    1              0.000003     let mappings = {   "h": "left",   "j": "bottom",   "k": "top",   "l": "right" }
-    1              0.000002     let args = 'focus-window --match neighbor:' . mappings[a:direction]
-    1   0.027368   0.000012     silent call s:KittyCommand(args)
-    1              0.000007     let s:kitty_is_last_pane = 1
-                              else
-                                let s:kitty_is_last_pane = 0
-    1              0.000000   endif
-
-FUNCTION  <SNR>41_try_cmd()
-    Defined: /opt/homebrew/Cellar/neovim/HEAD-367e52c/share/nvim/runtime/autoload/provider/clipboard.vim:38
-Called 2 times
-Total time:   0.023034
- Self time:   0.000293
-
-count  total (s)   self (s)
-    2   0.022999   0.000258   let out = systemlist(a:cmd, (a:0 ? a:1 : ['']), 1)
-    2              0.000011   if v:shell_error
-                                if !exists('s:did_error_try_cmd')
-                                  echohl WarningMsg
-                                  echomsg "clipboard: error: ".(len(out) ? out[0] : v:shell_error)
-                                  echohl None
-                                  let s:did_error_try_cmd = 1
-                                endif
-                                return 0
-    2              0.000001   endif
-    2              0.000002   return out
-
-FUNCTION  <SNR>12_KittyCommand()
-    Defined: ~/.local/share/nvim/lazy/vim-kitty-navigator/plugin/kitty_navigator.vim:29
-Called 2 times
-Total time:   0.062960
- Self time:   0.000033
-
-count  total (s)   self (s)
-    2              0.000005   let pw = get(g:, 'kitty_navigator_password', 0)
-    2              0.000005   let pw_s = pw != "" ? '--password="' . pw . '" ' : ''
-    2              0.000003   let cmd = 'kitty @ ' . pw_s . a:args
-    2   0.062943   0.000016   return system(cmd)
-
-FUNCTION  rust#GetConfigVar()
-    Defined: /opt/homebrew/Cellar/neovim/HEAD-367e52c/share/nvim/runtime/autoload/rust.vim:9
-Called 2 times
-Total time:   0.000011
- Self time:   0.000011
-
-count  total (s)   self (s)
-                                " Local buffer variable with same name takes predeence over global
-    2              0.000003     if has_key(b:, a:name)
-                                    return get(b:, a:name)
-    2              0.000000     endif
-    2              0.000002     if has_key(g:, a:name)
-    1              0.000001         return get(g:, a:name)
-    1              0.000000     endif
-    1              0.000001     return a:default
-
-FUNCTION  GetRustIndent()
-    Defined: /opt/homebrew/Cellar/neovim/HEAD-367e52c/share/nvim/runtime/indent/rust.vim:96
-Called 3 times
-Total time:   0.001414
- Self time:   0.000641
-
-count  total (s)   self (s)
-                                " Starting assumption: cindent (called at the end) will do it right
-                                " normally. We just want to fix up a few cases.
-                            
-    3              0.000018     let line = getline(a:lnum)
-                            
-    3              0.000008     if has('syntax_items')
-    3              0.000178         let synname = synIDattr(synID(a:lnum, 1, 1), "name")
-    3              0.000005         if synname ==# "rustString"
-                                        " If the start of the line is in a string, don't change the indent
-                                        return -1
-    3              0.000021         elseif synname =~? '\(Comment\|Todo\)' && line !~# '^\s*/\*'  " not /* opening line
-                                        if synname =~? "CommentML" " multi-line
-                                            if line !~# '^\s*\*' && getline(a:lnum - 1) =~# '^\s*/\*'
-                                                " This is (hopefully) the line after a /*, and it has no
-                                                " leader, so the correct indentation is that of the
-                                                " previous line.
-                                                return GetRustIndent(a:lnum - 1)
-                                            endif
-                                        endif
-                                        " If it's in a comment, let cindent take care of it now. This is
-                                        " for cases like "/*" where the next line should start " * ", not
-                                        " "* " as the code below would otherwise cause for module scope
-                                        " Fun fact: "  /*\n*\n*/" takes two calls to get right!
-                                        return cindent(a:lnum)
-    3              0.000001         endif
-    3              0.000001     endif
-                            
-                                " cindent gets second and subsequent match patterns/struct members wrong,
-                                " as it treats the comma as indicating an unfinished statement::
-                                "
-                                " match a {
-                                "     b => c,
-                                "         d => e,
-                                "         f => g,
-                                " };
-                            
-                                " Search backwards for the previous non-empty line.
-    3              0.000007     let prevlinenum = prevnonblank(a:lnum - 1)
-    3   0.000403   0.000046     let prevline = s:get_line_trimmed(prevlinenum)
-    3              0.000011     while prevlinenum > 1 && prevline !~# '[^[:blank:]]'
-                                    let prevlinenum = prevnonblank(prevlinenum - 1)
-                                    let prevline = s:get_line_trimmed(prevlinenum)
-    3              0.000002     endwhile
-                            
-                                " A standalone '{', '}', or 'where'
-    3              0.000011     let l:standalone_open = line =~# '\V\^\s\*{\s\*\$'
-    3              0.000007     let l:standalone_close = line =~# '\V\^\s\*}\s\*\$'
-    3              0.000008     let l:standalone_where = line =~# '\V\^\s\*where\s\*\$'
-    3              0.000004     if l:standalone_open || l:standalone_close || l:standalone_where
-                                    " ToDo: we can search for more items than 'fn' and 'if'.
-                                    let [l:found_line, l:col, l:submatch] = searchpos('\<\(fn\)\|\(if\)\>', 'bnWp')
-                                    if l:found_line !=# 0
-                                        " Now we count the number of '{' and '}' in between the match
-                                        " locations and the current line (there is probably a better
-                                        " way to compute this).
-                                        let l:i = l:found_line
-                                        let l:search_line = strpart(getline(l:i), l:col - 1)
-                                        let l:opens = 0
-                                        let l:closes = 0
-                                        while l:i < a:lnum
-                                            let l:search_line2 = substitute(l:search_line, '\V{', '', 'g')
-                                            let l:opens += strlen(l:search_line) - strlen(l:search_line2)
-                                            let l:search_line3 = substitute(l:search_line2, '\V}', '', 'g')
-                                            let l:closes += strlen(l:search_line2) - strlen(l:search_line3)
-                                            let l:i += 1
-                                            let l:search_line = getline(l:i)
-                                        endwhile
-                                        if l:standalone_open || l:standalone_where
-                                            if l:opens ==# l:closes
-                                                return indent(l:found_line)
-                                            endif
-                                        else
-                                            " Expect to find just one more close than an open
-                                            if l:opens ==# l:closes + 1
-                                                return indent(l:found_line)
-                                            endif
-                                        endif
-                                    endif
-    3              0.000001     endif
-                            
-                                " A standalone 'where' adds a shift.
-    3              0.000008     let l:standalone_prevline_where = prevline =~# '\V\^\s\*where\s\*\$'
-    3              0.000002     if l:standalone_prevline_where
-                                    return indent(prevlinenum) + 4
-    3              0.000001     endif
-                            
-                                " Handle where clauses nicely: subsequent values should line up nicely.
-    3              0.000012     if prevline[len(prevline) - 1] ==# "," && prevline =~# '^\s*where\s'
-                                    return indent(prevlinenum) + 6
-    3              0.000001     endif
-                            
-    3              0.000005     let l:last_prevline_character = prevline[len(prevline) - 1]
-                            
-                                " A line that ends with '.<expr>;' is probably an end of a long list
-                                " of method operations.
-    3              0.000006     if prevline =~# '\V\^\s\*.' && l:last_prevline_character ==# ';'
-                                    call cursor(a:lnum - 1, 1)
-                                    let l:scope_start = searchpair('{\|(', '', '}\|)', 'nbW', 's:is_string_comment(line("."), col("."))')
-                                    if l:scope_start != 0 && l:scope_start < a:lnum
-                                        return indent(l:scope_start) + 4
-                                    endif
-    3              0.000001     endif
-                            
-    3   0.000548   0.000132     if l:last_prevline_character ==# "," && s:get_line_trimmed(a:lnum) !~# '^\s*[\[\]{})]' && prevline !~# '^\s*fn\s' && prevline !~# '([^()]\+,$' && s:get_line_trimmed(a:lnum) !~# '^\s*\S\+\s*=>'
-                                    " Oh ho! The previous line ended in a comma! I bet cindent will try to
-                                    " take this too far... For now, let's normally use the previous line's
-                                    " indent.
-                            
-                                    " One case where this doesn't work out is where *this* line contains
-                                    " square or curly brackets; then we normally *do* want to be indenting
-                                    " further.
-                                    "
-                                    " Another case where we don't want to is one like a function
-                                    " definition with arguments spread over multiple lines:
-                                    "
-                                    " fn foo(baz: Baz,
-                                    "        baz: Baz) // <-- cindent gets this right by itself
-                                    "
-                                    " Another case is similar to the previous, except calling a function
-                                    " instead of defining it, or any conditional expression that leaves
-                                    " an open paren:
-                                    "
-                                    " foo(baz,
-                                    "     baz);
-                                    "
-                                    " if baz && (foo ||
-                                    "            bar) {
-                                    "
-                                    " Another case is when the current line is a new match arm.
-                                    "
-                                    " There are probably other cases where we don't want to do this as
-                                    " well. Add them as needed.
-    3              0.000004         return indent(prevlinenum)
-                                endif
-                            
-                                if !has("patch-7.4.355")
-                                    " cindent before 7.4.355 doesn't do the module scope well at all; e.g.::
-                                    "
-                                    " static FOO : &'static [bool] = [
-                                    " true,
-                                    "	 false,
-                                    "	 false,
-                                    "	 true,
-                                    "	 ];
-                                    "
-                                    "	 uh oh, next statement is indented further!
-                            
-                                    " Note that this does *not* apply the line continuation pattern properly;
-                                    " that's too hard to do correctly for my liking at present, so I'll just
-                                    " start with these two main cases (square brackets and not returning to
-                                    " column zero)
-                            
-                                    call cursor(a:lnum, 1)
-                                    if searchpair('{\|(', '', '}\|)', 'nbW', 's:is_string_comment(line("."), col("."))') == 0
-                                        if searchpair('\[', '', '\]', 'nbW', 's:is_string_comment(line("."), col("."))') == 0
-                                            " Global scope, should be zero
-                                            return 0
-                                        else
-                                            " At the module scope, inside square brackets only
-                                            "if getline(a:lnum)[0] == ']' || search('\[', '', '\]', 'nW') == a:lnum
-                                            if line =~# "^\\s*]"
-                                                " It's the closing line, dedent it
-                                                return 0
-                                            else
-                                                return &shiftwidth
-                                            endif
-                                        endif
-                                    endif
-                                endif
-                            
-                                " Fall back on cindent, which does it mostly right
-                                return cindent(a:lnum)
-
-FUNCTION  <SNR>12_VimNavigate()
-    Defined: ~/.local/share/nvim/lazy/vim-kitty-navigator/plugin/kitty_navigator.vim:9
-Called 1 time
-Total time:   0.000011
- Self time:   0.000011
-
-count  total (s)   self (s)
-    1              0.000001   try
-    1              0.000004     execute 'wincmd ' . a:direction
-                              catch
-                                echohl ErrorMsg | echo 'E11: Invalid in command-line window; <CR> executes, CTRL-C quits: wincmd k' | echohl None
-    1              0.000001   endtry
-
-FUNCTION  rustfmt#PreWrite()
-    Defined: /opt/homebrew/Cellar/neovim/HEAD-367e52c/share/nvim/runtime/autoload/rustfmt.vim:237
-Called 1 time
-Total time:   0.000050
- Self time:   0.000039
-
-count  total (s)   self (s)
-    1              0.000022     if !filereadable(expand("%@"))
-                                    return
-    1              0.000000     endif
-    1   0.000012   0.000005     if rust#GetConfigVar('rustfmt_autosave_if_config_present', 0)
-                                    if findfile('rustfmt.toml', '.;') !=# '' || findfile('.rustfmt.toml', '.;') !=# ''
-                                        let b:rustfmt_autosave = 1
-                                        let b:_rustfmt_autosave_because_of_config = 1
-                                    endif
-    1              0.000000     else
-    1              0.000001         if has_key(b:, '_rustfmt_autosave_because_of_config')
-                                        unlet b:_rustfmt_autosave_because_of_config
-                                        unlet b:rustfmt_autosave
-    1              0.000000         endif
-    1              0.000000     endif
-                            
-    1   0.000006   0.000002     if !rust#GetConfigVar("rustfmt_autosave", 0)
-    1              0.000000         return
-                                endif
-                            
-                                call s:RunRustfmt(s:RustfmtCommand(), '', v:true)
+    2              0.000914         exe $'runtime! indent/{name}[.]{{vim,lua}}'
+    4              0.000002       endfor
+    2              0.000001     endif
 
 FUNCTION  <SNR>38_LocalBrowseRefresh()
     Defined: /opt/homebrew/Cellar/neovim/HEAD-367e52c/share/nvim/runtime/autoload/netrw.vim:10842
 Called 1 time
-Total time:   0.000092
- Self time:   0.000092
+Total time:   0.000011
+ Self time:   0.000011
 
 count  total (s)   self (s)
                             "  call Dfunc("s:LocalBrowseRefresh() tabpagenr($)=".tabpagenr("$"))
@@ -698,40 +243,40 @@ count  total (s)   self (s)
                             "  call Decho("w:netrw_bannercnt  =".(exists("w:netrw_bannercnt")?   string(w:netrw_bannercnt)   : '<n/a>'),'~'.expand("<slnum>"))
                             
                               " determine which buffers currently reside in a tab
-    1              0.000007   if !exists("s:netrw_browselist")
+    1              0.000005   if !exists("s:netrw_browselist")
                             "   call Dret("s:LocalBrowseRefresh : browselist is empty")
                                return
     1              0.000000   endif
-    1              0.000002   if !exists("w:netrw_bannercnt")
+    1              0.000001   if !exists("w:netrw_bannercnt")
                             "   call Dret("s:LocalBrowseRefresh : don't refresh when focus not on netrw window")
-                               return
-    1              0.000000   endif
-    1              0.000003   if !empty(getcmdwintype())
+    1              0.000001    return
+                              endif
+                              if !empty(getcmdwintype())
                                 " cannot move away from cmdline window, see :h E11
                                 return
-    1              0.000000   endif
-    1              0.000003   if exists("s:netrw_events") && s:netrw_events == 1
+                              endif
+                              if exists("s:netrw_events") && s:netrw_events == 1
                                " s:LocalFastBrowser gets called (indirectly) from a
                                let s:netrw_events= 2
                             "   call Dret("s:LocalBrowseRefresh : avoid initial double refresh")
                                return
-    1              0.000000   endif
-    1              0.000002   let itab       = 1
-    1              0.000001   let buftablist = []
-    1              0.000002   let ykeep      = @@
-    2              0.000005   while itab <= tabpagenr("$")
-    1              0.000005    let buftablist = buftablist + tabpagebuflist()
-    1              0.000001    let itab       = itab + 1
-    1              0.000002    sil! tabn
-    2              0.000002   endwhile
+                              endif
+                              let itab       = 1
+                              let buftablist = []
+                              let ykeep      = @@
+                              while itab <= tabpagenr("$")
+                               let buftablist = buftablist + tabpagebuflist()
+                               let itab       = itab + 1
+                               sil! tabn
+                              endwhile
                             "  call Decho("buftablist".string(buftablist),'~'.expand("<slnum>"))
                             "  call Decho("s:netrw_browselist<".(exists("s:netrw_browselist")? string(s:netrw_browselist) : "").">",'~'.expand("<slnum>"))
                               "  GO through all buffers on netrw_browselist (ie. just local-netrw buffers):
                               "   | refresh any netrw window
                               "   | wipe out any non-displaying netrw buffer
-    1              0.000002   let curwinid = win_getid(winnr())
-    1              0.000001   let ibl    = 0
-    1              0.000002   for ibuf in s:netrw_browselist
+                              let curwinid = win_getid(winnr())
+                              let ibl    = 0
+                              for ibuf in s:netrw_browselist
                             "   call Decho("bufwinnr(".ibuf.") index(buftablist,".ibuf.")=".index(buftablist,ibuf),'~'.expand("<slnum>"))
                                if bufwinnr(ibuf) == -1 && index(buftablist,ibuf) == -1
                                 " wipe out any non-displaying netrw buffer
@@ -759,28 +304,28 @@ count  total (s)   self (s)
                                endif
                                let ibl= ibl + 1
                             "   call Decho("bottom of s:netrw_browselist for loop: ibl=".ibl,'~'.expand("<slnum>"))
-    1              0.000002   endfor
+                              endfor
                             "  call Decho("restore window: win_gotoid(".curwinid.")")
-    1              0.000003   call win_gotoid(curwinid)
-    1              0.000003   let @@= ykeep
+                              call win_gotoid(curwinid)
+                              let @@= ykeep
                             
                             "  call Dret("s:LocalBrowseRefresh")
 
 FUNCTION  <SNR>36_SynSet()
     Defined: /opt/homebrew/Cellar/neovim/HEAD-367e52c/share/nvim/runtime/syntax/synload.vim:27
-Called 19 times
-Total time:   0.021279
- Self time:   0.021279
+Called 2 times
+Total time:   0.002267
+ Self time:   0.002267
 
 count  total (s)   self (s)
                               " clear syntax for :set syntax=OFF  and any syntax name that doesn't exist
-   19              0.000043   syn clear
-   19              0.000019   if exists("b:current_syntax")
+    2              0.000005   syn clear
+    2              0.000002   if exists("b:current_syntax")
                                 unlet b:current_syntax
-   19              0.000005   endif
+    2              0.000000   endif
                             
-   19              0.000025   0verbose let s = expand("<amatch>")
-   19              0.000012   if s == "ON"
+    2              0.000003   0verbose let s = expand("<amatch>")
+    2              0.000001   if s == "ON"
                                 " :set syntax=ON
                                 if &filetype == ""
                                   echohl ErrorMsg
@@ -788,77 +333,36 @@ count  total (s)   self (s)
                                   echohl None
                                 endif
                                 let s = &filetype
-   19              0.000011   elseif s == "OFF"
+    2              0.000001   elseif s == "OFF"
                                 let s = ""
-   19              0.000004   endif
+    2              0.000000   endif
                             
-   19              0.000008   if s != ""
+    2              0.000001   if s != ""
                                 " Load the syntax file(s).  When there are several, separated by dots,
                                 " load each in sequence.  Skip empty entries.
-   38              0.000040     for name in split(s, '\.')
-   19              0.000017       if !empty(name)
+    4              0.000004     for name in split(s, '\.')
+    2              0.000002       if !empty(name)
                                     " XXX: "[.]" in the first pattern makes it a wildcard on Windows
-   19              0.020909         exe $'runtime! syntax/{name}[.]{{vim,lua}} syntax/{name}/*.{{vim,lua}}'
-   19              0.000009       endif
-   38              0.000014     endfor
-   19              0.000005   endif
-
-FUNCTION  provider#clipboard#Call()
-    Defined: /opt/homebrew/Cellar/neovim/HEAD-367e52c/share/nvim/runtime/autoload/provider/clipboard.vim:242
-Called 2 times
-Total time:   0.023161
- Self time:   0.000061
-
-count  total (s)   self (s)
-    2              0.000012   if get(s:, 'here', v:false)  " Clipboard provider must not recurse. #7184
-                                return 0
+    2              0.002228         exe $'runtime! syntax/{name}[.]{{vim,lua}} syntax/{name}/*.{{vim,lua}}'
+    2              0.000001       endif
+    4              0.000002     endfor
     2              0.000001   endif
-    2              0.000005   let s:here = v:true
-    2              0.000001   try
-    2   0.023128   0.000029     return call(s:clipboard[a:method],a:args,s:clipboard)
-    2              0.000002   finally
-    2              0.000002     let s:here = v:false
-    2              0.000002   endtry
 
 FUNCTIONS SORTED ON TOTAL TIME
 count  total (s)   self (s)  function
-    1   0.063097   0.000102  <SNR>12_KittyAwareNavigate()
-    2   0.062960   0.000033  <SNR>12_KittyCommand()
-    1   0.035628   0.000023  <SNR>12_KittyIsInStackLayout()
-   19   0.031689             <SNR>1_LoadFTPlugin()
-    2   0.023161   0.000061  provider#clipboard#Call()
-    2   0.023100   0.000066  10()
-    2   0.023034   0.000293  <SNR>41_try_cmd()
-   19   0.021279             <SNR>36_SynSet()
-  178   0.017630   0.015472  <SNR>24_Highlight_Matching_Pair()
-   19   0.008924             <SNR>2_LoadIndent()
-  180   0.001531             <SNR>24_Remove_Matches()
-    3   0.001414   0.000641  GetRustIndent()
-    9   0.000773             <SNR>48_get_line_trimmed()
-    1   0.000092             <SNR>38_LocalBrowseRefresh()
-    2   0.000067             <SNR>25_LocalBrowse()
-    1   0.000050   0.000039  rustfmt#PreWrite()
-    1   0.000011             <SNR>12_VimNavigate()
-    2   0.000011             rust#GetConfigVar()
+  307   0.015111   0.013173  <SNR>24_Highlight_Matching_Pair()
+    2   0.003196             <SNR>1_LoadFTPlugin()
+    2   0.002267             <SNR>36_SynSet()
+  307   0.001916             <SNR>24_Remove_Matches()
+    2   0.000939             <SNR>2_LoadIndent()
+    1   0.000011             <SNR>38_LocalBrowseRefresh()
 
 FUNCTIONS SORTED ON SELF TIME
 count  total (s)   self (s)  function
-   19              0.031689  <SNR>1_LoadFTPlugin()
-   19              0.021279  <SNR>36_SynSet()
-  178   0.017630   0.015472  <SNR>24_Highlight_Matching_Pair()
-   19              0.008924  <SNR>2_LoadIndent()
-  180              0.001531  <SNR>24_Remove_Matches()
-    9              0.000773  <SNR>48_get_line_trimmed()
-    3   0.001414   0.000641  GetRustIndent()
-    2   0.023034   0.000293  <SNR>41_try_cmd()
-    1   0.063097   0.000102  <SNR>12_KittyAwareNavigate()
-    1              0.000092  <SNR>38_LocalBrowseRefresh()
-    2              0.000067  <SNR>25_LocalBrowse()
-    2   0.023100   0.000066  10()
-    2   0.023161   0.000061  provider#clipboard#Call()
-    1   0.000050   0.000039  rustfmt#PreWrite()
-    2   0.062960   0.000033  <SNR>12_KittyCommand()
-    1   0.035628   0.000023  <SNR>12_KittyIsInStackLayout()
-    1              0.000011  <SNR>12_VimNavigate()
-    2              0.000011  rust#GetConfigVar()
+  307   0.015111   0.013173  <SNR>24_Highlight_Matching_Pair()
+    2              0.003196  <SNR>1_LoadFTPlugin()
+    2              0.002267  <SNR>36_SynSet()
+  307              0.001916  <SNR>24_Remove_Matches()
+    2              0.000939  <SNR>2_LoadIndent()
+    1              0.000011  <SNR>38_LocalBrowseRefresh()
 
