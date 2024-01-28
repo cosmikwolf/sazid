@@ -10,8 +10,9 @@ use tokio::{
 };
 
 use super::lsp_client::LspClient;
+
 pub struct LspClientStdio {
-  capabilites: ClientCapabilities,
+  pub capabilities: ClientCapabilities,
   sequence: u64,
   stdout_buf: BufReader<ChildStdout>,
   stdin_buf: BufWriter<ChildStdin>,
@@ -19,36 +20,6 @@ pub struct LspClientStdio {
 }
 
 impl LspClient for LspClientStdio {
-  fn add_client_capabilities(&mut self) {
-    let new_capabilites = ClientCapabilities {
-      workspace: Some(WorkspaceClientCapabilities {
-        workspace_folders: Some(true),
-        workspace_edit: Some(WorkspaceEditClientCapabilities {
-          document_changes: Some(true),
-          resource_operations: Some(vec![
-            ResourceOperationKind::Create,
-            ResourceOperationKind::Delete,
-            ResourceOperationKind::Rename,
-          ]),
-          failure_handling: Some(FailureHandlingKind::TextOnlyTransactional),
-          normalizes_line_endings: Some(true),
-          ..Default::default()
-        }),
-        ..Default::default()
-      }),
-      text_document: Some(TextDocumentClientCapabilities {
-        synchronization: Some(TextDocumentSyncClientCapabilities {
-          dynamic_registration: Some(true),
-          will_save: Some(true),
-          will_save_wait_until: Some(true),
-          did_save: Some(true),
-        }),
-        ..Default::default()
-      }),
-      ..Default::default()
-    };
-    self.update_capabilities(new_capabilites).unwrap();
-  }
   fn update_capabilities(&mut self, new_capabilities: ClientCapabilities) -> anyhow::Result<()> {
     fn deep_merge(base: &mut Value, other: &Value) {
       match (base, other) {
@@ -63,9 +34,13 @@ impl LspClient for LspClientStdio {
       }
     }
 
-    let mut capabilities = json!(self.capabilites);
+    let mut capabilities = json!(self.capabilities);
     let new_capabilities = json!(new_capabilities);
-    self.capabilites = from_value(deep_merge(&mut capabilities, &new_capabilities).into()).unwrap();
+    self.capabilities = from_value({
+      deep_merge(&mut capabilities, &new_capabilities);
+      ().into()
+    })
+    .unwrap();
     Ok(())
   }
   fn next_id(&self) -> u64 {
@@ -204,9 +179,9 @@ impl LspClient for LspClientStdio {
     let stdin_buf = BufWriter::new(stdin);
     let stdout_buf = BufReader::new(stdout);
     let stderr_buf = BufReader::new(stderr);
-
+    let capabilities = ClientCapabilities::default();
     // Ok(Self { reader, writer, stderr_reader, child, sequence: 0 })
-    Ok(Self { stdin_buf, stdout_buf, stderr_buf, sequence: 0 })
+    Ok(Self { capabilities, stdin_buf, stdout_buf, stderr_buf, sequence: 0 })
   }
   async fn initialize(&mut self, initialization_params: InitializeParams) -> Result<InitializeResult> {
     let request_id = self.next_id();
@@ -233,43 +208,74 @@ impl LspClient for LspClientStdio {
     Ok(())
   }
 
-  async fn did_open(&mut self, params: DidOpenTextDocumentParams) -> Result<()> {
-    match self.send_notification("textDocument/didOpen", params).await {
-      Ok(_) => Ok(()),
-      Err(err) => {
-        // add "textDocument/didOpen" to context of error
-        Err(anyhow!("failed to send textDocument/didOpen notification: {}", err))
-      },
-    }
-  }
-
-  async fn did_change(&mut self, params: DidChangeTextDocumentParams) -> anyhow::Result<()> {
-    match self.send_notification("textDocument/didChange", params).await {
-      Ok(_) => Ok(()),
-      Err(err) => {
-        // add "textDocument/didChange" to context of error
-        Err(anyhow!("failed to send textDocument/didChange notification: {}", err))
-      },
-    }
-  }
-
-  async fn did_save(&mut self, params: DidSaveTextDocumentParams) -> anyhow::Result<()> {
-    match self.send_notification("textDocument/didSave", params).await {
-      Ok(_) => Ok(()),
-      Err(err) => {
-        // add "textDocument/didSave" to context of error
-        Err(anyhow!("failed to send textDocument/didSave notification: {}", err))
-      },
-    }
-  }
-
-  async fn did_close(&mut self, params: DidCloseTextDocumentParams) -> anyhow::Result<()> {
-    match self.send_notification("textDocument/didClose", params).await {
-      Ok(_) => Ok(()),
-      Err(err) => {
-        // add "textDocument/didClose" to context of error
-        Err(anyhow!("failed to send textDocument/didClose notification: {}", err))
-      },
-    }
-  }
+  // fn apply_client_capabilities(&mut self) {
+  //   let new_capabilites = ClientCapabilities {
+  //     workspace: Some(WorkspaceClientCapabilities {
+  //       workspace_folders: Some(true),
+  //       workspace_edit: Some(WorkspaceEditClientCapabilities {
+  //         document_changes: Some(true),
+  //         resource_operations: Some(vec![
+  //           ResourceOperationKind::Create,
+  //           ResourceOperationKind::Delete,
+  //           ResourceOperationKind::Rename,
+  //         ]),
+  //         failure_handling: Some(FailureHandlingKind::TextOnlyTransactional),
+  //         normalizes_line_endings: Some(true),
+  //         ..Default::default()
+  //       }),
+  //       ..Default::default()
+  //     }),
+  //     text_document: Some(TextDocumentClientCapabilities {
+  //       synchronization: Some(TextDocumentSyncClientCapabilities {
+  //         dynamic_registration: Some(true),
+  //         will_save: Some(true),
+  //         will_save_wait_until: Some(true),
+  //         did_save: Some(true),
+  //       }),
+  //       ..Default::default()
+  //     }),
+  //     ..Default::default()
+  //   };
+  //   self.update_capabilities(new_capabilites).unwrap();
+  // }
+  //
+  // async fn did_open(&mut self, params: DidOpenTextDocumentParams) -> Result<()> {
+  //   match self.send_notification("textDocument/didOpen", params).await {
+  //     Ok(_) => Ok(()),
+  //     Err(err) => {
+  //       // add "textDocument/didOpen" to context of error
+  //       Err(anyhow!("failed to send textDocument/didOpen notification: {}", err))
+  //     },
+  //   }
+  // }
+  //
+  // async fn did_change(&mut self, params: DidChangeTextDocumentParams) -> anyhow::Result<()> {
+  //   match self.send_notification("textDocument/didChange", params).await {
+  //     Ok(_) => Ok(()),
+  //     Err(err) => {
+  //       // add "textDocument/didChange" to context of error
+  //       Err(anyhow!("failed to send textDocument/didChange notification: {}", err))
+  //     },
+  //   }
+  // }
+  //
+  // async fn did_save(&mut self, params: DidSaveTextDocumentParams) -> anyhow::Result<()> {
+  //   match self.send_notification("textDocument/didSave", params).await {
+  //     Ok(_) => Ok(()),
+  //     Err(err) => {
+  //       // add "textDocument/didSave" to context of error
+  //       Err(anyhow!("failed to send textDocument/didSave notification: {}", err))
+  //     },
+  //   }
+  // }
+  //
+  // async fn did_close(&mut self, params: DidCloseTextDocumentParams) -> anyhow::Result<()> {
+  //   match self.send_notification("textDocument/didClose", params).await {
+  //     Ok(_) => Ok(()),
+  //     Err(err) => {
+  //       // add "textDocument/didClose" to context of error
+  //       Err(anyhow!("failed to send textDocument/didClose notification: {}", err))
+  //     },
+  //   }
+  // }
 }
