@@ -3,14 +3,52 @@ use anyhow::anyhow;
 use lsp_types::*;
 use serde_json::{from_value, Value};
 
-trait LspNavigation
+#[allow(async_fn_in_trait)]
+pub trait LspNavigation
 where
   Self: LspClient,
 {
   async fn document_symbol(&mut self, params: DocumentSymbolParams) -> anyhow::Result<Option<DocumentSymbolResponse>>;
+  // fn apply_document_symbol_client_capabilities(&mut self) -> anyhow::Result<()> {
+  //   self.update_capabilities(ClientCapabilities {
+  //     text_document: Some(TextDocumentClientCapabilities {
+  //       document_symbol: Some(DocumentSymbolClientCapabilities {
+  //         dynamic_registration: None,
+  //         symbol_kind: None,
+  //         hierarchical_document_symbol_support: Some(true),
+  //         tag_support: None,
+  //       }),
+  //       ..Default::default()
+  //     }),
+  //     ..Default::default()
+  //   })
+  // }
   async fn workspace_symbol(&mut self, params: WorkspaceSymbolParams)
     -> anyhow::Result<Option<Vec<SymbolInformation>>>;
+  // fn apply_workspace_symbol_client_capabilities(&mut self) -> anyhow::Result<()> {
+  //   self.update_capabilities(ClientCapabilities {
+  //     workspace: Some(WorkspaceClientCapabilities {
+  //       symbol: Some(WorkspaceSymbolClientCapabilities {
+  //         dynamic_registration: None,
+  //         symbol_kind: None,
+  //         tag_support: None,
+  //         resolve_support: None,
+  //       }),
+  //       ..Default::default()
+  //     }),
+  //     ..Default::default()
+  //   })
+  // }
   async fn find_references(&mut self, params: ReferenceParams) -> anyhow::Result<Option<Vec<Location>>>;
+  // fn apply_find_references_client_capabilities(&mut self) -> anyhow::Result<()> {
+  //   self.update_capabilities(ClientCapabilities {
+  //     text_document: Some(TextDocumentClientCapabilities {
+  //       references: Some(DynamicRegistrationClientCapabilities { dynamic_registration: Some(true) }),
+  //       ..Default::default()
+  //     }),
+  //     ..Default::default()
+  //   })
+  // }
   async fn rename(&mut self, params: RenameParams) -> anyhow::Result<Option<Value>>;
   async fn formatting(&mut self, params: DocumentFormattingParams) -> anyhow::Result<Option<Vec<TextEdit>>>;
   async fn range_formatting(&mut self, params: DocumentRangeFormattingParams) -> anyhow::Result<Option<Vec<TextEdit>>>;

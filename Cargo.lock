@@ -4234,7 +4234,6 @@ dependencies = [
  "rust-fuzzy-search",
  "rust-sitter",
  "serde",
- "serde_derive",
  "serde_json",
  "serde_json_path",
  "serde_yaml",
