@@ -6,7 +6,7 @@ use std::{
 
 use color_eyre::owo_colors::OwoColorize;
 use ropey::Rope;
-use serde_derive::{Deserialize, Serialize};
+use serde::{Deserialize, Serialize};
 
 use async_openai::{
   self,
@@ -154,34 +154,22 @@ impl fmt::Display for MessageContainer {
       f,
       "{}",
       match &self.message {
-                ChatCompletionRequestMessage::System(message) => match &message
-                    .content
-                {
-                    Some(content) => {
-                        format!("{}\n{}", "System:".bright_magenta(), content)
-                    }
-                    None => {
-                        format!(
-                            "{}\n{}",
-                            "System:".bright_magenta(),
-                            "no content"
-                        )
-                    }
-                },
-                ChatCompletionRequestMessage::User(message) => match &message
-                    .content
-                {
-                    Some(ChatCompletionRequestUserMessageContent::Text(
-                        content,
-                    )) => {
-                        format!("{}\n{}", "You:".bright_blue(), content)
-                    }
-                    Some(ChatCompletionRequestUserMessageContent::Array(
-                        parts,
-                    )) => {
-                        let mut content: Vec<String> = Vec::new();
-                        for part in parts {
-                            content.push(match part {
+        ChatCompletionRequestMessage::System(message) => match &message.content {
+          Some(content) => {
+            format!("{}\n{}", "System:".bright_magenta(), content)
+          },
+          None => {
+            format!("{}\n{}", "System:".bright_magenta(), "no content")
+          },
+        },
+        ChatCompletionRequestMessage::User(message) => match &message.content {
+          Some(ChatCompletionRequestUserMessageContent::Text(content)) => {
+            format!("{}\n{}", "You:".bright_blue(), content)
+          },
+          Some(ChatCompletionRequestUserMessageContent::Array(parts)) => {
+            let mut content: Vec<String> = Vec::new();
+            for part in parts {
+              content.push(match part {
                 ChatCompletionRequestMessageContentPart::Text(content) => {
                   format!("{}\n{}", "You:".bright_blue(), content.text)
                 },
@@ -189,159 +177,134 @@ impl fmt::Display for MessageContainer {
                   format!("{}\n{}", "You <Image>:".bright_blue(), content.image_url.url)
                 },
               })
-                        }
-                        content.join("\n")
-                    }
-                    None => {
-                        format!("{}\n{}", "You:".bright_blue(), "no content")
-                    }
-                },
-                ChatCompletionRequestMessage::Assistant(message) => {
-                    let mut content: Vec<String> = Vec::new();
-                    content.push(match &message.content {
-                        Some(content) => format!(
-                            "{}\n{}\n",
-                            "Assistant:".bright_yellow(),
-                            content
-                        ),
-                        None => format!(
-                            "{}\n{}\n",
-                            "Assistant:".bright_yellow(),
-                            "no content"
-                        ),
-                    });
-                    match &message.tool_calls {
-                        Some(tool_calls) => {
-                            for tool_call in tool_calls {
-                                content.push(format!(
-                                    "{}\n{}",
-                                    "Tool:".bright_green(),
-                                    tool_call.function.name
-                                ));
-                                content.push(format!(
-                                    "{}\n{}",
-                                    "Arguments:".bright_green(),
-                                    tool_call.function.arguments
-                                ));
-                            }
-                        }
-                        None => {}
-                    }
-                    content.join("\n")
-                }
-                ChatCompletionRequestMessage::Tool(message) => {
-                    let mut content: Vec<String> = Vec::new();
-                    content.push(format!(
-                        "{}\n{}",
-                        "Tool:".bright_green(),
-                        message.tool_call_id
-                    ));
-                    content.push(match &message.content {
-                        Some(content) => content.to_string(),
-                        None => "no content".to_string(),
-                    });
-                    content.join("\n")
-                }
-                ChatCompletionRequestMessage::Function(message) => {
-                    let mut content: Vec<String> = Vec::new();
-                    content.push(format!(
-                        "{}\n{}",
-                        "Function:".bright_green(),
-                        message.name
-                    ));
-                    content.push(match &message.content {
-                        Some(content) => content.to_string(),
-                        None => "no content".to_string(),
-                    });
-                    content.join("\n")
-                }
-                // ChatMessage::Response(message) => {
-                //   let mut content: Vec<String> = Vec::new();
-                //   let choice = &message.choices[self.selected_choice];
-                //   if &message.choices.len() > &1 {
-                //     content.push(format!("{}\n{}", "Choice #".bright_green(), choice.index));
-                //   }
-                //   content.push(match choice.message.content {
-                //     Some(content) => format!("{}\n{}", "Assistant:".bright_yellow(), content),
-                //     None => format!("{}\n{}", "Assistant:".bright_yellow(), "no content"),
-                //   });
-                //   match choice.message.tool_calls {
-                //     Some(tool_calls) => {
-                //       for tool_call in tool_calls {
-                //         content.push(format!("{}\n{}", "Tool:".bright_green(), tool_call.function.name));
-                //         content.push(format!("{}\n{}", "Arguments:".bright_green(), tool_call.function.arguments));
-                //       }
-                //     },
-                //     None => {},
-                //   };
-                //   if &message.choices.len() > &1 {
-                //     content.push("\n".to_string());
-                //   }
-                //   content.join("\n")
-                // },
-                // ChatMessage::StreamResponse(messages) => {
-                //   let mut content: Vec<String> = Vec::new();
-                //   let message = messages
-                //     .iter()
-                //     .skip(1)
-                //     .try_fold(messages[0], |acc, m| concatenate_create_chat_completion_stream_response(&acc, m))
-                //     .unwrap();
-                //
-                //   let mut choice_idxs = message.choices.iter().map(|c| c.index as usize).collect::<Vec<usize>>();
-                //   choice_idxs.sort_unstable();
-                //   choice_idxs.dedup();
-                //
-                //   if choice_idxs.len() > 1 {
-                //     content.push(format!("{}{}:", "Choice #".bright_green(), self.selected_choice));
-                //   }
-                //   let mut tool_call_chunks: Vec<ChatCompletionMessageToolCallChunk> = Vec::new();
-                //   message.choices.iter().filter(|c| c.index as usize == self.selected_choice).for_each(|choice| {
-                //     content.push(match choice.delta.content {
-                //       Some(content) => format!("{}\n{}", "Assistant:".bright_yellow(), content),
-                //       None => format!("{}\n{}", "Assistant:".bright_yellow(), "no content"),
-                //     });
-                //
-                //     match choice.delta.tool_calls {
-                //       Some(tool_calls) => {
-                //         for tool_call in tool_calls {
-                //           tool_call_chunks.push(tool_call.clone());
-                //         }
-                //       },
-                //       None => {},
-                //     };
-                //   });
-                //   tool_call_chunks.iter().map(|tc| tc.index as usize).collect::<Vec<usize>>().iter().for_each(
-                //     |tool_call_idx| {
-                //       //tool_call_chunks.iter().filter(|tc| tc.index == tool_call_idx).skip(1).try_fold(tool_call_chunks[0], |acc, tc| concatenate_tool_call_chunks(&acc, tc) )
-                //       let tool_call_chunks_by_idx = tool_call_chunks
-                //         .iter()
-                //         .filter(|tc| tc.index as usize == *tool_call_idx)
-                //         .collect::<Vec<&ChatCompletionMessageToolCallChunk>>();
-                //
-                //       let id = tool_call_chunks_by_idx.iter().flat_map(|tc| tc.id).collect::<Vec<String>>().join(" ");
-                //
-                //       let name = tool_call_chunks_by_idx
-                //         .iter()
-                //         .flat_map(|tc| tc.function)
-                //         .flat_map(|fc| fc.name)
-                //         .collect::<Vec<String>>()
-                //         .join(" ");
-                //
-                //       let arguments = tool_call_chunks_by_idx
-                //         .iter()
-                //         .flat_map(|tc| tc.function)
-                //         .flat_map(|fc| fc.name)
-                //         .collect::<Vec<String>>()
-                //         .join(" ");
-                //
-                //       content.push(format!("{}{}", "Tool ID:".bright_green(), id));
-                //       content.push(format!("{}\t{}", "Name:".bright_green(), name));
-                //       content.push(format!("{}\n{}", "Arguments:".bright_green(), arguments));
-                //     },
-                //   );
-                //   content.join("\n")
-                // },
             }
+            content.join("\n")
+          },
+          None => {
+            format!("{}\n{}", "You:".bright_blue(), "no content")
+          },
+        },
+        ChatCompletionRequestMessage::Assistant(message) => {
+          let mut content: Vec<String> = Vec::new();
+          content.push(match &message.content {
+            Some(content) => format!("{}\n{}\n", "Assistant:".bright_yellow(), content),
+            None => format!("{}\n{}\n", "Assistant:".bright_yellow(), "no content"),
+          });
+          match &message.tool_calls {
+            Some(tool_calls) => {
+              for tool_call in tool_calls {
+                content.push(format!("{}\n{}", "Tool:".bright_green(), tool_call.function.name));
+                content.push(format!("{}\n{}", "Arguments:".bright_green(), tool_call.function.arguments));
+              }
+            },
+            None => {},
+          }
+          content.join("\n")
+        },
+        ChatCompletionRequestMessage::Tool(message) => {
+          let mut content: Vec<String> = Vec::new();
+          content.push(format!("{}\n{}", "Tool:".bright_green(), message.tool_call_id));
+          content.push(match &message.content {
+            Some(content) => content.to_string(),
+            None => "no content".to_string(),
+          });
+          content.join("\n")
+        },
+        ChatCompletionRequestMessage::Function(message) => {
+          let mut content: Vec<String> = Vec::new();
+          content.push(format!("{}\n{}", "Function:".bright_green(), message.name));
+          content.push(match &message.content {
+            Some(content) => content.to_string(),
+            None => "no content".to_string(),
+          });
+          content.join("\n")
+        }, // ChatMessage::Response(message) => {
+           //   let mut content: Vec<String> = Vec::new();
+           //   let choice = &message.choices[self.selected_choice];
+           //   if &message.choices.len() > &1 {
+           //     content.push(format!("{}\n{}", "Choice #".bright_green(), choice.index));
+           //   }
+           //   content.push(match choice.message.content {
+           //     Some(content) => format!("{}\n{}", "Assistant:".bright_yellow(), content),
+           //     None => format!("{}\n{}", "Assistant:".bright_yellow(), "no content"),
+           //   });
+           //   match choice.message.tool_calls {
+           //     Some(tool_calls) => {
+           //       for tool_call in tool_calls {
+           //         content.push(format!("{}\n{}", "Tool:".bright_green(), tool_call.function.name));
+           //         content.push(format!("{}\n{}", "Arguments:".bright_green(), tool_call.function.arguments));
+           //       }
+           //     },
+           //     None => {},
+           //   };
+           //   if &message.choices.len() > &1 {
+           //     content.push("\n".to_string());
+           //   }
+           //   content.join("\n")
+           // },
+           // ChatMessage::StreamResponse(messages) => {
+           //   let mut content: Vec<String> = Vec::new();
+           //   let message = messages
+           //     .iter()
+           //     .skip(1)
+           //     .try_fold(messages[0], |acc, m| concatenate_create_chat_completion_stream_response(&acc, m))
+           //     .unwrap();
+           //
+           //   let mut choice_idxs = message.choices.iter().map(|c| c.index as usize).collect::<Vec<usize>>();
+           //   choice_idxs.sort_unstable();
+           //   choice_idxs.dedup();
+           //
+           //   if choice_idxs.len() > 1 {
+           //     content.push(format!("{}{}:", "Choice #".bright_green(), self.selected_choice));
+           //   }
+           //   let mut tool_call_chunks: Vec<ChatCompletionMessageToolCallChunk> = Vec::new();
+           //   message.choices.iter().filter(|c| c.index as usize == self.selected_choice).for_each(|choice| {
+           //     content.push(match choice.delta.content {
+           //       Some(content) => format!("{}\n{}", "Assistant:".bright_yellow(), content),
+           //       None => format!("{}\n{}", "Assistant:".bright_yellow(), "no content"),
+           //     });
+           //
+           //     match choice.delta.tool_calls {
+           //       Some(tool_calls) => {
+           //         for tool_call in tool_calls {
+           //           tool_call_chunks.push(tool_call.clone());
+           //         }
+           //       },
+           //       None => {},
+           //     };
+           //   });
+           //   tool_call_chunks.iter().map(|tc| tc.index as usize).collect::<Vec<usize>>().iter().for_each(
+           //     |tool_call_idx| {
+           //       //tool_call_chunks.iter().filter(|tc| tc.index == tool_call_idx).skip(1).try_fold(tool_call_chunks[0], |acc, tc| concatenate_tool_call_chunks(&acc, tc) )
+           //       let tool_call_chunks_by_idx = tool_call_chunks
+           //         .iter()
+           //         .filter(|tc| tc.index as usize == *tool_call_idx)
+           //         .collect::<Vec<&ChatCompletionMessageToolCallChunk>>();
+           //
+           //       let id = tool_call_chunks_by_idx.iter().flat_map(|tc| tc.id).collect::<Vec<String>>().join(" ");
+           //
+           //       let name = tool_call_chunks_by_idx
+           //         .iter()
+           //         .flat_map(|tc| tc.function)
+           //         .flat_map(|fc| fc.name)
+           //         .collect::<Vec<String>>()
+           //         .join(" ");
+           //
+           //       let arguments = tool_call_chunks_by_idx
+           //         .iter()
+           //         .flat_map(|tc| tc.function)
+           //         .flat_map(|fc| fc.name)
+           //         .collect::<Vec<String>>()
+           //         .join(" ");
+           //
+           //       content.push(format!("{}{}", "Tool ID:".bright_green(), id));
+           //       content.push(format!("{}\t{}", "Name:".bright_green(), name));
+           //       content.push(format!("{}\n{}", "Arguments:".bright_green(), arguments));
+           //     },
+           //   );
+           //   content.join("\n")
+           // },
+      }
     )
   }
 }

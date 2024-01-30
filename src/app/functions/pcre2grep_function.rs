@@ -7,7 +7,7 @@ use super::{
   types::{FunctionCall, FunctionParameters, FunctionProperties},
 };
 
-use serde_derive::{Deserialize, Serialize};
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Pcre2GrepFunction {

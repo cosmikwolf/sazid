@@ -4,7 +4,7 @@ use std::{
 };
 
 use async_openai::{config::OpenAIConfig, types::ChatCompletionRequestSystemMessage};
-use serde_derive::{Deserialize, Serialize};
+use serde::{Deserialize, Serialize};
 
 use super::{consts::*, functions::CallableFunction, types::Model};
 

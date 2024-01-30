@@ -6,7 +6,7 @@ use std::{
 };
 
 use crate::app::session_config::SessionConfig;
-use serde_derive::{Deserialize, Serialize};
+use serde::{Deserialize, Serialize};
 
 use super::{
   errors::ToolCallError,

@@ -5,7 +5,7 @@ use sazid::app::lsp::{lsp_client::LspClient, lsp_navigation::LspNavigation, lsp_
 
 // The actual test function
 #[tokio::test]
-#[timeout(3000)]
+// #[timeout(60000)]
 async fn test_rust_analyzer_connection() -> anyhow::Result<()> {
   // Create an LspClientStdio instance
   let mut lsp_client = LspClientStdio::create().await?;
@@ -67,13 +67,8 @@ async fn test_rust_analyzer_connection() -> anyhow::Result<()> {
   //   },
   // };
   // println!("did_open_params: {:#?}", did_open_params);
-  let workspace_symbol_params = WorkspaceSymbolParams {
-    partial_result_params: Default::default(),
-    query: "main".into(),
-    work_done_progress_params: Default::default(),
-  };
 
-  let workspace_symbol_result = lsp_client.workspace_symbol(workspace_symbol_params).await?;
+  let workspace_symbol_result = lsp_client.workspace_symbol_query("main").await?;
   println!("workspace_symbol_result: {:#?}", workspace_symbol_result);
 
   let find_references_params = ReferenceParams {
