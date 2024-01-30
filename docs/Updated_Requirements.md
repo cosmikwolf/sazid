@@ -184,7 +184,7 @@ Absolutely! Here's a detailed list of the updated functional requirements based 
     - **Requirement**: The application must include specific crates to handle configuration management.
     - **Detail**:
         - The application's `Cargo.toml` file should include the `config` crate for configuration management.
-        - The `serde` and `serde_derive` crates should be added for serialization and deserialization of configuration data.
+        - The `serde` and `serde` crates should be added for serialization and deserialization of configuration data.
 
 2. **Configuration File**:
     - **Requirement**: The application must have a centralized configuration file named `Settings.toml`.

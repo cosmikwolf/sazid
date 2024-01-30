@@ -1,7 +1,7 @@
 use std::{collections::HashMap, path::PathBuf};
 
 use crate::app::session_config::SessionConfig;
-use serde_derive::{Deserialize, Serialize};
+use serde::{Deserialize, Serialize};
 
 use super::{
   argument_validation::{validate_and_extract_boolean_argument, validate_and_extract_paths_from_argument},

@@ -10,7 +10,7 @@ use crossterm::event::{KeyCode, KeyEvent, MouseButton, MouseEvent, MouseEventKin
 use futures::StreamExt;
 use ratatui::layout::Rect;
 use ratatui::{prelude::*, widgets::block::*, widgets::*};
-use serde_derive::{Deserialize, Serialize};
+use serde::{Deserialize, Serialize};
 use std::default::Default;
 use std::fs;
 use std::path::{Path, PathBuf};
