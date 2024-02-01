@@ -1,0 +1,13 @@
+{
+  "keybindings": {
+    "Home": {
+      "<i>": "EnterInsert",
+      "<Ctrl-c>": "Quit", // Yet another way to quit
+      "<Ctrl-z>": "Suspend" // Suspend the application
+    },
+  },
+  "list_file_paths": [
+    "patches", "lib/bat/src", "assets", "src", "Cargo.toml", ".data/session_files", ".session_data", "tests"
+  ],
+  "session_dir": ".session_data",
+}
