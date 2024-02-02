@@ -1,4 +1,11 @@
+use helix_loader::grammar::{build_grammars, fetch_grammars};
+
 fn main() {
+  if std::env::var("HELIX_DISABLE_AUTO_GRAMMAR_BUILD").is_err() {
+    fetch_grammars().expect("Failed to fetch tree-sitter grammars");
+    build_grammars(Some(std::env::var("TARGET").unwrap())).expect("Failed to compile tree-sitter grammars");
+  }
+
   let git_output = std::process::Command::new("git").args(["rev-parse", "--git-dir"]).output().ok();
   let git_dir = git_output.as_ref().and_then(|output| {
     std::str::from_utf8(&output.stdout).ok().and_then(|s| s.strip_suffix('\n').or_else(|| s.strip_suffix("\r\n")))

@@ -1,5 +1,5 @@
+mod bar;
 mod foo;
-
 use foo::foo;
 
 pub fn hello(v: String) -> String {
