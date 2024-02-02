@@ -1,0 +1,3 @@
+fn omgwtf() {
+  println!("OMGWTF");
+}

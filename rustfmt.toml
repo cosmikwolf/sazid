@@ -1,5 +1,5 @@
-max_width = 80
-fn_call_width = 60
-array_width = 60
-chain_width = 60
-attr_fn_like_width = 70
+# max_width = 80
+# fn_call_width = 60
+# array_width = 60
+# chain_width = 60
+# attr_fn_like_width = 70
