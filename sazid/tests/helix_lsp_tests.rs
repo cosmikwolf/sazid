@@ -1,18 +1,12 @@
+use futures_util::TryFutureExt;
+use helix_core;
+use helix_loader;
+use lsp_types::*;
+use sazid::app::lsp::helix_lsp_interface::LanguageServerInterface;
+use serde_json::from_value;
 use std::path::Path;
 use std::str::from_utf8;
-use std::sync::{Arc, Mutex};
-
-// tests/lsp_client.rs
-use helix_core;
-use helix_core::config::default_syntax_loader;
-use helix_core::syntax::Loader;
-use helix_loader;
-use helix_loader::grammar::{get_language, load_runtime_file};
-use helix_lsp::jsonrpc::{MethodCall, Notification};
-use helix_lsp::{self, Call, LspProgressMap, ProgressStatus, Registry};
-use lsp_types::notification::Progress;
-use lsp_types::*;
-use tokio::time;
+use tempfile::tempdir;
 use tokio::time::Duration;
 
 // The actual test function
@@ -23,266 +17,145 @@ pub fn test_lang_config() -> helix_core::syntax::Configuration {
     .expect("Could not parse built-in languages.toml to valid toml")
 }
 
+fn copy_dir_recursively(source: &Path, target: &Path) -> anyhow::Result<()> {
+  if source.is_dir() {
+    if !target.exists() {
+      std::fs::create_dir_all(target)?;
+    }
+
+    for entry in std::fs::read_dir(source)? {
+      let entry = entry?;
+      let path = entry.path();
+      let target_path = target.join(entry.file_name());
+
+      if path.is_dir() {
+        copy_dir_recursively(&path, &target_path)?;
+      } else {
+        std::fs::copy(&path, &target_path)?;
+      }
+    }
+  } else {
+    std::fs::copy(source, target)?;
+  }
+  Ok(())
+}
+
 #[tokio::test]
 async fn test_rust_analyzer_connection() -> anyhow::Result<()> {
-  let test_project_path = std::env::current_dir().unwrap().join("tests/assets/testproject");
-  std::env::set_current_dir(&test_project_path).unwrap();
-  assert!(test_project_path.exists());
-  let workspace_folders = Some(vec![WorkspaceFolder {
-    uri: url::Url::from_directory_path(test_project_path.clone()).unwrap(),
-    name: "testproject".to_string(),
-  }]);
+  let test_workspace_src_path = "tests/assets/rust_test_project";
+  let test_src_assets = std::env::current_dir().unwrap().join(test_workspace_src_path);
 
-  let config = default_syntax_loader();
+  // create temp dir for test
+  let temp_dir = tempdir()?;
+  let test_workspace_path = temp_dir.into_path().join(test_workspace_src_path);
+
+  println!("Test workspace path: {:#?}", test_workspace_path);
+  // recursively copy test_src_assets into temp_dir
+  copy_dir_recursively(&test_src_assets, &test_workspace_path).unwrap();
+
+  assert!(test_workspace_path.exists());
+
+  std::env::set_current_dir(&test_workspace_path).unwrap();
   let config = test_lang_config();
-  let loader = Loader::new(config);
+  let mut lsi = LanguageServerInterface::new(Some(config));
+  let root_dirs = vec![test_workspace_path.clone()];
 
-  let rust_lang_config = Arc::clone(&loader.language_config_for_name("rust").unwrap());
-  println!("Rust lang config: {:#?}", rust_lang_config);
+  let _c_client = lsi.initialize_client("c", "clangd", None, &[], false).unwrap().unwrap();
+  let _cpp_client = lsi.initialize_client("cpp", "clangd", None, &[], false).unwrap().unwrap();
+  let _python_client = lsi.initialize_client("python", "jedi", None, root_dirs.as_slice(), false).unwrap().unwrap();
+  let _typescript_client =
+    lsi.initialize_client("typescript", "typescript-language-server", None, &[], false).unwrap().unwrap();
+  let rust_client = lsi.initialize_client("rust", "rust-analyzer", None, root_dirs.as_slice(), false).unwrap().unwrap();
 
-  let toml_lang_config = Arc::clone(&loader.language_config_for_file_name(Path::new("Cargo.toml")).unwrap());
-
-  let root_dirs = vec![test_project_path.clone()];
-  // println!("Root dirs: {:?}", root_dirs);
-  let mut rust_registry = Registry::new(Arc::new(loader));
-  let rust_client = rust_registry
-    .get(&rust_lang_config, None, root_dirs.as_slice(), true)
-    .find(|(name, client_res)| name == "rust-analyzer")
-    .unwrap()
-    .1
-    .unwrap();
-
-  while !rust_client.is_initialized() {
-    // wait 10ms
-    tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+  while !lsi.language_servers.iter_clients().all(|client| {
+    println!("Waiting for all clients to be initialized {} {}", client.name(), client.id());
+    client.is_initialized()
+  }) {
+    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
   }
 
-  let mut lsp_progress = LspProgressMap::new();
+  println!("All clients initialized");
 
-  let work_done_token = ProgressToken::String("rustAnalyzer/Fetching".to_string());
-  lsp_progress.create(rust_client.id(), work_done_token.clone());
+  println!("Rust client capabilities: {:#?}", rust_client);
+  //panic!();
 
-  let src = WorkspaceFolder {
-    name: "src".to_string(),
-    uri: url::Url::from_directory_path(test_project_path.clone().join("src")).unwrap(),
-  };
-  use futures_util::StreamExt;
-  let rust_workspace_symbols_response = rust_client.workspace_symbols("".to_string());
-  if let Some(symbols) = rust_workspace_symbols_response {
-    println!("Rust Workspace symbols: {:#?}", symbols.await);
-  } else {
-    println!("No symbols found");
-  }
-  let timeout = Duration::from_secs(2);
-  if let Err(_) = time::timeout(timeout, async {
-    loop {
-      if let Some((size, message)) = rust_registry.incoming.next().await {
-        match message {
-          Call::MethodCall(MethodCall { method, params, id, .. }) => {
-            let reply = match MethodCall::parse(&method, params) {
-              Err(helix_lsp::Error::Unhandled) => {
-                error!("Language Server: Method {} not found in request {}", method, id);
-                Err(helix_lsp::jsonrpc::Error {
-                  code: helix_lsp::jsonrpc::ErrorCode::MethodNotFound,
-                  message: format!("Method not found: {}", method),
-                  data: None,
-                })
-              },
-              Err(err) => {
-                log::error!("Language Server: Received malformed method call {} in request {}: {}", method, id, err);
-                Err(helix_lsp::jsonrpc::Error {
-                  code: helix_lsp::jsonrpc::ErrorCode::ParseError,
-                  message: format!("Malformed method call: {}", method),
-                  data: None,
-                })
-              },
-              Ok(MethodCall::WorkDoneProgressCreate(params)) => {
-                lsp_progress.create(server_id, params.token);
-                println!("Progress token created: {:#?}", params);
+  lsi.language_servers.iter_clients().for_each(|client| {
+    println!(
+      "{}:
+      workspace_symbol_provider: {:?}
+      document_symbol_provider: {:?}
+      document_link_provider: {:#?}
+      references_provider: {:#?}\n",
+      client.name(),
+      client.capabilities().workspace_symbol_provider,
+      client.capabilities().document_symbol_provider,
+      client.capabilities().document_link_provider,
+      client.capabilities().references_provider
+    );
+  });
 
-                // let spinner = editor_view.spinners_mut().get_or_create(server_id);
-                // if spinner.is_stopped() {
-                //   spinner.start();
-                // }
+  // println!("{:#?}", rust_client);
+  // let timeout = Duration::from_secs(30);
+  // tokio::time::timeout(timeout, async {
+  let ids = vec![rust_client.id()];
+  println!("begin rust-analyzer tests");
+  let workspace_symbols = lsi.query_workspace_symbols("main", &ids).await.unwrap();
 
-                Ok(serde_json::Value::Null)
-              },
-            };
-          },
-          Call::Notification(helix_lsp::jsonrpc::Notification { method, params, .. }) => {
-            let notification = match Notification::parse(&method, params) {
-              Ok(notification) => notification,
-              Err(helix_lsp::Error::Unhandled) => {
-                info!("Ignoring Unhandled notification from Language Server");
-                return;
-              },
-              Err(err) => {
-                error!("Ignoring unknown notification from Language Server: {}", err);
-                return;
-              },
-            };
+  // println!("Workspace symbols: {:#?}", workspace_symbols);
+  let main_rs = workspace_symbols.first().unwrap();
+  // assert_eq!(workspace_symbols.len(), 1);
+  // assert_eq!(main_rs.name, "main");
 
-            match notification {
-              Notification::ProgressMessage(params) => {
-                let ProgressParams { token, value } = params;
-
-                let ProgressParamsValue::WorkDone(work) = value;
-                let parts = match &work {
-                  WorkDoneProgress::Begin(WorkDoneProgressBegin { title, message, percentage, .. }) => {
-                    (Some(title), message, percentage)
-                  },
-                  WorkDoneProgress::Report(WorkDoneProgressReport { message, percentage, .. }) => {
-                    (None, message, percentage)
-                  },
-                  WorkDoneProgress::End(WorkDoneProgressEnd { message }) => {
-                    if message.is_some() {
-                      (None, message, &None)
-                    } else {
-                      lsp_progress.end_progress(server_id, &token);
-                      // if !lsp_progress.is_progressing(server_id) {
-                      //   editor_view.spinners_mut().get_or_create(server_id).stop();
-                      // }
-                      // self.editor.clear_status();
-
-                      // we want to render to clear any leftover spinners or messages
-                      return;
-                    }
-                  },
-                };
-
-                let token_d: &dyn std::fmt::Display = match &token {
-                  NumberOrString::Number(n) => n,
-                  NumberOrString::String(s) => s,
-                };
-
-                let status = match parts {
-                  (Some(title), Some(message), Some(percentage)) => {
-                    format!("[{}] {}% {} - {}", token_d, percentage, title, message)
-                  },
-                  (Some(title), None, Some(percentage)) => {
-                    format!("[{}] {}% {}", token_d, percentage, title)
-                  },
-                  (Some(title), Some(message), None) => {
-                    format!("[{}] {} - {}", token_d, title, message)
-                  },
-                  (None, Some(message), Some(percentage)) => {
-                    format!("[{}] {}% {}", token_d, percentage, message)
-                  },
-                  (Some(title), None, None) => {
-                    format!("[{}] {}", token_d, title)
-                  },
-                  (None, Some(message), None) => {
-                    format!("[{}] {}", token_d, message)
-                  },
-                  (None, None, Some(percentage)) => {
-                    format!("[{}] {}%", token_d, percentage)
-                  },
-                  (None, None, None) => format!("[{}]", token_d),
-                };
-
-                if let WorkDoneProgress::End(_) = work {
-                  lsp_progress.end_progress(server_id, &token);
-                  // if !self.lsp_progress.is_progressing(server_id) {
-                  //   editor_view.spinners_mut().get_or_create(server_id).stop();
-                  // }
-                } else {
-                  lsp_progress.update(server_id, token, work);
-                }
-
-                // if self.config.load().editor.lsp.display_messages {
-                //   self.editor.set_status(status);
-                // }
-              },
-              Call::Notification(Notification::ProgressMessage(_params)) => {
-                // do nothing
-              },
-              Call::Notification(Notification::Exit) => {
-                // self.editor.set_status("Language server exited");
-
-                // LSPs may produce diagnostics for files that haven't been opened in helix,
-                // we need to clear those and remove the entries from the list if this leads to
-                // an empty diagnostic list for said files
-                // for diags in self.editor.diagnostics.values_mut() {
-                //   diags.retain(|(_, lsp_id)| *lsp_id != server_id);
-                // }
-                //
-                // self.editor.diagnostics.retain(|_, diags| !diags.is_empty());
-                //
-                // // Clear any diagnostics for documents with this server open.
-                // for doc in self.editor.documents_mut() {
-                //   doc.clear_diagnostics(Some(server_id));
-                // }
-                //
-                // // Remove the language server from the registry.
-                // self.editor.language_servers.remove_by_id(server_id);
-              },
-            }
-          },
-          _ => {
-            println!("Unexpected message");
-          },
-        }
-      }
-    }
-    while let Some(progress) = lsp_progress.progress(1, &work_done_token) {
-      use futures_util::StreamExt;
-      match progress.progress() {
-        Some(WorkDoneProgress::Begin(begin)) => {
-          println!("Progress Begin: {:#?}", begin);
-        },
-        Some(WorkDoneProgress::Report(report)) => {
-          println!("Progress Report: {:#?}", report);
-        },
-        Some(WorkDoneProgress::End(end)) => {
-          println!("Progress End: {:#?}", end);
-          break;
-        },
-        None => {
-          println!("No progress token found");
-        },
-      }
-    }
-    true;
-  })
-  .await
-  {
-    // The test has timed out
-    println!("Test timed out");
+  if let OneOf::Left(location) = &main_rs.location {
+    let document_symbols = lsi.query_document_symbols(&location.uri, &ids).await.unwrap();
+    println!("{:#?}", document_symbols);
   }
   panic!();
+  // })
+  // .await
+  // .unwrap();
+  // let timeout_res = tokio::time::timeout(timeout, async { lsi.wait_for_progress_tokens_completion().await })
+  //   .map_err(|f| anyhow::anyhow!("Timeout error: {:#?}", f))
+  //   .and_then(|res| {
+  //     assert!(res.is_ok());
+  //     async {
+  //       let rust_workspace_symbols_response = rust_client.workspace_symbols("main".to_string());
+  //       if let Some(symbols) = rust_workspace_symbols_response {
+  //         let symbols = symbols.await.unwrap();
+  //         let symbols = from_value::<Vec<WorkspaceSymbol>>(symbols).unwrap();
+  //         for symbol in symbols.iter().filter(|s| s.kind == SymbolKind::FUNCTION) {
+  //           println!("Rust Workspace symbol: {:#?}", symbol);
+  //         }
+  //         // println!("Rust Workspace symbols: {:#?}", symbols);
+  //         println!("Rust Workspace symbol count: {:#?}", symbols.len());
+  //         anyhow::Ok(())
+  //       } else {
+  //         Err(anyhow::anyhow!("Rust workspace symbols response is None"))
+  //       }
+  //     }
+  //   })
+  //   .and_then(|res| async {
+  //     assert!(res.is_ok());
+  //
+  //     Ok(())
+  //   });
+
+  // print out a list of files intest_workspace_path
+  // let mut files = vec![];
+  // for entry in std::fs::read_dir(&test_workspace_path)? {
+  //   let entry = entry?;
+  //   let path = entry.path();
+  //   if path.is_file() {
+  //     files.push(path);
+  //   }
+  // }
+  // println!("Files in test_workspace_path: {:#?}", files);
+  // panic!();
   // rust_client.did_change_workspace(vec![src], vec![]).await?;
 
   // println!("Workspace folders: {:#?}", workspace_folders);
 
-  tokio::time::sleep(std::time::Duration::from_millis(3000)).await;
-  let rust_workspace_symbols_response = rust_client.workspace_symbols("".to_string());
-  if let Some(symbols) = rust_workspace_symbols_response {
-    println!("Rust Workspace symbols: {:#?}", symbols.await);
-    panic!();
-  } else {
-    println!("No symbols found");
-    panic!();
-  }
+  // tokio::time::sleep(std::time::Duration::from_millis(3000)).await;
 
-  let toml_client = rust_registry
-    .get(&toml_lang_config, None, root_dirs.as_slice(), true)
-    .find(|(name, client_res)| name == "taplo")
-    .unwrap()
-    .1
-    .unwrap();
-
-  while !toml_client.is_initialized() {
-    // wait 10ms
-    println!("Waiting for toml client to initialize");
-    tokio::time::sleep(std::time::Duration::from_millis(1000)).await;
-  }
-
-  let toml_workspace_symbols_response = toml_client.workspace_symbols("".to_string());
-  if let Some(symbols) = toml_workspace_symbols_response {
-    println!("Toml Workspace symbols: {:#?}", symbols.await);
-  } else {
-    println!("No symbols found");
-  }
-  // Create an LspClientStdio instance
   Ok(())
 }

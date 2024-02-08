@@ -6,6 +6,7 @@ use ratatui::text::Line;
 use std::borrow::Cow;
 use std::cmp::Ordering;
 use std::iter;
+
 #[cfg(feature = "tuirs")]
 use tui::text::Spans as Line;
 use unicode_width::UnicodeWidthChar as _;

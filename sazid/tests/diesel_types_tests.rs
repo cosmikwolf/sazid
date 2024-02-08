@@ -2,8 +2,8 @@
 mod tests {
   use super::*;
   use diesel::{Connection, RunQueryDsl};
-  use diesel_async::AsyncPgConnection;
-  use sazid::embeddings::types::*;
+  use diesel_async::{AsyncConnection, AsyncPgConnection};
+  use sazid::app::database::types::*;
 
   async fn establish_connection() -> AsyncPgConnection {
     AsyncPgConnection::establish(&dotenv::var("TEST_DATABASE_URL").unwrap()).await.unwrap()

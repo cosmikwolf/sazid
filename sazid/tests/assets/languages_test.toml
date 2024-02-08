@@ -49,6 +49,7 @@ haskell-language-server = { command = "haskell-language-server-wrapper", args = 
 ] }
 idris2-lsp = { command = "idris2-lsp" }
 intelephense = { command = "intelephense", args = ["--stdio"] }
+jedi = { command = "jedi-language-server" }
 jdtls = { command = "jdtls" }
 jsonnet-language-server = { command = "jsonnet-language-server", args = [
   "-t",
@@ -180,6 +181,7 @@ command = [
 
 [language-server.rust-analyzer]
 command = "rust-analyzer"
+args = ["--log-file", "/tmp/rust-analyzer.log"]
 
 [language-server.rust-analyzer.config]
 inlayHints.bindingModeHints.enable = false
@@ -188,12 +190,14 @@ inlayHints.closureReturnTypeHints.enable = "with_block"
 inlayHints.discriminantHints.enable = "fieldless"
 inlayHints.lifetimeElisionHints.enable = "skip_trivial"
 inlayHints.typeHints.hideClosureInitialization = false
-
+workspace.symbol.search.kind = "all_symbols"
+workspace.symbol.search.limit = 1000
+workspace.symbol.search.scope = "workspace"
 
 [language-server.typescript-language-server]
 command = "typescript-language-server"
 args = ["--stdio"]
-config.hostInfo = "helix"
+# config.hostInfo = "helix"
 
 [language-server.typescript-language-server.config.typescript.inlayHints]
 includeInlayEnumMemberValueHints = true
@@ -851,7 +855,7 @@ file-types = [
 shebangs = ["python"]
 roots = ["pyproject.toml", "setup.py", "poetry.lock", "pyrightconfig.json"]
 comment-token = "#"
-language-servers = ["pylsp"]
+language-servers = ["pylsp", "jedi"]
 # TODO: pyls needs utf-8 offsets
 indent = { tab-width = 4, unit = "    " }
 

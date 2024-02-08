@@ -157,7 +157,8 @@ mod tests {
 
   use super::*;
   use async_openai::types::{
-    ChatCompletionResponseStreamMessage, ChatCompletionStreamResponseDelta, FinishReason, FunctionCallStream,
+    ChatCompletionMessageToolCallChunk, ChatCompletionResponseStreamMessage, ChatCompletionStreamResponseDelta,
+    FinishReason, FunctionCallStream,
   };
   use serde_json::to_string;
 
@@ -233,11 +234,23 @@ mod tests {
       role: Some(Role::User),
       content: Some("hello".to_string()),
       function_call: Some(FunctionCallStream { name: Some("greet".to_string()), arguments: Some("".to_string()) }),
+      tool_calls: Some(vec![ChatCompletionMessageToolCallChunk {
+        index: 1,
+        id: Some("tool1".to_string()),
+        r#type: Some("type1".to_string()),
+        function: Some(FunctionCallStream { name: "fname1", arguments: "fargs1" }),
+      }]),
     };
     let delta2 = ChatCompletionStreamResponseDelta {
       role: Some(Role::Assistant),
       content: Some(" world".to_string()),
       function_call: Some(FunctionCallStream { name: Some("response".to_string()), arguments: Some("".to_string()) }),
+      tool_calls: Some(vec![ChatCompletionMessageToolCallChunk {
+        index: 2,
+        id: Some("tool1".to_string()),
+        r#type: Some("type1".to_string()),
+        function: Some(FunctionCallStream { name: "fname2", arguments: "fargs2" }),
+      }]),
     };
     assert_eq!(
       concatenate_stream_delta(delta1, delta2),
@@ -248,6 +261,12 @@ mod tests {
           name: Some("greetresponse".to_string()),
           arguments: Some("".to_string())
         }),
+        tool_calls: Some(vec![ChatCompletionMessageToolCallChunk {
+          index: 2,
+          id: Some("tool1".to_string()),
+          r#type: Some(ChatCompletionToolType::Function),
+          function: Some(FunctionCallStream { name: "fname2", arguments: "fargs2" }),
+        }]),
       }
     );
   }
