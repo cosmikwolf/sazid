@@ -1,10 +1,11 @@
 use futures_util::TryFutureExt;
 use helix_core;
 use helix_loader;
+use helix_lsp::block_on;
 use lsp_types::*;
 use sazid::app::lsp::helix_lsp_interface::LanguageServerInterface;
 use serde_json::from_value;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::str::from_utf8;
 use tempfile::tempdir;
 use tokio::time::Duration;
@@ -40,8 +41,33 @@ fn copy_dir_recursively(source: &Path, target: &Path) -> anyhow::Result<()> {
   Ok(())
 }
 
+fn setup_test_logging() {
+  // Configure logger at runtime
+  fern::Dispatch::new()
+    // Perform allocation-free log formatting
+    .format(|out, message, record| {
+        out.finish(format_args!(
+            "[{} {} {}] {}",
+            humantime::format_rfc3339(std::time::SystemTime::now()),
+            record.level(),
+            record.target(),
+            message
+        ))
+    })
+    // Add blanket level filter -
+    .level(log::LevelFilter::Debug)
+    // - and per-module overrides
+    .level_for("hyper", log::LevelFilter::Info)
+    // Output to stdout, files, and other Dispatch configurations
+    // .chain(std::io::stdout())
+    .chain(fern::log_file("output.log").unwrap())
+    // Apply globally
+    .apply().unwrap();
+}
+
 #[tokio::test]
 async fn test_rust_analyzer_connection() -> anyhow::Result<()> {
+  setup_test_logging();
   let test_workspace_src_path = "tests/assets/rust_test_project";
   let test_src_assets = std::env::current_dir().unwrap().join(test_workspace_src_path);
 
@@ -101,7 +127,7 @@ async fn test_rust_analyzer_connection() -> anyhow::Result<()> {
   println!("begin rust-analyzer tests");
   let workspace_symbols = lsi.query_workspace_symbols("main", &ids).await.unwrap();
 
-  // println!("Workspace symbols: {:#?}", workspace_symbols);
+  println!("Workspace symbols: {:#?}", workspace_symbols);
   let main_rs = workspace_symbols.first().unwrap();
   // assert_eq!(workspace_symbols.len(), 1);
   // assert_eq!(main_rs.name, "main");
@@ -109,7 +135,36 @@ async fn test_rust_analyzer_connection() -> anyhow::Result<()> {
   if let OneOf::Left(location) = &main_rs.location {
     let document_symbols = lsi.query_document_symbols(&location.uri, &ids).await.unwrap();
     println!("{:#?}", document_symbols);
+    println!("{:#?}", &location.uri);
   }
+
+  println!("{:#?}", test_workspace_path);
+  // walk test_workspace_path, and collect all files
+  let files = walkdir::WalkDir::new(&test_workspace_path)
+    .into_iter()
+    .filter_map(|e| e.ok())
+    .filter(|e| e.path().is_file())
+    .filter(|e| e.path().extension().unwrap_or_default() == "rs")
+    .flat_map(|e| e.path().canonicalize())
+    .collect::<Vec<PathBuf>>();
+
+  let mut symbols = Vec::new();
+  for file in files.iter() {
+    let uri = Url::from_file_path(file).unwrap();
+    assert!(file.exists());
+    println!("uri: {:#?}", uri);
+    let document_symbols = lsi.query_document_symbols(&uri, &ids).await.unwrap();
+    symbols.extend(document_symbols);
+  }
+  println!("{:#?}", symbols);
+  assert!(symbols.len() > 1);
+
+  // let newfunc = symbols.iter().find(|s| s.name == "new").unwrap();
+  // println!("{:#?}", newfunc);
+
+  let wds_res = lsi.get_workspace_document_symbols(rust_client.id()).await?;
+  println!("{:#?}", wds_res);
+  assert!(wds_res.len() > 1);
   panic!();
   // })
   // .await

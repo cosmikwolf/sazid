@@ -584,6 +584,53 @@ impl Client {
             hierarchical_document_symbol_support: Some(true),
             ..Default::default()
           }),
+          semantic_tokens: Some(lsp::SemanticTokensClientCapabilities {
+            requests: lsp::SemanticTokensClientCapabilitiesRequests {
+              range: Some(true),
+              full: Some(lsp_types::SemanticTokensFullOptions::Bool(true)),
+            },
+            token_types: vec![
+              lsp::SemanticTokenType::NAMESPACE,
+              lsp::SemanticTokenType::TYPE,
+              lsp::SemanticTokenType::CLASS,
+              lsp::SemanticTokenType::ENUM,
+              lsp::SemanticTokenType::INTERFACE,
+              lsp::SemanticTokenType::STRUCT,
+              lsp::SemanticTokenType::TYPE_PARAMETER,
+              lsp::SemanticTokenType::PARAMETER,
+              lsp::SemanticTokenType::VARIABLE,
+              lsp::SemanticTokenType::PROPERTY,
+              lsp::SemanticTokenType::ENUM_MEMBER,
+              lsp::SemanticTokenType::EVENT,
+              lsp::SemanticTokenType::FUNCTION,
+              lsp::SemanticTokenType::METHOD,
+              lsp::SemanticTokenType::MACRO,
+              lsp::SemanticTokenType::KEYWORD,
+              lsp::SemanticTokenType::MODIFIER,
+              lsp::SemanticTokenType::COMMENT,
+              lsp::SemanticTokenType::STRING,
+              lsp::SemanticTokenType::NUMBER,
+              lsp::SemanticTokenType::REGEXP,
+              lsp::SemanticTokenType::OPERATOR,
+              lsp::SemanticTokenType::DECORATOR,
+            ],
+            token_modifiers: vec![
+              lsp::SemanticTokenModifier::DECLARATION,
+              lsp::SemanticTokenModifier::DEFINITION,
+              lsp::SemanticTokenModifier::READONLY,
+              lsp::SemanticTokenModifier::STATIC,
+              lsp::SemanticTokenModifier::DEPRECATED,
+              lsp::SemanticTokenModifier::ABSTRACT,
+              lsp::SemanticTokenModifier::ASYNC,
+              lsp::SemanticTokenModifier::MODIFICATION,
+              lsp::SemanticTokenModifier::DOCUMENTATION,
+              lsp::SemanticTokenModifier::DEFAULT_LIBRARY,
+            ],
+            formats: vec![lsp::TokenFormat::RELATIVE],
+            overlapping_token_support: Some(true),
+            multiline_token_support: Some(true),
+            ..Default::default()
+          }),
           ..Default::default()
         }),
         window: Some(lsp::WindowClientCapabilities { work_done_progress: Some(true), ..Default::default() }),
@@ -691,6 +738,38 @@ impl Client {
 
     let files = vec![lsp::FileRename { old_uri: url_from_path(old_path)?, new_uri: url_from_path(new_path)? }];
     Some(self.notify::<lsp::notification::DidRenameFiles>(lsp::RenameFilesParams { files }))
+  }
+  // -------------------------------------------------------------------------------------------
+  // Semantic Tokens
+  // -------------------------------------------------------------------------------------------
+
+  pub fn semantic_tokens(
+    &self,
+    text_document: lsp::TextDocumentIdentifier,
+  ) -> Option<impl Future<Output = Result<Value>>> {
+    let capabilities = self.capabilities.get().unwrap();
+
+    // Return early if the server does not support workspace symbols.
+    match &capabilities.semantic_tokens_provider {
+      Some(lsp::SemanticTokensServerCapabilities::SemanticTokensOptions(lsp::SemanticTokensOptions {
+        work_done_progress_options: _,
+        legend: _,
+        range: _,
+        full: Some(lsp::SemanticTokensFullOptions::Bool(true)),
+      })) => (),
+      _ => {
+        println!("Server does not support full semantic tokens");
+        return None;
+      },
+    }
+
+    let params = lsp::SemanticTokensParams {
+      text_document,
+      work_done_progress_params: lsp::WorkDoneProgressParams::default(),
+      partial_result_params: lsp::PartialResultParams::default(),
+    };
+
+    Some(self.call::<lsp::request::SemanticTokensFullRequest>(params))
   }
 
   // -------------------------------------------------------------------------------------------

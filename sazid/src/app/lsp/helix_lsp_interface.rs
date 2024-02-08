@@ -31,12 +31,40 @@ pub struct LanguageServerInterface {
   pub status_msg: Option<(Cow<'static, str>, Severity)>,
 }
 
-#[derive(Debug)]
-pub struct SymbolInformationItem {
-  symbol: lsp::SymbolInformation,
-  offset_encoding: OffsetEncoding,
-}
-
+// pub struct WorkspaceSymbolItems {
+//   pub language: String,
+//   pub symbols: Vec<SymbolItem>,
+// }
+//
+// impl WorkspaceSymbolItems {
+//   pub fn new(language: String, symbols: Vec<SymbolItem>) -> Self {
+//     Self { language, symbols }
+//   }
+//   pub fn add_new_childless_symbol(
+//     &mut self,
+//     symbol: lsp::SymbolInformation,
+//     parent_id: Option<u64>,
+//     offset_encoding: OffsetEncoding,
+//   ) {
+//     let symbol = SymbolItem::new(1, parent_id, symbol, offset_encoding);
+//     self.symbols.push(symbol);
+//   }
+// }
+//
+// #[derive(Debug)]
+// pub struct SymbolItem {
+//   id: u64,
+//   parent_id: Option<u64>,
+//   symbol: lsp::SymbolInformation,
+//   offset_encoding: OffsetEncoding,
+// }
+//
+// impl SymbolItem {
+//   pub fn new(id: u64, parent_id: Option<u64>, symbol: lsp::SymbolInformation, offset_encoding: OffsetEncoding) -> Self {
+//     Self { id, parent_id, symbol, offset_encoding }
+//   }
+// }
+//
 impl LanguageServerInterface {
   pub fn new(config: Option<Configuration>) -> Self {
     let loader = match config {
@@ -48,6 +76,22 @@ impl LanguageServerInterface {
       loader: loader.clone(),
       language_servers: Registry::new(loader),
       status_msg: None,
+    }
+  }
+
+  pub async fn get_semantic_tokens(&mut self, doc_url: &Url, id: usize) -> anyhow::Result<lsp::SemanticTokensResult> {
+    let language_server = self.language_server_by_id(id).unwrap();
+    let doc_id = lsp::TextDocumentIdentifier::new(doc_url.clone());
+    if let Some(s) = language_server.semantic_tokens(doc_id.clone()) {
+      let tokens = s.await.unwrap();
+      let response: Option<lsp::SemanticTokensResult> = serde_json::from_value(tokens)?;
+      let tokens = match response {
+        Some(tokens) => tokens,
+        None => return Err(anyhow::anyhow!("no semantic tokens found")),
+      };
+      Ok(tokens)
+    } else {
+      Err(anyhow::anyhow!("no semantic tokens found"))
     }
   }
 
@@ -78,34 +122,75 @@ impl LanguageServerInterface {
     }
   }
 
-  pub async fn query_document_symbols(&mut self, doc_url: &Url, ids: &[usize]) -> anyhow::Result<Vec<DocumentSymbol>> {
-    fn nested_to_flat(
-      list: &mut Vec<SymbolInformationItem>,
-      file: &lsp::TextDocumentIdentifier,
-      symbol: lsp::DocumentSymbol,
-      offset_encoding: OffsetEncoding,
-    ) {
-      #[allow(deprecated)]
-      list.push(SymbolInformationItem {
-        symbol: lsp::SymbolInformation {
-          name: symbol.name,
-          kind: symbol.kind,
-          tags: symbol.tags,
-          deprecated: symbol.deprecated,
-          location: lsp::Location::new(file.uri.clone(), symbol.selection_range),
-          container_name: None,
-        },
-        offset_encoding,
-      });
-      for child in symbol.children.into_iter().flatten() {
-        nested_to_flat(list, file, child, offset_encoding);
-      }
+  async fn get_workspace_files(&mut self, id: usize) -> anyhow::Result<Vec<PathBuf>> {
+    let mut files: Vec<PathBuf> = Vec::new();
+
+    match self.language_server_by_id(id) {
+      Some(language_server) => {
+        let workspace_folders = language_server.workspace_folders();
+        let wf = workspace_folders.await;
+        for folder in wf.iter() {
+          let folderfiles = walkdir::WalkDir::new(folder.uri.to_file_path().unwrap())
+            .into_iter()
+            .filter_map(|e| e.ok())
+            .filter(|e| e.path().is_file())
+            .filter(|e| e.path().extension().unwrap_or_default() == "rs")
+            .flat_map(|e| e.path().canonicalize())
+            .collect::<Vec<PathBuf>>();
+          files.extend(folderfiles);
+        }
+      },
+      None => return Err(anyhow::anyhow!("no language server with id found")),
     }
+    println!("files: {:#?}", files);
+    Ok(files)
+  }
+
+  pub async fn get_workspace_document_symbols(&mut self, id: usize) -> anyhow::Result<Vec<DocumentSymbol>> {
+    log::debug!("get_workspace_document_symbols: {:#?}", id);
+    let files = self.get_workspace_files(id).await?;
+    let mut doc_symbols = vec![];
+    for file in files.iter() {
+      let uri = Url::from_file_path(file).unwrap();
+      log::debug!("uri: {:#?}", uri);
+      let symbols = self.query_document_symbols(&uri, &[id]).await.unwrap();
+      doc_symbols.extend(symbols);
+    }
+    Ok(doc_symbols)
+  }
+
+  pub async fn query_document_symbols(&mut self, doc_url: &Url, ids: &[usize]) -> anyhow::Result<Vec<DocumentSymbol>> {
+    // fn nested_to_flat(
+    //   list: &mut Vec<SymbolInformationItem>,
+    //   file: &lsp::TextDocumentIdentifier,
+    //   symbol: lsp::DocumentSymbol,
+    //   offset_encoding: OffsetEncoding,
+    // ) {
+    //   #[allow(deprecated)]
+    //   list.push(SymbolInformationItem {
+    //     symbol: lsp::SymbolInformation {
+    //       name: symbol.name,
+    //       kind: symbol.kind,
+    //       tags: symbol.tags,
+    //       deprecated: symbol.deprecated,
+    //       location: lsp::Location::new(file.uri.clone(), symbol.selection_range),
+    //       container_name: None,
+    //     },
+    //     offset_encoding,
+    //   });
+    //   for child in symbol.children.into_iter().flatten() {
+    //     nested_to_flat(list, file, child, offset_encoding);
+    //   }
+    // }
+    log::debug!("query_document_symbols: {:#?}", doc_url);
+
     match self.wait_for_progress_token_completion(ids).await {
       Ok(_) => {
         let mut results = vec![];
         for language_server in self.language_servers.iter_clients() {
           if ids.contains(&language_server.id()) {
+            debug!("client name is included: {}", language_server.name());
+
             let doc_id = lsp::TextDocumentIdentifier::new(doc_url.clone());
 
             let _offset_encoding = language_server.offset_encoding();
@@ -117,7 +202,7 @@ impl LanguageServerInterface {
                 Some(symbols) => symbols,
                 None => return anyhow::Ok(vec![]),
               };
-              println!("symbols: {:#?}", symbols);
+              debug!("symbols: {:#?}", symbols);
               let symbols = match symbols {
                 lsp::DocumentSymbolResponse::Nested(symbols) => {
                   symbols
@@ -294,8 +379,8 @@ impl LanguageServerInterface {
             //   tokio::spawn(language_server.text_document_did_open(url, doc.version(), doc.text(), language_id));
             // }
           },
-          Notification::PublishDiagnostics(_params) => {
-            todo!("need to handle publish diagnostics");
+          Notification::PublishDiagnostics(params) => {
+            log::warn!("need to handle publish diagnostics: {:?}", params);
           },
           Notification::ShowMessage(params) => {
             log::warn!("unhandled window/showMessage: {:?}", params);
