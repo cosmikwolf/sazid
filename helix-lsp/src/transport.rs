@@ -111,7 +111,7 @@ impl Transport {
 
     // try parsing as output (server response) or call (server request)
     let output: serde_json::Result<ServerMessage> = serde_json::from_str(msg);
-    println!("ServerMessage: {:#?}", output);
+    // println!("ServerMessage: {:#?}", output);
     Ok(output?)
   }
 
@@ -131,7 +131,7 @@ impl Transport {
 
   async fn send_payload_to_server(&self, server_stdin: &mut BufWriter<ChildStdin>, payload: Payload) -> Result<()> {
     //TODO: reuse string
-    println!("Sending payload to server: {:#?}", payload);
+    // println!("Sending payload to server: {:#?}", payload);
     let json = match payload {
       Payload::Request { chan, value } => {
         self.pending_requests.lock().await.insert(value.id.clone(), chan);

@@ -15,9 +15,9 @@ mod tests {
   pub async fn test_add_message() {
     let mut session = Session::new();
     let (tx, _rx) = mpsc::unbounded_channel::<action::Action>();
-    session.data.add_message(ChatMessage::PromptMessage(session.config.prompt_message()));
-    assert_eq!(session.data.messages.len(), 1);
-    assert_eq!(session.data.messages[0].message, ChatMessage::PromptMessage(session.config.prompt_message()));
+    session.add_message(ChatMessage::PromptMessage(session.config.prompt_message()));
+    assert_eq!(session.messages.len(), 1);
+    assert_eq!(session.messages[0].message, ChatMessage::PromptMessage(session.config.prompt_message()));
     // Create a mock response from OpenAI
     let response = CreateChatCompletionResponse {
       id: "cmpl-3fZzT7q5Y3zJ5Jp9Dq3qX8s0".to_string(),

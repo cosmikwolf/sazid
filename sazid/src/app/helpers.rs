@@ -8,10 +8,10 @@ use super::errors::ParseError;
 
 pub fn concatenate_option_strings(a: Option<String>, b: Option<String>) -> Option<String> {
   match (a, b) {
-    (Some(a_str), Some(b_str)) => Some(a_str + &b_str), // Concatenate if both are Some
-    (Some(a_str), None) => Some(a_str),                 // Only a is Some
-    (None, Some(b_str)) => Some(b_str),                 // Only b is Some
-    (None, None) => None,                               // Both are None
+    (Some(a_str), Some(b_str)) => Some(format!("{}{}", a_str, b_str)), // Concatenate if both are Some
+    (Some(a_str), None) => Some(a_str),                                // Only a is Some
+    (None, Some(b_str)) => Some(b_str),                                // Only b is Some
+    (None, None) => None,                                              // Both are None
   }
 }
 

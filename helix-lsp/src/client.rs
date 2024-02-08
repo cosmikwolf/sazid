@@ -580,6 +580,10 @@ impl Client {
             dynamic_registration: Some(false),
             resolve_support: None,
           }),
+          document_symbol: Some(lsp::DocumentSymbolClientCapabilities {
+            hierarchical_document_symbol_support: Some(true),
+            ..Default::default()
+          }),
           ..Default::default()
         }),
         window: Some(lsp::WindowClientCapabilities { work_done_progress: Some(true), ..Default::default() }),
@@ -1268,7 +1272,7 @@ impl Client {
       Some(lsp::OneOf::Left(true) | lsp::OneOf::Right(_)) => (),
       _ => return None,
     }
-    let work_done_progress_params = Some(lsp::ProgressToken::String("workspace symbol token".to_string()));
+
     let params = lsp::WorkspaceSymbolParams {
       query,
       work_done_progress_params: lsp::WorkDoneProgressParams::default(),

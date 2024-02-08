@@ -24,15 +24,16 @@ insta = { version = "1.34.0", features = [
   "redactions",
 ] }
 # ntest = "0.9.0"
-helix-lsp = { path = "../helix-lsp" }
-helix-loader = { path = "../helix-loader" }
-helix-core = { path = "../helix-core" }
+# helix-lsp = { path = "../helix-lsp" }
+# helix-loader = { path = "../helix-loader" }
+# helix-core = { path = "../helix-core" }
 
 [build-dependencies]
 prost-build = "0.12.3"
 helix-loader = { path = "../helix-loader" }
 
 [dependencies]
+helix-stdx = { path = "../helix-stdx" }
 helix-lsp = { path = "../helix-lsp" }
 helix-loader = { path = "../helix-loader" }
 helix-core = { path = "../helix-core" }
@@ -155,3 +156,4 @@ memchr = "2.7.1"
 html-escape = "0.2.13"
 prost = "0.12.3"
 tree-sitter-tags = "0.20.2"
+ntest = "0.9.0"

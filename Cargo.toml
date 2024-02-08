@@ -7,7 +7,7 @@ members = [
   "helix-parsec",
   "helix-loader",
   "tui-textarea",
-  "sazid/tests/assets/testproject",
+  # "sazid/tests/assets/testproject",
 ]
 resolver = "2"
 default-members = ["sazid"]
@@ -24,7 +24,7 @@ license = "Apache 2.0 / MIT"
 rust-version = "1.75"
 homepage = "https://github.com/cosmikwolf/sazid"
 
-[profile.dev]
+# [profile.dev]
 
 [profile.dev.package]
 insta.opt-level = 3
