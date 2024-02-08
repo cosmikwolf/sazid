@@ -66,10 +66,17 @@ diesel::table! {
     use diesel::sql_types::*;
     use pgvector::sql_types::*;
 
-    source_trees (id) {
+    symbols (id) {
         id -> Int8,
         filepath -> Text,
-        syntax_tree -> Text,
+        name -> Text,
+        detail -> Nullable<Text>,
+        kind -> Int4,
+        start_line -> Int4,
+        start_character -> Int4,
+        end_line -> Int4,
+        end_character -> Int4,
+        parent_id -> Int8,
         updated_at -> Timestamptz,
     }
 }
@@ -85,6 +92,18 @@ diesel::table! {
     }
 }
 
+diesel::table! {
+    use diesel::sql_types::*;
+    use pgvector::sql_types::*;
+
+    workspace_files (id) {
+        id -> Int8,
+        filepath -> Text,
+        checksum -> Text,
+        updated_at -> Timestamptz,
+    }
+}
+
 diesel::joinable!(embedding_pages -> file_embeddings (file_embedding_id));
 diesel::joinable!(embedding_tags -> file_embeddings (file_embedding_id));
 diesel::joinable!(embedding_tags -> tags (tag_id));
@@ -96,6 +115,7 @@ diesel::allow_tables_to_appear_in_same_query!(
     file_embeddings,
     messages,
     sessions,
-    source_trees,
+    symbols,
     tags,
+    workspace_files,
 );

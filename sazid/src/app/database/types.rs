@@ -10,6 +10,21 @@ use diesel_async::{AsyncPgConnection, RunQueryDsl};
 use diesel_json;
 use pgvector::Vector;
 
+#[derive(Serialize, Queryable, Selectable, Debug, Clone, PartialEq, Identifiable, AsChangeset, ValidGrouping)]
+#[diesel(table_name = workspace_files)]
+pub struct WorkspaceFile {
+  id: i64,
+  pub filepath: String,
+  checksum: String,
+}
+
+// #[derive(Serialize, Queryable, Selectable, Debug, Clone, PartialEq, Identifiable, AsChangeset, ValidGrouping)]
+// #[diesel(table_name = symbols)]
+// pub struct Symbol {
+//   id: i64,
+//   parent_id: Option<i32>,
+// }
+
 #[derive(Serialize, Queryable, Selectable, Debug, Clone, Identifiable, PartialEq, ValidGrouping)]
 #[diesel(table_name = sessions)]
 pub struct QueryableSession {

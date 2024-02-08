@@ -1,6 +1,6 @@
-CREATE TABLE source_trees(
+CREATE TABLE workspace_files(
   id bigserial PRIMARY KEY NOT NULL,
   filepath TEXT NOT NULL,
-  syntax_tree TEXT NOT NULL,
+  checksum TEXT NOT NULL,
   updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
 );
