@@ -17,3 +17,4 @@ runtime/grammars
 node_modules
 package.json
 pnpm-lock.yaml
+sazid/output.log

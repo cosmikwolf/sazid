@@ -1614,6 +1614,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "fern"
+version = "0.6.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d9f0c14694cbd524c8720dd69b0e3179344f04ebb5f90f2e4a440c6ea3b2f1ee"
+dependencies = [
+ "log",
+]
+
+[[package]]
 name = "filedescriptor"
 version = "0.8.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4585,6 +4594,7 @@ dependencies = [
  "dirs-next",
  "dotenv",
  "dsync",
+ "fern",
  "futures",
  "futures-util",
  "globset",
@@ -4595,6 +4605,7 @@ dependencies = [
  "helix-stdx",
  "html-escape",
  "human-panic",
+ "humantime",
  "insta",
  "json5",
  "jsonrpc-core",
