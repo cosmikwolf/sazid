@@ -4,6 +4,8 @@ use helix_loader;
 use helix_lsp::block_on;
 use lsp_types::*;
 use sazid::app::lsp::helix_lsp_interface::LanguageServerInterface;
+use sazid::app::lsp::source_symbol::SourceSymbol;
+use sazid::utils::initialize_logging;
 use serde_json::from_value;
 use std::path::{Path, PathBuf};
 use std::str::from_utf8;
@@ -67,7 +69,7 @@ fn setup_test_logging() {
 
 #[tokio::test]
 async fn test_rust_analyzer_connection() -> anyhow::Result<()> {
-  setup_test_logging();
+  initialize_logging().unwrap();
   let test_workspace_src_path = "tests/assets/rust_test_project";
   let test_src_assets = std::env::current_dir().unwrap().join(test_workspace_src_path);
 
@@ -149,11 +151,15 @@ async fn test_rust_analyzer_connection() -> anyhow::Result<()> {
     .collect::<Vec<PathBuf>>();
 
   let mut symbols = Vec::new();
+  let mut source_symbols = Vec::new();
   for file in files.iter() {
     let uri = Url::from_file_path(file).unwrap();
     assert!(file.exists());
     println!("uri: {:#?}", uri);
     let document_symbols = lsi.query_document_symbols(&uri, &ids).await.unwrap();
+    document_symbols.iter().for_each(|s| {
+      source_symbols.push(SourceSymbol::from_document_symbol(s, &uri, None));
+    });
     symbols.extend(document_symbols);
   }
   println!("{:#?}", symbols);
@@ -163,7 +169,13 @@ async fn test_rust_analyzer_connection() -> anyhow::Result<()> {
   // println!("{:#?}", newfunc);
 
   let wds_res = lsi.get_workspace_document_symbols(rust_client.id()).await?;
+
   println!("{:#?}", wds_res);
+  assert!(source_symbols.len() > 1);
+  source_symbols.iter().for_each(|s| {
+    println!("symbols: {}", s);
+  });
+
   assert!(wds_res.len() > 1);
   panic!();
   // })
