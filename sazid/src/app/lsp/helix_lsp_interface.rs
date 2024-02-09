@@ -23,7 +23,6 @@ use lsp::WorkDoneProgressEnd;
 use serde_json::from_value;
 use serde_json::json;
 use url::Url;
-
 pub struct LanguageServerInterface {
   pub lsp_progress: LspProgressMap,
   pub language_servers: helix_lsp::Registry,
@@ -182,15 +181,12 @@ impl LanguageServerInterface {
     //     nested_to_flat(list, file, child, offset_encoding);
     //   }
     // }
-    log::debug!("query_document_symbols: {:#?}", doc_url);
 
     match self.wait_for_progress_token_completion(ids).await {
       Ok(_) => {
         let mut results = vec![];
         for language_server in self.language_servers.iter_clients() {
           if ids.contains(&language_server.id()) {
-            debug!("client name is included: {}", language_server.name());
-
             let doc_id = lsp::TextDocumentIdentifier::new(doc_url.clone());
 
             let _offset_encoding = language_server.offset_encoding();
@@ -202,7 +198,6 @@ impl LanguageServerInterface {
                 Some(symbols) => symbols,
                 None => return anyhow::Ok(vec![]),
               };
-              debug!("symbols: {:#?}", symbols);
               let symbols = match symbols {
                 lsp::DocumentSymbolResponse::Nested(symbols) => {
                   symbols
@@ -249,15 +244,21 @@ impl LanguageServerInterface {
 
   pub async fn wait_for_progress_token_completion(&mut self, ids: &[usize]) -> anyhow::Result<()> {
     loop {
-      self.poll_language_server_events().await;
-
-      let active_clients =
-        self.language_servers.iter_clients().filter(|client| ids.contains(&client.id())).collect::<Vec<&Arc<Client>>>();
-
-      if active_clients.is_empty() {
-        return Err(anyhow::anyhow!("no language servers with matching ids found"));
-      } else if active_clients.iter().all(|client| self.progress_tokens_complete(client.id()) == Some(true)) {
+      if ids.iter().all(|id| self.progress_tokens_complete(*id) == Some(true)) {
         break;
+      } else {
+        self.poll_language_server_events().await;
+        let active_clients = self
+          .language_servers
+          .iter_clients()
+          .filter(|client| ids.contains(&client.id()))
+          .collect::<Vec<&Arc<Client>>>();
+
+        if active_clients.is_empty() {
+          return Err(anyhow::anyhow!("no language servers with matching ids found"));
+        } else if active_clients.iter().all(|client| self.progress_tokens_complete(client.id()) == Some(true)) {
+          break;
+        }
       }
     }
     Ok(())
