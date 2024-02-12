@@ -4,7 +4,7 @@ use helix_loader;
 use helix_lsp::block_on;
 use lsp_types::*;
 use sazid::app::lsp::helix_lsp_interface::LanguageServerInterface;
-use sazid::app::lsp::source_symbol::SourceSymbol;
+use sazid::app::lsp::symbol_types::SourceSymbol;
 use sazid::utils::initialize_logging;
 use serde_json::from_value;
 use std::path::{Path, PathBuf};
