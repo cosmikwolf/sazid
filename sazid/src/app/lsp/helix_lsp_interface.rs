@@ -2,7 +2,6 @@ use std::borrow::Cow;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use futures_util::TryFutureExt;
 use helix_core::config::default_syntax_loader;
 use helix_core::diagnostic::Severity;
 use helix_core::syntax::Configuration;
@@ -542,7 +541,7 @@ impl LanguageServerInterface {
             }
             Ok(serde_json::Value::Null)
           },
-          Ok(MethodCall::ShowDocument(params)) => {
+          Ok(MethodCall::ShowDocument(_params)) => {
             // let language_server = language_server!();
             // let offset_encoding = language_server.offset_encoding();
 
@@ -580,6 +579,10 @@ impl LanguageServerInterface {
 
   #[inline]
   pub fn get_status(&self) -> Option<(&Cow<'static, str>, &Severity)> {
-    self.status_msg.as_ref().map(|(status, sev)| (status, sev))
+    if let Some((status, severity)) = &self.status_msg {
+      Some((status, severity))
+    } else {
+      None
+    }
   }
 }

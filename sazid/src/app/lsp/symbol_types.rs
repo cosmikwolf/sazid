@@ -31,7 +31,7 @@ impl Workspace {
       .filter(|e| e.path().extension().unwrap_or_default() == "rs")
       .flat_map(|e| e.path().canonicalize())
       .map(|file| Url::from_file_path(file).unwrap())
-      .map(|file_uri| WorkspaceFile::new(file_uri))
+      .map(WorkspaceFile::new)
       .collect();
     Workspace { files, workspace_path, language_server, language_config }
   }
@@ -62,7 +62,7 @@ impl Workspace {
         .flat_map(|e| e.path().canonicalize())
         .map(|file| Url::from_file_path(file).unwrap())
         .filter(|file_uri| !self.files.iter().any(|f| f.uri == *file_uri))
-        .map(|file_uri| WorkspaceFile::new(file_uri))
+        .map(WorkspaceFile::new)
         .collect::<Vec<WorkspaceFile>>(),
     );
 
@@ -105,12 +105,11 @@ impl WorkspaceFile {
   pub async fn update_file_symbols(&mut self, language_server: &Arc<Client>) -> anyhow::Result<()> {
     let doc_id = lsp::TextDocumentIdentifier::new(self.uri.clone());
     self.file_tree = SourceSymbol::new_file_symbol(self.uri.clone());
-    let file_tree_mut = self.file_tree.borrow_mut();
     if let Some(request) = language_server.document_symbols(doc_id.clone()) {
       let response_json = request.await.unwrap();
       let response_parsed: Option<lsp::DocumentSymbolResponse> = serde_json::from_value(response_json)?;
 
-      match response_parsed {
+      let _ = match response_parsed {
         Some(lsp::DocumentSymbolResponse::Nested(symbols)) => {
           symbols
           // let mut flat_symbols = Vec::new();
@@ -126,9 +125,8 @@ impl WorkspaceFile {
         None => return Err(anyhow::anyhow!("document symbol response is None")),
       }
       .iter()
-      .map(|s| SourceSymbol::from_document_symbol(&s, &self.uri, None))
-      .for_each(|s| SourceSymbol::add_child(&file_tree_mut, s));
-    }
+      .map(|s| SourceSymbol::from_document_symbol(s, &self.uri, Some(self.file_tree.clone())));
+    };
 
     Ok(())
   }
@@ -140,8 +138,8 @@ pub struct SourceSymbol {
   pub detail: Option<String>,
   pub kind: lsp::SymbolKind,
   pub tags: Option<Vec<lsp::SymbolTag>>,
-  pub range: lsp::Range,
-  pub selection_range: lsp::Range,
+  pub range: RefCell<lsp::Range>,
+  pub selection_range: RefCell<lsp::Range>,
   pub parent: RefCell<Weak<SourceSymbol>>,
   pub children: RefCell<Vec<Rc<SourceSymbol>>>,
   pub uri: Url,
@@ -162,8 +160,8 @@ impl SourceSymbol {
       detail,
       kind,
       tags,
-      range,
-      selection_range,
+      range: RefCell::new(range),
+      selection_range: RefCell::new(selection_range),
       uri,
       parent: RefCell::new(Weak::new()),
       children: RefCell::new(vec![]),
@@ -188,12 +186,12 @@ impl SourceSymbol {
     )
   }
 
-  pub fn add_child(parent: &Rc<Self>, child: Rc<SourceSymbol>) {
+  pub fn add_child(parent: &mut Rc<Self>, child: &Rc<SourceSymbol>) {
     *child.parent.borrow_mut() = Rc::downgrade(parent);
-    parent.children.borrow_mut().push(Rc::clone(&child));
-    // if the kind is File, then search for the longest end position, and apply it to the parent
-    if parent.kind == lsp::SymbolKind::FILE && child.range.end.line > parent.range.end.line {
-      *parent.range.end.line.borrow_mut() = child.range.end.line;
+    parent.children.borrow_mut().push(Rc::clone(child));
+    if parent.kind == lsp::SymbolKind::FILE && position_gt(child.range.borrow().end, parent.range.borrow().end) {
+      let new_range = child.range.borrow().to_owned();
+      *parent.range.borrow_mut() = new_range;
     }
   }
 
@@ -230,8 +228,8 @@ impl SourceSymbol {
       file_uri.clone(),
     );
 
-    if let Some(p) = parent {
-      SourceSymbol::add_child(&p, Rc::clone(&converted));
+    if let Some(mut parent) = parent {
+      SourceSymbol::add_child(&mut parent, &converted);
     }
 
     if let Some(children) = &doc_sym.children {
@@ -243,6 +241,7 @@ impl SourceSymbol {
     converted
   }
 }
+
 impl Display for SourceSymbol {
   fn fmt(&self, f: &mut fmt::Formatter) -> std::result::Result<(), std::fmt::Error> {
     let filename = PathBuf::from(self.uri.path());
@@ -253,5 +252,13 @@ impl Display for SourceSymbol {
       write!(f, " ({} child nodes)", childcount)?;
     }
     Ok(())
+  }
+}
+
+fn position_gt(pos1: lsp::Position, pos2: lsp::Position) -> bool {
+  if pos1.line > pos2.line {
+    true
+  } else {
+    pos1.line == pos2.line && pos1.character > pos2.character
   }
 }
