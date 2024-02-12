@@ -8,21 +8,21 @@ use helix_core::diagnostic::Severity;
 use helix_core::syntax::Configuration;
 use helix_core::syntax::LanguageConfiguration;
 use helix_core::syntax::Loader;
-use helix_lsp::block_on;
 use helix_lsp::lsp::{self, notification::Notification};
 use helix_lsp::Client;
 use helix_lsp::LspProgressMap;
-use helix_lsp::OffsetEncoding;
 use helix_lsp::ProgressStatus;
 use helix_lsp::Registry;
 use log::{debug, error, info, warn};
 use lsp::DocumentSymbol;
-use lsp::DocumentSymbolResponse;
 use lsp::WorkDoneProgress;
 use lsp::WorkDoneProgressEnd;
 use serde_json::from_value;
 use serde_json::json;
 use url::Url;
+
+use super::symbol_types::Workspace;
+
 pub struct LanguageServerInterface {
   pub lsp_progress: LspProgressMap,
   pub language_servers: helix_lsp::Registry,
@@ -30,40 +30,6 @@ pub struct LanguageServerInterface {
   pub status_msg: Option<(Cow<'static, str>, Severity)>,
 }
 
-// pub struct WorkspaceSymbolItems {
-//   pub language: String,
-//   pub symbols: Vec<SymbolItem>,
-// }
-//
-// impl WorkspaceSymbolItems {
-//   pub fn new(language: String, symbols: Vec<SymbolItem>) -> Self {
-//     Self { language, symbols }
-//   }
-//   pub fn add_new_childless_symbol(
-//     &mut self,
-//     symbol: lsp::SymbolInformation,
-//     parent_id: Option<u64>,
-//     offset_encoding: OffsetEncoding,
-//   ) {
-//     let symbol = SymbolItem::new(1, parent_id, symbol, offset_encoding);
-//     self.symbols.push(symbol);
-//   }
-// }
-//
-// #[derive(Debug)]
-// pub struct SymbolItem {
-//   id: u64,
-//   parent_id: Option<u64>,
-//   symbol: lsp::SymbolInformation,
-//   offset_encoding: OffsetEncoding,
-// }
-//
-// impl SymbolItem {
-//   pub fn new(id: u64, parent_id: Option<u64>, symbol: lsp::SymbolInformation, offset_encoding: OffsetEncoding) -> Self {
-//     Self { id, parent_id, symbol, offset_encoding }
-//   }
-// }
-//
 impl LanguageServerInterface {
   pub fn new(config: Option<Configuration>) -> Self {
     let loader = match config {
@@ -76,6 +42,22 @@ impl LanguageServerInterface {
       language_servers: Registry::new(loader),
       status_msg: None,
     }
+  }
+
+  pub fn create_workspace(
+    &mut self,
+    workspace_path: PathBuf,
+    language_name: &str,
+    languge_server_name: &str,
+    doc_path: Option<&PathBuf>,
+  ) -> anyhow::Result<Workspace> {
+    let root_dirs = &[workspace_path.clone()];
+    let enable_snippets = false;
+    let language_server =
+      self.initialize_client(language_name, languge_server_name, doc_path, root_dirs, enable_snippets)?;
+    let language_config =
+      self.language_configuration_by_name(language_name).expect("can't find language configuration");
+    Ok(Workspace::new(workspace_path, language_server.expect("unable to initialize language server"), language_config))
   }
 
   pub async fn get_semantic_tokens(&mut self, doc_url: &Url, id: usize) -> anyhow::Result<lsp::SemanticTokensResult> {
@@ -159,29 +141,6 @@ impl LanguageServerInterface {
   }
 
   pub async fn query_document_symbols(&mut self, doc_url: &Url, ids: &[usize]) -> anyhow::Result<Vec<DocumentSymbol>> {
-    // fn nested_to_flat(
-    //   list: &mut Vec<SymbolInformationItem>,
-    //   file: &lsp::TextDocumentIdentifier,
-    //   symbol: lsp::DocumentSymbol,
-    //   offset_encoding: OffsetEncoding,
-    // ) {
-    //   #[allow(deprecated)]
-    //   list.push(SymbolInformationItem {
-    //     symbol: lsp::SymbolInformation {
-    //       name: symbol.name,
-    //       kind: symbol.kind,
-    //       tags: symbol.tags,
-    //       deprecated: symbol.deprecated,
-    //       location: lsp::Location::new(file.uri.clone(), symbol.selection_range),
-    //       container_name: None,
-    //     },
-    //     offset_encoding,
-    //   });
-    //   for child in symbol.children.into_iter().flatten() {
-    //     nested_to_flat(list, file, child, offset_encoding);
-    //   }
-    // }
-
     match self.wait_for_progress_token_completion(ids).await {
       Ok(_) => {
         let mut results = vec![];
