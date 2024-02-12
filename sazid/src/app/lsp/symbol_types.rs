@@ -1,15 +1,13 @@
-use std::borrow::BorrowMut;
 use std::cell::RefCell;
 use std::fmt::{self, Display};
 use std::path::PathBuf;
-use std::rc::{Rc, Weak};
 
 use helix_core::syntax::{FileType, LanguageConfiguration};
 use lsp_types as lsp;
 use url::Url;
 
 use helix_lsp::Client;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex, Weak};
 
 pub struct Workspace {
   pub files: Vec<WorkspaceFile>,
@@ -31,7 +29,7 @@ impl Workspace {
       .filter(|e| e.path().extension().unwrap_or_default() == "rs")
       .flat_map(|e| e.path().canonicalize())
       .map(|file| Url::from_file_path(file).unwrap())
-      .map(|file_uri| WorkspaceFile::new(file_uri))
+      .map(WorkspaceFile::new)
       .collect();
     Workspace { files, workspace_path, language_server, language_config }
   }
@@ -62,7 +60,7 @@ impl Workspace {
         .flat_map(|e| e.path().canonicalize())
         .map(|file| Url::from_file_path(file).unwrap())
         .filter(|file_uri| !self.files.iter().any(|f| f.uri == *file_uri))
-        .map(|file_uri| WorkspaceFile::new(file_uri))
+        .map(WorkspaceFile::new)
         .collect::<Vec<WorkspaceFile>>(),
     );
 
@@ -71,7 +69,7 @@ impl Workspace {
 }
 
 pub struct WorkspaceFile {
-  pub file_tree: Rc<SourceSymbol>,
+  pub file_tree: Arc<SourceSymbol>,
   pub uri: Url,
   pub checksum: Option<blake3::Hash>,
   pub version: i32,
@@ -105,12 +103,11 @@ impl WorkspaceFile {
   pub async fn update_file_symbols(&mut self, language_server: &Arc<Client>) -> anyhow::Result<()> {
     let doc_id = lsp::TextDocumentIdentifier::new(self.uri.clone());
     self.file_tree = SourceSymbol::new_file_symbol(self.uri.clone());
-    let file_tree_mut = self.file_tree.borrow_mut();
     if let Some(request) = language_server.document_symbols(doc_id.clone()) {
       let response_json = request.await.unwrap();
       let response_parsed: Option<lsp::DocumentSymbolResponse> = serde_json::from_value(response_json)?;
 
-      match response_parsed {
+      let _ = match response_parsed {
         Some(lsp::DocumentSymbolResponse::Nested(symbols)) => {
           symbols
           // let mut flat_symbols = Vec::new();
@@ -126,15 +123,13 @@ impl WorkspaceFile {
         None => return Err(anyhow::anyhow!("document symbol response is None")),
       }
       .iter()
-      .map(|s| SourceSymbol::from_document_symbol(&s, &self.uri, None))
-      .for_each(|s| SourceSymbol::add_child(&file_tree_mut, s));
-    }
-
+      .map(|s| SourceSymbol::from_document_symbol(s, &self.uri, Some(self.file_tree.clone())));
+    };
     Ok(())
   }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct SourceSymbol {
   pub name: String,
   pub detail: Option<String>,
@@ -142,11 +137,37 @@ pub struct SourceSymbol {
   pub tags: Option<Vec<lsp::SymbolTag>>,
   pub range: lsp::Range,
   pub selection_range: lsp::Range,
-  pub parent: RefCell<Weak<SourceSymbol>>,
-  pub children: RefCell<Vec<Rc<SourceSymbol>>>,
+  pub parent: Mutex<Weak<SourceSymbol>>,         // Wrap Weak in Mutex
+  pub children: RefCell<Vec<Arc<SourceSymbol>>>, // Changed Rc to Arc
   pub uri: Url,
 }
 
+// impl Send for SourceSymbol {
+//   fn poll_ready(
+//     self: std::pin::Pin<&mut Self>,
+//     cx: &mut std::task::Context<'_>,
+//   ) -> std::task::Poll<std::result::Result<(), std::io::Error>> {
+//     todo!()
+//   }
+//   fn start_send(
+//     self: std::pin::Pin<&mut Self>,
+//     item: std::result::Result<(), std::io::Error>,
+//   ) -> std::result::Result<(), std::io::Error> {
+//     todo!()
+//   }
+//   fn poll_flush(
+//     self: std::pin::Pin<&mut Self>,
+//     cx: &mut std::task::Context<'_>,
+//   ) -> std::task::Poll<std::result::Result<(), std::io::Error>> {
+//     todo!()
+//   }
+//   fn poll_close(
+//     self: std::pin::Pin<&mut Self>,
+//     cx: &mut std::task::Context<'_>,
+//   ) -> std::task::Poll<std::result::Result<(), std::io::Error>> {
+//     todo!()
+//   }
+// }
 impl SourceSymbol {
   pub fn new(
     name: String,
@@ -156,8 +177,9 @@ impl SourceSymbol {
     range: lsp::Range,
     selection_range: lsp::Range,
     uri: Url,
-  ) -> Rc<Self> {
-    Rc::new(SourceSymbol {
+  ) -> Arc<Self> {
+    // Changed Rc to Arc
+    Arc::new(SourceSymbol {
       name,
       detail,
       kind,
@@ -165,12 +187,13 @@ impl SourceSymbol {
       range,
       selection_range,
       uri,
-      parent: RefCell::new(Weak::new()),
+      parent: Mutex::new(Weak::new()), // Initialize Mutex
       children: RefCell::new(vec![]),
     })
   }
 
-  pub fn new_file_symbol(uri: Url) -> Rc<Self> {
+  pub fn new_file_symbol(uri: Url) -> Arc<Self> {
+    // Changed Rc to Arc
     SourceSymbol::new(
       uri.to_string(),
       None,
@@ -188,27 +211,36 @@ impl SourceSymbol {
     )
   }
 
-  pub fn add_child(parent: &Rc<Self>, child: Rc<SourceSymbol>) {
-    *child.parent.borrow_mut() = Rc::downgrade(parent);
-    parent.children.borrow_mut().push(Rc::clone(&child));
-    // if the kind is File, then search for the longest end position, and apply it to the parent
-    if parent.kind == lsp::SymbolKind::FILE && child.range.end.line > parent.range.end.line {
-      *parent.range.end.line.borrow_mut() = child.range.end.line;
-    }
+  pub fn update_range(&mut self, new_range: lsp::Range) {
+    self.range = new_range;
   }
 
-  pub fn iter_tree(rc_self: Rc<Self>) -> impl Iterator<Item = Rc<SourceSymbol>> {
+  pub fn add_child(parent: Arc<SourceSymbol>, child: Arc<SourceSymbol>) {
+    let mut parent_weak = child.parent.lock().unwrap();
+    let child_arc = Arc::clone(&parent);
+    *parent_weak = Arc::downgrade(&child_arc);
+    // Add the child to the parent's children
+    parent.children.borrow_mut().push(Arc::clone(&child));
+  }
+
+  pub fn set_parent(parent: Arc<SourceSymbol>, child: Arc<SourceSymbol>) {
+    let mut parent_weak = child.parent.lock().unwrap();
+    *parent_weak = Arc::downgrade(&parent);
+  }
+
+  pub fn iter_tree(arc_self: Arc<Self>) -> impl Iterator<Item = Arc<SourceSymbol>> {
+    // Changed Rc to Arc
     // Initialize state for the iterator: a stack for DFS
-    let mut stack: Vec<Rc<SourceSymbol>> = vec![rc_self];
+    let mut stack: Vec<Arc<SourceSymbol>> = vec![arc_self];
 
     std::iter::from_fn(move || {
       if let Some(node) = stack.pop() {
         // When visiting a node, add its children to the stack for later visits
         let children = node.children.borrow();
         for child in children.iter().rev() {
-          stack.push(Rc::clone(child));
+          stack.push(Arc::clone(child));
         }
-        Some(Rc::clone(&node))
+        Some(Arc::clone(&node))
       } else {
         None // When the stack is empty, iteration ends
       }
@@ -218,8 +250,9 @@ impl SourceSymbol {
   pub fn from_document_symbol(
     doc_sym: &lsp::DocumentSymbol,
     file_uri: &Url,
-    parent: Option<Rc<SourceSymbol>>,
-  ) -> Rc<Self> {
+    parent: Option<Arc<SourceSymbol>>,
+  ) -> Arc<Self> {
+    // Changed Rc to Arc
     let converted = SourceSymbol::new(
       doc_sym.name.clone(),
       doc_sym.detail.clone(),
@@ -230,19 +263,20 @@ impl SourceSymbol {
       file_uri.clone(),
     );
 
-    if let Some(p) = parent {
-      SourceSymbol::add_child(&p, Rc::clone(&converted));
+    if let Some(parent) = parent {
+      Self::set_parent(parent, converted.clone());
     }
 
-    if let Some(children) = &doc_sym.children {
+    if let Some(children) = doc_sym.children.clone() {
       for child in children {
-        Self::from_document_symbol(child, file_uri, Some(Rc::clone(&converted)));
+        Self::from_document_symbol(&child, file_uri, Some(converted.clone()));
       }
     }
 
     converted
   }
 }
+
 impl Display for SourceSymbol {
   fn fmt(&self, f: &mut fmt::Formatter) -> std::result::Result<(), std::fmt::Error> {
     let filename = PathBuf::from(self.uri.path());
