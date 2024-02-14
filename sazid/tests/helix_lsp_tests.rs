@@ -5,6 +5,7 @@ use sazid::utils::initialize_logging;
 use std::path::Path;
 use std::str::from_utf8;
 use tempfile::tempdir;
+use url::Url;
 
 pub fn test_lang_config() -> helix_core::syntax::Configuration {
   let default_config = include_bytes!("./assets/languages_test.toml");
@@ -73,12 +74,18 @@ async fn test_rust_analyzer_connection() -> anyhow::Result<()> {
   assert!(a.is_ok());
   let a = lsi.update_workspace_symbols().await;
   assert!(a.is_ok());
-  //
 
   use owo_colors::{colors::*, OwoColorize};
   for workspace in lsi.workspaces {
     workspace.iter_symbols().for_each(|s| {
-      println!("symbol: {:#?} \t{}\n{}", s.kind, s.name, &s.get_symbol_source_code().unwrap().fg::<Blue>());
+      println!(
+        "symbol: {:#?}\nname: {}\nwsp: {}\nfp::{}\n{}",
+        s.kind,
+        s.name,
+        Url::from_file_path(s.workspace_path.clone().canonicalize().unwrap()).unwrap(),
+        s.file_path.to_str().unwrap(),
+        &s.get_symbol_source_code().unwrap().fg::<Blue>()
+      );
     });
     println!("{} workspace symbols found in {} files", workspace.count_symbols(), workspace.files.len());
   }
