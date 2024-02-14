@@ -1,4 +1,5 @@
 use std::borrow::Cow;
+use std::cell::RefCell;
 use std::path::PathBuf;
 use std::rc::Rc;
 use std::sync::Arc;
@@ -55,7 +56,7 @@ impl LanguageServerInterface {
     symbol: Rc<SourceSymbol>,
     language_server_id: usize,
   ) -> anyhow::Result<lsp::GotoDefinitionResponse> {
-    let text_document = lsp::TextDocumentIdentifier { uri: symbol.uri.clone() };
+    let text_document = lsp::TextDocumentIdentifier { uri: Url::from_file_path(symbol.file_path.clone()).unwrap() };
     let position = symbol.selection_range.borrow().start;
 
     let client = self
@@ -76,7 +77,7 @@ impl LanguageServerInterface {
     symbol: Rc<SourceSymbol>,
     language_server_id: usize,
   ) -> anyhow::Result<lsp::GotoDefinitionResponse> {
-    let text_document = lsp::TextDocumentIdentifier { uri: symbol.uri.clone() };
+    let text_document = lsp::TextDocumentIdentifier { uri: Url::from_file_path(symbol.file_path.clone()).unwrap() };
     let position = symbol.selection_range.borrow().start;
     let client = self
       .language_servers
@@ -95,7 +96,7 @@ impl LanguageServerInterface {
     symbol: Rc<SourceSymbol>,
     language_server_id: usize,
   ) -> anyhow::Result<lsp::Location> {
-    let text_document = lsp::TextDocumentIdentifier { uri: symbol.uri.clone() };
+    let text_document = lsp::TextDocumentIdentifier { uri: Url::from_file_path(symbol.file_path.clone()).unwrap() };
     let position = symbol.selection_range.borrow().start;
     let client = self
       .language_servers
@@ -126,7 +127,7 @@ impl LanguageServerInterface {
     let language_config =
       self.language_configuration_by_name(language_name).expect("can't find language configuration");
 
-    self.workspaces.push(Workspace::new(workspace_path, language_server_id, language_config));
+    self.workspaces.push(Workspace::new(&workspace_path, language_server_id, language_config));
     Ok(())
   }
 
@@ -141,9 +142,10 @@ impl LanguageServerInterface {
           trace_dbg!("workspace files: {:#?}", workspace.files.len());
           for workspace_file in workspace.files.iter_mut() {
             if workspace_file.needs_update()? {
-              trace_dbg!("updating workspace file: {:#?}", workspace_file.uri);
+              trace_dbg!("updating workspace file: {:#?}", workspace_file.file_path);
 
-              let doc_id = lsp::TextDocumentIdentifier::new(workspace_file.uri.clone());
+              let doc_id =
+                lsp::TextDocumentIdentifier::new(Url::from_file_path(workspace_file.file_path.clone()).unwrap());
               let language_server = clients
                 .iter()
                 .find(|client| client.id() == workspace.language_server_id)
@@ -168,8 +170,8 @@ impl LanguageServerInterface {
                   },
                   None => return Err(anyhow::anyhow!("document symbol response is None")),
                 };
-                let rc = workspace_file.workspace.borrow().upgrade().unwrap();
-                workspace_file.file_tree = SourceSymbol::new_file_tree(&workspace_file.uri, doc_symbols, &rc);
+                workspace_file.file_tree =
+                  SourceSymbol::new_file_tree(&workspace_file.file_path, doc_symbols, &workspace_file.workspace_path);
               };
             }
           }

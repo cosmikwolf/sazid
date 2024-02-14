@@ -1,11 +1,10 @@
 use std::cell::RefCell;
 use std::fmt::{self, Display};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::rc::{Rc, Weak};
 
 use helix_core::syntax::{FileType, LanguageConfiguration};
 use lsp_types as lsp;
-use url::Url;
 
 use std::sync::Arc;
 
@@ -21,30 +20,17 @@ pub struct SymbolQuery {
   name: Option<String>,
   kind: Option<lsp::SymbolKind>,
   range: Option<lsp::Range>,
-  uri: Option<String>,
   file: Option<String>,
 }
 
 impl Workspace {
   pub fn new(
-    workspace_path: PathBuf,
+    workspace_path: &Path,
     // language_server: Arc<Client>,
     language_server_id: usize,
     language_config: Arc<LanguageConfiguration>,
   ) -> Self {
-    let mut workspace =
-      Workspace { files: vec![], workspace_path: workspace_path.clone(), language_server_id, language_config };
-    let mut workspace_rc = Rc::new(workspace);
-    workspace.files = walkdir::WalkDir::new(&workspace_path)
-      .into_iter()
-      .filter_map(|e| e.ok())
-      .filter(|e| e.path().is_file())
-      .filter(|e| e.path().extension().unwrap_or_default() == "rs")
-      .flat_map(|e| e.path().canonicalize())
-      .map(|file| Url::from_file_path(file).unwrap())
-      .map(|uri| WorkspaceFile::new(uri, &workspace_rc))
-      .collect();
-    workspace
+    Workspace { files: vec![], workspace_path: workspace_path.to_path_buf(), language_server_id, language_config }
   }
 
   pub fn scan_workspace_files(&mut self) -> anyhow::Result<()> {
@@ -61,34 +47,33 @@ impl Workspace {
           })
         })
         .flat_map(|e| e.path().canonicalize())
-        .map(|file| Url::from_file_path(file).unwrap())
-        .filter(|file_uri| !self.files.iter().any(|f| f.uri == *file_uri))
-        .map(|uri| WorkspaceFile::new(uri, &Rc::new(*self)))
+        .map(|file_path| WorkspaceFile::new(&file_path, &self.workspace_path))
         .collect::<Vec<WorkspaceFile>>(),
     );
     // clean up files that no longer exist
-    self.files.retain(|f| f.uri.to_file_path().unwrap().exists());
+    self.files.retain(|f| f.file_path.exists());
     Ok(())
   }
 
-  pub fn query_symbols(&self, query: SymbolQuery) -> Vec<Rc<SourceSymbol>> {
-    self
-      .files
-      .iter()
-      .flat_map(|f| {
-        SourceSymbol::iter_tree(Rc::clone(&f.file_tree)).filter(|_s| {
-          if let Some(file) = query.file.clone() {
-            f.uri.to_string() == file
-          } else {
-            true
-          }
+  pub fn query_symbols(&self, query: SymbolQuery) -> anyhow::Result<Vec<Rc<SourceSymbol>>> {
+    Ok(
+      self
+        .files
+        .iter()
+        .flat_map(|f| {
+          SourceSymbol::iter_tree(Rc::clone(&f.file_tree)).filter(|_s| {
+            if let Some(file) = query.file.clone() {
+              f.file_path == PathBuf::from(file)
+            } else {
+              true
+            }
+          })
         })
-      })
-      .filter(|s| if let Some(name) = query.name.clone() { s.name == name } else { true })
-      .filter(|s| if let Some(kind) = query.kind { s.kind == kind } else { true })
-      .filter(|s| if let Some(range) = query.range { *s.range.borrow() == range } else { true })
-      .filter(|s| if let Some(uri) = query.uri.clone() { s.uri.to_string() == uri } else { true })
-      .collect::<Vec<_>>()
+        .filter(|s| if let Some(name) = query.name.clone() { s.name == name } else { true })
+        .filter(|s| if let Some(kind) = query.kind { s.kind == kind } else { true })
+        .filter(|s| if let Some(range) = query.range { *s.range.borrow() == range } else { true })
+        .collect::<Vec<_>>(),
+    )
   }
 
   pub fn iter_symbols(&self) -> impl Iterator<Item = Rc<SourceSymbol>> {
@@ -102,24 +87,29 @@ impl Workspace {
 
 pub struct WorkspaceFile {
   pub file_tree: Rc<SourceSymbol>,
-  pub uri: Url,
+  pub file_path: PathBuf,
   pub checksum: Option<blake3::Hash>,
-  pub workspace: RefCell<Weak<Workspace>>,
+  pub workspace_path: PathBuf,
   pub version: i32,
 }
 
 impl WorkspaceFile {
-  pub fn new(uri: Url, workspace: &Rc<Workspace>) -> Self {
+  pub fn new(file_path: &Path, workspace_path: &Path) -> Self {
     let version = 0;
-    let file_tree = SourceSymbol::new_file_symbol(&uri, workspace);
-    let workspace = RefCell::new(Rc::downgrade(workspace));
-    WorkspaceFile { file_tree, uri, checksum: None, version, workspace }
+    let file_tree = SourceSymbol::new_empty_file_symbol(file_path, workspace_path);
+    WorkspaceFile {
+      file_tree,
+      file_path: file_path.to_path_buf(),
+      checksum: None,
+      version,
+      workspace_path: workspace_path.to_path_buf(),
+    }
   }
 }
 
 impl WorkspaceFile {
   fn get_checksum(&self) -> anyhow::Result<blake3::Hash> {
-    let contents = std::fs::read(self.uri.path()).unwrap();
+    let contents = std::fs::read(&self.file_path).unwrap();
     Ok(blake3::hash(contents.as_slice()))
   }
 
@@ -146,39 +136,71 @@ pub struct SourceSymbol {
   pub selection_range: RefCell<lsp::Range>,
   pub parent: RefCell<Weak<SourceSymbol>>,
   pub children: RefCell<Vec<Rc<SourceSymbol>>>,
-  pub workspace: RefCell<Weak<Workspace>>,
-  pub uri: Url,
+  pub workspace_path: PathBuf,
+  pub file_path: PathBuf,
 }
 
 impl SourceSymbol {
-  pub fn new(
-    name: String,
-    detail: Option<String>,
-    kind: lsp::SymbolKind,
-    tags: Option<Vec<lsp::SymbolTag>>,
-    range: lsp::Range,
-    selection_range: lsp::Range,
-    uri: Url,
-    workspace: &Rc<Workspace>,
-  ) -> Rc<Self> {
-    let workspace = RefCell::new(Rc::downgrade(workspace));
-
+  pub fn new_empty_file_symbol(file_path: &Path, workspace_path: &Path) -> Rc<Self> {
     Rc::new(SourceSymbol {
-      name,
-      detail,
-      kind,
-      tags,
-      range: RefCell::new(range),
-      selection_range: RefCell::new(selection_range),
-      uri,
+      name: file_path.strip_prefix(workspace_path.canonicalize().unwrap()).unwrap().display().to_string(),
+      detail: None,
+      kind: lsp::SymbolKind::FILE,
+      tags: None,
+      range: RefCell::new(lsp::Range {
+        start: lsp_types::Position { line: 0, character: 0 },
+        end: lsp_types::Position { line: 0, character: 0 },
+      }),
+      selection_range: RefCell::new(lsp::Range {
+        start: lsp_types::Position { line: 0, character: 0 },
+        end: lsp_types::Position { line: 0, character: 0 },
+      }),
+      file_path: file_path.to_path_buf(),
       parent: RefCell::new(Weak::new()),
       children: RefCell::new(vec![]),
-      workspace,
+      workspace_path: workspace_path.to_path_buf(),
     })
   }
 
+  pub fn new_file_tree(file_path: &Path, doc_symbols: Vec<lsp::DocumentSymbol>, workspace_path: &Path) -> Rc<Self> {
+    let file_tree = &mut Self::new_empty_file_symbol(file_path, workspace_path);
+    for symbol in doc_symbols {
+      SourceSymbol::from_document_symbol(&symbol, file_path, file_tree, workspace_path);
+    }
+    file_tree.clone()
+  }
+
+  pub fn from_document_symbol(
+    doc_sym: &lsp::DocumentSymbol,
+    file_path: &Path,
+    parent: &mut Rc<SourceSymbol>,
+    workspace_path: &Path,
+  ) -> Rc<Self> {
+    let converted = Rc::new(SourceSymbol {
+      name: doc_sym.name.clone(),
+      detail: doc_sym.detail.clone(),
+      kind: doc_sym.kind,
+      tags: doc_sym.tags.clone(),
+      range: RefCell::new(doc_sym.range),
+      selection_range: RefCell::new(doc_sym.selection_range),
+      file_path: file_path.to_path_buf(),
+      parent: RefCell::new(Weak::new()),
+      children: RefCell::new(vec![]),
+      workspace_path: workspace_path.to_path_buf(),
+    });
+
+    SourceSymbol::add_child(parent, &converted);
+
+    if let Some(children) = &doc_sym.children {
+      for child in children {
+        Self::from_document_symbol(child, file_path, &mut Rc::clone(&converted), workspace_path);
+      }
+    }
+
+    converted
+  }
   pub fn get_symbol_source_code(&self) -> anyhow::Result<String> {
-    let file_path = self.uri.path();
+    let file_path = &self.file_path;
     let source_code = std::fs::read_to_string(file_path)?;
     let start = self.range.borrow().start;
     let end = self.range.borrow().end;
@@ -199,33 +221,6 @@ impl SourceSymbol {
       .collect::<Vec<_>>()
       .join("\n");
     Ok(source_code)
-  }
-
-  pub fn new_file_tree(uri: &Url, doc_symbols: Vec<lsp::DocumentSymbol>, workspace: &Rc<Workspace>) -> Rc<Self> {
-    let file_tree = &mut Self::new_file_symbol(uri, workspace);
-    for symbol in doc_symbols {
-      SourceSymbol::from_document_symbol(&symbol, uri, file_tree, workspace);
-    }
-    file_tree.clone()
-  }
-
-  pub fn new_file_symbol(uri: &Url, workspace: &Rc<Workspace>) -> Rc<Self> {
-    SourceSymbol::new(
-      uri.to_string(),
-      None,
-      lsp::SymbolKind::FILE,
-      None,
-      lsp::Range {
-        start: lsp_types::Position { line: 0, character: 0 },
-        end: lsp_types::Position { line: 0, character: 0 },
-      },
-      lsp::Range {
-        start: lsp_types::Position { line: 0, character: 0 },
-        end: lsp_types::Position { line: 0, character: 0 },
-      },
-      uri.clone(),
-      workspace,
-    )
   }
 
   pub fn add_child(parent: &mut Rc<Self>, child: &Rc<SourceSymbol>) {
@@ -254,39 +249,11 @@ impl SourceSymbol {
       }
     })
   }
-
-  pub fn from_document_symbol(
-    doc_sym: &lsp::DocumentSymbol,
-    file_uri: &Url,
-    parent: &mut Rc<SourceSymbol>,
-    workspace: &Rc<Workspace>,
-  ) -> Rc<Self> {
-    let converted = SourceSymbol::new(
-      doc_sym.name.clone(),
-      doc_sym.detail.clone(),
-      doc_sym.kind,
-      doc_sym.tags.clone(),
-      doc_sym.range,
-      doc_sym.selection_range,
-      file_uri.clone(),
-      workspace,
-    );
-
-    SourceSymbol::add_child(parent, &converted);
-
-    if let Some(children) = &doc_sym.children {
-      for child in children {
-        Self::from_document_symbol(child, file_uri, &mut Rc::clone(&converted), workspace);
-      }
-    }
-
-    converted
-  }
 }
 
 impl Display for SourceSymbol {
   fn fmt(&self, f: &mut fmt::Formatter) -> std::result::Result<(), std::fmt::Error> {
-    let filename = PathBuf::from(self.uri.path());
+    let filename = PathBuf::from(&self.file_path);
     let filename = filename.file_name().unwrap().to_str().unwrap();
     write!(f, "{:?} - {:?}: {}", filename, self.kind, self.name)?;
     let childcount = self.children.borrow().len();
