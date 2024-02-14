@@ -1,18 +1,10 @@
-use futures_util::TryFutureExt;
 use helix_core;
-use helix_loader;
-use helix_lsp::block_on;
-use lsp_types::*;
 use sazid::app::lsp::helix_lsp_interface::LanguageServerInterface;
-use sazid::app::lsp::symbol_types::SourceSymbol;
+use sazid::trace_dbg;
 use sazid::utils::initialize_logging;
-use serde_json::from_value;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::str::from_utf8;
 use tempfile::tempdir;
-use tokio::time::Duration;
-
-// The actual test function
 
 pub fn test_lang_config() -> helix_core::syntax::Configuration {
   let default_config = include_bytes!("./assets/languages_test.toml");
@@ -43,33 +35,20 @@ fn copy_dir_recursively(source: &Path, target: &Path) -> anyhow::Result<()> {
   Ok(())
 }
 
-fn setup_test_logging() {
-  // Configure logger at runtime
-  fern::Dispatch::new()
-    // Perform allocation-free log formatting
-    .format(|out, message, record| {
-        out.finish(format_args!(
-            "[{} {} {}] {}",
-            humantime::format_rfc3339(std::time::SystemTime::now()),
-            record.level(),
-            record.target(),
-            message
-        ))
-    })
-    // Add blanket level filter -
-    .level(log::LevelFilter::Debug)
-    // - and per-module overrides
-    .level_for("hyper", log::LevelFilter::Info)
-    // Output to stdout, files, and other Dispatch configurations
-    // .chain(std::io::stdout())
-    .chain(fern::log_file("output.log").unwrap())
-    // Apply globally
-    .apply().unwrap();
+#[test]
+fn test_logging() -> anyhow::Result<()> {
+  // let res = initialize_logging();
+  // assert!(res.is_ok());
+  trace_dbg!("log test");
+  Ok(())
 }
 
 #[tokio::test]
 async fn test_rust_analyzer_connection() -> anyhow::Result<()> {
-  initialize_logging().unwrap();
+  let res = initialize_logging();
+  assert!(res.is_ok());
+  trace_dbg!("beginning workspace scan tests");
+
   let test_workspace_src_path = "tests/assets/rust_test_project";
   let test_src_assets = std::env::current_dir().unwrap().join(test_workspace_src_path);
 
@@ -88,6 +67,24 @@ async fn test_rust_analyzer_connection() -> anyhow::Result<()> {
   let mut lsi = LanguageServerInterface::new(Some(config));
   let root_dirs = vec![test_workspace_path.clone()];
 
+  lsi.create_workspace(test_workspace_path.clone(), "rust", "rust-analyzer", None).unwrap();
+
+  let a = lsi.wait_for_initialization().await;
+  assert!(a.is_ok());
+  let a = lsi.update_workspace_symbols().await;
+  assert!(a.is_ok());
+  //
+
+  use owo_colors::{colors::*, OwoColorize};
+  for workspace in lsi.workspaces {
+    workspace.iter_symbols().for_each(|s| {
+      println!("symbol: {:#?} \t{}\n{}", s.kind, s.name, &s.get_symbol_source_code().unwrap().fg::<Blue>());
+    });
+    println!("{} workspace symbols found in {} files", workspace.count_symbols(), workspace.files.len());
+  }
+
+  panic!();
+  /*
   let _c_client = lsi.initialize_client("c", "clangd", None, &[], false).unwrap().unwrap();
   let _cpp_client = lsi.initialize_client("cpp", "clangd", None, &[], false).unwrap().unwrap();
   let _python_client = lsi.initialize_client("python", "jedi", None, root_dirs.as_slice(), false).unwrap().unwrap();
@@ -224,5 +221,6 @@ async fn test_rust_analyzer_connection() -> anyhow::Result<()> {
 
   // tokio::time::sleep(std::time::Duration::from_millis(3000)).await;
 
+      */
   Ok(())
 }

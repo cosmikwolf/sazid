@@ -1,3 +1,3 @@
 pub fn foo(v: String) -> String {
-  format!("foofooofoooooo, {}!", v)
+  format!("I am a function defined in another file!, {}!", v)
 }
