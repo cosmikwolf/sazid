@@ -5,15 +5,18 @@ use std::rc::{Rc, Weak};
 
 use helix_core::syntax::{FileType, LanguageConfiguration};
 use lsp_types as lsp;
+use ropey::Rope;
+use url::Url;
 
 use std::sync::Arc;
 
 pub struct Workspace {
   pub files: Vec<WorkspaceFile>,
   pub workspace_path: PathBuf,
-  // pub language_server: Arc<Client>,
+  pub language_id: String,
   pub language_server_id: usize,
   pub language_config: Arc<LanguageConfiguration>,
+  pub offset_encoding: helix_lsp::OffsetEncoding,
 }
 
 pub struct SymbolQuery {
@@ -26,11 +29,19 @@ pub struct SymbolQuery {
 impl Workspace {
   pub fn new(
     workspace_path: &Path,
-    // language_server: Arc<Client>,
+    language_id: String,
     language_server_id: usize,
     language_config: Arc<LanguageConfiguration>,
+    offset_encoding: helix_lsp::OffsetEncoding,
   ) -> Self {
-    Workspace { files: vec![], workspace_path: workspace_path.to_path_buf(), language_server_id, language_config }
+    Workspace {
+      files: vec![],
+      workspace_path: workspace_path.to_path_buf(),
+      language_id,
+      language_server_id,
+      language_config,
+      offset_encoding,
+    }
   }
 
   pub fn scan_workspace_files(&mut self) -> anyhow::Result<()> {
@@ -47,7 +58,7 @@ impl Workspace {
           })
         })
         .flat_map(|e| e.path().canonicalize())
-        .map(|file_path| WorkspaceFile::new(&file_path, &self.workspace_path))
+        .map(|file_path| WorkspaceFile::new(&file_path, &self.workspace_path, &self.offset_encoding))
         .collect::<Vec<WorkspaceFile>>(),
     );
     // clean up files that no longer exist
@@ -85,22 +96,34 @@ impl Workspace {
   }
 }
 
+pub struct DocumentChange {
+  pub original_contents: Rope,
+  pub new_contents: Rope,
+  pub versioned_doc_id: lsp::VersionedTextDocumentIdentifier,
+}
+
 pub struct WorkspaceFile {
   pub file_tree: Rc<SourceSymbol>,
   pub file_path: PathBuf,
+  pub diagnostics: Vec<lsp::Diagnostic>,
   pub checksum: Option<blake3::Hash>,
+  pub contents: Rope,
+  pub offset_encoding: helix_lsp::OffsetEncoding,
   pub workspace_path: PathBuf,
   pub version: i32,
 }
 
 impl WorkspaceFile {
-  pub fn new(file_path: &Path, workspace_path: &Path) -> Self {
+  pub fn new(file_path: &Path, workspace_path: &Path, offset_encoding: &helix_lsp::OffsetEncoding) -> Self {
     let version = 0;
-    let file_tree = SourceSymbol::new_empty_file_symbol(file_path, workspace_path);
+    let file_tree = Rc::new(SourceSymbol::default());
     WorkspaceFile {
       file_tree,
       file_path: file_path.to_path_buf(),
+      diagnostics: vec![],
       checksum: None,
+      contents: Rope::new(),
+      offset_encoding: *offset_encoding,
       version,
       workspace_path: workspace_path.to_path_buf(),
     }
@@ -113,6 +136,9 @@ impl WorkspaceFile {
     Ok(blake3::hash(contents.as_slice()))
   }
 
+  pub fn get_text_document_id(&self) -> anyhow::Result<lsp::TextDocumentIdentifier> {
+    Ok(lsp::TextDocumentIdentifier::new(Url::from_file_path(&self.file_path).unwrap()))
+  }
   pub fn needs_update(&self) -> anyhow::Result<bool> {
     let new_checksum = self.get_checksum()?;
     if let Some(checksum) = self.checksum {
@@ -123,6 +149,44 @@ impl WorkspaceFile {
     }
     // If no checksum exists, or if they don't match, then an update is indicated
     Ok(true)
+  }
+
+  pub fn update(&mut self, doc_symbols: Vec<lsp::DocumentSymbol>) -> anyhow::Result<DocumentChange> {
+    let original_contents = self.contents.clone();
+    self.checksum = Some(self.get_checksum()?);
+    self.contents = Rope::from_str(&std::fs::read_to_string(&self.file_path)?);
+    self.file_tree = Rc::new(SourceSymbol {
+      name: self.file_path.strip_prefix(self.workspace_path.canonicalize().unwrap()).unwrap().display().to_string(),
+      detail: None,
+      kind: lsp::SymbolKind::FILE,
+      tags: None,
+      range: RefCell::new(lsp::Range {
+        start: lsp_types::Position { line: 0, character: 0 },
+        end: lsp_types::Position { line: 0, character: 0 },
+      }),
+      selection_range: RefCell::new(lsp::Range {
+        start: lsp_types::Position { line: 0, character: 0 },
+        end: lsp_types::Position { line: 0, character: 0 },
+      }),
+      file_path: self.file_path.to_path_buf(),
+      parent: RefCell::new(Weak::new()),
+      children: RefCell::new(vec![]),
+      workspace_path: self.workspace_path.to_path_buf(),
+    });
+
+    for symbol in doc_symbols {
+      SourceSymbol::from_document_symbol(&symbol, &self.file_path, &mut self.file_tree, &self.workspace_path);
+    }
+    self.version += 1;
+
+    Ok(DocumentChange {
+      original_contents,
+      new_contents: self.contents.clone(),
+      versioned_doc_id: lsp::VersionedTextDocumentIdentifier {
+        uri: Url::from_file_path(&self.file_path).unwrap(),
+        version: self.version,
+      },
+    })
   }
 }
 
@@ -140,12 +204,12 @@ pub struct SourceSymbol {
   pub file_path: PathBuf,
 }
 
-impl SourceSymbol {
-  pub fn new_empty_file_symbol(file_path: &Path, workspace_path: &Path) -> Rc<Self> {
-    Rc::new(SourceSymbol {
-      name: file_path.strip_prefix(workspace_path.canonicalize().unwrap()).unwrap().display().to_string(),
-      detail: None,
+impl Default for SourceSymbol {
+  fn default() -> Self {
+    SourceSymbol {
       kind: lsp::SymbolKind::FILE,
+      name: String::new(),
+      detail: None,
       tags: None,
       range: RefCell::new(lsp::Range {
         start: lsp_types::Position { line: 0, character: 0 },
@@ -155,21 +219,15 @@ impl SourceSymbol {
         start: lsp_types::Position { line: 0, character: 0 },
         end: lsp_types::Position { line: 0, character: 0 },
       }),
-      file_path: file_path.to_path_buf(),
       parent: RefCell::new(Weak::new()),
-      children: RefCell::new(vec![]),
-      workspace_path: workspace_path.to_path_buf(),
-    })
-  }
-
-  pub fn new_file_tree(file_path: &Path, doc_symbols: Vec<lsp::DocumentSymbol>, workspace_path: &Path) -> Rc<Self> {
-    let file_tree = &mut Self::new_empty_file_symbol(file_path, workspace_path);
-    for symbol in doc_symbols {
-      SourceSymbol::from_document_symbol(&symbol, file_path, file_tree, workspace_path);
+      children: RefCell::new(Vec::new()),
+      workspace_path: PathBuf::new(),
+      file_path: PathBuf::new(),
     }
-    file_tree.clone()
   }
+}
 
+impl SourceSymbol {
   pub fn from_document_symbol(
     doc_sym: &lsp::DocumentSymbol,
     file_path: &Path,
@@ -199,35 +257,24 @@ impl SourceSymbol {
 
     converted
   }
-  pub fn get_symbol_source_code(&self) -> anyhow::Result<String> {
+
+  pub fn get_source(&self) -> anyhow::Result<String> {
     let file_path = &self.file_path;
-    let source_code = std::fs::read_to_string(file_path)?;
-    let start = self.range.borrow().start;
-    let end = self.range.borrow().end;
-    let source_code = source_code
-      .lines()
-      .skip(start.line as usize)
-      .take((end.line - start.line) as usize + 1)
-      .enumerate()
-      .map(|(i, line)| {
-        if i == 0 {
-          line.chars().skip(start.character as usize).collect()
-        } else if i == (end.line - start.line) as usize {
-          line.chars().take(end.character as usize).collect()
-        } else {
-          line.to_string()
-        }
-      })
-      .collect::<Vec<_>>()
-      .join("\n");
-    Ok(source_code)
+    let range = *self.range.borrow();
+    get_file_range_contents(file_path, range)
+  }
+
+  pub fn get_selection(&self) -> anyhow::Result<String> {
+    let file_path = &self.file_path;
+    let range = *self.selection_range.borrow();
+    get_file_range_contents(file_path, range)
   }
 
   pub fn add_child(parent: &mut Rc<Self>, child: &Rc<SourceSymbol>) {
     *child.parent.borrow_mut() = Rc::downgrade(parent);
     parent.children.borrow_mut().push(Rc::clone(child));
     if parent.kind == lsp::SymbolKind::FILE && position_gt(child.range.borrow().end, parent.range.borrow().end) {
-      let new_range = child.range.borrow().to_owned();
+      let new_range = lsp::Range { start: parent.range.borrow().start, end: child.range.borrow().end };
       *parent.range.borrow_mut() = new_range;
     }
   }
@@ -270,4 +317,28 @@ fn position_gt(pos1: lsp::Position, pos2: lsp::Position) -> bool {
   } else {
     pos1.line == pos2.line && pos1.character > pos2.character
   }
+}
+
+fn get_file_range_contents(file_path: &Path, range: lsp::Range) -> anyhow::Result<String> {
+  let source_code = std::fs::read_to_string(file_path)?;
+  if range.start == range.end {
+    return Ok(String::new());
+  }
+  let source_code = source_code
+    .lines()
+    .skip(range.start.line as usize)
+    .take((range.end.line - range.start.line) as usize + 1)
+    .enumerate()
+    .map(|(i, line)| {
+      if i == 0 {
+        line.chars().skip(range.start.character as usize).collect()
+      } else if i == (range.end.line - range.start.line) as usize {
+        line.chars().take(range.end.character as usize).collect()
+      } else {
+        line.to_string()
+      }
+    })
+    .collect::<Vec<_>>()
+    .join("\n");
+  Ok(source_code)
 }

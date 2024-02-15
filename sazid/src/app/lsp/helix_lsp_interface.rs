@@ -1,11 +1,12 @@
 use std::borrow::Cow;
-use std::cell::RefCell;
 use std::path::PathBuf;
 use std::rc::Rc;
 use std::sync::Arc;
 
+use futures_util::future::join_all;
 use helix_core::config::default_syntax_loader;
 use helix_core::diagnostic::Severity;
+use helix_core::diff::compare_ropes;
 use helix_core::syntax::Configuration;
 use helix_core::syntax::LanguageConfiguration;
 use helix_core::syntax::Loader;
@@ -19,7 +20,6 @@ use lsp::DocumentSymbol;
 use lsp::NumberOrString;
 use lsp::WorkDoneProgress;
 use lsp::WorkDoneProgressEnd;
-use serde_json::from_value;
 use serde_json::json;
 use url::Url;
 
@@ -49,6 +49,15 @@ impl LanguageServerInterface {
       status_msg: None,
       workspaces: vec![],
     }
+  }
+
+  pub fn server_capabilities(&self) -> anyhow::Result<Vec<&lsp::ServerCapabilities>> {
+    let mut capabilities = vec![];
+    for client in self.language_servers.iter_clients() {
+      let server_capabilities = client.capabilities();
+      capabilities.push(server_capabilities);
+    }
+    Ok(capabilities)
   }
 
   pub async fn goto_symbol_definition(
@@ -126,8 +135,13 @@ impl LanguageServerInterface {
     let language_server_id = language_server.id();
     let language_config =
       self.language_configuration_by_name(language_name).expect("can't find language configuration");
-
-    self.workspaces.push(Workspace::new(&workspace_path, language_server_id, language_config));
+    self.workspaces.push(Workspace::new(
+      &workspace_path,
+      language_name.into(),
+      language_server_id,
+      language_config,
+      helix_lsp::OffsetEncoding::default(),
+    ));
     Ok(())
   }
 
@@ -138,128 +152,70 @@ impl LanguageServerInterface {
       Ok(_) => {
         trace_dbg!("update_workspace_symbols: {:#?}", ids);
         for workspace in self.workspaces.iter_mut() {
-          workspace.scan_workspace_files()?;
+          workspace.scan_workspace_files().unwrap();
           trace_dbg!("workspace files: {:#?}", workspace.files.len());
-          for workspace_file in workspace.files.iter_mut() {
-            if workspace_file.needs_update()? {
-              trace_dbg!("updating workspace file: {:#?}", workspace_file.file_path);
+          for workspace_file in
+            workspace.files.iter_mut().filter(|workspace_file| workspace_file.needs_update().unwrap_or_default())
+          {
+            trace_dbg!("updating workspace file: {:#?}", workspace_file.file_path);
 
-              let doc_id =
-                lsp::TextDocumentIdentifier::new(Url::from_file_path(workspace_file.file_path.clone()).unwrap());
-              let language_server = clients
-                .iter()
-                .find(|client| client.id() == workspace.language_server_id)
-                .expect("cannot find workspace language server");
+            let language_server = clients
+              .iter()
+              .find(|client| client.id() == workspace.language_server_id)
+              .expect("cannot find workspace language server");
 
-              if let Some(request) = language_server.document_symbols(doc_id.clone()) {
-                let response_json = request.await.unwrap();
-                let response_parsed: Option<lsp::DocumentSymbolResponse> = serde_json::from_value(response_json)?;
+            workspace.offset_encoding = language_server.offset_encoding();
 
-                let doc_symbols = match response_parsed {
-                  Some(lsp::DocumentSymbolResponse::Nested(symbols)) => {
-                    symbols
-                    // let mut flat_symbols = Vec::new();
-                    // for symbol in symbols {
-                    //   nested_to_flat(&mut flat_symbols, &doc_id, symbol, offset_encoding)
-                    // }
-                    // flat_symbols
-                  },
-                  Some(lsp::DocumentSymbolResponse::Flat(_symbols)) => {
-                    // symbols.into_iter().map(|symbol| SymbolInformationItem { symbol, offset_encoding }).collect()
-                    return Err(anyhow::anyhow!("document symbol support is required"));
-                  },
-                  None => return Err(anyhow::anyhow!("document symbol response is None")),
-                };
-                workspace_file.file_tree =
-                  SourceSymbol::new_file_tree(&workspace_file.file_path, doc_symbols, &workspace_file.workspace_path);
+            if let Some(request) = language_server.document_symbols(workspace_file.get_text_document_id().unwrap()) {
+              let response_json = request.await.unwrap();
+              let response_parsed: Option<lsp::DocumentSymbolResponse> = serde_json::from_value(response_json)?;
+
+              let doc_symbols = match response_parsed {
+                Some(lsp::DocumentSymbolResponse::Nested(symbols)) => {
+                  symbols
+                  // let mut flat_symbols = Vec::new();
+                  // for symbol in symbols {
+                  //   nested_to_flat(&mut flat_symbols, &doc_id, symbol, offset_encoding)
+                  // }
+                  // flat_symbols
+                },
+                Some(lsp::DocumentSymbolResponse::Flat(_symbols)) => {
+                  // symbols.into_iter().map(|symbol| SymbolInformationItem { symbol, offset_encoding }).collect()
+                  return Err(anyhow::anyhow!("document symbol support is required"));
+                },
+                None => return Err(anyhow::anyhow!("document symbol response is None")),
               };
+              let doc_change = workspace_file.update(doc_symbols).unwrap();
+              if workspace_file.version == 1 {
+                language_server
+                  .text_document_did_open(
+                    doc_change.versioned_doc_id.uri,
+                    workspace_file.version,
+                    &doc_change.new_contents,
+                    workspace.language_id.clone(),
+                  )
+                  .await
+                  .expect("failed to open document with language server")
+              } else {
+                let changes = compare_ropes(&doc_change.original_contents, &doc_change.new_contents);
+                language_server
+                  .text_document_did_change(
+                    doc_change.versioned_doc_id,
+                    &doc_change.original_contents,
+                    &doc_change.new_contents,
+                    changes.changes(),
+                  )
+                  .unwrap()
+                  .await
+                  .expect("failed to update document with language server")
+              }
             }
           }
         }
-      },
-      Err(e) => return Err(e),
-    }
-    Ok(())
-  }
-
-  pub async fn get_semantic_tokens(&mut self, doc_url: &Url, id: usize) -> anyhow::Result<lsp::SemanticTokensResult> {
-    let language_server = self.language_server_by_id(id).unwrap();
-    let doc_id = lsp::TextDocumentIdentifier::new(doc_url.clone());
-    if let Some(s) = language_server.semantic_tokens(doc_id.clone()) {
-      let tokens = s.await.unwrap();
-      let response: Option<lsp::SemanticTokensResult> = serde_json::from_value(tokens)?;
-      let tokens = match response {
-        Some(tokens) => tokens,
-        None => return Err(anyhow::anyhow!("no semantic tokens found")),
-      };
-      Ok(tokens)
-    } else {
-      Err(anyhow::anyhow!("no semantic tokens found"))
-    }
-  }
-
-  pub async fn query_workspace_symbols(
-    &mut self,
-    query: &str,
-    ids: &[usize],
-  ) -> anyhow::Result<Vec<lsp::WorkspaceSymbol>> {
-    match self.wait_for_progress_token_completion(ids).await {
-      Ok(_) => {
-        let mut results = vec![];
-        for client in self.language_servers.iter_clients() {
-          println!("client id: {}", client.id());
-
-          if ids.contains(&client.id()) {
-            println!("client name is included: {}", client.name());
-
-            if let Some(s) = client.workspace_symbols(query.into()) {
-              let symbols = s.await.unwrap();
-              results
-                .extend(from_value::<Vec<lsp::WorkspaceSymbol>>(symbols).expect("failed to parse workspace symbols"))
-            }
-          }
-        }
-        Ok(results)
+        Ok(())
       },
       Err(e) => Err(e),
     }
-  }
-
-  async fn get_workspace_files(&mut self, id: usize) -> anyhow::Result<Vec<PathBuf>> {
-    let mut files: Vec<PathBuf> = Vec::new();
-
-    match self.language_server_by_id(id) {
-      Some(language_server) => {
-        let workspace_folders = language_server.workspace_folders();
-        let wf = workspace_folders.await;
-        for folder in wf.iter() {
-          let folderfiles = walkdir::WalkDir::new(folder.uri.to_file_path().unwrap())
-            .into_iter()
-            .filter_map(|e| e.ok())
-            .filter(|e| e.path().is_file())
-            .filter(|e| e.path().extension().unwrap_or_default() == "rs")
-            .flat_map(|e| e.path().canonicalize())
-            .collect::<Vec<PathBuf>>();
-          files.extend(folderfiles);
-        }
-      },
-      None => return Err(anyhow::anyhow!("no language server with id found")),
-    }
-    println!("files: {:#?}", files);
-    Ok(files)
-  }
-
-  pub async fn get_workspace_document_symbols(&mut self, id: usize) -> anyhow::Result<Vec<DocumentSymbol>> {
-    log::debug!("get_workspace_document_symbols: {:#?}", id);
-    let files = self.get_workspace_files(id).await?;
-    let mut doc_symbols = vec![];
-    for file in files.iter() {
-      let uri = Url::from_file_path(file).unwrap();
-      log::debug!("uri: {:#?}", uri);
-      let symbols = self.query_document_symbols(&uri, &[id]).await.unwrap();
-      doc_symbols.extend(symbols);
-    }
-    Ok(doc_symbols)
   }
 
   pub async fn query_document_symbols(&mut self, doc_url: &Url, ids: &[usize]) -> anyhow::Result<Vec<DocumentSymbol>> {
@@ -707,6 +663,85 @@ impl LanguageServerInterface {
       },
       Call::Invalid { id } => log::error!("LSP invalid method call id={:?}", id),
     }
+    // pub async fn get_semantic_tokens(&mut self, doc_url: &Url, id: usize) -> anyhow::Result<lsp::SemanticTokensResult> {
+    //   let language_server = self.language_server_by_id(id).unwrap();
+    //   let doc_id = lsp::TextDocumentIdentifier::new(doc_url.clone());
+    //   if let Some(s) = language_server.semantic_tokens(doc_id.clone()) {
+    //     let tokens = s.await.unwrap();
+    //     let response: Option<lsp::SemanticTokensResult> = serde_json::from_value(tokens)?;
+    //     let tokens = match response {
+    //       Some(tokens) => tokens,
+    //       None => return Err(anyhow::anyhow!("no semantic tokens found")),
+    //     };
+    //     Ok(tokens)
+    //   } else {
+    //     Err(anyhow::anyhow!("no semantic tokens found"))
+    //   }
+    // }
+
+    // pub async fn query_workspace_symbols(
+    //   &mut self,
+    //   query: &str,
+    //   ids: &[usize],
+    // ) -> anyhow::Result<Vec<lsp::WorkspaceSymbol>> {
+    //   match self.wait_for_progress_token_completion(ids).await {
+    //     Ok(_) => {
+    //       let mut results = vec![];
+    //       for client in self.language_servers.iter_clients() {
+    //         println!("client id: {}", client.id());
+    //
+    //         if ids.contains(&client.id()) {
+    //           println!("client name is included: {}", client.name());
+    //
+    //           if let Some(s) = client.workspace_symbols(query.into()) {
+    //             let symbols = s.await.unwrap();
+    //             results
+    //               .extend(from_value::<Vec<lsp::WorkspaceSymbol>>(symbols).expect("failed to parse workspace symbols"))
+    //           }
+    //         }
+    //       }
+    //       Ok(results)
+    //     },
+    //     Err(e) => Err(e),
+    //   }
+    // }
+
+    // async fn get_workspace_files(&mut self, id: usize) -> anyhow::Result<Vec<PathBuf>> {
+    //   let mut files: Vec<PathBuf> = Vec::new();
+    //
+    //   match self.language_server_by_id(id) {
+    //     Some(language_server) => {
+    //       let workspace_folders = language_server.workspace_folders();
+    //       let wf = workspace_folders.await;
+    //       for folder in wf.iter() {
+    //         let folderfiles = walkdir::WalkDir::new(folder.uri.to_file_path().unwrap())
+    //           .into_iter()
+    //           .filter_map(|e| e.ok())
+    //           .filter(|e| e.path().is_file())
+    //           .filter(|e| e.path().extension().unwrap_or_default() == "rs")
+    //           .flat_map(|e| e.path().canonicalize())
+    //           .collect::<Vec<PathBuf>>();
+    //         files.extend(folderfiles);
+    //       }
+    //     },
+    //     None => return Err(anyhow::anyhow!("no language server with id found")),
+    //   }
+    //   println!("files: {:#?}", files);
+    //   Ok(files)
+    // }
+    //
+    // pub async fn get_workspace_document_symbols(&mut self, id: usize) -> anyhow::Result<Vec<DocumentSymbol>> {
+    //   log::debug!("get_workspace_document_symbols: {:#?}", id);
+    //   let files = self.get_workspace_files(id).await?;
+    //   let mut doc_symbols = vec![];
+    //   for file in files.iter() {
+    //     let uri = Url::from_file_path(file).unwrap();
+    //     log::debug!("uri: {:#?}", uri);
+    //     let symbols = self.query_document_symbols(&uri, &[id]).await.unwrap();
+    //     doc_symbols.extend(symbols);
+    //   }
+    //   Ok(doc_symbols)
+    // }
   }
 
   #[inline]
