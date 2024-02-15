@@ -76,19 +76,25 @@ async fn test_rust_analyzer_connection() -> anyhow::Result<()> {
   assert!(a.is_ok());
 
   use owo_colors::{colors::*, OwoColorize};
-  for workspace in lsi.workspaces {
+  for workspace in &lsi.workspaces {
     workspace.iter_symbols().for_each(|s| {
       println!(
-        "symbol: {:#?}\nname: {}\nwsp: {}\nfp::{}\n{}",
+        "symbol: {:#?}\nname: {}\nrange:{:#?}\nwsp: {}\nfp::{}\n{}\n{}",
         s.kind,
         s.name,
+        s.range,
         Url::from_file_path(s.workspace_path.clone().canonicalize().unwrap()).unwrap(),
         s.file_path.to_str().unwrap(),
-        &s.get_symbol_source_code().unwrap().fg::<Blue>()
+        &s.get_source().unwrap().fg::<Blue>(),
+        &s.get_selection().unwrap().fg::<Green>()
       );
     });
     println!("{} workspace symbols found in {} files", workspace.count_symbols(), workspace.files.len());
   }
+
+  let capabilities = lsi.server_capabilities();
+  assert!(capabilities.is_ok());
+  println!("Capabilities: {:#?}", capabilities.unwrap());
 
   panic!();
   /*
