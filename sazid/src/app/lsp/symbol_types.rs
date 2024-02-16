@@ -1,4 +1,5 @@
 use std::cell::RefCell;
+use std::collections::HashMap;
 use std::fmt::{self, Display};
 use std::path::{Path, PathBuf};
 use std::rc::{Rc, Weak};
@@ -97,7 +98,7 @@ impl Workspace {
 }
 
 pub struct DocumentChange {
-  pub original_contents: Rope,
+  pub original_contents: Option<Rope>,
   pub new_contents: Rope,
   pub versioned_doc_id: lsp::VersionedTextDocumentIdentifier,
 }
@@ -107,7 +108,7 @@ pub struct WorkspaceFile {
   pub file_path: PathBuf,
   pub diagnostics: Vec<lsp::Diagnostic>,
   pub checksum: Option<blake3::Hash>,
-  pub contents: Rope,
+  pub contents: HashMap<i32, Rope>, // hashmap of contents indexed by version
   pub offset_encoding: helix_lsp::OffsetEncoding,
   pub workspace_path: PathBuf,
   pub version: i32,
@@ -122,8 +123,8 @@ impl WorkspaceFile {
       file_path: file_path.to_path_buf(),
       diagnostics: vec![],
       checksum: None,
-      contents: Rope::new(),
       offset_encoding: *offset_encoding,
+      contents: HashMap::new(),
       version,
       workspace_path: workspace_path.to_path_buf(),
     }
@@ -131,6 +132,15 @@ impl WorkspaceFile {
 }
 
 impl WorkspaceFile {
+  pub fn get_current_contents(&self) -> Rope {
+    self.contents.get(&self.version).cloned().expect("No contents found for current version")
+  }
+
+  pub fn get_previous_version_contents(&self) -> Option<Rope> {
+    let previous_version = self.version - 1;
+    self.contents.get(&previous_version).cloned()
+  }
+
   fn get_checksum(&self) -> anyhow::Result<blake3::Hash> {
     let contents = std::fs::read(&self.file_path).unwrap();
     Ok(blake3::hash(contents.as_slice()))
@@ -153,8 +163,9 @@ impl WorkspaceFile {
 
   pub fn update(&mut self, doc_symbols: Vec<lsp::DocumentSymbol>) -> anyhow::Result<DocumentChange> {
     let original_contents = self.contents.clone();
+    self.version += 1;
     self.checksum = Some(self.get_checksum()?);
-    self.contents = Rope::from_str(&std::fs::read_to_string(&self.file_path)?);
+    self.contents.insert(self.version, Rope::from_str(&std::fs::read_to_string(&self.file_path)?));
     self.file_tree = Rc::new(SourceSymbol {
       name: self.file_path.strip_prefix(self.workspace_path.canonicalize().unwrap()).unwrap().display().to_string(),
       detail: None,
@@ -177,11 +188,10 @@ impl WorkspaceFile {
     for symbol in doc_symbols {
       SourceSymbol::from_document_symbol(&symbol, &self.file_path, &mut self.file_tree, &self.workspace_path);
     }
-    self.version += 1;
 
     Ok(DocumentChange {
-      original_contents,
-      new_contents: self.contents.clone(),
+      original_contents: self.get_previous_version_contents(),
+      new_contents: self.get_current_contents(),
       versioned_doc_id: lsp::VersionedTextDocumentIdentifier {
         uri: Url::from_file_path(&self.file_path).unwrap(),
         version: self.version,

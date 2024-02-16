@@ -3,7 +3,6 @@ use std::path::PathBuf;
 use std::rc::Rc;
 use std::sync::Arc;
 
-use futures_util::future::join_all;
 use helix_core::config::default_syntax_loader;
 use helix_core::diagnostic::Severity;
 use helix_core::diff::compare_ropes;
@@ -11,29 +10,65 @@ use helix_core::syntax::Configuration;
 use helix_core::syntax::LanguageConfiguration;
 use helix_core::syntax::Loader;
 use helix_lsp::lsp::{self, notification::Notification};
+use helix_lsp::Call;
 use helix_lsp::Client;
 use helix_lsp::LspProgressMap;
-use helix_lsp::ProgressStatus;
 use helix_lsp::Registry;
 use log::{debug, error, info, warn};
 use lsp::DocumentSymbol;
 use lsp::NumberOrString;
-use lsp::WorkDoneProgress;
-use lsp::WorkDoneProgressEnd;
 use serde_json::json;
+use tokio::sync::Mutex;
 use url::Url;
 
+use crate::app::lsp::symbol_types::DocumentChange;
 use crate::trace_dbg;
 
 use super::symbol_types::SourceSymbol;
 use super::symbol_types::Workspace;
 
+#[derive(Default)]
+pub struct StatusMessage {
+  pub msg: Option<(Cow<'static, str>, Severity)>,
+}
+
+impl StatusMessage {
+  #[inline]
+  pub fn clear_status(&mut self) {
+    self.msg = None;
+  }
+
+  #[inline]
+  pub fn set_status<T: Into<Cow<'static, str>>>(&mut self, status: T) {
+    let status = status.into();
+    log::debug!("editor status: {}", status);
+    self.msg = Some((status, Severity::Info));
+  }
+
+  #[inline]
+  pub fn set_error<T: Into<Cow<'static, str>>>(&mut self, error: T) {
+    let error = error.into();
+    log::debug!("editor error: {}", error);
+    self.msg = Some((error, Severity::Error));
+  }
+
+  #[inline]
+  pub fn get_status(&self) -> Option<(&Cow<'static, str>, &Severity)> {
+    if let Some((status, severity)) = &self.msg {
+      Some((status, severity))
+    } else {
+      None
+    }
+  }
+}
+
 pub struct LanguageServerInterface {
-  pub workspaces: Vec<Workspace>,
-  pub lsp_progress: LspProgressMap,
-  pub language_servers: helix_lsp::Registry,
+  pub workspaces: Arc<Mutex<Vec<Workspace>>>,
+  pub lsp_progress: Arc<Mutex<LspProgressMap>>,
+  pub server_message_queue: Arc<Mutex<Vec<(usize, Call)>>>,
+  pub language_servers: Arc<Mutex<helix_lsp::Registry>>,
+  pub status_msg: Arc<Mutex<StatusMessage>>,
   loader: Arc<Loader>,
-  pub status_msg: Option<(Cow<'static, str>, Severity)>,
 }
 
 impl LanguageServerInterface {
@@ -43,21 +78,19 @@ impl LanguageServerInterface {
       None => Arc::new(Loader::new(default_syntax_loader())),
     };
     Self {
-      lsp_progress: LspProgressMap::new(),
+      lsp_progress: Arc::new(Mutex::new(LspProgressMap::new())),
+      server_message_queue: Arc::new(Mutex::new(vec![])),
       loader: loader.clone(),
-      language_servers: Registry::new(loader),
-      status_msg: None,
-      workspaces: vec![],
+      language_servers: Arc::new(Mutex::new(Registry::new(loader))),
+      status_msg: Arc::new(Mutex::new(StatusMessage::default())),
+      workspaces: Arc::new(Mutex::new(vec![])),
     }
   }
 
-  pub fn server_capabilities(&self) -> anyhow::Result<Vec<&lsp::ServerCapabilities>> {
-    let mut capabilities = vec![];
-    for client in self.language_servers.iter_clients() {
-      let server_capabilities = client.capabilities();
-      capabilities.push(server_capabilities);
-    }
-    Ok(capabilities)
+  pub async fn server_capabilities(&self) -> anyhow::Result<Vec<lsp::ServerCapabilities>> {
+    let ls = self.language_servers.clone();
+    let ls = ls.lock().await;
+    Ok(ls.iter_clients().map(|client| client.capabilities().clone()).collect::<Vec<_>>())
   }
 
   pub async fn goto_symbol_definition(
@@ -70,9 +103,12 @@ impl LanguageServerInterface {
 
     let client = self
       .language_servers
+      .lock()
+      .await
       .iter_clients()
       .find(|c| c.id() == language_server_id)
-      .expect("could not obtain language server for goto request");
+      .expect("could not obtain language server for goto request")
+      .clone();
 
     let work_done_token = Some(NumberOrString::String("goto definition".to_string()));
     let request = client
@@ -90,9 +126,12 @@ impl LanguageServerInterface {
     let position = symbol.selection_range.borrow().start;
     let client = self
       .language_servers
+      .lock()
+      .await
       .iter_clients()
       .find(|c| c.id() == language_server_id)
-      .expect("could not obtain language server for goto request");
+      .expect("could not obtain language server for goto request")
+      .clone();
     let work_done_token = Some(NumberOrString::String("goto declaration".to_string()));
     let request = client
       .goto_declaration(text_document, position, work_done_token)
@@ -109,9 +148,12 @@ impl LanguageServerInterface {
     let position = symbol.selection_range.borrow().start;
     let client = self
       .language_servers
+      .lock()
+      .await
       .iter_clients()
       .find(|c| c.id() == language_server_id)
-      .expect("could not obtain language server for goto request");
+      .expect("could not obtain language server for goto request")
+      .clone();
     let work_done_token = Some(NumberOrString::String("goto type definition".to_string()));
     let request = client
       .goto_type_definition(text_document, position, work_done_token)
@@ -119,7 +161,7 @@ impl LanguageServerInterface {
     Ok(serde_json::from_value(request.await?)?)
   }
 
-  pub fn create_workspace(
+  pub async fn create_workspace(
     &mut self,
     workspace_path: PathBuf,
     language_name: &str,
@@ -130,12 +172,13 @@ impl LanguageServerInterface {
     let enable_snippets = false;
     let language_server = self
       .initialize_client(language_name, languge_server_name, doc_path, root_dirs, enable_snippets)
+      .await
       .unwrap()
       .expect("unable to initialize language server");
     let language_server_id = language_server.id();
     let language_config =
       self.language_configuration_by_name(language_name).expect("can't find language configuration");
-    self.workspaces.push(Workspace::new(
+    self.workspaces.lock().await.push(Workspace::new(
       &workspace_path,
       language_name.into(),
       language_server_id,
@@ -146,12 +189,12 @@ impl LanguageServerInterface {
   }
 
   pub async fn update_workspace_symbols(&mut self) -> anyhow::Result<()> {
-    let clients = self.language_servers.iter_clients().cloned().collect::<Vec<Arc<Client>>>();
+    let clients = self.language_servers.lock().await.iter_clients().cloned().collect::<Vec<Arc<Client>>>();
     let ids = clients.iter().map(|client| client.id()).collect::<Vec<usize>>();
     match self.wait_for_progress_token_completion(ids.as_slice()).await {
       Ok(_) => {
         trace_dbg!("update_workspace_symbols: {:#?}", ids);
-        for workspace in self.workspaces.iter_mut() {
+        for workspace in self.workspaces.lock().await.iter_mut() {
           workspace.scan_workspace_files().unwrap();
           trace_dbg!("workspace files: {:#?}", workspace.files.len());
           for workspace_file in
@@ -186,7 +229,19 @@ impl LanguageServerInterface {
                 None => return Err(anyhow::anyhow!("document symbol response is None")),
               };
               let doc_change = workspace_file.update(doc_symbols).unwrap();
-              if workspace_file.version == 1 {
+              if let DocumentChange{ original_contents: Some(original_contents), new_contents, versioned_doc_id }=  doc_change {
+                let changes = compare_ropes(&original_contents, &new_contents);
+                language_server
+                  .text_document_did_change(
+                    versioned_doc_id,
+                    &original_contents,
+                    &new_contents,
+                    changes.changes(),
+                  )
+                  .unwrap()
+                  .await
+                  .expect("failed to update document with language server")
+               } else {
                 language_server
                   .text_document_did_open(
                     doc_change.versioned_doc_id.uri,
@@ -196,18 +251,6 @@ impl LanguageServerInterface {
                   )
                   .await
                   .expect("failed to open document with language server")
-              } else {
-                let changes = compare_ropes(&doc_change.original_contents, &doc_change.new_contents);
-                language_server
-                  .text_document_did_change(
-                    doc_change.versioned_doc_id,
-                    &doc_change.original_contents,
-                    &doc_change.new_contents,
-                    changes.changes(),
-                  )
-                  .unwrap()
-                  .await
-                  .expect("failed to update document with language server")
               }
             }
           }
@@ -222,7 +265,7 @@ impl LanguageServerInterface {
     match self.wait_for_progress_token_completion(ids).await {
       Ok(_) => {
         let mut results = vec![];
-        for language_server in self.language_servers.iter_clients() {
+        for language_server in self.language_servers.lock().await.iter_clients() {
           if ids.contains(&language_server.id()) {
             let doc_id = lsp::TextDocumentIdentifier::new(doc_url.clone());
 
@@ -259,32 +302,17 @@ impl LanguageServerInterface {
     }
   }
 
-  // check if all progress tokens are complete for language server with id
-  pub fn progress_tokens_complete(&self, id: usize) -> Option<bool> {
-    if let Some(prog_map) = self.lsp_progress.progress_map(id) {
-      prog_map.iter().for_each(|(k, v)| {
-        trace_dbg!("Progress: {:#?} - {:#?}", k, v);
-      });
+  pub async fn wait_for_language_server_initialization(&mut self, language_server_ids: &[usize]) -> anyhow::Result<()> {
+    let active_clients = self
+      .language_servers
+      .lock()
+      .await
+      .iter_clients()
+      .filter(|client| language_server_ids.contains(&client.id()))
+      .cloned()
+      .collect::<Vec<Arc<Client>>>();
 
-      if prog_map
-        .iter()
-        .any(|(_k, v)| !matches!(v, ProgressStatus::Started(WorkDoneProgress::End(WorkDoneProgressEnd { message: _ }))))
-      {
-        trace_dbg!("progress tokens incomplete: {:#?}", id);
-        Some(false)
-      } else {
-        trace_dbg!("progress tokens complete: {:#?}", id);
-        Some(true)
-      }
-    } else {
-      trace_dbg!("no progress tokens found: {:#?}", id);
-      None
-    }
-  }
-
-  pub async fn wait_for_initialization(&mut self) -> anyhow::Result<()> {
     tokio::spawn({
-      let active_clients = self.language_servers.iter_clients().cloned().collect::<Vec<Arc<Client>>>();
       async move {
         let mut interval = tokio::time::interval(std::time::Duration::from_secs(1));
         while !active_clients.iter().all(|client| client.is_initialized()) {
@@ -297,53 +325,78 @@ impl LanguageServerInterface {
     .map_err(|e| anyhow::anyhow!(e))
   }
 
-  pub async fn wait_for_progress_token_completion(&mut self, ids: &[usize]) -> anyhow::Result<()> {
-    let active_clients = self
-      .language_servers
-      .iter_clients()
-      .filter(|client| ids.contains(&client.id()))
-      .cloned()
-      .collect::<Vec<Arc<Client>>>();
+  pub async fn spawn_server_notification_thread(&mut self) {
+    let ls = self.language_servers.clone();
+    let lsp_progress_mutex = self.lsp_progress.clone();
+    let registry_mutex = self.language_servers.clone();
+    let status_msg_mutex = self.status_msg.clone();
+    let workspaces_mutex = self.workspaces.clone();
+    use futures_util::StreamExt;
 
-    let mut interval = tokio::time::interval(std::time::Duration::from_secs(1));
-    while !active_clients.iter().all(|client| client.is_initialized()) {
-      interval.tick().await;
-      if ids.iter().all(|id| self.progress_tokens_complete(*id) == Some(true)) {
-        trace_dbg!("progress tokens complete: {:#?}", ids);
-        break;
-      } else {
-        if ids.iter().all(|client_id| !self.lsp_progress.is_progressing(*client_id)) {
-          // return Err(anyhow::anyhow!("no progress tokens found"));
-          trace_dbg!("no progress tokens found: {:#?}", ids);
-          break;
-        }
+    tokio::spawn(async {
+      loop {
+        let lsp_progress = &mut lsp_progress_mutex.lock().await;
+        let registry = &mut registry_mutex.lock().await;
+        let status_msg = &mut status_msg_mutex.lock().await;
+        let workspaces= &mut workspaces_mutex.lock().await;
 
-        if active_clients.is_empty() {
-          trace_dbg!("no language servers with matching ids found: {:#?}", ids);
-          return Err(anyhow::anyhow!("no language servers with matching ids found"));
-        } else if active_clients.iter().all(|client| self.progress_tokens_complete(client.id()) == Some(true)) {
-          trace_dbg!("progress tokens complete: {:#?}", active_clients);
-          break;
+        if let Some((id, call)) = ls.lock().await.incoming.next().await {
+          Self::handle_language_server_message(lsp_progress, registry, call, id, status_msg, workspaces).await
         }
       }
-      self.poll_language_server_events().await;
-    }
-    Ok(())
+    })
+    .await
+    .unwrap();
   }
 
   pub async fn poll_language_server_events(&mut self) {
     use futures_util::StreamExt;
     trace_dbg!("poll_language_server_events");
 
-    tokio::select! {
-      biased;
-     Some((size, message)) = self.language_servers.incoming.next() => {
-      self.handle_language_server_message(message, size).await
-     }
+    let lsp_progress = &mut self.lsp_progress.lock().await;
+    let registry = &mut self.language_servers.lock().await;
+    let status_msg = &mut self.status_msg.lock().await;
+        let workspaces= &mut self.workspaces.lock().await;
+    if let Some((id, message)) = self.language_servers.clone().lock().await.incoming.next().await {
+      Self::handle_language_server_message(lsp_progress, registry, message, id, status_msg, workspaces).await
     }
   }
 
-  pub fn initialize_client(
+  pub async fn wait_for_progress_token_completion(&mut self, ids: &[usize]) -> anyhow::Result<()> {
+    let active_clients = self
+      .language_servers
+      .lock()
+      .await
+      .iter_clients()
+      .filter(|client| ids.contains(&client.id()))
+      .cloned()
+      .collect::<Vec<Arc<Client>>>();
+
+    if active_clients.is_empty() {
+      trace_dbg!("no language servers with matching ids found: {:#?}", ids);
+      return Err(anyhow::anyhow!("no language servers with matching ids found"));
+    }
+
+    let mut interval = tokio::time::interval(std::time::Duration::from_secs(1));
+
+    self.wait_for_language_server_initialization(ids).await.unwrap();
+
+    let lsp_progress_mtx = self.lsp_progress.clone();
+
+    tokio::spawn(async move {
+      loop {
+        interval.tick().await;
+        let lsp_progress = lsp_progress_mtx.lock().await;
+        if active_clients.iter().all(|c| !lsp_progress.is_progressing(c.id())) {
+          break;
+        }
+      }
+    })
+    .await
+    .map_err(|e| anyhow::anyhow!(e))
+  }
+
+  pub async fn initialize_client(
     &mut self,
     language_name: &str,
     languge_server_name: &str,
@@ -356,6 +409,8 @@ impl LanguageServerInterface {
         Ok(Some(
           self
             .language_servers
+            .lock()
+            .await
             .get(
               //
               &language_config,
@@ -377,35 +432,34 @@ impl LanguageServerInterface {
     self.loader.language_config_for_name(name)
   }
 
-  pub fn language_server_by_name(&self, language_server_name: &str) -> Option<&helix_lsp::Client> {
-    println!("language_servers: {:?}", self.language_servers.iter_clients().count());
-
-    self
-      .language_servers
-      .iter_clients()
-      .find(|client| {
-        println!("client name: {}", client.name());
-        client.name() == language_server_name
-      })
-      .map(|client| &**client)
+  pub async fn language_server_by_name(&self, language_server_name: String) -> Option<Arc<helix_lsp::Client>> {
+    self.language_servers.lock().await.iter_clients().find(|client| client.name() == language_server_name).cloned()
   }
 
-  pub fn language_server_by_id(&self, language_server_id: usize) -> Option<&helix_lsp::Client> {
-    self.language_servers.get_by_id(language_server_id)
+  pub async fn language_server_by_id(&self, language_server_id: usize) -> Option<Arc<helix_lsp::Client>> {
+    self.language_servers.lock().await.iter_clients().find(|client| client.id() == language_server_id).cloned()
   }
 
-  pub async fn handle_language_server_message(&mut self, call: helix_lsp::Call, server_id: usize) {
-    use helix_lsp::{Call, MethodCall, Notification};
+  pub async fn handle_language_server_message(
+    lsp_progress: &mut LspProgressMap,
+    registry: &mut Registry,
+    call: helix_lsp::Call,
+    server_id: usize,
+    status_msg: &mut StatusMessage,
+    workspaces: &mut Vec<Workspace>,
+  ) {
+    use helix_lsp::{MethodCall, Notification};
 
     macro_rules! language_server {
       () => {
-        match self.language_server_by_id(server_id) {
-          Some(language_server) => language_server,
-          None => {
-            warn!("can't find language server with id `{}`", server_id);
-            return;
-          },
-        }
+        registry.iter_clients().find(|client| client.id() == server_id).expect("expected language server")
+        // match self.language_server_by_id(server_id).await {
+        //   Some(language_server) => language_server,
+        //   None => {
+        //     warn!("can't find language server with id `{}`", server_id);
+        //     return;
+        //   },
+        // }
       };
     }
 
@@ -447,8 +501,10 @@ impl LanguageServerInterface {
             //
             //   tokio::spawn(language_server.text_document_did_open(url, doc.version(), doc.text(), language_id));
             // }
+            log::info!("Language server initialized: server id: {}", server_id);
           },
           Notification::PublishDiagnostics(params) => {
+            workspaces.iter_mut().find(|workspace| workspace.workspace_files.iter().any(|file| file.file_path == params.uri))
             log::warn!("need to handle publish diagnostics: {:?}", params);
           },
           Notification::ShowMessage(params) => {
@@ -514,22 +570,22 @@ impl LanguageServerInterface {
               (None, None, None) => format!("[{}]", token_d),
             };
 
-            // if let lsp::WorkDoneProgress::End(_) = work {
-            //   self.lsp_progress.end_progress(server_id, &token);
-            //   if !self.lsp_progress.is_progressing(server_id) {
-            //     // editor_view.spinners_mut().get_or_create(server_id).stop();
-            //   }
-            // } else {
-            //   self.lsp_progress.update(server_id, token, work);
-            // }
+            if let lsp::WorkDoneProgress::End(_) = work {
+              lsp_progress.end_progress(server_id, &token);
+              // if !self.lsp_progress.is_progressing(server_id) {
+              // editor_view.spinners_mut().get_or_create(server_id).stop();
+              // }
+            } else {
+              lsp_progress.update(server_id, token, work);
+            }
             //
-            self.lsp_progress.update(server_id, token, work);
+            // self.lsp_progress.update(server_id, token, work);
             // if self.config.load().editor.lsp.display_messages {
-            self.set_status(status);
+            status_msg.set_status(status);
             // }
           },
           Notification::Exit => {
-            self.set_status("Language server exited");
+            status_msg.set_status("Language server exited");
 
             // LSPs may produce diagnostics for files that haven't been opened in helix,
             // we need to clear those and remove the entries from the list if this leads to
@@ -546,7 +602,7 @@ impl LanguageServerInterface {
             // }
 
             // Remove the language server from the registry.
-            self.language_servers.remove_by_id(server_id);
+            registry.remove_by_id(server_id);
           },
         }
       },
@@ -569,7 +625,7 @@ impl LanguageServerInterface {
             })
           },
           Ok(MethodCall::WorkDoneProgressCreate(params)) => {
-            self.lsp_progress.create(server_id, params.token);
+            lsp_progress.create(server_id, params.token);
 
             // let editor_view = self.compositor.find::<ui::EditorView>().expect("expected at least one EditorView");
             // let spinner = editor_view.spinners_mut().get_or_create(server_id);
@@ -604,7 +660,7 @@ impl LanguageServerInterface {
             Ok(json!(result))
           },
           Ok(MethodCall::RegisterCapability(params)) => {
-            if let Some(client) = self.language_servers.iter_clients().find(|client| client.id() == server_id) {
+            if let Some(client) = registry.iter_clients().find(|client| client.id() == server_id) {
               for reg in params.registrations {
                 match reg.method.as_str() {
                   lsp::notification::DidChangeWatchedFiles::METHOD => {
@@ -618,7 +674,7 @@ impl LanguageServerInterface {
                         continue;
                       },
                     };
-                    self.language_servers.file_event_handler.register(client.id(), Arc::downgrade(client), reg.id, ops)
+                    registry.file_event_handler.register(client.id(), Arc::downgrade(client), reg.id, ops)
                   },
                   _ => {
                     // Language Servers based on the `vscode-languageserver-node` library often send
@@ -639,7 +695,7 @@ impl LanguageServerInterface {
             for unreg in params.unregisterations {
               match unreg.method.as_str() {
                 lsp::notification::DidChangeWatchedFiles::METHOD => {
-                  self.language_servers.file_event_handler.unregister(server_id, unreg.id);
+                  registry.file_event_handler.unregister(server_id, unreg.id);
                 },
                 _ => {
                   log::warn!("Received unregistration request for unsupported method: {}", unreg.method);
@@ -742,33 +798,5 @@ impl LanguageServerInterface {
     //   }
     //   Ok(doc_symbols)
     // }
-  }
-
-  #[inline]
-  pub fn clear_status(&mut self) {
-    self.status_msg = None;
-  }
-
-  #[inline]
-  pub fn set_status<T: Into<Cow<'static, str>>>(&mut self, status: T) {
-    let status = status.into();
-    log::debug!("editor status: {}", status);
-    self.status_msg = Some((status, Severity::Info));
-  }
-
-  #[inline]
-  pub fn set_error<T: Into<Cow<'static, str>>>(&mut self, error: T) {
-    let error = error.into();
-    log::debug!("editor error: {}", error);
-    self.status_msg = Some((error, Severity::Error));
-  }
-
-  #[inline]
-  pub fn get_status(&self) -> Option<(&Cow<'static, str>, &Severity)> {
-    if let Some((status, severity)) = &self.status_msg {
-      Some((status, severity))
-    } else {
-      None
-    }
   }
 }

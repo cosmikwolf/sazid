@@ -1,4 +1,5 @@
 use helix_core;
+use helix_lsp::Client;
 use sazid::app::lsp::helix_lsp_interface::LanguageServerInterface;
 use sazid::trace_dbg;
 use sazid::utils::initialize_logging;
@@ -68,15 +69,16 @@ async fn test_rust_analyzer_connection() -> anyhow::Result<()> {
   let mut lsi = LanguageServerInterface::new(Some(config));
   let root_dirs = vec![test_workspace_path.clone()];
 
-  lsi.create_workspace(test_workspace_path.clone(), "rust", "rust-analyzer", None).unwrap();
+  lsi.create_workspace(test_workspace_path.clone(), "rust", "rust-analyzer", None).await.unwrap();
+  let ids = lsi.language_servers.lock().await.iter_clients().map(|c| c.id()).collect::<Vec<usize>>();
 
-  let a = lsi.wait_for_initialization().await;
+  let a = lsi.wait_for_language_server_initialization(ids.as_slice()).await;
   assert!(a.is_ok());
   let a = lsi.update_workspace_symbols().await;
   assert!(a.is_ok());
 
   use owo_colors::{colors::*, OwoColorize};
-  for workspace in &lsi.workspaces {
+  for workspace in lsi.workspaces.lock().await.iter() {
     workspace.iter_symbols().for_each(|s| {
       println!(
         "symbol: {:#?}\nname: {}\nrange:{:#?}\nwsp: {}\nfp::{}\n{}\n{}",
@@ -92,7 +94,7 @@ async fn test_rust_analyzer_connection() -> anyhow::Result<()> {
     println!("{} workspace symbols found in {} files", workspace.count_symbols(), workspace.files.len());
   }
 
-  let capabilities = lsi.server_capabilities();
+  let capabilities = lsi.server_capabilities().await;
   assert!(capabilities.is_ok());
   println!("Capabilities: {:#?}", capabilities.unwrap());
 
