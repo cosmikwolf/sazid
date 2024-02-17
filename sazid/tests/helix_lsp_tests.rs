@@ -79,7 +79,7 @@ async fn test_rust_analyzer_connection() -> anyhow::Result<()> {
 
   use owo_colors::{colors::*, OwoColorize};
   for workspace in lsi.workspaces.lock().await.iter() {
-    workspace.iter_symbols().for_each(|s| {
+    workspace.all_symbols_weak().iter().map(|s| s.upgrade().unwrap()).for_each(|s| {
       println!(
         "symbol: {:#?}\nname: {}\nrange:{:#?}\nwsp: {}\nfp::{}\n{}\n{}",
         s.kind,
