@@ -1,15 +1,15 @@
-use std::cell::RefCell;
 use std::collections::HashMap;
 use std::fmt::{self, Display};
 use std::path::{Path, PathBuf};
-use std::rc::{Rc, Weak};
 
+use futures_util::Stream;
 use helix_core::syntax::{FileType, LanguageConfiguration};
 use lsp_types as lsp;
 use ropey::Rope;
+use tokio::sync::Mutex;
 use url::Url;
 
-use std::sync::Arc;
+use std::sync::{Arc, Weak};
 
 pub struct Workspace {
   pub files: Vec<WorkspaceFile>,
@@ -67,29 +67,42 @@ impl Workspace {
     Ok(())
   }
 
-  pub fn query_symbols(&self, query: SymbolQuery) -> anyhow::Result<Vec<Rc<SourceSymbol>>> {
-    Ok(
-      self
-        .files
-        .iter()
-        .flat_map(|f| {
-          SourceSymbol::iter_tree(Rc::clone(&f.file_tree)).filter(|_s| {
-            if let Some(file) = query.file.clone() {
-              f.file_path == PathBuf::from(file)
-            } else {
-              true
-            }
-          })
-        })
-        .filter(|s| if let Some(name) = query.name.clone() { s.name == name } else { true })
-        .filter(|s| if let Some(kind) = query.kind { s.kind == kind } else { true })
-        .filter(|s| if let Some(range) = query.range { *s.range.borrow() == range } else { true })
-        .collect::<Vec<_>>(),
-    )
+  pub fn get_mut_file(&mut self, file_path: &Path) -> Option<&mut WorkspaceFile> {
+    self.files.iter_mut().find(|f| f.file_path == file_path)
   }
 
-  pub fn iter_symbols(&self) -> impl Iterator<Item = Rc<SourceSymbol>> {
-    self.files.iter().flat_map(|f| SourceSymbol::iter_tree(Rc::clone(&f.file_tree))).collect::<Vec<_>>().into_iter()
+  pub async fn query_symbols(&self, query: SymbolQuery) -> anyhow::Result<Vec<Arc<SourceSymbol>>> {
+    todo!("fix this");
+    //   use async_stream::stream;
+    //   let streams = self
+    //     .files
+    //     .iter()
+    //     .flat_map(|f|
+    //         stream! {
+    //       let tree = while let Some(file) = SourceSymbol::iter_tree(Arc::clone(&f.file_tree)).next().await {
+    //         PathBuf::from(file)
+    //       };
+    //       // SourceSymbol::iter_tree(Arc::clone(&f.file_tree)).await.filter(|_s| {
+    //       //   if let Some(file) = query.file.clone() {
+    //       //     f.file_path == PathBuf::from(file)
+    //       //   } else {
+    //       //     true
+    //       //   }
+    //       // })
+    //     })
+    //     .filter(|s| if let Some(name) = query.name.clone() { s.name == name } else { true })
+    //     .filter(|s| if let Some(kind) = query.kind { s.kind == kind } else { true })
+    //     .filter(|s| if let Some(range) = query.range { *s.range.blocking_lock() == range } else { true })
+    //     .collect::<Vec<_>>();
+    // Ok(streams)
+  }
+
+  pub fn iter_symbols(&self) -> impl Iterator<Item = Arc<SourceSymbol>> {
+    use async_stream::stream;
+    let streams = for file in self.files.iter(){
+          SourceSymbol::iter_tree(Arc::clone(&file.file_tree))
+    }
+    streams
   }
 
   pub fn count_symbols(&self) -> usize {
@@ -104,9 +117,9 @@ pub struct DocumentChange {
 }
 
 pub struct WorkspaceFile {
-  pub file_tree: Rc<SourceSymbol>,
+  pub file_tree: Arc<SourceSymbol>,
   pub file_path: PathBuf,
-  pub diagnostics: Vec<lsp::Diagnostic>,
+  pub diagnostics: HashMap<i32, Vec<lsp::Diagnostic>>,
   pub checksum: Option<blake3::Hash>,
   pub contents: HashMap<i32, Rope>, // hashmap of contents indexed by version
   pub offset_encoding: helix_lsp::OffsetEncoding,
@@ -117,11 +130,11 @@ pub struct WorkspaceFile {
 impl WorkspaceFile {
   pub fn new(file_path: &Path, workspace_path: &Path, offset_encoding: &helix_lsp::OffsetEncoding) -> Self {
     let version = 0;
-    let file_tree = Rc::new(SourceSymbol::default());
+    let file_tree = Arc::new(SourceSymbol::default());
     WorkspaceFile {
       file_tree,
       file_path: file_path.to_path_buf(),
-      diagnostics: vec![],
+      diagnostics: HashMap::new(),
       checksum: None,
       offset_encoding: *offset_encoding,
       contents: HashMap::new(),
@@ -161,32 +174,31 @@ impl WorkspaceFile {
     Ok(true)
   }
 
-  pub fn update(&mut self, doc_symbols: Vec<lsp::DocumentSymbol>) -> anyhow::Result<DocumentChange> {
-    let original_contents = self.contents.clone();
+  pub async fn update(&mut self, doc_symbols: Vec<lsp::DocumentSymbol>) -> anyhow::Result<DocumentChange> {
     self.version += 1;
     self.checksum = Some(self.get_checksum()?);
     self.contents.insert(self.version, Rope::from_str(&std::fs::read_to_string(&self.file_path)?));
-    self.file_tree = Rc::new(SourceSymbol {
+    self.file_tree = Arc::new(SourceSymbol {
       name: self.file_path.strip_prefix(self.workspace_path.canonicalize().unwrap()).unwrap().display().to_string(),
       detail: None,
       kind: lsp::SymbolKind::FILE,
       tags: None,
-      range: RefCell::new(lsp::Range {
+      range: Mutex::new(lsp::Range {
         start: lsp_types::Position { line: 0, character: 0 },
         end: lsp_types::Position { line: 0, character: 0 },
       }),
-      selection_range: RefCell::new(lsp::Range {
+      selection_range: Mutex::new(lsp::Range {
         start: lsp_types::Position { line: 0, character: 0 },
         end: lsp_types::Position { line: 0, character: 0 },
       }),
       file_path: self.file_path.to_path_buf(),
-      parent: RefCell::new(Weak::new()),
-      children: RefCell::new(vec![]),
+      parent: Mutex::new(Weak::new()),
+      children: Mutex::new(vec![]),
       workspace_path: self.workspace_path.to_path_buf(),
     });
 
     for symbol in doc_symbols {
-      SourceSymbol::from_document_symbol(&symbol, &self.file_path, &mut self.file_tree, &self.workspace_path);
+      SourceSymbol::from_document_symbol(&symbol, &self.file_path, &mut self.file_tree, &self.workspace_path).await;
     }
 
     Ok(DocumentChange {
@@ -200,18 +212,18 @@ impl WorkspaceFile {
   }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct SourceSymbol {
   pub name: String,
   pub detail: Option<String>,
   pub kind: lsp::SymbolKind,
   pub tags: Option<Vec<lsp::SymbolTag>>,
-  pub range: RefCell<lsp::Range>,
-  pub selection_range: RefCell<lsp::Range>,
-  pub parent: RefCell<Weak<SourceSymbol>>,
-  pub children: RefCell<Vec<Rc<SourceSymbol>>>,
+  pub range: Mutex<lsp::Range>,
+  pub selection_range: Mutex<lsp::Range>,
   pub workspace_path: PathBuf,
   pub file_path: PathBuf,
+  pub parent: Mutex<Weak<SourceSymbol>>,
+  pub children: Mutex<Vec<Arc<SourceSymbol>>>,
 }
 
 impl Default for SourceSymbol {
@@ -221,16 +233,16 @@ impl Default for SourceSymbol {
       name: String::new(),
       detail: None,
       tags: None,
-      range: RefCell::new(lsp::Range {
+      range: Mutex::new(lsp::Range {
         start: lsp_types::Position { line: 0, character: 0 },
         end: lsp_types::Position { line: 0, character: 0 },
       }),
-      selection_range: RefCell::new(lsp::Range {
+      selection_range: Mutex::new(lsp::Range {
         start: lsp_types::Position { line: 0, character: 0 },
         end: lsp_types::Position { line: 0, character: 0 },
       }),
-      parent: RefCell::new(Weak::new()),
-      children: RefCell::new(Vec::new()),
+      parent: Mutex::new(Weak::new()),
+      children: Mutex::new(Vec::new()),
       workspace_path: PathBuf::new(),
       file_path: PathBuf::new(),
     }
@@ -238,30 +250,30 @@ impl Default for SourceSymbol {
 }
 
 impl SourceSymbol {
-  pub fn from_document_symbol(
+  pub async fn from_document_symbol(
     doc_sym: &lsp::DocumentSymbol,
     file_path: &Path,
-    parent: &mut Rc<SourceSymbol>,
+    parent: &mut Arc<SourceSymbol>,
     workspace_path: &Path,
-  ) -> Rc<Self> {
-    let converted = Rc::new(SourceSymbol {
+  ) -> Arc<Self> {
+    let converted = Arc::new(SourceSymbol {
       name: doc_sym.name.clone(),
       detail: doc_sym.detail.clone(),
       kind: doc_sym.kind,
       tags: doc_sym.tags.clone(),
-      range: RefCell::new(doc_sym.range),
-      selection_range: RefCell::new(doc_sym.selection_range),
+      range: Mutex::new(doc_sym.range),
+      selection_range: Mutex::new(doc_sym.selection_range),
       file_path: file_path.to_path_buf(),
-      parent: RefCell::new(Weak::new()),
-      children: RefCell::new(vec![]),
+      parent: Mutex::new(Weak::new()),
+      children: Mutex::new(vec![]),
       workspace_path: workspace_path.to_path_buf(),
     });
 
-    SourceSymbol::add_child(parent, &converted);
+    SourceSymbol::add_child(parent, &converted).await;
 
     if let Some(children) = &doc_sym.children {
       for child in children {
-        Self::from_document_symbol(child, file_path, &mut Rc::clone(&converted), workspace_path);
+        Self::from_document_symbol(child, file_path, &mut Arc::clone(&converted), workspace_path);
       }
     }
 
@@ -270,37 +282,36 @@ impl SourceSymbol {
 
   pub fn get_source(&self) -> anyhow::Result<String> {
     let file_path = &self.file_path;
-    let range = *self.range.borrow();
-    get_file_range_contents(file_path, range)
+    get_file_range_contents(file_path, *self.range.blocking_lock())
   }
 
   pub fn get_selection(&self) -> anyhow::Result<String> {
     let file_path = &self.file_path;
-    let range = *self.selection_range.borrow();
-    get_file_range_contents(file_path, range)
+    get_file_range_contents(file_path, *self.selection_range.blocking_lock())
   }
 
-  pub fn add_child(parent: &mut Rc<Self>, child: &Rc<SourceSymbol>) {
-    *child.parent.borrow_mut() = Rc::downgrade(parent);
-    parent.children.borrow_mut().push(Rc::clone(child));
-    if parent.kind == lsp::SymbolKind::FILE && position_gt(child.range.borrow().end, parent.range.borrow().end) {
-      let new_range = lsp::Range { start: parent.range.borrow().start, end: child.range.borrow().end };
-      *parent.range.borrow_mut() = new_range;
+  pub async fn add_child(parent: &mut Arc<Self>, child: &Arc<SourceSymbol>) {
+    *child.parent.lock().await = Arc::downgrade(parent);
+    parent.children.lock().await.push(Arc::clone(child));
+    if parent.kind == lsp::SymbolKind::FILE && position_gt(child.range.lock().await.end, parent.range.lock().await.end)
+    {
+      let new_range = lsp::Range { start: parent.range.lock().await.start, end: child.range.lock().await.end };
+      *parent.range.lock().await = new_range;
     }
   }
 
-  pub fn iter_tree(rc_self: Rc<Self>) -> impl Iterator<Item = Rc<SourceSymbol>> {
+  pub async fn iter_tree(rc_self: Arc<Self>) -> impl Stream<Item = Arc<SourceSymbol>> {
     // Initialize state for the iterator: a stack for DFS
-    let mut stack: Vec<Rc<SourceSymbol>> = vec![rc_self];
+    let stack: Vec<Arc<SourceSymbol>> = vec![rc_self];
 
-    std::iter::from_fn(move || {
+    futures::stream::unfold(stack, |mut stack| async {
       if let Some(node) = stack.pop() {
         // When visiting a node, add its children to the stack for later visits
-        let children = node.children.borrow();
+        let children = node.children.lock().await;
         for child in children.iter().rev() {
-          stack.push(Rc::clone(child));
+          stack.push(Arc::clone(child));
         }
-        Some(Rc::clone(&node))
+        Some((Arc::clone(&node), stack))
       } else {
         None // When the stack is empty, iteration ends
       }
@@ -313,7 +324,7 @@ impl Display for SourceSymbol {
     let filename = PathBuf::from(&self.file_path);
     let filename = filename.file_name().unwrap().to_str().unwrap();
     write!(f, "{:?} - {:?}: {}", filename, self.kind, self.name)?;
-    let childcount = self.children.borrow().len();
+    let childcount = self.children.blocking_lock().len();
     if childcount > 0 {
       write!(f, " ({} child nodes)", childcount)?;
     }

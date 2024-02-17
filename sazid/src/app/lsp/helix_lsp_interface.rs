@@ -95,11 +95,11 @@ impl LanguageServerInterface {
 
   pub async fn goto_symbol_definition(
     &self,
-    symbol: Rc<SourceSymbol>,
+    symbol: Arc<SourceSymbol>,
     language_server_id: usize,
   ) -> anyhow::Result<lsp::GotoDefinitionResponse> {
     let text_document = lsp::TextDocumentIdentifier { uri: Url::from_file_path(symbol.file_path.clone()).unwrap() };
-    let position = symbol.selection_range.borrow().start;
+    let position = symbol.selection_range.lock().await.start;
 
     let client = self
       .language_servers
@@ -119,11 +119,11 @@ impl LanguageServerInterface {
 
   pub async fn goto_symbol_declaration(
     &self,
-    symbol: Rc<SourceSymbol>,
+    symbol: Arc<SourceSymbol>,
     language_server_id: usize,
   ) -> anyhow::Result<lsp::GotoDefinitionResponse> {
     let text_document = lsp::TextDocumentIdentifier { uri: Url::from_file_path(symbol.file_path.clone()).unwrap() };
-    let position = symbol.selection_range.borrow().start;
+    let position = symbol.selection_range.lock().await.start;
     let client = self
       .language_servers
       .lock()
@@ -141,11 +141,11 @@ impl LanguageServerInterface {
 
   pub async fn goto_type_definition(
     &self,
-    symbol: Rc<SourceSymbol>,
+    symbol: Arc<SourceSymbol>,
     language_server_id: usize,
   ) -> anyhow::Result<lsp::Location> {
     let text_document = lsp::TextDocumentIdentifier { uri: Url::from_file_path(symbol.file_path.clone()).unwrap() };
-    let position = symbol.selection_range.borrow().start;
+    let position = symbol.selection_range.lock().await.start;
     let client = self
       .language_servers
       .lock()
@@ -228,20 +228,17 @@ impl LanguageServerInterface {
                 },
                 None => return Err(anyhow::anyhow!("document symbol response is None")),
               };
-              let doc_change = workspace_file.update(doc_symbols).unwrap();
-              if let DocumentChange{ original_contents: Some(original_contents), new_contents, versioned_doc_id }=  doc_change {
+              let doc_change = workspace_file.update(doc_symbols).await.unwrap();
+              if let DocumentChange { original_contents: Some(original_contents), new_contents, versioned_doc_id } =
+                doc_change
+              {
                 let changes = compare_ropes(&original_contents, &new_contents);
                 language_server
-                  .text_document_did_change(
-                    versioned_doc_id,
-                    &original_contents,
-                    &new_contents,
-                    changes.changes(),
-                  )
+                  .text_document_did_change(versioned_doc_id, &original_contents, &new_contents, changes.changes())
                   .unwrap()
                   .await
                   .expect("failed to update document with language server")
-               } else {
+              } else {
                 language_server
                   .text_document_did_open(
                     doc_change.versioned_doc_id.uri,
@@ -325,20 +322,21 @@ impl LanguageServerInterface {
     .map_err(|e| anyhow::anyhow!(e))
   }
 
-  pub async fn spawn_server_notification_thread(&mut self) {
-    let ls = self.language_servers.clone();
-    let lsp_progress_mutex = self.lsp_progress.clone();
-    let registry_mutex = self.language_servers.clone();
-    let status_msg_mutex = self.status_msg.clone();
-    let workspaces_mutex = self.workspaces.clone();
+  pub async fn spawn_server_notification_thread(lsi: Arc<Mutex<LanguageServerInterface>>) {
+    let lsi = lsi.lock().await;
+    let ls = lsi.language_servers.clone();
+    let lsp_progress_mutex = lsi.lsp_progress.clone();
+    let registry_mutex = lsi.language_servers.clone();
+    let status_msg_mutex = lsi.status_msg.clone();
+    let workspaces_mutex = lsi.workspaces.clone();
     use futures_util::StreamExt;
 
-    tokio::spawn(async {
+    tokio::spawn(async move {
       loop {
         let lsp_progress = &mut lsp_progress_mutex.lock().await;
         let registry = &mut registry_mutex.lock().await;
         let status_msg = &mut status_msg_mutex.lock().await;
-        let workspaces= &mut workspaces_mutex.lock().await;
+        let workspaces = &mut workspaces_mutex.lock().await;
 
         if let Some((id, call)) = ls.lock().await.incoming.next().await {
           Self::handle_language_server_message(lsp_progress, registry, call, id, status_msg, workspaces).await
@@ -356,9 +354,9 @@ impl LanguageServerInterface {
     let lsp_progress = &mut self.lsp_progress.lock().await;
     let registry = &mut self.language_servers.lock().await;
     let status_msg = &mut self.status_msg.lock().await;
-        let workspaces= &mut self.workspaces.lock().await;
-    if let Some((id, message)) = self.language_servers.clone().lock().await.incoming.next().await {
-      Self::handle_language_server_message(lsp_progress, registry, message, id, status_msg, workspaces).await
+    let workspaces = &mut self.workspaces.lock().await;
+    if let Some((id, call)) = self.language_servers.clone().lock().await.incoming.next().await {
+      Self::handle_language_server_message(lsp_progress, registry, call, id, status_msg, workspaces).await
     }
   }
 
@@ -446,7 +444,7 @@ impl LanguageServerInterface {
     call: helix_lsp::Call,
     server_id: usize,
     status_msg: &mut StatusMessage,
-    workspaces: &mut Vec<Workspace>,
+    workspaces: &mut [Workspace],
   ) {
     use helix_lsp::{MethodCall, Notification};
 
@@ -504,8 +502,40 @@ impl LanguageServerInterface {
             log::info!("Language server initialized: server id: {}", server_id);
           },
           Notification::PublishDiagnostics(params) => {
-            workspaces.iter_mut().find(|workspace| workspace.workspace_files.iter().any(|file| file.file_path == params.uri))
-            log::warn!("need to handle publish diagnostics: {:?}", params);
+            let file_path = params.uri.to_file_path().unwrap();
+            match workspaces.iter_mut().find_map(|ws| ws.get_mut_file(&file_path)) {
+              Some(file) => {
+                let new_diagnostics = params.diagnostics;
+                match params.version {
+                  Some(version) => {
+                    if let Some(diagnostics) = file.diagnostics.get_mut(&version) {
+                      diagnostics.extend(new_diagnostics);
+                      log::info!("updated diagnostics for version: {}", version);
+                      log::debug!("diagnostics: {:#?}", diagnostics);
+                    } else {
+                      file.diagnostics.insert(version, new_diagnostics.clone());
+                      log::info!("added diagnostics for version: {}", version);
+                      log::debug!("diagnostics: {:#?}", new_diagnostics);
+                    }
+                  },
+                  None => {
+                    log::warn!("no version supplied with server message, using file version {}", file.version);
+                    if let Some(diagnostics) = file.diagnostics.get_mut(&file.version) {
+                      diagnostics.extend(new_diagnostics);
+                      log::info!("updated diagnostics for version: {}", file.version);
+                      log::debug!("diagnostics: {:#?}", diagnostics);
+                    } else {
+                      file.diagnostics.insert(file.version, new_diagnostics.clone());
+                      log::info!("added diagnostics for file.version: {}", file.version);
+                      log::debug!("diagnostics: {:#?}", new_diagnostics);
+                    }
+                  },
+                };
+              },
+              None => {
+                log::error!("no workspace file found for uri: {:?}", file_path);
+              },
+            }
           },
           Notification::ShowMessage(params) => {
             log::warn!("unhandled window/showMessage: {:?}", params);
