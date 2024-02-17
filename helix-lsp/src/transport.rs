@@ -259,7 +259,9 @@ impl Transport {
     let mut recv_buffer = String::new();
     loop {
       match Self::recv_server_error(&mut server_stderr, &mut recv_buffer, &transport.name).await {
-        Ok(_) => {},
+        Ok(_) => {
+          log::error!("{} err: <- {recv_buffer:?}", transport.name);
+        },
         Err(err) => {
           error!("{} err: <- {err:?}", transport.name);
           break;

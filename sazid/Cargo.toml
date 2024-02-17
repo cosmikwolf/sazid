@@ -161,3 +161,4 @@ fern = "0.6.2"
 humantime = "2.1.0"
 owo-colors = "4.0.0"
 async-stream = "0.3.5"
+tracing-test = { version = "0.2.4", features = ["no-env-filter"] }
