@@ -96,8 +96,8 @@ async fn test_rust_analyzer_connection() -> anyhow::Result<()> {
 
   let capabilities = lsi.server_capabilities().await;
   assert!(capabilities.is_ok());
-  println!("Capabilities: {:#?}", capabilities.unwrap());
-
+  // println!("Capabilities: {:#?}", capabilities.unwrap());
+  tokio::time::sleep(std::time::Duration::from_millis(1000)).await;
   panic!();
   /*
   let _c_client = lsi.initialize_client("c", "clangd", None, &[], false).unwrap().unwrap();

@@ -4533,6 +4533,7 @@ dependencies = [
  "anyhow",
  "async-openai 0.17.1",
  "async-recursion",
+ "async-stream",
  "async-trait",
  "backoff",
  "bat",
