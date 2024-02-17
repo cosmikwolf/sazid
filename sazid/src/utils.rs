@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::{fmt::Debug, path::PathBuf};
 
 use color_eyre::eyre::Result;
 use directories::ProjectDirs;
@@ -131,16 +131,14 @@ pub fn initialize_logging() -> Result<()> {
     .with_file(true)
     .with_line_number(true)
     .with_writer(log_file)
-    .with_target(false)
-    .pretty()
-    .fmt_fields(format::PrettyFields::new())
-    .with_ansi(true)
+    .with_target(true)
     .without_time()
+  // .fmt_fields(format::PrettyFields::new())
+  // .with_ansi(true)
+    .pretty()
     .with_filter(tracing_subscriber::filter::EnvFilter::from_default_env());
   // a filter that removes the trace level
-  //  .with_filter(filter::filter_fn(|metadata| {
-  //              !metadata.().starts_with("metrics")
-  //          }))
+
   tracing_subscriber::registry().with(file_subscriber).with(console_layer).with(ErrorLayer::default()).init();
   Ok(())
 }

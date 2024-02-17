@@ -1,11 +1,14 @@
+use futures::FutureExt;
 use helix_core;
 use helix_lsp::Client;
 use sazid::app::lsp::helix_lsp_interface::LanguageServerInterface;
-use sazid::trace_dbg;
+// use sazid::trace_dbg;
 use sazid::utils::initialize_logging;
 use std::path::Path;
 use std::str::from_utf8;
 use tempfile::tempdir;
+use tracing::warn;
+use tracing_test::traced_test;
 use url::Url;
 
 pub fn test_lang_config() -> helix_core::syntax::Configuration {
@@ -41,15 +44,20 @@ fn copy_dir_recursively(source: &Path, target: &Path) -> anyhow::Result<()> {
 fn test_logging() -> anyhow::Result<()> {
   // let res = initialize_logging();
   // assert!(res.is_ok());
-  trace_dbg!("log test");
+  // trace_dbg!("log test");
   Ok(())
 }
 
+// #[traced_test]
 #[tokio::test]
 async fn test_rust_analyzer_connection() -> anyhow::Result<()> {
+  // println!("{:#?}", std::env::vars());
+
+  // std::env::set_var("RUST_LOG", std::env::var(format!("{}=info", env!("CARGO_CRATE_NAME"))));
   let res = initialize_logging();
   assert!(res.is_ok());
-  trace_dbg!("beginning workspace scan tests");
+  warn!("beginning workspace scan tests");
+  // panic!();
 
   let test_workspace_src_path = "tests/assets/rust_test_project";
   let test_src_assets = std::env::current_dir().unwrap().join(test_workspace_src_path);
@@ -74,11 +82,26 @@ async fn test_rust_analyzer_connection() -> anyhow::Result<()> {
 
   let a = lsi.wait_for_language_server_initialization(ids.as_slice()).await;
   assert!(a.is_ok());
-  let a = lsi.update_workspace_symbols().await;
+  println!("Initialized language servers");
+  // lsi
+  //   .poll_language_server_events()
+  //   .then(|_| async {
+  //     panic!("lsi poll completge");
+  //   })
+  //   .await;
+  use owo_colors::{colors::*, OwoColorize};
+  let a: Result<(), anyhow::Error> = futures::executor::block_on(async {
+    println!("Updating workspace symbols");
+    lsi.update_workspace_symbols().await
+  });
   assert!(a.is_ok());
 
-  use owo_colors::{colors::*, OwoColorize};
-  for workspace in lsi.workspaces.lock().await.iter() {
+  let a = lsi.wait_for_progress_token_completion(ids.as_slice()).await;
+  assert!(a.is_ok());
+
+  for workspace in lsi.workspaces.iter() {
+    log::error!("Workspace: {:#?}", workspace.workspace_path.display());
+
     workspace.all_symbols_weak().iter().map(|s| s.upgrade().unwrap()).for_each(|s| {
       println!(
         "symbol: {:#?}\nname: {}\nrange:{:#?}\nwsp: {}\nfp::{}\n{}\n{}",
@@ -97,7 +120,7 @@ async fn test_rust_analyzer_connection() -> anyhow::Result<()> {
   let capabilities = lsi.server_capabilities().await;
   assert!(capabilities.is_ok());
   // println!("Capabilities: {:#?}", capabilities.unwrap());
-  tokio::time::sleep(std::time::Duration::from_millis(1000)).await;
+  // tokio::time::sleep(std::time::Duration::from_millis(1000)).await;
   panic!();
   /*
   let _c_client = lsi.initialize_client("c", "clangd", None, &[], false).unwrap().unwrap();
