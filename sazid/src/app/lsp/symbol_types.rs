@@ -1,8 +1,10 @@
+use futures::FutureExt;
+use futures_util::Future;
 use std::collections::HashMap;
 use std::fmt::{self, Display};
 use std::path::{Path, PathBuf};
 
-use futures_util::Stream;
+use futures::future::BoxFuture;
 use helix_core::syntax::{FileType, LanguageConfiguration};
 use lsp_types as lsp;
 use ropey::Rope;
@@ -72,41 +74,36 @@ impl Workspace {
   }
 
   pub async fn query_symbols(&self, query: SymbolQuery) -> anyhow::Result<Vec<Arc<SourceSymbol>>> {
-    todo!("fix this");
-    //   use async_stream::stream;
-    //   let streams = self
-    //     .files
-    //     .iter()
-    //     .flat_map(|f|
-    //         stream! {
-    //       let tree = while let Some(file) = SourceSymbol::iter_tree(Arc::clone(&f.file_tree)).next().await {
-    //         PathBuf::from(file)
-    //       };
-    //       // SourceSymbol::iter_tree(Arc::clone(&f.file_tree)).await.filter(|_s| {
-    //       //   if let Some(file) = query.file.clone() {
-    //       //     f.file_path == PathBuf::from(file)
-    //       //   } else {
-    //       //     true
-    //       //   }
-    //       // })
-    //     })
-    //     .filter(|s| if let Some(name) = query.name.clone() { s.name == name } else { true })
-    //     .filter(|s| if let Some(kind) = query.kind { s.kind == kind } else { true })
-    //     .filter(|s| if let Some(range) = query.range { *s.range.blocking_lock() == range } else { true })
-    //     .collect::<Vec<_>>();
-    // Ok(streams)
+    Ok(
+      self
+        .all_symbols_weak()
+        .iter()
+        .map(|s| s.upgrade().unwrap())
+        .filter(|s| {
+          if let Some(file_name) = &query.file {
+            s.file_path.file_name().unwrap().to_str().unwrap() == file_name
+              || &s.file_path.strip_prefix(&self.workspace_path).unwrap().display().to_string() == file_name
+          } else {
+            false
+          }
+        })
+        .filter(|s| if let Some(name) = query.name.clone() { s.name == name } else { false })
+        .filter(|s| if let Some(kind) = query.kind { s.kind == kind } else { false })
+        .filter(|s| if let Some(range) = query.range { *s.range.blocking_lock() == range } else { false })
+        .collect::<Vec<_>>(),
+    )
   }
 
-  pub fn iter_symbols(&self) -> impl Iterator<Item = Arc<SourceSymbol>> {
-    use async_stream::stream;
-    let streams = for file in self.files.iter(){
-          SourceSymbol::iter_tree(Arc::clone(&file.file_tree))
+  pub fn all_symbols_weak(&self) -> Vec<Weak<SourceSymbol>> {
+    let mut all_symbols = vec![];
+    for file in &self.files {
+      all_symbols.extend(file.symbol_list.iter().cloned());
     }
-    streams
+    all_symbols
   }
 
   pub fn count_symbols(&self) -> usize {
-    Workspace::iter_symbols(self).count()
+    self.all_symbols_weak().len()
   }
 }
 
@@ -118,6 +115,7 @@ pub struct DocumentChange {
 
 pub struct WorkspaceFile {
   pub file_tree: Arc<SourceSymbol>,
+  pub symbol_list: Vec<Weak<SourceSymbol>>,
   pub file_path: PathBuf,
   pub diagnostics: HashMap<i32, Vec<lsp::Diagnostic>>,
   pub checksum: Option<blake3::Hash>,
@@ -133,6 +131,7 @@ impl WorkspaceFile {
     let file_tree = Arc::new(SourceSymbol::default());
     WorkspaceFile {
       file_tree,
+      symbol_list: vec![],
       file_path: file_path.to_path_buf(),
       diagnostics: HashMap::new(),
       checksum: None,
@@ -198,7 +197,14 @@ impl WorkspaceFile {
     });
 
     for symbol in doc_symbols {
-      SourceSymbol::from_document_symbol(&symbol, &self.file_path, &mut self.file_tree, &self.workspace_path).await;
+      SourceSymbol::from_document_symbol(
+        &symbol,
+        &self.file_path,
+        &mut self.file_tree,
+        &mut self.symbol_list,
+        &self.workspace_path,
+      )
+      .await;
     }
 
     Ok(DocumentChange {
@@ -250,12 +256,13 @@ impl Default for SourceSymbol {
 }
 
 impl SourceSymbol {
-  pub async fn from_document_symbol(
+  pub fn from_document_symbol(
     doc_sym: &lsp::DocumentSymbol,
     file_path: &Path,
     parent: &mut Arc<SourceSymbol>,
+    list: &mut Vec<Weak<SourceSymbol>>,
     workspace_path: &Path,
-  ) -> Arc<Self> {
+  ) -> impl Future<Output = ()> {
     let converted = Arc::new(SourceSymbol {
       name: doc_sym.name.clone(),
       detail: doc_sym.detail.clone(),
@@ -269,25 +276,24 @@ impl SourceSymbol {
       workspace_path: workspace_path.to_path_buf(),
     });
 
+    list.push(Arc::downgrade(&converted));
     SourceSymbol::add_child(parent, &converted).await;
 
     if let Some(children) = &doc_sym.children {
       for child in children {
-        Self::from_document_symbol(child, file_path, &mut Arc::clone(&converted), workspace_path);
+        Self::from_document_symbol(child, file_path, &mut Arc::clone(&converted), list, workspace_path);
       }
     }
-
-    converted
   }
 
-  pub fn get_source(&self) -> anyhow::Result<String> {
+  pub async fn get_source(&self) -> anyhow::Result<String> {
     let file_path = &self.file_path;
-    get_file_range_contents(file_path, *self.range.blocking_lock())
+    get_file_range_contents(file_path, *self.range.lock().await)
   }
 
-  pub fn get_selection(&self) -> anyhow::Result<String> {
+  pub async fn get_selection(&self) -> anyhow::Result<String> {
     let file_path = &self.file_path;
-    get_file_range_contents(file_path, *self.selection_range.blocking_lock())
+    get_file_range_contents(file_path, *self.selection_range.lock().await)
   }
 
   pub async fn add_child(parent: &mut Arc<Self>, child: &Arc<SourceSymbol>) {
@@ -298,24 +304,6 @@ impl SourceSymbol {
       let new_range = lsp::Range { start: parent.range.lock().await.start, end: child.range.lock().await.end };
       *parent.range.lock().await = new_range;
     }
-  }
-
-  pub async fn iter_tree(rc_self: Arc<Self>) -> impl Stream<Item = Arc<SourceSymbol>> {
-    // Initialize state for the iterator: a stack for DFS
-    let stack: Vec<Arc<SourceSymbol>> = vec![rc_self];
-
-    futures::stream::unfold(stack, |mut stack| async {
-      if let Some(node) = stack.pop() {
-        // When visiting a node, add its children to the stack for later visits
-        let children = node.children.lock().await;
-        for child in children.iter().rev() {
-          stack.push(Arc::clone(child));
-        }
-        Some((Arc::clone(&node), stack))
-      } else {
-        None // When the stack is empty, iteration ends
-      }
-    })
   }
 }
 
