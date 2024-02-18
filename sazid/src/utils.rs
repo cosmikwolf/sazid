@@ -131,29 +131,34 @@ pub fn initialize_logging() -> Result<()> {
   std::fs::create_dir_all(directory.clone())?;
   let log_path = directory.join(LOG_FILE.clone());
   let log_file = std::fs::File::create(log_path)?;
+
   std::env::set_var(
     "RUST_LOG",
     std::env::var("RUST_LOG")
       .or_else(|_| std::env::var(LOG_ENV.clone()))
       .unwrap_or_else(|_| format!("{}=info", env!("CARGO_CRATE_NAME"))),
   );
-  let console_layer =
-    console_subscriber::ConsoleLayer::builder().with_default_env().spawn();
+
   let file_subscriber = tracing_subscriber::fmt::layer()
-    .with_file(true)
-    .with_line_number(true)
     .with_writer(log_file)
-    .with_target(true)
+    .event_format(
+      tracing_subscriber::fmt::format::format()
+        .pretty()
+        .with_source_location(true),
+    )
     .without_time()
-  // .fmt_fields(format::PrettyFields::new())
-  // .with_ansi(true)
-    .pretty()
+    // .with_file(false)
+    // .with_line_number(false)
+    .with_target(false)
+    .with_ansi(true)
     .with_filter(tracing_subscriber::filter::EnvFilter::from_default_env());
   // a filter that removes the trace level
 
   tracing_subscriber::registry()
     .with(file_subscriber)
-    .with(console_layer)
+    .with(
+      console_subscriber::ConsoleLayer::builder().with_default_env().spawn(),
+    )
     .with(ErrorLayer::default())
     .init();
   Ok(())
