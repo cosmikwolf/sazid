@@ -28,9 +28,14 @@ async fn tokio_main() -> Result<(), SazidError> {
   trace_dbg!("app start");
   let args = Cli::parse();
   let config = Config::new(args.local_api).unwrap();
-  let api_key: String = env::var("OPENAI_API_KEY").expect("OPENAI_API_KEY not set");
-  let openai_config = OpenAIConfig::new().with_api_key(api_key).with_org_id("org-WagBLu0vLgiuEL12dylmcPFj");
-  let mut embeddings_manager = DataManager::new(config.clone(), EmbeddingModel::Ada002(openai_config)).await?;
+  let api_key: String =
+    env::var("OPENAI_API_KEY").expect("OPENAI_API_KEY not set");
+  let openai_config = OpenAIConfig::new()
+    .with_api_key(api_key)
+    .with_org_id("org-WagBLu0vLgiuEL12dylmcPFj");
+  let mut embeddings_manager =
+    DataManager::new(config.clone(), EmbeddingModel::Ada002(openai_config))
+      .await?;
 
   match embeddings_manager.run_cli(args.clone()).await {
     Ok(Some(output)) => {
@@ -39,7 +44,10 @@ async fn tokio_main() -> Result<(), SazidError> {
     },
     Ok(None) => {
       println!("No output");
-      let mut app = App::new(args.tick_rate, args.frame_rate, config, embeddings_manager).await.unwrap();
+      let mut app =
+        App::new(args.tick_rate, args.frame_rate, config, embeddings_manager)
+          .await
+          .unwrap();
       app.run().await.unwrap();
       Ok(())
     },

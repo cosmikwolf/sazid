@@ -10,7 +10,16 @@ use diesel_async::{AsyncPgConnection, RunQueryDsl};
 use diesel_json;
 use pgvector::Vector;
 
-#[derive(Serialize, Queryable, Selectable, Debug, Clone, Identifiable, PartialEq, ValidGrouping)]
+#[derive(
+  Serialize,
+  Queryable,
+  Selectable,
+  Debug,
+  Clone,
+  Identifiable,
+  PartialEq,
+  ValidGrouping,
+)]
 #[diesel(table_name = sessions)]
 pub struct QueryableSession {
   pub id: i64,
@@ -18,7 +27,17 @@ pub struct QueryableSession {
   pub summary: Option<String>,
 }
 
-#[derive(Serialize, Queryable, Selectable, Debug, Clone, Identifiable, PartialEq, ValidGrouping, Associations)]
+#[derive(
+  Serialize,
+  Queryable,
+  Selectable,
+  Debug,
+  Clone,
+  Identifiable,
+  PartialEq,
+  ValidGrouping,
+  Associations,
+)]
 #[diesel(table_name = messages)]
 #[diesel(belongs_to(QueryableSession, foreign_key = session_id))]
 pub struct QueryableMessage {
@@ -36,7 +55,17 @@ pub struct InsertableSession {
   pub summary: Option<String>,
 }
 
-#[derive(Serialize, Queryable, Selectable, Debug, Clone, Identifiable, PartialEq, Associations, ValidGrouping)]
+#[derive(
+  Serialize,
+  Queryable,
+  Selectable,
+  Debug,
+  Clone,
+  Identifiable,
+  PartialEq,
+  Associations,
+  ValidGrouping,
+)]
 #[diesel(belongs_to(FileEmbedding))]
 #[diesel(table_name = embedding_pages)]
 pub struct EmbeddingPage {
@@ -58,7 +87,17 @@ pub struct InsertablePage {
   pub embedding: Vector,
 }
 
-#[derive(Serialize, Queryable, Selectable, Debug, Clone, PartialEq, Identifiable, AsChangeset, ValidGrouping)]
+#[derive(
+  Serialize,
+  Queryable,
+  Selectable,
+  Debug,
+  Clone,
+  PartialEq,
+  Identifiable,
+  AsChangeset,
+  ValidGrouping,
+)]
 #[diesel(table_name = file_embeddings)]
 pub struct FileEmbedding {
   id: i64,
@@ -73,7 +112,9 @@ pub struct InsertableFileEmbedding {
   pub checksum: String,
 }
 
-#[derive(Queryable, Selectable, Debug, Clone, PartialEq, Identifiable, AsChangeset)]
+#[derive(
+  Queryable, Selectable, Debug, Clone, PartialEq, Identifiable, AsChangeset,
+)]
 #[diesel(table_name = tags)]
 pub struct Tag {
   id: i64,
@@ -93,7 +134,9 @@ pub struct InsertableTag {
   tag: String,
 }
 
-#[derive(Debug, Clone, PartialEq, Queryable, Selectable, Associations, Identifiable)]
+#[derive(
+  Debug, Clone, PartialEq, Queryable, Selectable, Associations, Identifiable,
+)]
 #[diesel(belongs_to(FileEmbedding))]
 #[diesel(table_name = embedding_tags)]
 #[diesel(primary_key(file_embedding_id, tag_id))]
@@ -103,15 +146,23 @@ pub struct EmbeddingTag {
 }
 
 impl FileEmbedding {
-  pub async fn page_count(&self, conn: &mut AsyncPgConnection) -> Result<usize, SazidError> {
-    let all_pages =
-      EmbeddingPage::belonging_to(self).select(EmbeddingPage::as_select()).load::<EmbeddingPage>(conn).await?;
+  pub async fn page_count(
+    &self,
+    conn: &mut AsyncPgConnection,
+  ) -> Result<usize, SazidError> {
+    let all_pages = EmbeddingPage::belonging_to(self)
+      .select(EmbeddingPage::as_select())
+      .load::<EmbeddingPage>(conn)
+      .await?;
     Ok(all_pages.len())
   }
 }
 
 impl EmbeddingPage {
-  pub async fn get_embedding_from_page(&self, conn: &mut AsyncPgConnection) -> Result<FileEmbedding, SazidError> {
+  pub async fn get_embedding_from_page(
+    &self,
+    conn: &mut AsyncPgConnection,
+  ) -> Result<FileEmbedding, SazidError> {
     let embedding = file_embeddings::table
       .filter(file_embeddings::id.eq(self.file_embedding_id))
       .select(FileEmbedding::as_select())
@@ -119,7 +170,10 @@ impl EmbeddingPage {
       .await?;
     Ok(embedding)
   }
-  pub async fn get_next_page(&self, conn: &mut AsyncPgConnection) -> Result<Option<EmbeddingPage>, SazidError> {
+  pub async fn get_next_page(
+    &self,
+    conn: &mut AsyncPgConnection,
+  ) -> Result<Option<EmbeddingPage>, SazidError> {
     let next_page = embedding_pages::table
       .filter(embedding_pages::file_embedding_id.eq(self.file_embedding_id))
       .filter(embedding_pages::page_number.gt(self.page_number))
@@ -131,7 +185,10 @@ impl EmbeddingPage {
     Ok(next_page)
   }
 
-  pub async fn get_previous_page(&self, conn: &mut AsyncPgConnection) -> Result<Option<EmbeddingPage>, SazidError> {
+  pub async fn get_previous_page(
+    &self,
+    conn: &mut AsyncPgConnection,
+  ) -> Result<Option<EmbeddingPage>, SazidError> {
     let previous_page = embedding_pages::table
       .filter(embedding_pages::file_embedding_id.eq(self.file_embedding_id))
       .filter(embedding_pages::page_number.lt(self.page_number))
@@ -183,7 +240,11 @@ impl fmt::Display for EmbeddingPage {
 
 impl fmt::Display for FileEmbedding {
   fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-    write!(f, "TextFileEmbedding(filename: {}\tchecksum: {}) ", self.filepath, self.checksum,)
+    write!(
+      f,
+      "TextFileEmbedding(filename: {}\tchecksum: {}) ",
+      self.filepath, self.checksum,
+    )
   }
 }
 

@@ -55,21 +55,39 @@ impl ToolCallTrait for TemplatedFunction {
     session_config: SessionConfig,
   ) -> Result<Option<String>, ToolCallError> {
     // Begin Example Call Code
-    match validate_and_extract_paths_from_argument(&function_args, session_config, true, None) {
-      Ok(Some(paths)) => match validate_and_extract_boolean_argument(&function_args, "reverse", false) {
+    match validate_and_extract_paths_from_argument(
+      &function_args,
+      session_config,
+      true,
+      None,
+    ) {
+      Ok(Some(paths)) => match validate_and_extract_boolean_argument(
+        &function_args,
+        "reverse",
+        false,
+      ) {
         Ok(reverse) => {
           // This command is an abstraction for a CLI command, so it calls std::process::command, any new function should have whatever implementation is necessary to execute the function, and should return a Result<Option<String>, ToolCallError>
           // If the code is too complex, it should be broken out into another function.
           let output = std::process::Command::new("git")
             .arg("apply")
             .arg("--verbose")
-            .args(if reverse.unwrap_or(false) { vec!["--reverse"] } else { vec![] })
+            .args(if reverse.unwrap_or(false) {
+              vec!["--reverse"]
+            } else {
+              vec![]
+            })
             .args(paths)
             .output()
             .map_err(|e| ToolCallError::new(e.to_string().as_str()))?;
 
           if !output.status.success() {
-            return Ok(Some(ToolCallError::new(&String::from_utf8_lossy(output.stderr.as_slice())).to_string()));
+            return Ok(Some(
+              ToolCallError::new(&String::from_utf8_lossy(
+                output.stderr.as_slice(),
+              ))
+              .to_string(),
+            ));
           }
 
           Ok(Some(String::from_utf8_lossy(&output.stdout).to_string()))
@@ -99,7 +117,13 @@ impl ToolCallTrait for TemplatedFunction {
       description: Some(self.description.clone()),
       parameters: Some(FunctionParameters {
         param_type: "object".to_string(),
-        required: self.properties.clone().into_iter().filter(|p| p.required).map(|p| p.name).collect(),
+        required: self
+          .properties
+          .clone()
+          .into_iter()
+          .filter(|p| p.required)
+          .map(|p| p.name)
+          .collect(),
         properties,
       }),
     }

@@ -1,12 +1,10 @@
 use std::borrow::Cow;
 use std::path::PathBuf;
 use std::sync::Arc;
+use tokio::sync::Mutex;
 
-use futures::FutureExt;
-use futures_util::future::SelectAll;
 use helix_core::config::default_syntax_loader;
 use helix_core::diagnostic::Severity;
-use helix_core::diff::compare_ropes;
 use helix_core::syntax::Configuration;
 use helix_core::syntax::LanguageConfiguration;
 use helix_core::syntax::Loader;
@@ -19,12 +17,11 @@ use log::{debug, error, info, warn};
 use lsp::DocumentSymbol;
 use lsp::NumberOrString;
 use serde_json::json;
-use tokio::sync::mpsc::UnboundedReceiver;
-use tokio::sync::oneshot;
-use tokio::sync::Mutex;
+use std::sync::MutexGuard;
+use tokio::sync::mpsc::UnboundedSender;
 use url::Url;
 
-use crate::app::lsp::symbol_types::DocumentChange;
+use crate::action::Action;
 use crate::trace_dbg;
 
 use super::symbol_types::SourceSymbol;
@@ -67,33 +64,67 @@ impl StatusMessage {
 
 pub struct LanguageServerInterface {
   pub workspaces: Vec<Workspace>,
-  pub lsp_progress: Arc<Mutex<LspProgressMap>>,
-  pub server_message_queue: Arc<Mutex<Vec<(usize, Call)>>>,
+  pub lsp_progress: LspProgressMap,
   pub language_servers: Arc<Mutex<helix_lsp::Registry>>,
-  pub status_msg: Arc<Mutex<StatusMessage>>,
+  pub status_msg: StatusMessage,
+  pub action_tx: Option<UnboundedSender<Action>>,
   loader: Arc<Loader>,
 }
 
 impl LanguageServerInterface {
-  pub fn new(config: Option<Configuration>) -> Self {
+  pub fn new(
+    config: Option<Configuration>,
+    action_tx: tokio::sync::mpsc::UnboundedSender<Action>,
+  ) -> Self {
     let loader = match config {
       Some(config) => Arc::new(Loader::new(config)),
       None => Arc::new(Loader::new(default_syntax_loader())),
     };
     Self {
-      lsp_progress: Arc::new(Mutex::new(LspProgressMap::new())),
-      server_message_queue: Arc::new(Mutex::new(vec![])),
+      lsp_progress: LspProgressMap::new(),
       loader: loader.clone(),
       language_servers: Arc::new(Mutex::new(Registry::new(loader))),
-      status_msg: Arc::new(Mutex::new(StatusMessage::default())),
+      action_tx: Some(action_tx),
+      status_msg: StatusMessage::default(),
       workspaces: vec![],
     }
   }
 
-  pub async fn server_capabilities(&self) -> anyhow::Result<Vec<lsp::ServerCapabilities>> {
-    let ls = self.language_servers.clone();
-    let ls = ls.lock().await;
-    Ok(ls.iter_clients().map(|client| client.capabilities().clone()).collect::<Vec<_>>())
+  pub async fn spawn_server_notification_thread(&mut self) {
+    use futures_util::StreamExt;
+    let ls_mutex = self.language_servers.clone();
+    let action_tx = self.action_tx.as_mut().unwrap().clone();
+
+    tokio::spawn(async move {
+      loop {
+        let mut ls = ls_mutex.lock().await;
+
+        if let Some((id, call)) = ls.incoming.next().await {
+          action_tx.send(Action::LspServerMessageReceived((id, call))).unwrap();
+        }
+      }
+    })
+    .await
+    .unwrap();
+  }
+
+  pub async fn check_server_notifications(&mut self) -> Option<(usize, Call)> {
+    use futures_util::StreamExt;
+    trace_dbg!("check_server_notifications");
+
+    let mut ls = self.language_servers.lock().await;
+    ls.incoming.next().await
+  }
+
+  pub async fn server_capabilities(
+    &self,
+  ) -> anyhow::Result<Vec<lsp::ServerCapabilities>> {
+    let ls = self.language_servers.lock().await;
+    Ok(
+      ls.iter_clients()
+        .map(|client| client.capabilities().clone())
+        .collect::<Vec<_>>(),
+    )
   }
 
   pub async fn goto_symbol_definition(
@@ -101,19 +132,20 @@ impl LanguageServerInterface {
     symbol: Arc<SourceSymbol>,
     language_server_id: usize,
   ) -> anyhow::Result<lsp::GotoDefinitionResponse> {
-    let text_document = lsp::TextDocumentIdentifier { uri: Url::from_file_path(symbol.file_path.clone()).unwrap() };
+    let text_document = lsp::TextDocumentIdentifier {
+      uri: Url::from_file_path(symbol.file_path.clone()).unwrap(),
+    };
     let position = symbol.selection_range.borrow().start;
 
-    let client = self
-      .language_servers
-      .lock()
-      .await
+    let ls = self.language_servers.lock().await;
+    let client = ls
       .iter_clients()
       .find(|c| c.id() == language_server_id)
       .expect("could not obtain language server for goto request")
       .clone();
 
-    let work_done_token = Some(NumberOrString::String("goto definition".to_string()));
+    let work_done_token =
+      Some(NumberOrString::String("goto definition".to_string()));
     let request = client
       .goto_definition(text_document, position, work_done_token)
       .expect("could not obtain goto definition response");
@@ -125,17 +157,18 @@ impl LanguageServerInterface {
     symbol: Arc<SourceSymbol>,
     language_server_id: usize,
   ) -> anyhow::Result<lsp::GotoDefinitionResponse> {
-    let text_document = lsp::TextDocumentIdentifier { uri: Url::from_file_path(symbol.file_path.clone()).unwrap() };
+    let text_document = lsp::TextDocumentIdentifier {
+      uri: Url::from_file_path(symbol.file_path.clone()).unwrap(),
+    };
     let position = symbol.selection_range.borrow().start;
-    let client = self
-      .language_servers
-      .lock()
-      .await
+    let ls = self.language_servers.lock().await;
+    let client = ls
       .iter_clients()
       .find(|c| c.id() == language_server_id)
       .expect("could not obtain language server for goto request")
       .clone();
-    let work_done_token = Some(NumberOrString::String("goto declaration".to_string()));
+    let work_done_token =
+      Some(NumberOrString::String("goto declaration".to_string()));
     let request = client
       .goto_declaration(text_document, position, work_done_token)
       .expect("could not obtain goto declaration response");
@@ -147,17 +180,18 @@ impl LanguageServerInterface {
     symbol: Arc<SourceSymbol>,
     language_server_id: usize,
   ) -> anyhow::Result<lsp::Location> {
-    let text_document = lsp::TextDocumentIdentifier { uri: Url::from_file_path(symbol.file_path.clone()).unwrap() };
+    let text_document = lsp::TextDocumentIdentifier {
+      uri: Url::from_file_path(symbol.file_path.clone()).unwrap(),
+    };
     let position = symbol.selection_range.borrow().start;
-    let client = self
-      .language_servers
-      .lock()
-      .await
+    let ls = self.language_servers.lock().await;
+    let client = ls
       .iter_clients()
       .find(|c| c.id() == language_server_id)
       .expect("could not obtain language server for goto request")
       .clone();
-    let work_done_token = Some(NumberOrString::String("goto type definition".to_string()));
+    let work_done_token =
+      Some(NumberOrString::String("goto type definition".to_string()));
     let request = client
       .goto_type_definition(text_document, position, work_done_token)
       .expect("could not obtain goto type definition response");
@@ -174,13 +208,20 @@ impl LanguageServerInterface {
     let root_dirs = &[workspace_path.clone()];
     let enable_snippets = false;
     let language_server = self
-      .initialize_client(language_name, languge_server_name, doc_path, root_dirs, enable_snippets)
+      .initialize_client(
+        language_name,
+        languge_server_name,
+        doc_path,
+        root_dirs,
+        enable_snippets,
+      )
       .await
       .unwrap()
       .expect("unable to initialize language server");
     let language_server_id = language_server.id();
-    let language_config =
-      self.language_configuration_by_name(language_name).expect("can't find language configuration");
+    let language_config = self
+      .language_configuration_by_name(language_name)
+      .expect("can't find language configuration");
     self.workspaces.push(Workspace::new(
       &workspace_path,
       language_name.into(),
@@ -194,7 +235,8 @@ impl LanguageServerInterface {
   pub async fn update_workspace_symbols(&mut self) -> anyhow::Result<()> {
     log::info!("update_workspace_symbols");
 
-    let clients = self.language_servers.lock().await.iter_clients().cloned().collect::<Vec<Arc<Client>>>();
+    let ls = self.language_servers.lock().await;
+    let clients = ls.iter_clients().cloned().collect::<Vec<Arc<Client>>>();
     let ids = clients.iter().map(|client| client.id()).collect::<Vec<usize>>();
     match self.wait_for_progress_token_completion(ids.as_slice()).await {
       Ok(_) => {
@@ -203,9 +245,14 @@ impl LanguageServerInterface {
           workspace.scan_workspace_files().unwrap();
           trace_dbg!("workspace files: {:#?}", workspace.files.len());
           for workspace_file in
-            workspace.files.iter_mut().filter(|workspace_file| workspace_file.needs_update().unwrap_or_default())
+            workspace.files.iter_mut().filter(|workspace_file| {
+              workspace_file.needs_update().unwrap_or_default()
+            })
           {
-            trace_dbg!("updating workspace file: {:#?}", workspace_file.file_path);
+            trace_dbg!(
+              "updating workspace file: {:#?}",
+              workspace_file.file_path
+            );
 
             let language_server = clients
               .iter()
@@ -214,10 +261,16 @@ impl LanguageServerInterface {
 
             workspace.offset_encoding = language_server.offset_encoding();
 
-            if let Some(request) = language_server.document_symbols(workspace_file.get_text_document_id().unwrap()) {
-              log::info!("requesting document symbols for {}", workspace_file.file_path.display());
+            if let Some(request) = language_server
+              .document_symbols(workspace_file.get_text_document_id().unwrap())
+            {
+              log::info!(
+                "requesting document symbols for {}",
+                workspace_file.file_path.display()
+              );
               let response_json = request.await.unwrap();
-              let response_parsed: Option<lsp::DocumentSymbolResponse> = serde_json::from_value(response_json)?;
+              let response_parsed: Option<lsp::DocumentSymbolResponse> =
+                serde_json::from_value(response_json)?;
 
               let doc_symbols = match response_parsed {
                 Some(lsp::DocumentSymbolResponse::Nested(symbols)) => {
@@ -230,9 +283,15 @@ impl LanguageServerInterface {
                 },
                 Some(lsp::DocumentSymbolResponse::Flat(_symbols)) => {
                   // symbols.into_iter().map(|symbol| SymbolInformationItem { symbol, offset_encoding }).collect()
-                  return Err(anyhow::anyhow!("document symbol support is required"));
+                  return Err(anyhow::anyhow!(
+                    "document symbol support is required"
+                  ));
                 },
-                None => return Err(anyhow::anyhow!("document symbol response is None")),
+                None => {
+                  return Err(anyhow::anyhow!(
+                    "document symbol response is None"
+                  ))
+                },
               };
               let doc_change = workspace_file.update(doc_symbols).unwrap();
               log::info!("document change: {:#?}", doc_change);
@@ -276,18 +335,24 @@ impl LanguageServerInterface {
     }
   }
 
-  pub async fn query_document_symbols(&mut self, doc_url: &Url, ids: &[usize]) -> anyhow::Result<Vec<DocumentSymbol>> {
+  pub async fn query_document_symbols(
+    &mut self,
+    doc_url: &Url,
+    ids: &[usize],
+  ) -> anyhow::Result<Vec<DocumentSymbol>> {
     match self.wait_for_progress_token_completion(ids).await {
       Ok(_) => {
         let mut results = vec![];
-        for language_server in self.language_servers.lock().await.iter_clients() {
+        let ls = self.language_servers.lock().await;
+        for language_server in ls.iter_clients() {
           if ids.contains(&language_server.id()) {
             let doc_id = lsp::TextDocumentIdentifier::new(doc_url.clone());
 
             let _offset_encoding = language_server.offset_encoding();
             if let Some(s) = language_server.document_symbols(doc_id.clone()) {
               let symbols = s.await.unwrap();
-              let response: Option<lsp::DocumentSymbolResponse> = serde_json::from_value(symbols)?;
+              let response: Option<lsp::DocumentSymbolResponse> =
+                serde_json::from_value(symbols)?;
 
               let symbols = match response {
                 Some(symbols) => symbols,
@@ -304,7 +369,9 @@ impl LanguageServerInterface {
                 },
                 lsp::DocumentSymbolResponse::Flat(_symbols) => {
                   // symbols.into_iter().map(|symbol| SymbolInformationItem { symbol, offset_encoding }).collect()
-                  return Err(anyhow::anyhow!("document symbol support is required"));
+                  return Err(anyhow::anyhow!(
+                    "document symbol support is required"
+                  ));
                 },
               };
               results.extend(symbols);
@@ -317,11 +384,12 @@ impl LanguageServerInterface {
     }
   }
 
-  pub async fn wait_for_language_server_initialization(&mut self, language_server_ids: &[usize]) -> anyhow::Result<()> {
-    let active_clients = self
-      .language_servers
-      .lock()
-      .await
+  pub async fn wait_for_language_server_initialization(
+    &mut self,
+    language_server_ids: &[usize],
+  ) -> anyhow::Result<()> {
+    let ls = self.language_servers.lock().await;
+    let active_clients = ls
       .iter_clients()
       .filter(|client| language_server_ids.contains(&client.id()))
       .cloned()
@@ -329,7 +397,8 @@ impl LanguageServerInterface {
 
     tokio::spawn({
       async move {
-        let mut interval = tokio::time::interval(std::time::Duration::from_secs(1));
+        let mut interval =
+          tokio::time::interval(std::time::Duration::from_secs(1));
         while !active_clients.iter().all(|client| client.is_initialized()) {
           interval.tick().await;
           log::info!("waiting for language server initialization");
@@ -341,48 +410,14 @@ impl LanguageServerInterface {
     .map_err(|e| anyhow::anyhow!(e))
   }
 
-  pub async fn spawn_server_notification_thread(lsi: Arc<Mutex<LanguageServerInterface>>) {
-    let lsi = lsi.lock().await;
-    let ls = lsi.language_servers.clone();
-    let server_message_queue_mutex = lsi.server_message_queue.clone();
-    use futures_util::StreamExt;
-
-    tokio::spawn(async move {
-      loop {
-        let server_message_queue = &mut server_message_queue_mutex.lock().await;
-        if let Some((id, call)) = ls.lock().await.incoming.next().await {
-          server_message_queue.push((id, call));
-          // Self::handle_language_server_message(lsp_progress, registry, call, id, status_msg, workspaces).await
-        }
-      }
-    })
-    .await
-    .unwrap();
-  }
-
-  // pub async fn poll_language_server_events(&mut self) {
-  //   use futures_util::StreamExt;
-  //   trace_dbg!("poll_language_server_events");
-  //
-  //   let lsp_progress = &mut self.lsp_progress.lock().await;
-  //   let registry = &mut self.language_servers.lock().await;
-  //   let status_msg = &mut self.status_msg.lock().await;
-  //   let workspaces = &mut self.workspaces;
-  //   if let Some((id, call)) = self.language_servers.clone().lock().await.incoming.next().await {
-  //     trace_dbg!("poll_language_server_events: {:#?}", call);
-  //     Self::handle_language_server_message(lsp_progress, registry, call, id, status_msg, workspaces).await
-  //   } else {
-  //     trace_dbg!("no message to handle");
-  //   }
-  // }
-
-  pub async fn wait_for_progress_token_completion(&mut self, ids: &[usize]) -> anyhow::Result<()> {
+  pub async fn wait_for_progress_token_completion(
+    &self,
+    ids: &[usize],
+  ) -> anyhow::Result<()> {
     log::info!("wait_for_progress_token_completion: {:#?}", ids);
+    let ls = self.language_servers.lock().await;
 
-    let active_clients = self
-      .language_servers
-      .lock()
-      .await
+    let active_clients = ls
       .iter_clients()
       .filter(|client| ids.contains(&client.id()))
       .cloned()
@@ -392,32 +427,26 @@ impl LanguageServerInterface {
 
     if active_clients.is_empty() {
       trace_dbg!("no language servers with matching ids found: {:#?}", ids);
-      return Err(anyhow::anyhow!("no language servers with matching ids found"));
+      return Err(anyhow::anyhow!(
+        "no language servers with matching ids found"
+      ));
     }
 
     // self
     //   .wait_for_language_server_initialization(ids)
     //   .then(|_| async { log::info!("language server initialized") })
     //   .await;
-    let lsp_progress_mtx = self.lsp_progress.clone();
 
-    tokio::spawn(async move {
-      log::info!("waiting for progress token completion loop");
-      let mut interval = tokio::time::interval(std::time::Duration::from_millis(1000));
-      let lsp_progress = &mut lsp_progress_mtx.lock().await;
-      while active_clients.iter().any(|c| {
-        log::info!("lsp_progress: {:#?}", lsp_progress.progress_map(c.id()));
-        lsp_progress.is_progressing(c.id())
-      }) {
-        interval.tick().await;
-      }
-    })
-    .then(|r| async {
-      log::info!("token loop ended");
-      r
-    })
-    .await
-    .map_err(|e| anyhow::anyhow!(e))
+    log::info!("waiting for progress token completion loop");
+    let mut interval =
+      tokio::time::interval(std::time::Duration::from_millis(1000));
+    while active_clients.iter().any(|c| {
+      log::info!("lsp_progress: {:#?}", self.lsp_progress.progress_map(c.id()));
+      self.lsp_progress.is_progressing(c.id())
+    }) {
+      interval.tick().await;
+    }
+    Ok(())
   }
 
   pub async fn initialize_client(
@@ -430,38 +459,50 @@ impl LanguageServerInterface {
   ) -> Result<Option<Arc<Client>>, anyhow::Error> {
     match self.language_configuration_by_name(language_name) {
       Some(language_config) => {
-        Ok(Some(
-          self
-            .language_servers
-            .lock()
-            .await
-            .get(
-              //
-              &language_config,
-              doc_path,
-              root_dirs,
-              enable_snippets,
-            )
-            .find(|(name, _client)| name == languge_server_name)
-            .unwrap()
-            .1
-            .map_err(|e| anyhow::anyhow!(e))?,
-        ))
+        let mut ls = self.language_servers.lock().await;
+        let client = ls
+          .get(
+            //
+            &language_config,
+            doc_path,
+            root_dirs,
+            enable_snippets,
+          )
+          .find(|(name, _client)| name == languge_server_name)
+          .unwrap()
+          .1
+          .map_err(|e| anyhow::anyhow!(e))?;
+        Ok(Some(client))
       },
       None => Ok(None),
     }
   }
 
-  pub fn language_configuration_by_name(&self, name: &str) -> Option<Arc<LanguageConfiguration>> {
+  pub fn language_configuration_by_name(
+    &self,
+    name: &str,
+  ) -> Option<Arc<LanguageConfiguration>> {
     self.loader.language_config_for_name(name)
   }
 
-  pub async fn language_server_by_name(&self, language_server_name: String) -> Option<Arc<helix_lsp::Client>> {
-    self.language_servers.lock().await.iter_clients().find(|client| client.name() == language_server_name).cloned()
+  pub async fn language_server_by_name(
+    &self,
+    language_server_name: String,
+  ) -> Option<Arc<helix_lsp::Client>> {
+    let ls = self.language_servers.lock().await;
+    let client =
+      ls.iter_clients().find(|client| client.name() == language_server_name);
+    client.cloned()
   }
 
-  pub async fn language_server_by_id(&self, language_server_id: usize) -> Option<Arc<helix_lsp::Client>> {
-    self.language_servers.lock().await.iter_clients().find(|client| client.id() == language_server_id).cloned()
+  pub async fn language_server_by_id(
+    &self,
+    language_server_id: usize,
+  ) -> Option<Arc<helix_lsp::Client>> {
+    let ls = self.language_servers.lock().await;
+    let client =
+      ls.iter_clients().find(|client| client.id() == language_server_id);
+    client.cloned()
   }
 
   pub async fn handle_language_server_message(
@@ -476,7 +517,10 @@ impl LanguageServerInterface {
 
     macro_rules! language_server {
       () => {
-        registry.iter_clients().find(|client| client.id() == server_id).expect("expected language server")
+        registry
+          .iter_clients()
+          .find(|client| client.id() == server_id)
+          .expect("expected language server")
         // match self.language_server_by_id(server_id).await {
         //   Some(language_server) => language_server,
         //   None => {
@@ -488,7 +532,11 @@ impl LanguageServerInterface {
     }
 
     match call {
-      Call::Notification(helix_lsp::jsonrpc::Notification { method, params, .. }) => {
+      Call::Notification(helix_lsp::jsonrpc::Notification {
+        method,
+        params,
+        ..
+      }) => {
         let notification = match Notification::parse(&method, params) {
           Ok(notification) => notification,
           Err(helix_lsp::Error::Unhandled) => {
@@ -496,7 +544,10 @@ impl LanguageServerInterface {
             return;
           },
           Err(err) => {
-            error!("Ignoring unknown notification from Language Server: {}", err);
+            error!(
+              "Ignoring unknown notification from Language Server: {}",
+              err
+            );
             return;
           },
         };
@@ -509,7 +560,9 @@ impl LanguageServerInterface {
             // This might not be required by the spec but Neovim does this as well, so it's
             // probably a good idea for compatibility.
             if let Some(config) = language_server.config() {
-              tokio::spawn(language_server.did_change_configuration(config.clone()));
+              tokio::spawn(
+                language_server.did_change_configuration(config.clone()),
+              );
             }
 
             // let docs = self.editor.documents().filter(|doc| doc.supports_language_server(server_id));
@@ -529,14 +582,22 @@ impl LanguageServerInterface {
           },
           Notification::PublishDiagnostics(params) => {
             let file_path = params.uri.to_file_path().unwrap();
-            match workspaces.iter_mut().find_map(|ws| ws.get_mut_file(&file_path)) {
+            match workspaces
+              .iter_mut()
+              .find_map(|ws| ws.get_mut_file(&file_path))
+            {
               Some(file) => {
                 let new_diagnostics = params.diagnostics;
                 match params.version {
                   Some(version) => {
-                    if let Some(diagnostics) = file.diagnostics.get_mut(&version) {
+                    if let Some(diagnostics) =
+                      file.diagnostics.get_mut(&version)
+                    {
                       diagnostics.extend(new_diagnostics);
-                      log::info!("updated diagnostics for version: {}", version);
+                      log::info!(
+                        "updated diagnostics for version: {}",
+                        version
+                      );
                       log::debug!("diagnostics: {:#?}", diagnostics);
                     } else {
                       file.diagnostics.insert(version, new_diagnostics.clone());
@@ -546,13 +607,23 @@ impl LanguageServerInterface {
                   },
                   None => {
                     log::warn!("no version supplied with server message, using file version {}", file.version);
-                    if let Some(diagnostics) = file.diagnostics.get_mut(&file.version) {
+                    if let Some(diagnostics) =
+                      file.diagnostics.get_mut(&file.version)
+                    {
                       diagnostics.extend(new_diagnostics);
-                      log::info!("updated diagnostics for version: {}", file.version);
+                      log::info!(
+                        "updated diagnostics for version: {}",
+                        file.version
+                      );
                       log::debug!("diagnostics: {:#?}", diagnostics);
                     } else {
-                      file.diagnostics.insert(file.version, new_diagnostics.clone());
-                      log::info!("added diagnostics for file.version: {}", file.version);
+                      file
+                        .diagnostics
+                        .insert(file.version, new_diagnostics.clone());
+                      log::info!(
+                        "added diagnostics for file.version: {}",
+                        file.version
+                      );
                       log::debug!("diagnostics: {:#?}", new_diagnostics);
                     }
                   },
@@ -573,28 +644,34 @@ impl LanguageServerInterface {
             let lsp::ProgressParams { token, value } = params;
 
             let lsp::ProgressParamsValue::WorkDone(work) = value;
-            let parts = match &work {
-              lsp::WorkDoneProgress::Begin(lsp::WorkDoneProgressBegin { title, message, percentage, .. }) => {
-                (Some(title), message, percentage)
-              },
-              lsp::WorkDoneProgress::Report(lsp::WorkDoneProgressReport { message, percentage, .. }) => {
-                (None, message, percentage)
-              },
-              lsp::WorkDoneProgress::End(lsp::WorkDoneProgressEnd { message }) => {
-                // if message.is_some() {
-                (None, message, &None)
-                // } else {
-                // self.lsp_progress.end_progress(server_id, &token);
-                // if !self.lsp_progress.is_progressing(server_id) {
-                // editor_view.spinners_mut().get_or_create(server_id).stop();
-                // }
-                // self.clear_status();
+            let parts =
+              match &work {
+                lsp::WorkDoneProgress::Begin(lsp::WorkDoneProgressBegin {
+                  title,
+                  message,
+                  percentage,
+                  ..
+                }) => (Some(title), message, percentage),
+                lsp::WorkDoneProgress::Report(
+                  lsp::WorkDoneProgressReport { message, percentage, .. },
+                ) => (None, message, percentage),
+                lsp::WorkDoneProgress::End(lsp::WorkDoneProgressEnd {
+                  message,
+                }) => {
+                  // if message.is_some() {
+                  (None, message, &None)
+                  // } else {
+                  // self.lsp_progress.end_progress(server_id, &token);
+                  // if !self.lsp_progress.is_progressing(server_id) {
+                  // editor_view.spinners_mut().get_or_create(server_id).stop();
+                  // }
+                  // self.clear_status();
 
-                // we want to render to clear any leftover spinners or messages
-                // return;
-                // }
-              },
-            };
+                  // we want to render to clear any leftover spinners or messages
+                  // return;
+                  // }
+                },
+              };
 
             let token_d: &dyn std::fmt::Display = match &token {
               lsp::NumberOrString::Number(n) => n,
@@ -623,7 +700,9 @@ impl LanguageServerInterface {
               (None, None, Some(percentage)) => {
                 format!("[{}] {}%", token_d, percentage)
               },
-              (None, None, None) => format!("[{}]", token_d),
+              (None, None, None) => {
+                format!("[{}]", token_d)
+              },
             };
 
             if let lsp::WorkDoneProgress::End(_) = work {
@@ -662,10 +741,18 @@ impl LanguageServerInterface {
           },
         }
       },
-      Call::MethodCall(helix_lsp::jsonrpc::MethodCall { method, params, id, .. }) => {
+      Call::MethodCall(helix_lsp::jsonrpc::MethodCall {
+        method,
+        params,
+        id,
+        ..
+      }) => {
         let reply = match MethodCall::parse(&method, params) {
           Err(helix_lsp::Error::Unhandled) => {
-            error!("Language Server: Method {} not found in request {}", method, id);
+            error!(
+              "Language Server: Method {} not found in request {}",
+              method, id
+            );
             Err(helix_lsp::jsonrpc::Error {
               code: helix_lsp::jsonrpc::ErrorCode::MethodNotFound,
               message: format!("Method not found: {}", method),
@@ -694,7 +781,9 @@ impl LanguageServerInterface {
           Ok(MethodCall::ApplyWorkspaceEdit(_params)) => {
             todo!("need to handle apply workspace edit");
           },
-          Ok(MethodCall::WorkspaceFolders) => Ok(json!(&*language_server!().workspace_folders().await)),
+          Ok(MethodCall::WorkspaceFolders) => {
+            Ok(json!(&*language_server!().workspace_folders().await))
+          },
           Ok(MethodCall::WorkspaceConfiguration(params)) => {
             let language_server = language_server!();
             let result: Vec<_> = params
@@ -716,21 +805,29 @@ impl LanguageServerInterface {
             Ok(json!(result))
           },
           Ok(MethodCall::RegisterCapability(params)) => {
-            if let Some(client) = registry.iter_clients().find(|client| client.id() == server_id) {
+            if let Some(client) =
+              registry.iter_clients().find(|client| client.id() == server_id)
+            {
               for reg in params.registrations {
                 match reg.method.as_str() {
                   lsp::notification::DidChangeWatchedFiles::METHOD => {
                     let Some(options) = reg.register_options else {
                       continue;
                     };
-                    let ops: lsp::DidChangeWatchedFilesRegistrationOptions = match serde_json::from_value(options) {
-                      Ok(ops) => ops,
-                      Err(err) => {
-                        log::warn!("Failed to deserialize DidChangeWatchedFilesRegistrationOptions: {err}");
-                        continue;
-                      },
-                    };
-                    registry.file_event_handler.register(client.id(), Arc::downgrade(client), reg.id, ops)
+                    let ops: lsp::DidChangeWatchedFilesRegistrationOptions =
+                      match serde_json::from_value(options) {
+                        Ok(ops) => ops,
+                        Err(err) => {
+                          log::warn!("Failed to deserialize DidChangeWatchedFilesRegistrationOptions: {err}");
+                          continue;
+                        },
+                      };
+                    registry.file_event_handler.register(
+                      client.id(),
+                      Arc::downgrade(client),
+                      reg.id,
+                      ops,
+                    )
                   },
                   _ => {
                     // Language Servers based on the `vscode-languageserver-node` library often send
@@ -773,7 +870,9 @@ impl LanguageServerInterface {
 
         tokio::spawn(language_server!().reply(id, reply));
       },
-      Call::Invalid { id } => log::error!("LSP invalid method call id={:?}", id),
+      Call::Invalid { id } => {
+        log::error!("LSP invalid method call id={:?}", id)
+      },
     }
     // pub async fn get_semantic_tokens(&mut self, doc_url: &Url, id: usize) -> anyhow::Result<lsp::SemanticTokensResult> {
     //   let language_server = self.language_server_by_id(id).unwrap();

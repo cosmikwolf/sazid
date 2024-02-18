@@ -35,13 +35,16 @@ mod tests {
 
     let patch_content = "..."; // The actual patch content goes here
 
-    std::fs::write(&patch_path, patch_content).expect("Failed to write patch content");
+    std::fs::write(&patch_path, patch_content)
+      .expect("Failed to write patch content");
 
     let result = apply_patch_file(file_path, patch_path);
 
     // Assert that an error occurred due to the missing file, not due to parsing
     match result {
-      Ok(_) => panic!("apply_patch_file should fail for a nonexistent original file"),
+      Ok(_) => {
+        panic!("apply_patch_file should fail for a nonexistent original file")
+      },
       Err(e) => {
         // Update the assertion here
         assert!(
@@ -67,9 +70,14 @@ mod tests {
     let result = apply_patch_file(file_path, patch_path);
 
     match result {
-      Ok(_) => panic!("apply_patch_file should have failed due to invalid patch content"),
+      Ok(_) => panic!(
+        "apply_patch_file should have failed due to invalid patch content"
+      ),
       Err(e) => {
-        assert!(e.to_string().contains("error parsing patch content"), "Error message did not match expected content");
+        assert!(
+          e.to_string().contains("error parsing patch content"),
+          "Error message did not match expected content"
+        );
       },
     }
   }
@@ -108,7 +116,9 @@ mod tests {
 
     // We expect this to fail due to read-only permissions
     match result {
-      Ok(_) => panic!("create_patch_file should have failed due to read-only permissions"),
+      Ok(_) => panic!(
+        "create_patch_file should have failed due to read-only permissions"
+      ),
       Err(e) => {
         let error_message = e.to_string();
         assert!(
@@ -133,15 +143,18 @@ mod tests {
     let patch_path = temp_dir.path().join("sample.patch");
 
     // Create a sample file
-    std::fs::write(&file_path, "This is the first line.\n").expect("Failed to write original file content");
+    std::fs::write(&file_path, "This is the first line.\n")
+      .expect("Failed to write original file content");
 
     // Create a patch file
     let patch_content =
       "--- a/sample.txt\n+++ b/sample.txt\n@@ -1 +1 @@\n-This is the first line.\n+This is an edited line.\n";
-    std::fs::write(&patch_path, patch_content).expect("Failed to write patch content");
+    std::fs::write(&patch_path, patch_content)
+      .expect("Failed to write patch content");
 
     // Apply the patch for the first time
-    let first_apply_result = apply_patch_file(file_path.clone(), patch_path.clone());
+    let first_apply_result =
+      apply_patch_file(file_path.clone(), patch_path.clone());
     assert!(first_apply_result.is_ok(), "Apply first patch should succeed");
     let content_after_first_patch = first_apply_result.unwrap();
 
@@ -165,25 +178,30 @@ mod tests {
     let patch2_path = temp_dir.path().join("sample2.patch");
 
     let file_content = "Content before patches.\n";
-    std::fs::write(&file_path, file_content).expect("Failed to write file content");
+    std::fs::write(&file_path, file_content)
+      .expect("Failed to write file content");
 
     let patch1_content =
       "--- a/sample.txt\n+++ b/sample.txt\n@@ -1 +1 @@\n-Content before patches.\n+Content after patch 1.\n";
-    std::fs::write(&patch1_path, patch1_content).expect("Failed to write patch1 content");
+    std::fs::write(&patch1_path, patch1_content)
+      .expect("Failed to write patch1 content");
 
     let apply_result1 = apply_patch_file(file_path.clone(), patch1_path);
     assert!(apply_result1.is_ok(), "Apply first patch should succeed");
 
-    let content_after_patch1 = read_to_string(&file_path).expect("Failed to read file after first patch");
+    let content_after_patch1 = read_to_string(&file_path)
+      .expect("Failed to read file after first patch");
 
     let patch2_content =
       "--- a/sample.txt\n+++ b/sample.txt\n@@ -1 +1 @@\n-Content after patch 1.\n+Final content after patch 2.\n";
-    std::fs::write(&patch2_path, patch2_content).expect("Failed to write patch2 content");
+    std::fs::write(&patch2_path, patch2_content)
+      .expect("Failed to write patch2 content");
 
     let apply_result2 = apply_patch_file(file_path.clone(), patch2_path);
     assert!(apply_result2.is_ok(), "Apply second patch should succeed");
 
-    let content_after_patch2 = read_to_string(&file_path).expect("Failed to read file after second patch");
+    let content_after_patch2 = read_to_string(&file_path)
+      .expect("Failed to read file after second patch");
 
     assert_eq!(
       content_after_patch1, "Content after patch 1.",
@@ -246,7 +264,10 @@ mod tests {
     let result = apply_patch_file(dir_path, patch_path);
 
     // verify
-    assert!(result.is_err(), "apply_patch_file should fail when the target is a directory");
+    assert!(
+      result.is_err(),
+      "apply_patch_file should fail when the target is a directory"
+    );
   }
 
   #[test]
@@ -259,7 +280,10 @@ mod tests {
     let result = apply_patch_file(file_path, PathBuf::new()); // Empty PathBuf simulates missing patch_name
 
     // verify
-    assert!(result.is_err(), "apply_patch_file should fail when patch_name is missing");
+    assert!(
+      result.is_err(),
+      "apply_patch_file should fail when patch_name is missing"
+    );
   }
 
   #[test]
@@ -277,7 +301,8 @@ mod tests {
       "--- a/sample.txt\n+++ b/sample.txt\n@@ -1 +1 @@\n-This is the first line.\n+This is an edited line.\n";
 
     // We write the patch content to the path from where our function will read
-    std::fs::write(&patch_path, patch_content).expect("Failed to write patch content");
+    std::fs::write(&patch_path, patch_content)
+      .expect("Failed to write patch content");
 
     // making the file read-only to trigger a failure scenario in apply_patch_file
     let file = File::create(&file_path).unwrap();
@@ -290,7 +315,9 @@ mod tests {
 
     // Since we expect an error due to read-only permissions, we handle the Result accordingly
     match result {
-      Ok(_) => panic!("apply_patch_file should have failed due to read-only permissions"),
+      Ok(_) => panic!(
+        "apply_patch_file should have failed due to read-only permissions"
+      ),
       Err(e) => {
         // Ensuring that the failure scenario is due to file permission error
         assert!(

@@ -1,7 +1,10 @@
 use ratatui::style::Color;
 
 // Compute both rainbow color and its hue-inverted counterpart.
-pub fn get_rainbow_and_inverse_colors(step: u32, total_steps: u32) -> (Color, Color) {
+pub fn get_rainbow_and_inverse_colors(
+  step: u32,
+  total_steps: u32,
+) -> (Color, Color) {
   let hue = step as f32 / total_steps as f32;
   let inverse_hue = (hue + 0.5) % 1.0; // Add 0.5 to invert the hue in the spectrum and use modulo to wrap around
 
@@ -21,7 +24,10 @@ pub fn get_rainbow_and_inverse_colors(step: u32, total_steps: u32) -> (Color, Co
     (inverse_color.2 * 255.0).round() as u8,
   );
 
-  (Color::Rgb(rainbow_rgb.0, rainbow_rgb.1, rainbow_rgb.2), Color::Rgb(inverse_rgb.0, inverse_rgb.1, inverse_rgb.2))
+  (
+    Color::Rgb(rainbow_rgb.0, rainbow_rgb.1, rainbow_rgb.2),
+    Color::Rgb(inverse_rgb.0, inverse_rgb.1, inverse_rgb.2),
+  )
 }
 
 fn hsv_to_rgb(h: f32, s: f32, v: f32) -> (f32, f32, f32) {

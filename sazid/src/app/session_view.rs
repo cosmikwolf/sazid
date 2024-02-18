@@ -1,4 +1,7 @@
-use bat::{assets::HighlightingAssets, config::Config, controller::Controller, style::StyleComponents};
+use bat::{
+  assets::HighlightingAssets, config::Config, controller::Controller,
+  style::StyleComponents,
+};
 use ratatui::style::Modifier;
 use ratatui::widgets::Block;
 use ratatui::widgets::Borders;
@@ -40,14 +43,25 @@ impl<'a> SessionView<'a> {
     use ratatui::style::{Color, Style};
     self.textarea.move_cursor(CursorMove::Top);
     self.textarea.move_cursor(CursorMove::Head);
-    self
-      .textarea
-      .set_cursor_line_style(Style::default().add_modifier(Modifier::UNDERLINED).add_modifier(Modifier::SLOW_BLINK));
+    self.textarea.set_cursor_line_style(
+      Style::default()
+        .add_modifier(Modifier::UNDERLINED)
+        .add_modifier(Modifier::SLOW_BLINK),
+    );
     self.textarea.set_cursor_style(Style::default().bg(Color::Yellow));
-    self.textarea.set_block(Block::default().borders(Borders::ALL).style(Style::default()).title(" Active "));
+    self.textarea.set_block(
+      Block::default()
+        .borders(Borders::ALL)
+        .style(Style::default())
+        .title(" Active "),
+    );
   }
 
-  pub fn set_window_width(&mut self, width: usize, _messages: &mut [MessageContainer]) {
+  pub fn set_window_width(
+    &mut self,
+    width: usize,
+    _messages: &mut [MessageContainer],
+  ) {
     let new_value = width;
     if self.window_width != new_value {
       trace_dbg!("setting window width to {}", new_value);
@@ -58,16 +72,21 @@ impl<'a> SessionView<'a> {
     }
   }
 
-  pub fn post_process_new_messages(&mut self, messages: &mut Vec<MessageContainer>) {
+  pub fn post_process_new_messages(
+    &mut self,
+    messages: &mut Vec<MessageContainer>,
+  ) {
     let dividing_newlines_count = 2;
     messages.iter_mut().for_each(|message| {
-      let rendered_text_message_start_index = self.rendered_text.len_chars() - message.stylized.len_chars();
+      let rendered_text_message_start_index =
+        self.rendered_text.len_chars() - message.stylized.len_chars();
       let original_message_length = message.stylized.len_chars();
       // trace_dbg!("message: {:#?}", message.bright_blue());
       // let previously_rendered_bytecount = message.rendered.stylized.len_bytes();
       if !message.stylize_complete {
         let text_width = self.window_width.min(80 - 4);
-        let stylized = self.renderer.render_message_bat(format!("{}", &message).as_str());
+        let stylized =
+          self.renderer.render_message_bat(format!("{}", &message).as_str());
         let options = Options::new(text_width)
           //.break_words(false)
             .initial_indent("")
@@ -77,8 +96,14 @@ impl<'a> SessionView<'a> {
         .wrap_algorithm(WrapAlgorithm::new_optimal_fit());
         let wrapped = textwrap::wrap(stylized.as_str(), options);
 
-        message.stylized =
-          Rope::from_str(wrapped.iter().map(|c| c.to_string()).collect::<Vec<String>>().join("\n").as_str());
+        message.stylized = Rope::from_str(
+          wrapped
+            .iter()
+            .map(|c| c.to_string())
+            .collect::<Vec<String>>()
+            .join("\n")
+            .as_str(),
+        );
 
         // message.stylized = Rope::from_str(
         //   wrapped
@@ -97,12 +122,17 @@ impl<'a> SessionView<'a> {
         // );
         //message.rendered.stylized = Rope::from_str(&message.rendered.content);
         if message.receive_complete {
-          message.stylized.append(Rope::from_str("\n".to_string().repeat(dividing_newlines_count).as_str()));
+          message.stylized.append(Rope::from_str(
+            "\n".to_string().repeat(dividing_newlines_count).as_str(),
+          ));
           message.stylize_complete = true;
         }
 
         self.new_data = true;
-        self.textarea.replace_at_end(message.stylized.to_string(), original_message_length);
+        self.textarea.replace_at_end(
+          message.stylized.to_string(),
+          original_message_length,
+        );
 
         // message.stylized.to_string().lines().for_each(|l| {
         //   trace_dbg!("line: {:#?}", l);
@@ -187,13 +217,23 @@ impl<'a> BatRenderer<'a> {
     //text.bytes().skip(self.buffer.len()).for_each(|b| self.buffer.push(b));
     let input = bat::Input::from_bytes(text.as_bytes());
     //trace_dbg!("render_message_bat: {:?}", self.rendered_bytes);
-    controller.run_with_error_handler(vec![input.into()], Some(&mut buffer), Self::render_error).unwrap();
+    controller
+      .run_with_error_handler(
+        vec![input.into()],
+        Some(&mut buffer),
+        Self::render_error,
+      )
+      .unwrap();
     //trace_dbg!("render_message_bat: {:?}", buffer);
     buffer
   }
 }
 
-fn visual_char_coord_to_index(rope: &Rope, line_number: usize, x_coord: usize) -> usize {
+fn visual_char_coord_to_index(
+  rope: &Rope,
+  line_number: usize,
+  x_coord: usize,
+) -> usize {
   // Clamp line_number within the number of lines in rope
   let line_number = line_number.min(rope.len_lines());
   // Get the character offset of the line
@@ -221,10 +261,14 @@ fn visual_char_coord_to_index(rope: &Rope, line_number: usize, x_coord: usize) -
       }
     } else if c == '\x1B' {
       // Detect ANSI escape codes
-      if actual_char_index + 1 < line.len_chars() && line.char(actual_char_index + 1) == '[' {
+      if actual_char_index + 1 < line.len_chars()
+        && line.char(actual_char_index + 1) == '['
+      {
         actual_char_index += 2; // Skip the escape character and '['
                                 // Loop until we find a character that is not part of the code
-        while actual_char_index < line.len_chars() && !line.char(actual_char_index).is_alphabetic() {
+        while actual_char_index < line.len_chars()
+          && !line.char(actual_char_index).is_alphabetic()
+        {
           actual_char_index += 1;
         }
         actual_char_index += 1; // Skip the final character of the ANSI code

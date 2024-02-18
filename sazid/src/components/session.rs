@@ -1,12 +1,15 @@
 use async_openai::types::{
-  ChatCompletionRequestAssistantMessage, ChatCompletionRequestMessage, ChatCompletionRequestUserMessage,
-  ChatCompletionRequestUserMessageContent, ChatCompletionTool, CreateChatCompletionRequest, CreateEmbeddingRequestArgs,
+  ChatCompletionRequestAssistantMessage, ChatCompletionRequestMessage,
+  ChatCompletionRequestUserMessage, ChatCompletionRequestUserMessageContent,
+  ChatCompletionTool, CreateChatCompletionRequest, CreateEmbeddingRequestArgs,
   CreateEmbeddingResponse, Role,
 };
 use clipboard::{ClipboardContext, ClipboardProvider};
 use color_eyre::owo_colors::OwoColorize;
 use crossterm::event::KeyModifiers;
-use crossterm::event::{KeyCode, KeyEvent, MouseButton, MouseEvent, MouseEventKind};
+use crossterm::event::{
+  KeyCode, KeyEvent, MouseButton, MouseEvent, MouseEventKind,
+};
 use futures::StreamExt;
 use ratatui::layout::Rect;
 use ratatui::{prelude::*, widgets::block::*, widgets::*};
@@ -23,7 +26,8 @@ use dotenv::dotenv;
 
 use super::{Component, Frame};
 use crate::app::database::data_manager::{
-  get_all_embeddings_by_session, search_message_embeddings_by_session, DataManager,
+  get_all_embeddings_by_session, search_message_embeddings_by_session,
+  DataManager,
 };
 use crate::app::database::types::QueryableSession;
 use crate::app::functions::{all_functions, handle_tool_call};
@@ -134,9 +138,16 @@ impl<'a> From<QueryableSession> for Session<'a> {
   fn from(value: QueryableSession) -> Self {
     dotenv().ok();
     let api_key = std::env::var("OPENAI_API_KEY").unwrap();
-    let openai_config = OpenAIConfig::new().with_api_key(api_key).with_org_id("org-WagBLu0vLgiuEL12dylmcPFj");
+    let openai_config = OpenAIConfig::new()
+      .with_api_key(api_key)
+      .with_org_id("org-WagBLu0vLgiuEL12dylmcPFj");
     // let openai_config = OpenAIConfig::new().with_api_base("http://localhost:1234/v1".to_string());
-    Session { id: value.id, openai_config, config: value.config.0, ..Default::default() }
+    Session {
+      id: value.id,
+      openai_config,
+      config: value.config.0,
+      ..Default::default()
+    }
   }
 }
 
@@ -165,18 +176,27 @@ impl Component for Session<'static> {
     "- When evaluating function tests, make it a priority to determine if the problems exist in the source code, or if the test code itself is not properly designed"].join("\n").to_string();
     // self.config.prompt = "act as a very terse assistant".into();
     self.view.set_window_width(area.width as usize, &mut self.messages);
-    tx.send(Action::AddMessage(ChatMessage::System(self.config.prompt_message()))).unwrap();
+    tx.send(Action::AddMessage(ChatMessage::System(
+      self.config.prompt_message(),
+    )))
+    .unwrap();
     self.view.post_process_new_messages(&mut self.messages);
     // self.text_area = TextArea::new(self.view.rendered_text.lines().map(|l| l.to_string()).collect());
     self.config.available_functions = all_functions();
     Ok(())
   }
-  fn register_action_handler(&mut self, tx: UnboundedSender<Action>) -> Result<(), SazidError> {
+  fn register_action_handler(
+    &mut self,
+    tx: UnboundedSender<Action>,
+  ) -> Result<(), SazidError> {
     trace_dbg!("register_session_action_handler");
     self.action_tx = Some(tx);
     Ok(())
   }
-  fn register_config_handler(&mut self, config: Config) -> Result<(), SazidError> {
+  fn register_config_handler(
+    &mut self,
+    config: Config,
+  ) -> Result<(), SazidError> {
     self.config = config.session_config;
     Ok(())
   }
@@ -208,7 +228,12 @@ impl Component for Session<'static> {
         self.request_chat_completion(None, tx.clone())
       },
       Action::MessageEmbeddingSuccess(id) => {
-        self.messages.iter_mut().find(|m| m.message_id == id).unwrap().embedding_saved = true;
+        self
+          .messages
+          .iter_mut()
+          .find(|m| m.message_id == id)
+          .unwrap()
+          .embedding_saved = true;
       },
       Action::Resize(width, _height) => {
         self.view.set_window_width(width.into(), &mut self.messages);
@@ -248,29 +273,52 @@ impl Component for Session<'static> {
     Ok(None)
   }
 
-  fn handle_events(&mut self, event: Option<Event>) -> Result<Option<Action>, SazidError> {
+  fn handle_events(
+    &mut self,
+    event: Option<Event>,
+  ) -> Result<Option<Action>, SazidError> {
     let r = match event {
       Some(Event::Key(key_event)) => self.handle_key_events(key_event)?,
-      Some(Event::Mouse(mouse_event)) => self.handle_mouse_events(mouse_event)?,
+      Some(Event::Mouse(mouse_event)) => {
+        self.handle_mouse_events(mouse_event)?
+      },
       _ => None,
     };
     Ok(r)
   }
 
-  fn handle_mouse_events(&mut self, mouse_event: MouseEvent) -> Result<Option<Action>, SazidError> {
+  fn handle_mouse_events(
+    &mut self,
+    mouse_event: MouseEvent,
+  ) -> Result<Option<Action>, SazidError> {
     match mouse_event {
       MouseEvent { kind: MouseEventKind::ScrollUp, .. } => self.scroll_up(),
       MouseEvent { kind: MouseEventKind::ScrollDown, .. } => self.scroll_down(),
-      MouseEvent { kind: MouseEventKind::Drag(MouseButton::Left), column, row, modifiers } => {
+      MouseEvent {
+        kind: MouseEventKind::Drag(MouseButton::Left),
+        column,
+        row,
+        modifiers,
+      } => {
         // translate mouse click coordinates to text column and row
         self.select_end_coords = Some((column as usize, row as usize));
         // self.select_coords = Some((column as usize, row as usize));
         self.cursor_coords = Some((column as usize, row as usize));
         self.view.new_data = true;
-        trace_dbg!("mouse drag: column: {}, row: {}, modifiers: {:?}", column, row, modifiers);
+        trace_dbg!(
+          "mouse drag: column: {}, row: {}, modifiers: {:?}",
+          column,
+          row,
+          modifiers
+        );
         Ok(Some(Action::Update))
       },
-      MouseEvent { kind: MouseEventKind::Down(MouseButton::Left), column, row, .. } => {
+      MouseEvent {
+        kind: MouseEventKind::Down(MouseButton::Left),
+        column,
+        row,
+        ..
+      } => {
         // translate mouse click coordinates to text column and row
         self.select_start_coords = Some((column as usize, row as usize));
         self.cursor_coords = Some((column as usize, row as usize));
@@ -281,24 +329,44 @@ impl Component for Session<'static> {
     }
   }
 
-  fn handle_key_events(&mut self, key: KeyEvent) -> Result<Option<Action>, SazidError> {
+  fn handle_key_events(
+    &mut self,
+    key: KeyEvent,
+  ) -> Result<Option<Action>, SazidError> {
     self.last_events.push(key);
     Ok(match self.mode {
       Mode::Normal => match key {
-        KeyEvent { code: KeyCode::Char('d'), modifiers: KeyModifiers::CONTROL, .. } => {
+        KeyEvent {
+          code: KeyCode::Char('d'),
+          modifiers: KeyModifiers::CONTROL,
+          ..
+        } => {
           self.view.textarea.scroll(Scrolling::HalfPageDown);
           Some(Action::Update)
         },
-        KeyEvent { code: KeyCode::Char('u'), modifiers: KeyModifiers::CONTROL, .. } => {
+        KeyEvent {
+          code: KeyCode::Char('u'),
+          modifiers: KeyModifiers::CONTROL,
+          ..
+        } => {
           self.view.textarea.scroll(Scrolling::HalfPageUp);
           Some(Action::Update)
         },
-        KeyEvent { code: KeyCode::Char('f'), modifiers: KeyModifiers::CONTROL, .. } => {
+        KeyEvent {
+          code: KeyCode::Char('f'),
+          modifiers: KeyModifiers::CONTROL,
+          ..
+        } => {
           self.view.textarea.scroll(Scrolling::PageDown);
-          self.scroll_sticky_end = self.view.textarea.cursor().0 == self.view.textarea.lines().len();
+          self.scroll_sticky_end =
+            self.view.textarea.cursor().0 == self.view.textarea.lines().len();
           Some(Action::Update)
         },
-        KeyEvent { code: KeyCode::Char('b'), modifiers: KeyModifiers::CONTROL, .. } => {
+        KeyEvent {
+          code: KeyCode::Char('b'),
+          modifiers: KeyModifiers::CONTROL,
+          ..
+        } => {
           self.view.textarea.scroll(Scrolling::PageUp);
           Some(Action::Update)
         },
@@ -308,7 +376,8 @@ impl Component for Session<'static> {
         },
         KeyEvent { code: KeyCode::Char('j'), .. } => {
           self.view.textarea.move_cursor(CursorMove::Down);
-          self.scroll_sticky_end = self.view.textarea.cursor().0 == self.view.textarea.lines().len();
+          self.scroll_sticky_end =
+            self.view.textarea.cursor().0 == self.view.textarea.lines().len();
           trace_dbg!("cursor: {:#?}", self.view.textarea.cursor());
           Some(Action::Update)
         },
@@ -335,7 +404,8 @@ impl Component for Session<'static> {
         },
         KeyEvent { code: KeyCode::Char('$'), .. } => {
           self.view.textarea.move_cursor(CursorMove::End);
-          self.scroll_sticky_end = self.view.textarea.cursor().0 == self.view.textarea.lines().len();
+          self.scroll_sticky_end =
+            self.view.textarea.cursor().0 == self.view.textarea.lines().len();
           Some(Action::Update)
         },
         KeyEvent { code: KeyCode::Char('v'), .. } => {
@@ -345,14 +415,20 @@ impl Component for Session<'static> {
         KeyEvent { code: KeyCode::Char('y'), .. } => {
           self.view.textarea.copy();
           let mut ctx: ClipboardContext = ClipboardProvider::new().unwrap();
-          ctx.set_contents(ansi_to_plain_text(&self.view.textarea.yank_text())).unwrap();
+          ctx
+            .set_contents(ansi_to_plain_text(&self.view.textarea.yank_text()))
+            .unwrap();
           Some(Action::Update)
         },
         KeyEvent { code: KeyCode::Esc, .. } => {
           self.view.textarea.cancel_selection();
           Some(Action::Update)
         },
-        KeyEvent { code: KeyCode::Char('V'), modifiers: KeyModifiers::SHIFT, .. } => {
+        KeyEvent {
+          code: KeyCode::Char('V'),
+          modifiers: KeyModifiers::SHIFT,
+          ..
+        } => {
           self.view.textarea.start_selection();
           self.view.textarea.move_cursor(CursorMove::Head);
           self.view.textarea.start_selection();
@@ -382,11 +458,18 @@ impl Component for Session<'static> {
     }
     let rects = Layout::default()
       .direction(Direction::Vertical)
-      .constraints([Constraint::Percentage(100), Constraint::Min(self.input_vsize)].as_ref())
+      .constraints(
+        [Constraint::Percentage(100), Constraint::Min(self.input_vsize)]
+          .as_ref(),
+      )
       .split(area);
     let inner = Layout::default()
       .direction(Direction::Vertical)
-      .constraints(vec![Constraint::Length(1), Constraint::Min(10), Constraint::Length(0)])
+      .constraints(vec![
+        Constraint::Length(1),
+        Constraint::Min(10),
+        Constraint::Length(0),
+      ])
       .split(rects[0]);
     let inner = Layout::default()
       .direction(Direction::Horizontal)
@@ -406,9 +489,14 @@ impl Component for Session<'static> {
     .block(block);
     self.vertical_viewport_height = inner[1].height as usize;
     self.vertical_content_height = self.view.rendered_text.len_lines();
-    self.vertical_scroll_state = self.vertical_scroll_state.content_length(self.vertical_content_height);
+    self.vertical_scroll_state =
+      self.vertical_scroll_state.content_length(self.vertical_content_height);
     self.view.set_window_width(session_width as usize, &mut self.messages);
-    self.scroll_max = self.view.rendered_text.len_lines().saturating_sub(self.vertical_viewport_height);
+    self.scroll_max = self
+      .view
+      .rendered_text
+      .len_lines()
+      .saturating_sub(self.vertical_viewport_height);
 
     if self.scroll_sticky_end {
       self.view.textarea.move_cursor(CursorMove::Bottom);
@@ -435,16 +523,23 @@ impl Session<'static> {
 
   pub fn add_message(&mut self, message: ChatMessage) {
     match message {
-      ChatMessage::User(_) => self.messages.push(message.set_current_transaction_flag()),
+      ChatMessage::User(_) => {
+        self.messages.push(message.set_current_transaction_flag())
+      },
       ChatMessage::StreamResponse(new_srvec) => {
         new_srvec.iter().for_each(|sr| {
           if let Some(message) = self.messages.iter_mut().find(|m| {
             // trace_dbg!("message: {:#?}", m);
-            m.stream_id == Some(sr.id.clone()) && matches!(m.receive_buffer, Some(ReceiveBuffer::StreamResponse(_)))
+            m.stream_id == Some(sr.id.clone())
+              && matches!(
+                m.receive_buffer,
+                Some(ReceiveBuffer::StreamResponse(_))
+              )
           }) {
             message.update_stream_response(sr.clone()).unwrap();
           } else {
-            let message: MessageContainer = ChatMessage::StreamResponse(vec![sr.clone()]).into();
+            let message: MessageContainer =
+              ChatMessage::StreamResponse(vec![sr.clone()]).into();
             self.messages.push(message.set_current_transaction_flag());
           }
         });
@@ -459,10 +554,14 @@ impl Session<'static> {
 
   pub fn generate_new_message_embeddings(&mut self) {
     let tx = self.action_tx.clone().unwrap();
-    self.messages.iter_mut().filter(|m| m.receive_complete && !m.embedding_saved).for_each(|m| {
-      tx.send(Action::AddMessageEmbedding(self.id, m.clone())).unwrap();
-      m.embedding_saved = true
-    })
+    self
+      .messages
+      .iter_mut()
+      .filter(|m| m.receive_complete && !m.embedding_saved)
+      .for_each(|m| {
+        tx.send(Action::AddMessageEmbedding(self.id, m.clone())).unwrap();
+        m.embedding_saved = true
+      })
   }
 
   // pub fn get_select_coords(&self) -> Option<((usize, usize), (usize, usize))> {
@@ -481,14 +580,18 @@ impl Session<'static> {
       .messages
       .iter_mut()
       .filter(|m| {
-        m.receive_complete && !m.tools_called && matches!(m.message, ChatCompletionRequestMessage::Assistant(_))
+        m.receive_complete
+          && !m.tools_called
+          && matches!(m.message, ChatCompletionRequestMessage::Assistant(_))
       })
       .for_each(|m| {
         // trace_dbg!("executing tool calls");
-        if let ChatCompletionRequestMessage::Assistant(ChatCompletionRequestAssistantMessage {
-          tool_calls: Some(tool_calls),
-          ..
-        }) = &m.message
+        if let ChatCompletionRequestMessage::Assistant(
+          ChatCompletionRequestAssistantMessage {
+            tool_calls: Some(tool_calls),
+            ..
+          },
+        ) = &m.message
         {
           tool_calls.iter().for_each(|tc| {
             // let debug_text = format!("calling tool: {:?}", tc);
@@ -522,9 +625,13 @@ impl Session<'static> {
   }
 
   pub fn scroll_down(&mut self) -> Result<Option<Action>, SazidError> {
-    self.vertical_scroll = self.vertical_scroll.saturating_add(1).min(self.scroll_max);
-    self.vertical_scroll_state = self.vertical_scroll_state.position(self.vertical_scroll);
-    if self.vertical_scroll_state == self.vertical_scroll_state.position(self.scroll_max) {
+    self.vertical_scroll =
+      self.vertical_scroll.saturating_add(1).min(self.scroll_max);
+    self.vertical_scroll_state =
+      self.vertical_scroll_state.position(self.vertical_scroll);
+    if self.vertical_scroll_state
+      == self.vertical_scroll_state.position(self.scroll_max)
+    {
       if !self.scroll_sticky_end {
         let mut debug_string = String::new();
         for (idx, line) in self.view.rendered_text.lines().enumerate() {
@@ -552,13 +659,19 @@ impl Session<'static> {
     model: &Model,
   ) -> Result<Vec<ChatMessage>, SazidError> {
     let mut new_messages = Vec::new();
-    match parse_input(content, CHUNK_TOKEN_LIMIT as usize, model.token_limit as usize) {
+    match parse_input(
+      content,
+      CHUNK_TOKEN_LIMIT as usize,
+      model.token_limit as usize,
+    ) {
       Ok(chunks) => {
         chunks.iter().for_each(|chunk| {
           let message = ChatMessage::User(ChatCompletionRequestUserMessage {
             role,
             name: Some(name.into()),
-            content: Some(ChatCompletionRequestUserMessageContent::Text(chunk.clone())),
+            content: Some(ChatCompletionRequestUserMessageContent::Text(
+              chunk.clone(),
+            )),
           });
           self.update(Action::AddMessage(message.clone())).unwrap();
           new_messages.push(message);
@@ -573,10 +686,19 @@ impl Session<'static> {
     s.chars().filter(|c| c.is_ascii()).collect()
   }
 
-  pub fn submit_chat_completion_request(&mut self, input: String, tx: UnboundedSender<Action>) {
+  pub fn submit_chat_completion_request(
+    &mut self,
+    input: String,
+    tx: UnboundedSender<Action>,
+  ) {
     let config = self.config.clone();
-    self.messages.iter_mut().filter(|m| m.current_transaction_flag).for_each(|m| m.current_transaction_flag = false);
-    tx.send(Action::UpdateStatus(Some("submitting input".to_string()))).unwrap();
+    self
+      .messages
+      .iter_mut()
+      .filter(|m| m.current_transaction_flag)
+      .for_each(|m| m.current_transaction_flag = false);
+    tx.send(Action::UpdateStatus(Some("submitting input".to_string())))
+      .unwrap();
     match self.add_chunked_chat_completion_request_messages(
       Self::filter_non_ascii(&input).as_str(),
       config.user.as_str(),
@@ -592,8 +714,13 @@ impl Session<'static> {
     }
   }
 
-  pub fn request_chat_completion(&mut self, input: Option<String>, tx: UnboundedSender<Action>) {
-    tx.send(Action::UpdateStatus(Some("Configuring Client".to_string()))).unwrap();
+  pub fn request_chat_completion(
+    &mut self,
+    input: Option<String>,
+    tx: UnboundedSender<Action>,
+  ) {
+    tx.send(Action::UpdateStatus(Some("Configuring Client".to_string())))
+      .unwrap();
     let stream_response = self.config.stream_response;
     let openai_config = self.openai_config.clone();
     let db_url = self.embeddings_manager.get_database_url();
@@ -607,9 +734,9 @@ impl Session<'static> {
 
     let tools = match self.config.available_functions.is_empty() {
       true => None,
-      false => {
-        Some(create_chat_completion_tool_args(self.config.available_functions.iter().map(|f| f.into()).collect()))
-      },
+      false => Some(create_chat_completion_tool_args(
+        self.config.available_functions.iter().map(|f| f.into()).collect(),
+      )),
     };
 
     let new_messages = self
@@ -624,13 +751,22 @@ impl Session<'static> {
     // debug_request_validation(&request);
     // let request = self.request_message_buffer.clone().unwrap();
     // let token_count = self.request_buffer_token_count;
-    tx.send(Action::UpdateStatus(Some("Assembling request...".to_string()))).unwrap();
+    tx.send(Action::UpdateStatus(Some("Assembling request...".to_string())))
+      .unwrap();
     tokio::spawn(async move {
       let mut embeddings_and_messages = match (input, rag) {
-        (Some(input), Some(count)) => {
-          search_message_embeddings_by_session(&db_url, session_id, &embedding_model, &input, count).await.unwrap()
+        (Some(input), Some(count)) => search_message_embeddings_by_session(
+          &db_url,
+          session_id,
+          &embedding_model,
+          &input,
+          count,
+        )
+        .await
+        .unwrap(),
+        (Some(_), None) => {
+          get_all_embeddings_by_session(&db_url, session_id).await.unwrap()
         },
-        (Some(_), None) => get_all_embeddings_by_session(&db_url, session_id).await.unwrap(),
         (None, _) => Vec::new(),
       };
 
@@ -647,7 +783,10 @@ impl Session<'static> {
         tools,
       );
       let request_clone = request.clone();
-      tx.send(Action::UpdateStatus(Some("Establishing Client Connection".to_string()))).unwrap();
+      tx.send(Action::UpdateStatus(Some(
+        "Establishing Client Connection".to_string(),
+      )))
+      .unwrap();
       tx.send(Action::EnterProcessing).unwrap();
       let client = create_openai_client(&openai_config);
       trace_dbg!("client connection established");
@@ -655,42 +794,64 @@ impl Session<'static> {
       //   .unwrap();
       match stream_response {
         true => {
-          tx.send(Action::UpdateStatus(Some("Sending Request to OpenAI API...".to_string()))).unwrap();
+          tx.send(Action::UpdateStatus(Some(
+            "Sending Request to OpenAI API...".to_string(),
+          )))
+          .unwrap();
           trace_dbg!("Sending Request to API");
           let mut stream = client.chat().create_stream(request).await.unwrap();
-          tx.send(Action::UpdateStatus(Some("Request submitted. Awaiting Response...".to_string()))).unwrap();
+          tx.send(Action::UpdateStatus(Some(
+            "Request submitted. Awaiting Response...".to_string(),
+          )))
+          .unwrap();
           while let Some(response_result) = stream.next().await {
             match response_result {
               Ok(response) => {
                 trace_dbg!("Response: {:#?}", response.bright_yellow());
                 //tx.send(Action::UpdateStatus(Some(format!("Received responses: {}", count).to_string()))).unwrap();
-                tx.send(Action::AddMessage(ChatMessage::StreamResponse(vec![response]))).unwrap();
+                tx.send(Action::AddMessage(ChatMessage::StreamResponse(vec![
+                  response,
+                ])))
+                .unwrap();
                 tx.send(Action::Update).unwrap();
               },
               Err(e) => {
-                trace_dbg!("Error: {:#?} -- check https://status.openai.com", e.bright_red());
+                trace_dbg!(
+                  "Error: {:#?} -- check https://status.openai.com",
+                  e.bright_red()
+                );
                 debug_request_validation(&request_clone);
                 // let reqtext = format!("Request: \n{:#?}", request_clone.clone());
                 // trace_dbg!(reqtext);
                 trace_dbg!(&request_clone);
                 // tx.send(Action::AddMessage(ChatMessage::SazidSystemMessage(reqtext))).unwrap();
-                tx.send(Action::Error(format!("Error: {:?} -- check https://status.openai.com/", e))).unwrap();
+                tx.send(Action::Error(format!(
+                  "Error: {:?} -- check https://status.openai.com/",
+                  e
+                )))
+                .unwrap();
               },
             }
           }
         },
         false => match client.chat().create(request).await {
           Ok(response) => {
-            tx.send(Action::AddMessage(ChatMessage::Response(response))).unwrap();
+            tx.send(Action::AddMessage(ChatMessage::Response(response)))
+              .unwrap();
             tx.send(Action::Update).unwrap();
           },
           Err(e) => {
             trace_dbg!("Error: {}", e);
-            tx.send(Action::Error(format!("Error: {:#?} -- check https://status.openai.com/", e))).unwrap();
+            tx.send(Action::Error(format!(
+              "Error: {:#?} -- check https://status.openai.com/",
+              e
+            )))
+            .unwrap();
           },
         },
       };
-      tx.send(Action::UpdateStatus(Some("Chat Request Complete".to_string()))).unwrap();
+      tx.send(Action::UpdateStatus(Some("Chat Request Complete".to_string())))
+        .unwrap();
       tx.send(Action::SaveSession).unwrap();
       tx.send(Action::ExitProcessing).unwrap();
     });
@@ -714,25 +875,36 @@ impl Session<'static> {
     }
   }
 
-  pub fn select_model(model_preference_list: Vec<Model>, client: Client<OpenAIConfig>) {
+  pub fn select_model(
+    model_preference_list: Vec<Model>,
+    client: Client<OpenAIConfig>,
+  ) {
     trace_dbg!("select model");
     tokio::spawn(async move {
       // Retrieve the list of available models
       let models_response = client.models().list().await;
       match models_response {
         Ok(response) => {
-          let available_models: Vec<String> = response.data.iter().map(|model| model.id.clone()).collect();
+          let available_models: Vec<String> =
+            response.data.iter().map(|model| model.id.clone()).collect();
           trace_dbg!("{:?}", available_models);
           // Check if the default model is in the list
-          if let Some(preferences) = model_preference_list.iter().find(|model| available_models.contains(&model.name)) {
+          if let Some(preferences) = model_preference_list
+            .iter()
+            .find(|model| available_models.contains(&model.name))
+          {
             Ok(preferences.clone())
           } else {
-            Err(SessionManagerError::Other("no preferred models available".to_string()))
+            Err(SessionManagerError::Other(
+              "no preferred models available".to_string(),
+            ))
           }
         },
         Err(e) => {
           trace_dbg!("Failed to fetch the list of available models. {:#?}", e);
-          Err(SessionManagerError::Other("Failed to fetch the list of available models.".to_string()))
+          Err(SessionManagerError::Other(
+            "Failed to fetch the list of available models.".to_string(),
+          ))
         },
       }
     });
@@ -747,14 +919,25 @@ pub fn construct_request(
   user: Option<String>,
   tools: Option<Vec<ChatCompletionTool>>,
 ) -> CreateChatCompletionRequest {
-  let request = CreateChatCompletionRequest { model, messages, stream, max_tokens, user, tools, ..Default::default() };
+  let request = CreateChatCompletionRequest {
+    model,
+    messages,
+    stream,
+    max_tokens,
+    user,
+    tools,
+    ..Default::default()
+  };
   // trace_dbg!("request:\n{:#?}", request);
   request
 }
-pub fn create_openai_client(openai_config: &OpenAIConfig) -> async_openai::Client<OpenAIConfig> {
-  let backoff = ExponentialBackoffBuilder::new() // Ensure backoff crate is added to Cargo.toml
-    .with_max_elapsed_time(Some(std::time::Duration::from_secs(60)))
-    .build();
+pub fn create_openai_client(
+  openai_config: &OpenAIConfig,
+) -> async_openai::Client<OpenAIConfig> {
+  let backoff =
+    ExponentialBackoffBuilder::new() // Ensure backoff crate is added to Cargo.toml
+      .with_max_elapsed_time(Some(std::time::Duration::from_secs(60)))
+      .build();
   Client::with_config(openai_config.clone()).with_backoff(backoff)
 }
 
@@ -763,7 +946,8 @@ pub async fn create_embedding_request(
   input: Vec<&str>,
 ) -> Result<CreateEmbeddingResponse, GPTConnectorError> {
   let client = Client::new();
-  let request = CreateEmbeddingRequestArgs::default().model(model).input(input).build()?;
+  let request =
+    CreateEmbeddingRequestArgs::default().model(model).input(input).build()?;
   let response = client.embeddings().create(request).await?;
   Ok(response)
 }

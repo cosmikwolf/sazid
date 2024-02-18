@@ -11,7 +11,10 @@ use crate::trace_dbg;
 
 use super::tool_call::ToolCallTrait;
 use super::types::FunctionParameters;
-use super::{argument_validation::count_tokens, argument_validation::get_accessible_file_paths, ToolCallError};
+use super::{
+  argument_validation::count_tokens,
+  argument_validation::get_accessible_file_paths, ToolCallError,
+};
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
 pub struct FileSearchFunction {
@@ -46,17 +49,27 @@ impl ToolCallTrait for FileSearchFunction {
   ) -> Result<Option<String>, ToolCallError> {
     if let Some(v) = function_args.get("path") {
       if let Some(pathstr) = v.as_str() {
-        let accesible_paths = get_accessible_file_paths(session_config.accessible_paths.clone(), None);
+        let accesible_paths = get_accessible_file_paths(
+          session_config.accessible_paths.clone(),
+          None,
+        );
         if !accesible_paths.contains_key(Path::new(pathstr).to_str().unwrap()) {
-          return Err(ToolCallError::new(format!("File path is not accessible: {:?}", pathstr).as_str()));
+          return Err(ToolCallError::new(
+            format!("File path is not accessible: {:?}", pathstr).as_str(),
+          ));
         } else {
           trace_dbg!("path: {:?} exists", pathstr);
         }
       }
     }
-    let search_term: Option<&str> = function_args.get("search_term").and_then(|s| s.as_str());
+    let search_term: Option<&str> =
+      function_args.get("search_term").and_then(|s| s.as_str());
 
-    file_search(session_config.function_result_max_tokens, session_config.accessible_paths.clone(), search_term)
+    file_search(
+      session_config.function_result_max_tokens,
+      session_config.accessible_paths.clone(),
+      search_term,
+    )
   }
 
   fn function_definition(&self) -> FunctionCall {
@@ -74,7 +87,12 @@ impl ToolCallTrait for FileSearchFunction {
       description: Some(self.description.clone()),
       parameters: Some(FunctionParameters {
         param_type: "object".to_string(),
-        required: self.required_properties.clone().into_iter().map(|p| p.name).collect(),
+        required: self
+          .required_properties
+          .clone()
+          .into_iter()
+          .map(|p| p.name)
+          .collect(),
         properties,
       }),
     }
@@ -98,11 +116,18 @@ fn count_lines_and_format_search_results(
           let linecount = buf.lines().count();
           // format line that is below, but truncates s.1 to 2 decimal places
           match result_score {
-            Some(score) => Some(format!("{:column_width$}\t{:<15.2}\t{} lines", path, score, linecount)),
-            None => Some(format!("{:column_width$}\t{} lines", path, linecount)),
+            Some(score) => Some(format!(
+              "{:column_width$}\t{:<15.2}\t{} lines",
+              path, score, linecount
+            )),
+            None => {
+              Some(format!("{:column_width$}\t{} lines", path, linecount))
+            },
           }
         },
-        Err(e) => Some(format!("error reading file path {} error: {}", path, e)),
+        Err(e) => {
+          Some(format!("error reading file path {} error: {}", path, e))
+        },
       }
     },
     Err(e) => Some(format!("error opening file path {} error: {}", path, e)),
@@ -119,15 +144,24 @@ pub fn file_search(
   search_term: Option<&str>,
 ) -> Result<Option<String>, ToolCallError> {
   let paths = get_accessible_file_paths(list_file_paths, None);
-  let accessible_paths = paths.keys().map(|path| path.as_str()).collect::<Vec<&str>>();
+  let accessible_paths =
+    paths.keys().map(|path| path.as_str()).collect::<Vec<&str>>();
   // find the length of the longest string in accessible_paths
   let search_results = if let Some(search) = search_term {
-    let fuzzy_search_result = rust_fuzzy_search::fuzzy_search_sorted(search, &accessible_paths);
-    let column_width = get_column_width(fuzzy_search_result.iter().map(|(s, _)| *s).collect());
+    let fuzzy_search_result =
+      rust_fuzzy_search::fuzzy_search_sorted(search, &accessible_paths);
+    let column_width =
+      get_column_width(fuzzy_search_result.iter().map(|(s, _)| *s).collect());
     let fuzzy_search_result = fuzzy_search_result
       .iter()
       .filter(|(_, result_score)| result_score > &0.15)
-      .filter_map(|(path, result_score)| count_lines_and_format_search_results(path, column_width, Some(result_score)))
+      .filter_map(|(path, result_score)| {
+        count_lines_and_format_search_results(
+          path,
+          column_width,
+          Some(result_score),
+        )
+      })
       .collect::<Vec<String>>();
     if fuzzy_search_result.is_empty() {
       return Ok(Some("no files matching search term found".to_string()));
@@ -140,13 +174,18 @@ pub fn file_search(
     let column_width = get_column_width(accessible_paths.clone());
     accessible_paths
       .iter()
-      .filter_map(|s| count_lines_and_format_search_results(s, column_width, None))
+      .filter_map(|s| {
+        count_lines_and_format_search_results(s, column_width, None)
+      })
       .collect::<Vec<String>>()
       .join("\n")
   };
   let token_count = count_tokens(&search_results);
   if token_count > reply_max_tokens {
-    return Ok(Some(format!("Function Token limit exceeded: {} tokens.", token_count)));
+    return Ok(Some(format!(
+      "Function Token limit exceeded: {} tokens.",
+      token_count
+    )));
   }
   Ok(Some(search_results))
 }
@@ -159,7 +198,11 @@ mod tests {
   use tempfile::tempdir;
 
   // Helper function to create a file with some content
-  fn create_file_with_content(dir: &tempfile::TempDir, file_name: &str, content: &str) -> PathBuf {
+  fn create_file_with_content(
+    dir: &tempfile::TempDir,
+    file_name: &str,
+    content: &str,
+  ) -> PathBuf {
     let file_path = dir.path().join(file_name);
     let mut file = File::create(&file_path).expect("Failed to create file.");
     writeln!(file, "{}", content).expect("Failed to write to file.");
@@ -169,7 +212,11 @@ mod tests {
   #[test]
   fn test_file_search_with_matching_term() {
     let dir = tempdir().expect("Failed to create temp dir.");
-    let file_path = create_file_with_content(&dir, "test.txt", "This is a test file containing Rust.");
+    let file_path = create_file_with_content(
+      &dir,
+      "test.txt",
+      "This is a test file containing Rust.",
+    );
 
     let result = file_search(100, vec![file_path], Some("Rust"));
 
@@ -183,7 +230,8 @@ mod tests {
   #[test]
   fn test_file_search_without_search_term() {
     let dir = tempdir().expect("Failed to create temp dir.");
-    let file_path = create_file_with_content(&dir, "test.txt", "This is a test file.");
+    let file_path =
+      create_file_with_content(&dir, "test.txt", "This is a test file.");
 
     let result = file_search(100, vec![file_path], None);
 
@@ -197,7 +245,8 @@ mod tests {
   #[test]
   fn test_file_search_with_no_matching_term() {
     let dir = tempdir().expect("Failed to create temp dir.");
-    let file_path = create_file_with_content(&dir, "test.txt", "This is a test file.");
+    let file_path =
+      create_file_with_content(&dir, "test.txt", "This is a test file.");
 
     let result = file_search(100, vec![file_path], Some("Nonexistent"));
 
@@ -223,7 +272,11 @@ mod tests {
   #[test]
   fn test_file_search_with_token_limit_exceeded() {
     let dir = tempdir().expect("Failed to create temp dir.");
-    let file_path = create_file_with_content(&dir, "test.txt", "This is a test file with a lot of content...");
+    let file_path = create_file_with_content(
+      &dir,
+      "test.txt",
+      "This is a test file with a lot of content...",
+    );
 
     let result = file_search(10, vec![file_path], None); // Set a low token limit to trigger the limit
 

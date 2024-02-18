@@ -7,8 +7,9 @@ use color_eyre::eyre::Result;
 use crossterm::{
   cursor,
   event::{
-    DisableBracketedPaste, DisableMouseCapture, EnableBracketedPaste, EnableMouseCapture, Event as CrosstermEvent,
-    KeyEvent, KeyEventKind, MouseEvent,
+    DisableBracketedPaste, DisableMouseCapture, EnableBracketedPaste,
+    EnableMouseCapture, Event as CrosstermEvent, KeyEvent, KeyEventKind,
+    MouseEvent,
   },
   terminal::{EnterAlternateScreen, LeaveAlternateScreen},
 };
@@ -61,7 +62,17 @@ impl Tui {
     let task = tokio::spawn(async {});
     let mouse = false;
     let paste = false;
-    Ok(Self { terminal, task, cancellation_token, event_rx, event_tx, frame_rate, tick_rate, mouse, paste })
+    Ok(Self {
+      terminal,
+      task,
+      cancellation_token,
+      event_rx,
+      event_tx,
+      frame_rate,
+      tick_rate,
+      mouse,
+      paste,
+    })
   }
 
   pub fn tick_rate(&mut self, tick_rate: f64) {
@@ -82,7 +93,8 @@ impl Tui {
 
   pub fn start(&mut self) {
     let tick_delay = std::time::Duration::from_secs_f64(1.0 / self.tick_rate);
-    let render_delay = std::time::Duration::from_secs_f64(1.0 / self.frame_rate);
+    let render_delay =
+      std::time::Duration::from_secs_f64(1.0 / self.frame_rate);
     self.cancel();
     self.cancellation_token = CancellationToken::new();
     let _cancellation_token = self.cancellation_token.clone();
@@ -155,7 +167,9 @@ impl Tui {
         self.task.abort();
       }
       if counter > 100 {
-        log::error!("Failed to abort task in 100 milliseconds for unknown reason");
+        log::error!(
+          "Failed to abort task in 100 milliseconds for unknown reason"
+        );
         break;
       }
     }
@@ -185,7 +199,11 @@ impl Tui {
       if self.mouse {
         crossterm::execute!(std::io::stderr(), DisableMouseCapture)?;
       }
-      crossterm::execute!(std::io::stderr(), LeaveAlternateScreen, cursor::Show)?;
+      crossterm::execute!(
+        std::io::stderr(),
+        LeaveAlternateScreen,
+        cursor::Show
+      )?;
       crossterm::terminal::disable_raw_mode()?;
     }
     Ok(())

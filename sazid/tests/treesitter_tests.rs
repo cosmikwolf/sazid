@@ -30,8 +30,13 @@ mod tests {
     file_path
   }
 
-  fn create_session_config_with_tempdir_accessor(dir: &TempDir) -> SessionConfig {
-    SessionConfig { accessible_paths: vec![dir.path().to_path_buf()], ..Default::default() }
+  fn create_session_config_with_tempdir_accessor(
+    dir: &TempDir,
+  ) -> SessionConfig {
+    SessionConfig {
+      accessible_paths: vec![dir.path().to_path_buf()],
+      ..Default::default()
+    }
   }
 
   fn setup_parse(source_code: &str) -> Result<TreeData, anyhow::Error> {
@@ -81,7 +86,10 @@ mod tests {
     // );
     println!(
       "tags: \n{:#?}",
-      tags.iter().flat_map(|n| { tree_data.node_to_protobuf(*n,) }).collect::<Vec<ts_proto::Node>>()
+      tags
+        .iter()
+        .flat_map(|n| { tree_data.node_to_protobuf(*n,) })
+        .collect::<Vec<ts_proto::Node>>()
     );
     // println!("tags pb: \n{:#?}",);
     // println!(
@@ -102,7 +110,10 @@ mod tests {
 
   #[test]
   fn test_file_does_not_exist() {
-    let result = treesitter_query(vec![PathBuf::from("./tests/test_files/test_does_not_exist.rs")], "");
+    let result = treesitter_query(
+      vec![PathBuf::from("./tests/test_files/test_does_not_exist.rs")],
+      "",
+    );
     println!("{:?}", result);
     assert!(result.is_err());
     assert_eq!(

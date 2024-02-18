@@ -12,7 +12,10 @@ use walkdir::WalkDir;
 use crate::app::session_config::SessionConfig;
 
 use super::{
-  argument_validation::{validate_and_extract_paths_from_argument, validate_and_extract_string_argument},
+  argument_validation::{
+    validate_and_extract_paths_from_argument,
+    validate_and_extract_string_argument,
+  },
   tool_call::ToolCallTrait,
   types::{FunctionCall, FunctionParameters, FunctionProperties},
   ToolCallError,
@@ -68,8 +71,16 @@ impl ToolCallTrait for GrepFunction {
     function_args: HashMap<String, serde_json::Value>,
     session_config: SessionConfig,
   ) -> Result<Option<String>, ToolCallError> {
-    let paths = validate_and_extract_paths_from_argument(&function_args, session_config, true, None)?.unwrap();
-    let pattern = validate_and_extract_string_argument(&function_args, "pattern", true)?.unwrap();
+    let paths = validate_and_extract_paths_from_argument(
+      &function_args,
+      session_config,
+      true,
+      None,
+    )?
+    .unwrap();
+    let pattern =
+      validate_and_extract_string_argument(&function_args, "pattern", true)?
+        .unwrap();
     grep(pattern.as_str(), paths)
   }
 
@@ -88,21 +99,31 @@ impl ToolCallTrait for GrepFunction {
       description: Some(self.description.clone()),
       parameters: Some(FunctionParameters {
         param_type: "object".to_string(),
-        required: self.required_properties.clone().into_iter().map(|p| p.name).collect(),
+        required: self
+          .required_properties
+          .clone()
+          .into_iter()
+          .map(|p| p.name)
+          .collect(),
         properties,
       }),
     }
   }
 }
 
-pub fn grep(pattern: &str, paths: Vec<PathBuf>) -> Result<Option<String>, ToolCallError> {
+pub fn grep(
+  pattern: &str,
+  paths: Vec<PathBuf>,
+) -> Result<Option<String>, ToolCallError> {
   //let mut buffer = Cursor::new(Vec::new());
   let buffer: BufWriter<Vec<u8>> = BufWriter::new(Vec::new());
   let mut error_buffer: BufWriter<Vec<u8>> = BufWriter::new(Vec::new());
   match RegexMatcher::new(pattern) {
     Ok(matcher) => {
-      let mut searcher =
-        SearcherBuilder::new().binary_detection(BinaryDetection::quit(b'\x00')).line_number(false).build();
+      let mut searcher = SearcherBuilder::new()
+        .binary_detection(BinaryDetection::quit(b'\x00'))
+        .line_number(false)
+        .build();
       let mut printer = StandardBuilder::new().build_no_color(buffer);
 
       for path in paths {
@@ -117,28 +138,49 @@ pub fn grep(pattern: &str, paths: Vec<PathBuf>) -> Result<Option<String>, ToolCa
           if !dent.file_type().is_file() {
             continue;
           }
-          let result = searcher.search_path(&matcher, dent.path(), printer.sink_with_path(&matcher, dent.path()));
+          let result = searcher.search_path(
+            &matcher,
+            dent.path(),
+            printer.sink_with_path(&matcher, dent.path()),
+          );
           if let Err(err) = result {
-            error_buffer.write_all(format!("{}: {}", dent.path().display(), err).as_bytes()).unwrap();
+            error_buffer
+              .write_all(
+                format!("{}: {}", dent.path().display(), err).as_bytes(),
+              )
+              .unwrap();
           }
         }
       }
       match printer.into_inner().into_inner().into_inner() {
         Ok(matches) => {
           if matches.is_empty() {
-            error_buffer.write_all(format!("No matches found for pattern: {}", pattern).as_bytes()).unwrap();
+            error_buffer
+              .write_all(
+                format!("No matches found for pattern: {}", pattern).as_bytes(),
+              )
+              .unwrap();
           }
 
           Ok(Some(
-            String::from_utf8(matches).unwrap_or_else(|_| "Error parsing grep output text".to_string())
+            String::from_utf8(matches)
+              .unwrap_or_else(|_| "Error parsing grep output text".to_string())
               + String::from_utf8(error_buffer.into_inner().unwrap())
-                .unwrap_or_else(|_| "Error parsing grep output text".to_string())
+                .unwrap_or_else(|_| {
+                  "Error parsing grep output text".to_string()
+                })
                 .as_str(),
           ))
         },
         Err(err) => {
-          error_buffer.write_all(format!("Error parsing grep output text: {:?}", err).as_bytes()).unwrap();
-          Ok(Some(String::from_utf8(error_buffer.into_inner().unwrap()).unwrap()))
+          error_buffer
+            .write_all(
+              format!("Error parsing grep output text: {:?}", err).as_bytes(),
+            )
+            .unwrap();
+          Ok(Some(
+            String::from_utf8(error_buffer.into_inner().unwrap()).unwrap(),
+          ))
         },
       }
     },
@@ -156,7 +198,10 @@ mod tests {
   use tempfile::tempdir;
 
   // Helper function to write to a file
-  fn write_to_file(file_path: &PathBuf, content: &str) -> Result<(), std::io::Error> {
+  fn write_to_file(
+    file_path: &PathBuf,
+    content: &str,
+  ) -> Result<(), std::io::Error> {
     let mut file = File::create(file_path)?;
     file.write_all(content.as_bytes())?;
     Ok(())
@@ -205,7 +250,9 @@ mod tests {
     let result = grep(pattern, paths)?;
 
     assert!(result.is_some());
-    assert!(result.unwrap().contains("No matches found for pattern: Nonexistent"));
+    assert!(result
+      .unwrap()
+      .contains("No matches found for pattern: Nonexistent"));
     Ok(())
   }
 

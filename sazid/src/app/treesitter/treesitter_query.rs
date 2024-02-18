@@ -41,7 +41,11 @@ impl fmt::Display for TreeData {
 }
 
 impl TreeData {
-  pub fn new(parser: &mut Parser, path: PathBuf, language: Language) -> Result<Self, anyhow::Error> {
+  pub fn new(
+    parser: &mut Parser,
+    path: PathBuf,
+    language: Language,
+  ) -> Result<Self, anyhow::Error> {
     parser.set_language(language)?;
     let source_code = fs::read(path.clone()).expect("Error reading file");
     let tree = parser.parse(&source_code, None).unwrap();
@@ -58,13 +62,19 @@ impl TreeData {
   pub fn execute_edits(&mut self, parser: &mut Parser) -> Result<String> {
     let mut output = String::new();
     if let Some(edits) = &self.edits.clone() {
-      output.push_str(&format!("BEFORE:\n{}", String::from_utf8_lossy(&self.source_code)));
+      output.push_str(&format!(
+        "BEFORE:\n{}",
+        String::from_utf8_lossy(&self.source_code)
+      ));
       edits.iter().for_each(|edit| {
         // let edit = parse_edit_flag(self.source_code, edit)?
         self.format_edit(edit).unwrap();
         self.tree = parser.parse(&self.source_code, Some(&self.tree)).unwrap();
       });
-      output.push_str(&format!("AFTER:\n{}", String::from_utf8_lossy(&self.source_code)));
+      output.push_str(&format!(
+        "AFTER:\n{}",
+        String::from_utf8_lossy(&self.source_code)
+      ));
       Ok(output)
     } else {
       Ok("no edits made".to_string())
@@ -101,12 +111,18 @@ impl TreeData {
             if node.is_named() {
               output.push_str(&format!("MISSING {}", node.kind()));
             } else {
-              output.push_str(&format!("MISSING \"{}\"", node.kind().replace('\n', "\\n")));
+              output.push_str(&format!(
+                "MISSING \"{}\"",
+                node.kind().replace('\n', "\\n")
+              ));
             }
           } else {
             output.push_str(node.kind());
           }
-          output.push_str(&format!(" [{}, {}] - [{}, {}])", start.row, start.column, end.row, end.column));
+          output.push_str(&format!(
+            " [{}, {}] - [{}, {}])",
+            start.row, start.column, end.row, end.column
+          ));
         }
         output.push('\n');
         output
@@ -118,11 +134,23 @@ impl TreeData {
     let start_byte = edit.position;
     let old_end_byte = edit.position + edit.deleted_length;
     let new_end_byte = edit.position + edit.inserted_text.len();
-    let start_position = position_for_offset(self.source_code.as_slice(), start_byte)?;
-    let old_end_position = position_for_offset(self.source_code.as_slice(), old_end_byte)?;
-    self.source_code.splice(start_byte..old_end_byte, edit.inserted_text.iter().cloned());
-    let new_end_position = position_for_offset(self.source_code.as_slice(), new_end_byte)?;
-    let edit = InputEdit { start_byte, old_end_byte, new_end_byte, start_position, old_end_position, new_end_position };
+    let start_position =
+      position_for_offset(self.source_code.as_slice(), start_byte)?;
+    let old_end_position =
+      position_for_offset(self.source_code.as_slice(), old_end_byte)?;
+    self
+      .source_code
+      .splice(start_byte..old_end_byte, edit.inserted_text.iter().cloned());
+    let new_end_position =
+      position_for_offset(self.source_code.as_slice(), new_end_byte)?;
+    let edit = InputEdit {
+      start_byte,
+      old_end_byte,
+      new_end_byte,
+      start_position,
+      old_end_position,
+      new_end_position,
+    };
     self.tree.edit(&edit);
     Ok(edit)
   }
@@ -142,9 +170,11 @@ impl TreeData {
   }
 
   pub fn query_tags(&self) -> Vec<Node> {
-    let query =
-      Query::new(self.tree.language(), &format!("{}\n{}", tree_sitter_rust::TAGGING_QUERY, RUST_COMMENT_QUERY))
-        .unwrap();
+    let query = Query::new(
+      self.tree.language(),
+      &format!("{}\n{}", tree_sitter_rust::TAGGING_QUERY, RUST_COMMENT_QUERY),
+    )
+    .unwrap();
     let mut cursor = QueryCursor::new();
     cursor
       .matches(
@@ -161,11 +191,18 @@ impl TreeData {
   }
 
   pub fn to_protobuf(&self) -> Result<ts_proto::SyntaxTree, FromUtf8Error> {
-    Ok(ts_proto::SyntaxTree { root: Some(self.node_to_protobuf(self.tree.root_node()).unwrap()) })
+    Ok(ts_proto::SyntaxTree {
+      root: Some(self.node_to_protobuf(self.tree.root_node()).unwrap()),
+    })
   }
 
-  pub fn node_to_protobuf(&self, node: Node) -> Result<ts_proto::Node, FromUtf8Error> {
-    let source_file = Some(ts_proto::SourceFile { path: self.path.to_str().unwrap().to_string() });
+  pub fn node_to_protobuf(
+    &self,
+    node: Node,
+  ) -> Result<ts_proto::Node, FromUtf8Error> {
+    let source_file = Some(ts_proto::SourceFile {
+      path: self.path.to_str().unwrap().to_string(),
+    });
     Ok(ts_proto::Node {
       id: node.id() as u32,
       r#type: node.kind().to_string(),
@@ -179,8 +216,13 @@ impl TreeData {
     })
   }
 
-  pub fn load_node_tag_identifier(&self, node: Node) -> Result<Option<String>, FromUtf8Error> {
-    let query = Query::new(self.tree.language(), tree_sitter_rust::TAGGING_QUERY).unwrap();
+  pub fn load_node_tag_identifier(
+    &self,
+    node: Node,
+  ) -> Result<Option<String>, FromUtf8Error> {
+    let query =
+      Query::new(self.tree.language(), tree_sitter_rust::TAGGING_QUERY)
+        .unwrap();
     let mut cursor = QueryCursor::new();
     let matches = cursor
       .matches(

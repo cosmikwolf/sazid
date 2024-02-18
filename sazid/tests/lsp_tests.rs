@@ -1,7 +1,10 @@
 // tests/lsp_client.rs
 use lsp_types::*;
 use ntest::timeout;
-use sazid::app::lsp::{lsp_client::LspClient, lsp_navigation::LspNavigation, lsp_stdio::LspClientStdio};
+use sazid::app::lsp::{
+  lsp_client::LspClient, lsp_navigation::LspNavigation,
+  lsp_stdio::LspClientStdio,
+};
 
 // The actual test function
 #[tokio::test]
@@ -24,14 +27,17 @@ async fn test_rust_analyzer_connection() -> anyhow::Result<()> {
     .unwrap(),
   );
 
-  let test_project_path = std::env::current_dir()?.join("tests/assets/testproject");
+  let test_project_path =
+    std::env::current_dir()?.join("tests/assets/testproject");
   let workspace_folders = Some(vec![WorkspaceFolder {
     uri: url::Url::from_directory_path(test_project_path.clone()).unwrap(),
     name: "testproject".to_string(),
   }]);
 
-  let root_uri = Some(url::Url::from_directory_path(test_project_path).unwrap());
-  let client_info = Some(ClientInfo { name: "sazid".to_string(), version: None });
+  let root_uri =
+    Some(url::Url::from_directory_path(test_project_path).unwrap());
+  let client_info =
+    Some(ClientInfo { name: "sazid".to_string(), version: None });
 
   let capabilities = lsp_client.capabilities.clone();
 
@@ -68,19 +74,23 @@ async fn test_rust_analyzer_connection() -> anyhow::Result<()> {
   // };
   // println!("did_open_params: {:#?}", did_open_params);
 
-  let workspace_symbol_result = lsp_client.workspace_symbol_query("main").await?;
+  let workspace_symbol_result =
+    lsp_client.workspace_symbol_query("main").await?;
   println!("workspace_symbol_result: {:#?}", workspace_symbol_result);
 
   let find_references_params = ReferenceParams {
     partial_result_params: Default::default(),
     context: ReferenceContext { include_declaration: true },
     text_document_position: TextDocumentPositionParams {
-      text_document: TextDocumentIdentifier { uri: "file:///src/foo.rs".parse()? },
+      text_document: TextDocumentIdentifier {
+        uri: "file:///src/foo.rs".parse()?,
+      },
       position: Position { line: 0, character: 4 },
     },
     work_done_progress_params: Default::default(),
   };
-  let find_references_result = lsp_client.find_references(find_references_params).await?;
+  let find_references_result =
+    lsp_client.find_references(find_references_params).await?;
   println!("find_references_result: {:#?}", find_references_result);
   panic!();
   // let did_open_params_result = lsp_client.did_open(did_open_params).await;

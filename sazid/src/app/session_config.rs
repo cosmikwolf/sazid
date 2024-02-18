@@ -3,7 +3,9 @@ use std::{
   time::{SystemTime, UNIX_EPOCH},
 };
 
-use async_openai::{config::OpenAIConfig, types::ChatCompletionRequestSystemMessage};
+use async_openai::{
+  config::OpenAIConfig, types::ChatCompletionRequestSystemMessage,
+};
 use serde::{Deserialize, Serialize};
 
 use super::{consts::*, functions::CallableFunction, types::Model};
@@ -44,13 +46,17 @@ impl Default for SessionConfig {
 }
 impl SessionConfig {
   pub fn prompt_message(&self) -> ChatCompletionRequestSystemMessage {
-    ChatCompletionRequestSystemMessage { content: Some(self.prompt.clone()), ..Default::default() }
+    ChatCompletionRequestSystemMessage {
+      content: Some(self.prompt.clone()),
+      ..Default::default()
+    }
   }
 
   pub fn generate_session_id() -> String {
     // Get the current time since UNIX_EPOCH in seconds.
     let start = SystemTime::now();
-    let since_the_epoch = start.duration_since(UNIX_EPOCH).expect("Time went backwards").as_secs();
+    let since_the_epoch =
+      start.duration_since(UNIX_EPOCH).expect("Time went backwards").as_secs();
 
     // Introduce a delay of 1 second to ensure unique session IDs even if called rapidly.
     std::thread::sleep(std::time::Duration::from_secs(1));

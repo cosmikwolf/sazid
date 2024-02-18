@@ -1,12 +1,16 @@
 #[cfg(test)]
 mod tests {
   use async_openai::types::{
-    ChatChoice, ChatCompletionResponseMessage, ChatCompletionResponseStreamMessage, ChatCompletionStreamResponseDelta,
-    CreateChatCompletionResponse, CreateChatCompletionStreamResponse, FinishReason, FunctionCallStream, Role,
+    ChatChoice, ChatCompletionResponseMessage,
+    ChatCompletionResponseStreamMessage, ChatCompletionStreamResponseDelta,
+    CreateChatCompletionResponse, CreateChatCompletionStreamResponse,
+    FinishReason, FunctionCallStream, Role,
   };
   use ntest::timeout;
   use sazid::action;
-  use sazid::app::messages::{ChatMessage, ChatResponse, ChatResponseSingleMessage};
+  use sazid::app::messages::{
+    ChatMessage, ChatResponse, ChatResponseSingleMessage,
+  };
   use sazid::components::session::*;
   use tokio::sync::mpsc;
   // write a test for Session::add_message
@@ -15,9 +19,13 @@ mod tests {
   pub async fn test_add_message() {
     let mut session = Session::new();
     let (tx, _rx) = mpsc::unbounded_channel::<action::Action>();
-    session.add_message(ChatMessage::PromptMessage(session.config.prompt_message()));
+    session
+      .add_message(ChatMessage::PromptMessage(session.config.prompt_message()));
     assert_eq!(session.messages.len(), 1);
-    assert_eq!(session.messages[0].message, ChatMessage::PromptMessage(session.config.prompt_message()));
+    assert_eq!(
+      session.messages[0].message,
+      ChatMessage::PromptMessage(session.config.prompt_message())
+    );
     // Create a mock response from OpenAI
     let response = CreateChatCompletionResponse {
       id: "cmpl-3fZzT7q5Y3zJ5Jp9Dq3qX8s0".to_string(),
@@ -43,7 +51,11 @@ mod tests {
         model: "davinci:2020-05-03".to_string(),
         choices: vec![ChatCompletionResponseStreamMessage {
           index: 0,
-          delta: ChatCompletionStreamResponseDelta { role: Some(Role::Assistant), content: None, function_call: None },
+          delta: ChatCompletionStreamResponseDelta {
+            role: Some(Role::Assistant),
+            content: None,
+            function_call: None,
+          },
           finish_reason: None,
         }],
       },
@@ -84,7 +96,11 @@ mod tests {
         model: "davinci:2020-05-03".to_string(),
         choices: vec![ChatCompletionResponseStreamMessage {
           index: 0,
-          delta: ChatCompletionStreamResponseDelta { role: None, content: None, function_call: None },
+          delta: ChatCompletionStreamResponseDelta {
+            role: None,
+            content: None,
+            function_call: None,
+          },
           finish_reason: Some(FinishReason::Stop),
         }],
       },
@@ -101,7 +117,10 @@ mod tests {
           delta: ChatCompletionStreamResponseDelta {
             role: Some(Role::Assistant),
             content: None,
-            function_call: Some(FunctionCallStream { name: Some("file_search".to_string()), arguments: None }),
+            function_call: Some(FunctionCallStream {
+              name: Some("file_search".to_string()),
+              arguments: None,
+            }),
           },
           finish_reason: None,
         }],
@@ -116,7 +135,10 @@ mod tests {
           delta: ChatCompletionStreamResponseDelta {
             role: None,
             content: None,
-            function_call: Some(FunctionCallStream { name: None, arguments: Some("{ ".to_string()) }),
+            function_call: Some(FunctionCallStream {
+              name: None,
+              arguments: Some("{ ".to_string()),
+            }),
           },
           finish_reason: None,
         }],
@@ -131,7 +153,10 @@ mod tests {
           delta: ChatCompletionStreamResponseDelta {
             role: None,
             content: None,
-            function_call: Some(FunctionCallStream { name: None, arguments: Some("src }".to_string()) }),
+            function_call: Some(FunctionCallStream {
+              name: None,
+              arguments: Some("src }".to_string()),
+            }),
           },
           finish_reason: None,
         }],
@@ -143,17 +168,27 @@ mod tests {
         model: "davinci:2020-05-03".to_string(),
         choices: vec![ChatCompletionResponseStreamMessage {
           index: 0,
-          delta: ChatCompletionStreamResponseDelta { role: None, content: None, function_call: None },
+          delta: ChatCompletionStreamResponseDelta {
+            role: None,
+            content: None,
+            function_call: None,
+          },
           finish_reason: Some(FinishReason::FunctionCall),
         }],
       },
     ];
-    Session::response_handler(tx.clone(), ChatResponse::Response(response)).await;
+    Session::response_handler(tx.clone(), ChatResponse::Response(response))
+      .await;
     assert_eq!(session.data.messages.len(), 2);
-    Session::response_handler(tx.clone(), ChatResponse::StreamResponse(stream_responses[0].clone())).await;
+    Session::response_handler(
+      tx.clone(),
+      ChatResponse::StreamResponse(stream_responses[0].clone()),
+    )
+    .await;
     assert_eq!(session.data.messages.len(), 3);
-    if let ChatMessage::ChatCompletionResponseMessage(ChatResponseSingleMessage::StreamResponse(msg)) =
-      &session.data.messages[2].message
+    if let ChatMessage::ChatCompletionResponseMessage(
+      ChatResponseSingleMessage::StreamResponse(msg),
+    ) = &session.data.messages[2].message
     {
       assert_eq!(msg[0].delta.role, Some(Role::Assistant));
       assert_eq!(msg.len(), 1);
@@ -162,10 +197,15 @@ mod tests {
     } else {
       panic!("Expected ChatMessage::ChatCompletionResponseMessage(ChatResponseSingleMessage::StreamResponse(msg))");
     }
-    Session::response_handler(tx.clone(), ChatResponse::StreamResponse(stream_responses[1].clone())).await;
+    Session::response_handler(
+      tx.clone(),
+      ChatResponse::StreamResponse(stream_responses[1].clone()),
+    )
+    .await;
     assert_eq!(session.data.messages.len(), 3);
-    if let ChatMessage::ChatCompletionResponseMessage(ChatResponseSingleMessage::StreamResponse(msg)) =
-      &session.data.messages[2].message
+    if let ChatMessage::ChatCompletionResponseMessage(
+      ChatResponseSingleMessage::StreamResponse(msg),
+    ) = &session.data.messages[2].message
     {
       assert_eq!(msg[0].delta.role, Some(Role::Assistant));
       assert_eq!(msg[0].delta.content, Some("two".to_string()));
@@ -173,10 +213,15 @@ mod tests {
     } else {
       panic!("Expected ChatMessage::ChatCompletionResponseMessage(ChatResponseSingleMessage::StreamResponse(msg))");
     }
-    Session::response_handler(tx.clone(), ChatResponse::StreamResponse(stream_responses[2].clone())).await;
+    Session::response_handler(
+      tx.clone(),
+      ChatResponse::StreamResponse(stream_responses[2].clone()),
+    )
+    .await;
     assert_eq!(session.data.messages.len(), 3);
-    if let ChatMessage::ChatCompletionResponseMessage(ChatResponseSingleMessage::StreamResponse(msg)) =
-      &session.data.messages[2].message
+    if let ChatMessage::ChatCompletionResponseMessage(
+      ChatResponseSingleMessage::StreamResponse(msg),
+    ) = &session.data.messages[2].message
     {
       assert_eq!(msg[0].delta.role, Some(Role::Assistant));
       assert_eq!(msg[0].delta.content, Some("twothree".to_string()));
@@ -184,10 +229,15 @@ mod tests {
     } else {
       panic!("Expected ChatMessage::ChatCompletionResponseMessage(ChatResponseSingleMessage::StreamResponse(msg))");
     }
-    Session::response_handler(tx.clone(), ChatResponse::StreamResponse(stream_responses[3].clone())).await;
+    Session::response_handler(
+      tx.clone(),
+      ChatResponse::StreamResponse(stream_responses[3].clone()),
+    )
+    .await;
     assert_eq!(session.data.messages.len(), 3);
-    if let ChatMessage::ChatCompletionResponseMessage(ChatResponseSingleMessage::StreamResponse(msg)) =
-      &session.data.messages[2].message
+    if let ChatMessage::ChatCompletionResponseMessage(
+      ChatResponseSingleMessage::StreamResponse(msg),
+    ) = &session.data.messages[2].message
     {
       assert_eq!(msg[0].delta.role, Some(Role::Assistant));
       assert_eq!(msg[0].delta.content, Some("twothree".to_string()));
@@ -198,76 +248,100 @@ mod tests {
     assert!(session.data.messages[1].finished);
     Session::response_handler(
       tx.clone(),
-      ChatResponse::StreamResponse(stream_responses_with_function_calls[0].clone()),
+      ChatResponse::StreamResponse(
+        stream_responses_with_function_calls[0].clone(),
+      ),
     )
     .await;
     assert_eq!(session.data.messages.len(), 4);
-    if let ChatMessage::ChatCompletionResponseMessage(ChatResponseSingleMessage::StreamResponse(msg)) =
-      &session.data.messages[3].message
+    if let ChatMessage::ChatCompletionResponseMessage(
+      ChatResponseSingleMessage::StreamResponse(msg),
+    ) = &session.data.messages[3].message
     {
       assert_eq!(msg[0].delta.role, Some(Role::Assistant));
       assert_eq!(msg[0].delta.content, None);
       assert_eq!(msg[0].finish_reason, None);
       assert_eq!(
         msg[0].delta.function_call,
-        Some(FunctionCallStream { name: Some("file_search".to_string()), arguments: None })
+        Some(FunctionCallStream {
+          name: Some("file_search".to_string()),
+          arguments: None
+        })
       );
     } else {
       panic!("Expected ChatMessage::ChatCompletionRequestMessage(ChatResponseSingleMessage::StreamResponse(msg))");
     }
     Session::response_handler(
       tx.clone(),
-      ChatResponse::StreamResponse(stream_responses_with_function_calls[1].clone()),
+      ChatResponse::StreamResponse(
+        stream_responses_with_function_calls[1].clone(),
+      ),
     )
     .await;
     assert_eq!(session.data.messages.len(), 4);
-    if let ChatMessage::ChatCompletionResponseMessage(ChatResponseSingleMessage::StreamResponse(msg)) =
-      &session.data.messages[3].message
+    if let ChatMessage::ChatCompletionResponseMessage(
+      ChatResponseSingleMessage::StreamResponse(msg),
+    ) = &session.data.messages[3].message
     {
       assert_eq!(msg[0].delta.role, Some(Role::Assistant));
       assert_eq!(msg[0].delta.content, None);
       assert_eq!(msg[0].finish_reason, None);
       assert_eq!(
         msg[0].delta.function_call,
-        Some(FunctionCallStream { name: Some("file_search".to_string()), arguments: Some("{ ".to_string()) })
+        Some(FunctionCallStream {
+          name: Some("file_search".to_string()),
+          arguments: Some("{ ".to_string())
+        })
       );
     } else {
       panic!("Expected ChatMessage::ChatCompletionRequestMessage(ChatResponseSingleMessage::StreamResponse(msg))");
     }
     Session::response_handler(
       tx.clone(),
-      ChatResponse::StreamResponse(stream_responses_with_function_calls[2].clone()),
+      ChatResponse::StreamResponse(
+        stream_responses_with_function_calls[2].clone(),
+      ),
     )
     .await;
     assert_eq!(session.data.messages.len(), 4);
-    if let ChatMessage::ChatCompletionResponseMessage(ChatResponseSingleMessage::StreamResponse(msg)) =
-      &session.data.messages[3].message
+    if let ChatMessage::ChatCompletionResponseMessage(
+      ChatResponseSingleMessage::StreamResponse(msg),
+    ) = &session.data.messages[3].message
     {
       assert_eq!(msg[0].delta.role, Some(Role::Assistant));
       assert_eq!(msg[0].delta.content, None);
       assert_eq!(msg[0].finish_reason, None);
       assert_eq!(
         msg[0].delta.function_call,
-        Some(FunctionCallStream { name: Some("file_search".to_string()), arguments: Some("{ src }".to_string()) })
+        Some(FunctionCallStream {
+          name: Some("file_search".to_string()),
+          arguments: Some("{ src }".to_string())
+        })
       );
     } else {
       panic!("Expected ChatMessage::ChatCompletionRequestMessage(ChatResponseSingleMessage::StreamResponse(msg))");
     }
     Session::response_handler(
       tx.clone(),
-      ChatResponse::StreamResponse(stream_responses_with_function_calls[3].clone()),
+      ChatResponse::StreamResponse(
+        stream_responses_with_function_calls[3].clone(),
+      ),
     )
     .await;
     assert_eq!(session.data.messages.len(), 4);
-    if let ChatMessage::ChatCompletionResponseMessage(ChatResponseSingleMessage::StreamResponse(msg)) =
-      &session.data.messages[3].message
+    if let ChatMessage::ChatCompletionResponseMessage(
+      ChatResponseSingleMessage::StreamResponse(msg),
+    ) = &session.data.messages[3].message
     {
       assert_eq!(msg[0].delta.role, Some(Role::Assistant));
       assert_eq!(msg[0].delta.content, None);
       assert_eq!(msg[0].finish_reason, Some(FinishReason::FunctionCall));
       assert_eq!(
         msg[0].delta.function_call,
-        Some(FunctionCallStream { name: Some("file_search".to_string()), arguments: Some("{ src }".to_string()) })
+        Some(FunctionCallStream {
+          name: Some("file_search".to_string()),
+          arguments: Some("{ src }".to_string())
+        })
       );
     } else {
       panic!("Expected ChatMessage::ChatCompletionRequestMessage(ChatResponseSingleMessage::StreamResponse(msg))");

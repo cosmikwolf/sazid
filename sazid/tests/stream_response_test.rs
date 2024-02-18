@@ -5,7 +5,9 @@ mod tests {
   use async_openai::types::Role;
   use ntest::timeout;
   use sazid::action::Action;
-  use sazid::app::messages::{ChatMessage, ChatResponseSingleMessage, MessageContainer};
+  use sazid::app::messages::{
+    ChatMessage, ChatResponseSingleMessage, MessageContainer,
+  };
   use sazid::components::session::*;
   use tokio::sync::mpsc;
 
@@ -15,7 +17,8 @@ mod tests {
     let mut enter_processing_action_run = false;
     let (tx, mut rx) = mpsc::unbounded_channel::<Action>();
     let mut session = Session::new();
-    session.submit_chat_completion_request("Hello World".to_string(), tx.clone());
+    session
+      .submit_chat_completion_request("Hello World".to_string(), tx.clone());
     'outer: loop {
       while let Some(res) = rx.recv().await {
         match res {
@@ -24,7 +27,10 @@ mod tests {
           },
           Action::ExitProcessing => {
             if let Some(MessageContainer {
-              message: ChatMessage::ChatCompletionResponseMessage(ChatResponseSingleMessage::StreamResponse(combined)),
+              message:
+                ChatMessage::ChatCompletionResponseMessage(
+                  ChatResponseSingleMessage::StreamResponse(combined),
+                ),
               ..
             }) = session.data.messages.last()
             {
@@ -33,7 +39,10 @@ mod tests {
               insta::assert_yaml_snapshot!(&session.data.messages.last().unwrap(), { ".id" => "[id]", ".created"  => "[created]" });
               insta::assert_yaml_snapshot!(&session.data.messages, { ".id" => "[id]", ".created"  => "[created]" });
               insta::assert_yaml_snapshot!(&session.data);
-              insta::assert_yaml_snapshot!(&session.view.rendered_text.to_string());
+              insta::assert_yaml_snapshot!(&session
+                .view
+                .rendered_text
+                .to_string());
             } else {
               panic!(
                 "Expected last transaction message to be StreamResponse {:#?}",

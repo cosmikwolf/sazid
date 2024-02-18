@@ -21,7 +21,11 @@ pub fn parse_input(
 }
 
 fn categorize_input(input: &str) -> Result<IngestData, ChunkifierError> {
-  let ingest_data = IngestData { text: input.to_string(), urls: Vec::new(), file_paths: Vec::new() };
+  let ingest_data = IngestData {
+    text: input.to_string(),
+    urls: Vec::new(),
+    file_paths: Vec::new(),
+  };
   Ok(ingest_data)
   // this code has a bug where any text that shared the name of a local directory results in a directories not supported error. need to just make this an argument -f
   // let words: Vec<&str> = input.split_whitespace().collect();
@@ -45,7 +49,10 @@ fn categorize_input(input: &str) -> Result<IngestData, ChunkifierError> {
   // Ok(ingest_data)
 }
 
-fn chunkify_parsed_input(ingest_data: IngestData, tokens_per_chunk: usize) -> Result<Vec<String>, ChunkifierError> {
+fn chunkify_parsed_input(
+  ingest_data: IngestData,
+  tokens_per_chunk: usize,
+) -> Result<Vec<String>, ChunkifierError> {
   let full_text = ingest_data.text;
   // ingest_data.urls.iter().for_each(|url| {
   //     let url_data = UrlData {
@@ -61,14 +68,20 @@ fn chunkify_parsed_input(ingest_data: IngestData, tokens_per_chunk: usize) -> Re
 }
 
 /// an algorithm that will determine if a Vec<String> string exceeds a model_max_tokens limit
-pub fn check_token_count_model_limit(chunks: &Vec<String>, model_max_tokens: usize) -> Result<(), ChunkifierError> {
+pub fn check_token_count_model_limit(
+  chunks: &Vec<String>,
+  model_max_tokens: usize,
+) -> Result<(), ChunkifierError> {
   let bpe = cl100k_base().unwrap();
   let mut token_count = 0;
   for chunk in chunks {
     token_count += bpe.encode_with_special_tokens(chunk).len();
   }
   if token_count > model_max_tokens {
-    Err(ChunkifierError::Other(format!("Input exceeds max token limit: {} tokens", token_count)))
+    Err(ChunkifierError::Other(format!(
+      "Input exceeds max token limit: {} tokens",
+      token_count
+    )))
   } else {
     Ok(())
   }
@@ -80,7 +93,10 @@ pub fn check_token_count_model_limit(chunks: &Vec<String>, model_max_tokens: usi
 /// This function determines if the input is a file path or just a block of text.
 /// If the input is a valid file path, it will chunkify the contents of the file.
 /// Otherwise, it will treat the input as plain text and chunkify it directly.
-pub fn chunkify_input(input: &str, tokens_per_chunk: usize) -> Result<Vec<String>, ChunkifierError> {
+pub fn chunkify_input(
+  input: &str,
+  tokens_per_chunk: usize,
+) -> Result<Vec<String>, ChunkifierError> {
   let path = PathBuf::try_from(input);
   // Check if the input can be treated as a file path
 
@@ -91,15 +107,22 @@ pub fn chunkify_input(input: &str, tokens_per_chunk: usize) -> Result<Vec<String
     } else if p.is_dir() {
       let dirchunks = p
         .read_dir()
-        .map_err(|_| ChunkifierError::Other("Failed to read directory".to_string()))
+        .map_err(|_| {
+          ChunkifierError::Other("Failed to read directory".to_string())
+        })
         .and_then(|dir| {
           dir
             .map(|entry| entry.map(|e| e.path()))
             .collect::<Result<Vec<_>, std::io::Error>>()
-            .map_err(|_| ChunkifierError::Other("Failed to read directory".to_string()))
+            .map_err(|_| {
+              ChunkifierError::Other("Failed to read directory".to_string())
+            })
         })
         .and_then(|paths| {
-          paths.iter().map(|path| chunkify_file(path, tokens_per_chunk)).collect::<Result<Vec<_>, ChunkifierError>>()
+          paths
+            .iter()
+            .map(|path| chunkify_file(path, tokens_per_chunk))
+            .collect::<Result<Vec<_>, ChunkifierError>>()
         })
         .map(|chunks| chunks.into_iter().flatten().collect())
         .unwrap();
@@ -107,11 +130,17 @@ pub fn chunkify_input(input: &str, tokens_per_chunk: usize) -> Result<Vec<String
     } else {
       // if it is a path, but its not a file or a directory, then it is a URL
       println!("URL detected, but not implemented. ingesting as text");
-      return Ok::<Vec<std::string::String>, ChunkifierError>(chunkify_text(input, tokens_per_chunk));
+      return Ok::<Vec<std::string::String>, ChunkifierError>(chunkify_text(
+        input,
+        tokens_per_chunk,
+      ));
     }
   } else {
     // If not a file path, chunkify the input text directly
-    Ok::<Vec<std::string::String>, ChunkifierError>(chunkify_text(input, tokens_per_chunk))
+    Ok::<Vec<std::string::String>, ChunkifierError>(chunkify_text(
+      input,
+      tokens_per_chunk,
+    ))
   }
 }
 
@@ -119,12 +148,16 @@ pub fn chunkify_input(input: &str, tokens_per_chunk: usize) -> Result<Vec<String
 
 /// Chunk the content of a file based on its type (PDF, text, etc.).
 /// Additionally, copy the file to the 'ingested' directory after chunking.
-fn chunkify_file(file_path: &PathBuf, tokens_per_chunk: usize) -> Result<Vec<String>, ChunkifierError> {
+fn chunkify_file(
+  file_path: &PathBuf,
+  tokens_per_chunk: usize,
+) -> Result<Vec<String>, ChunkifierError> {
   let content = extract_file_text(file_path)?;
   let chunks = chunkify_text(&content, tokens_per_chunk);
   ensure_directory_exists(INGESTED_DIR).unwrap();
   if file_path.is_file() {
-    let dest_path = Path::new(INGESTED_DIR).join(file_path.file_name().unwrap());
+    let dest_path =
+      Path::new(INGESTED_DIR).join(file_path.file_name().unwrap());
     fs::copy(file_path, dest_path)?;
   }
   Ok(chunks)
@@ -176,11 +209,15 @@ fn extract_file_text(file_path: &PathBuf) -> Result<String, ChunkifierError> {
   if is_pdf_file(file_path) {
     PdfText::from_pdf(file_path)
       .and_then(|pdf_text| pdf_text.get_text())
-      .map_err(|_| ChunkifierError::Other("Failed to extract text from PDF".to_string()))
+      .map_err(|_| {
+        ChunkifierError::Other("Failed to extract text from PDF".to_string())
+      })
   } else if is_binary_file(file_path) {
     Err(ChunkifierError::Other("Binary file detected".to_string()))
   } else {
-    fs::read_to_string(file_path).map_err(|_| ChunkifierError::Other("Failed to read text file".to_string()))
+    fs::read_to_string(file_path).map_err(|_| {
+      ChunkifierError::Other("Failed to read text file".to_string())
+    })
   }
 }
 
@@ -227,7 +264,10 @@ mod tests {
     let dir = tempdir().unwrap();
     let text_file_path = dir.path().join("test.txt");
 
-    File::create(&text_file_path).unwrap().write_all(b"Hello, world!\nHow are you?\nThis is a test!").unwrap();
+    File::create(&text_file_path)
+      .unwrap()
+      .write_all(b"Hello, world!\nHow are you?\nThis is a test!")
+      .unwrap();
 
     let chunks = chunkify_file(&text_file_path, 4).unwrap();
 
@@ -247,7 +287,10 @@ mod tests {
     let dir = tempdir().unwrap();
     let binary_file_path = dir.path().join("binary_test_file.bin");
 
-    File::create(&binary_file_path).unwrap().write_all(&[0u8, 1, 2, 3, 4, 255]).unwrap();
+    File::create(&binary_file_path)
+      .unwrap()
+      .write_all(&[0u8, 1, 2, 3, 4, 255])
+      .unwrap();
 
     let result = chunkify_file(&binary_file_path, 4);
 
