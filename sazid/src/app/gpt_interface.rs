@@ -1,6 +1,8 @@
 use async_openai::{
   config::OpenAIConfig,
-  types::{ChatCompletionFunctions, ChatCompletionTool, ChatCompletionToolType},
+  types::{
+    ChatCompletionFunctions, ChatCompletionTool, ChatCompletionToolType,
+  },
   Client,
 };
 
@@ -326,7 +328,9 @@ pub struct GPTConnector {
 //   commands
 // }
 
-pub fn create_chat_completion_tool_args(commands: Vec<FunctionCall>) -> Vec<ChatCompletionTool> {
+pub fn create_chat_completion_tool_args(
+  commands: Vec<FunctionCall>,
+) -> Vec<ChatCompletionTool> {
   commands
     .iter()
     .map(|command| ChatCompletionTool {
@@ -343,7 +347,9 @@ pub fn create_chat_completion_tool_args(commands: Vec<FunctionCall>) -> Vec<Chat
     .collect()
 }
 
-pub fn create_chat_completion_function_args(commands: Vec<FunctionCall>) -> Vec<ChatCompletionFunctions> {
+pub fn create_chat_completion_function_args(
+  commands: Vec<FunctionCall>,
+) -> Vec<ChatCompletionFunctions> {
   let mut chat_completion_functions: Vec<ChatCompletionFunctions> = Vec::new();
   let empty_parameters = "{\"type\": \"object\", \"properties\": {}}";
   for command in commands {
@@ -364,11 +370,14 @@ pub fn create_chat_completion_function_args(commands: Vec<FunctionCall>) -> Vec<
 mod test {
   use std::path::PathBuf;
 
-  use crate::app::functions::{cargo_check_function::cargo_check, file_search_function::file_search};
+  use crate::app::functions::{
+    cargo_check_function::cargo_check, file_search_function::file_search,
+  };
 
   #[test]
   fn test_list_dir() {
-    let dir_contents = file_search(1024, vec![PathBuf::from("src".to_string())], None);
+    let dir_contents =
+      file_search(1024, vec![PathBuf::from("src".to_string())], None);
     assert!(dir_contents.is_ok());
   }
 

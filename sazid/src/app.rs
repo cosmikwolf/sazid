@@ -32,7 +32,9 @@ use self::{
   session_config::SessionConfig,
 };
 
-#[derive(Default, Debug, Copy, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(
+  Default, Debug, Copy, Clone, PartialEq, Eq, Hash, Serialize, Deserialize,
+)]
 pub enum Mode {
   #[default]
   Home,
@@ -49,12 +51,17 @@ pub struct App {
   pub last_tick_key_events: Vec<KeyEvent>,
 }
 
-pub fn add_session_sync(db_url: &str, config: SessionConfig) -> Result<database::types::QueryableSession, SazidError> {
-  use diesel::prelude::{Connection, ExpressionMethods, RunQueryDsl, SelectableHelper};
+pub fn add_session_sync(
+  db_url: &str,
+  config: SessionConfig,
+) -> Result<database::types::QueryableSession, SazidError> {
+  use diesel::prelude::{
+    Connection, ExpressionMethods, RunQueryDsl, SelectableHelper,
+  };
   let mut conn =
-    diesel_async::async_connection_wrapper::AsyncConnectionWrapper::<diesel_async::AsyncPgConnection>::establish(
-      db_url,
-    )
+    diesel_async::async_connection_wrapper::AsyncConnectionWrapper::<
+      diesel_async::AsyncPgConnection,
+    >::establish(db_url)
     .unwrap();
   use crate::app::database::schema::sessions;
   let config = diesel_json::Json::new(config);
@@ -75,12 +82,17 @@ impl App {
   ) -> Result<Self, SazidError> {
     let home = Home::new();
     let db_url = data_manager.get_database_url();
-    let session: Session = add_session(&db_url, config.session_config.clone()).await.unwrap().into();
+    let session: Session =
+      add_session(&db_url, config.session_config.clone()).await.unwrap().into();
     let mode = Mode::Home;
     Ok(Self {
       tick_rate,
       frame_rate,
-      components: vec![Box::new(home), Box::new(session), Box::new(data_manager)],
+      components: vec![
+        Box::new(home),
+        Box::new(session),
+        Box::new(data_manager),
+      ],
       should_quit: false,
       should_suspend: false,
       config,
@@ -116,7 +128,9 @@ impl App {
           tui::Event::Quit => action_tx.send(Action::Quit).unwrap(),
           tui::Event::Tick => action_tx.send(Action::Tick).unwrap(),
           tui::Event::Render => action_tx.send(Action::Render).unwrap(),
-          tui::Event::Resize(x, y) => action_tx.send(Action::Resize(x, y)).unwrap(),
+          tui::Event::Resize(x, y) => {
+            action_tx.send(Action::Resize(x, y)).unwrap()
+          },
           tui::Event::Key(key) => {
             if let Some(keymap) = self.config.keybindings.get(&self.mode) {
               if let Some(action) = keymap.get(&vec![key]) {
@@ -138,7 +152,9 @@ impl App {
           _ => {},
         }
         for component in self.components.iter_mut() {
-          if let Some(action) = component.handle_events(Some(e.clone())).unwrap() {
+          if let Some(action) =
+            component.handle_events(Some(e.clone())).unwrap()
+          {
             action_tx.send(action).unwrap();
           }
         }
@@ -163,7 +179,9 @@ impl App {
                 for component in self.components.iter_mut() {
                   let r = component.draw(f, f.size());
                   if let Err(e) = r {
-                    action_tx.send(Action::Error(format!("Failed to draw: {:?}", e))).unwrap();
+                    action_tx
+                      .send(Action::Error(format!("Failed to draw: {:?}", e)))
+                      .unwrap();
                   }
                 }
               })
@@ -176,7 +194,9 @@ impl App {
                 for component in self.components.iter_mut() {
                   let r = component.draw(f, f.size());
                   if let Err(e) = r {
-                    action_tx.send(Action::Error(format!("Failed to draw: {:?}", e))).unwrap();
+                    action_tx
+                      .send(Action::Error(format!("Failed to draw: {:?}", e)))
+                      .unwrap();
                   }
                 }
               })

@@ -24,24 +24,34 @@ pub fn extract_comments(source_code: &str) -> Value {
   let language = tree_sitter_rust::language();
   parser.set_language(language).expect("Error loading Rust grammar");
 
-  let parsed = parser.parse(source_code, None).expect("Error parsing source code");
+  let parsed =
+    parser.parse(source_code, None).expect("Error parsing source code");
   let root_node = parsed.root_node();
   let mut comments = Vec::new();
-  let comment_query = tree_sitter::Query::new(language, "(line_comment) @comment (block_comment) @comment").unwrap();
+  let comment_query = tree_sitter::Query::new(
+    language,
+    "(line_comment) @comment (block_comment) @comment",
+  )
+  .unwrap();
   let mut query_cursor = tree_sitter::QueryCursor::new();
-  let query_matches = query_cursor.matches(&comment_query, root_node, source_code.as_bytes());
+  let query_matches =
+    query_cursor.matches(&comment_query, root_node, source_code.as_bytes());
 
   for match_ in query_matches {
     for capture in match_.captures {
-      if capture.node.kind() == "line_comment" || capture.node.kind() == "block_comment" {
+      if capture.node.kind() == "line_comment"
+        || capture.node.kind() == "block_comment"
+      {
         let comment_range = capture.node.range();
-        let comment = &source_code[comment_range.start_byte..comment_range.end_byte];
+        let comment =
+          &source_code[comment_range.start_byte..comment_range.end_byte];
         comments.push(comment.to_string());
       }
     }
   }
 
-  let comments: Vec<Value> = comments.iter().map(|c| json!({"type": "comment", "text": c})).collect();
+  let comments: Vec<Value> =
+    comments.iter().map(|c| json!({"type": "comment", "text": c})).collect();
   json!({"source": source_code, "constructs": comments})
 }
 
@@ -50,7 +60,8 @@ pub fn extract_declarations(source_code: &str) -> Value {
   let language = tree_sitter_rust::language();
   parser.set_language(language).expect("Error loading Rust grammar");
 
-  let parsed = parser.parse(source_code, None).expect("Error parsing source code");
+  let parsed =
+    parser.parse(source_code, None).expect("Error parsing source code");
   let root_node = parsed.root_node();
 
   let mut declarations = HashMap::new();
@@ -66,23 +77,41 @@ pub fn extract_declarations(source_code: &str) -> Value {
   .unwrap();
 
   let mut query_cursor = tree_sitter::QueryCursor::new();
-  let query_matches = query_cursor.matches(&declarations_query, root_node, source_code.as_bytes());
+  let query_matches = query_cursor.matches(
+    &declarations_query,
+    root_node,
+    source_code.as_bytes(),
+  );
 
   for match_ in query_matches {
     for capture in match_.captures {
-      let capture_text = &source_code[capture.node.range().start_byte..capture.node.range().end_byte].to_string();
+      let capture_text = &source_code
+        [capture.node.range().start_byte..capture.node.range().end_byte]
+        .to_string();
       match capture.node.kind() {
         "function_item" => {
-          declarations.entry("functions").or_insert_with(Vec::new).push(capture_text.clone());
+          declarations
+            .entry("functions")
+            .or_insert_with(Vec::new)
+            .push(capture_text.clone());
         },
         "struct_item" => {
-          declarations.entry("structs").or_insert_with(Vec::new).push(capture_text.clone());
+          declarations
+            .entry("structs")
+            .or_insert_with(Vec::new)
+            .push(capture_text.clone());
         },
         "enum_item" => {
-          declarations.entry("enums").or_insert_with(Vec::new).push(capture_text.clone());
+          declarations
+            .entry("enums")
+            .or_insert_with(Vec::new)
+            .push(capture_text.clone());
         },
         "trait_item" => {
-          declarations.entry("traits").or_insert_with(Vec::new).push(capture_text.clone());
+          declarations
+            .entry("traits")
+            .or_insert_with(Vec::new)
+            .push(capture_text.clone());
         },
         _ => {},
       }
@@ -92,7 +121,10 @@ pub fn extract_declarations(source_code: &str) -> Value {
   let declarations_list: Vec<Value> = declarations
     .iter()
     .flat_map(|(type_name, items)| {
-      items.iter().map(|item| json!({"type": type_name, "text": item})).collect::<Vec<Value>>()
+      items
+        .iter()
+        .map(|item| json!({"type": type_name, "text": item}))
+        .collect::<Vec<Value>>()
     })
     .collect();
   json!({"source": source_code, "constructs": declarations_list})
@@ -103,7 +135,8 @@ pub fn extract_code_constructs(source_code: &str) -> Value {
   let language = tree_sitter_rust::language();
   parser.set_language(language).expect("Error loading Rust grammar");
 
-  let parsed = parser.parse(source_code, None).expect("Error parsing source code");
+  let parsed =
+    parser.parse(source_code, None).expect("Error parsing source code");
   let root_node = parsed.root_node();
 
   let complex_query = Query::new(
@@ -123,7 +156,8 @@ pub fn extract_code_constructs(source_code: &str) -> Value {
   .expect("Error creating query");
 
   let mut query_cursor = QueryCursor::new();
-  let query_matches = query_cursor.matches(&complex_query, root_node, source_code.as_bytes());
+  let query_matches =
+    query_cursor.matches(&complex_query, root_node, source_code.as_bytes());
 
   let mut constructs = json!({
       "implementations": [],
@@ -137,7 +171,9 @@ pub fn extract_code_constructs(source_code: &str) -> Value {
 
   for match_ in query_matches {
     for capture in match_.captures {
-      let capture_text = source_code[capture.node.range().start_byte..capture.node.range().end_byte].to_string();
+      let capture_text = source_code
+        [capture.node.range().start_byte..capture.node.range().end_byte]
+        .to_string();
       let construct_type = match capture.node.kind() {
         "impl_item" => "implementations",
         "function_item" => "definitions",
@@ -150,7 +186,10 @@ pub fn extract_code_constructs(source_code: &str) -> Value {
       };
 
       if !construct_type.is_empty() {
-        constructs[construct_type].as_array_mut().unwrap().push(json!(capture_text));
+        constructs[construct_type]
+          .as_array_mut()
+          .unwrap()
+          .push(json!(capture_text));
       }
     }
   }
@@ -160,7 +199,12 @@ pub fn extract_code_constructs(source_code: &str) -> Value {
     .unwrap()
     .iter()
     .flat_map(|(type_name, items)| {
-      items.as_array().unwrap().iter().map(|item| json!({"type": type_name, "text": item})).collect::<Vec<Value>>()
+      items
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|item| json!({"type": type_name, "text": item}))
+        .collect::<Vec<Value>>()
     })
     .collect();
 

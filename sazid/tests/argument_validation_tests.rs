@@ -5,7 +5,8 @@ mod tests {
   use clap::Parser;
   use sazid::app::{
     functions::argument_validation::{
-      clap_args_to_json, validate_and_extract_paths_from_argument, validate_and_extract_string_argument,
+      clap_args_to_json, validate_and_extract_paths_from_argument,
+      validate_and_extract_string_argument,
     },
     session_config::SessionConfig,
   };
@@ -25,7 +26,8 @@ mod tests {
   ]"#,
     )
     .unwrap();
-    let actual_json: serde_json::Value = serde_json::from_str(&clap_args_to_json::<TestArgs>()).unwrap();
+    let actual_json: serde_json::Value =
+      serde_json::from_str(&clap_args_to_json::<TestArgs>()).unwrap();
 
     assert_eq!(expected_json, actual_json);
   }
@@ -33,20 +35,28 @@ mod tests {
   #[test]
   fn test_validate_and_extract_options_with_required() {
     let function_args = HashMap::new();
-    assert!(validate_and_extract_options::<TestArgs>(&function_args, true).is_err());
+    assert!(
+      validate_and_extract_options::<TestArgs>(&function_args, true).is_err()
+    );
   }
 
   #[test]
   fn test_validate_and_extract_options_with_optional() {
     let function_args = HashMap::new();
-    assert!(validate_and_extract_options::<TestArgs>(&function_args, false).is_ok());
+    assert!(
+      validate_and_extract_options::<TestArgs>(&function_args, false).is_ok()
+    );
   }
 
   #[test]
   fn test_validate_and_extract_string_argument_with_required() {
     let mut function_args = HashMap::new();
-    function_args.insert("arg".to_string(), serde_json::Value::String("value".to_string()));
-    let result = validate_and_extract_string_argument(&function_args, "arg", true);
+    function_args.insert(
+      "arg".to_string(),
+      serde_json::Value::String("value".to_string()),
+    );
+    let result =
+      validate_and_extract_string_argument(&function_args, "arg", true);
     assert!(result.is_ok());
     assert_eq!(result.unwrap(), Some("value".to_string()));
   }
@@ -54,7 +64,8 @@ mod tests {
   #[test]
   fn test_validate_and_extract_string_argument_with_optional() {
     let function_args = HashMap::new();
-    let result = validate_and_extract_string_argument(&function_args, "arg", false);
+    let result =
+      validate_and_extract_string_argument(&function_args, "arg", false);
     assert!(result.is_ok());
     assert_eq!(result.unwrap(), None);
   }
@@ -62,7 +73,8 @@ mod tests {
   #[test]
   fn test_validate_and_extract_paths_from_argument_valid_paths() {
     // Set the base directory for file search as the temporary directory
-    let temp_dir = tempfile::tempdir().expect("Failed to create a temporary directory");
+    let temp_dir =
+      tempfile::tempdir().expect("Failed to create a temporary directory");
     println!("{:?}", temp_dir.path());
     let file1 = temp_dir.path().join("file1.rs");
     let file2 = temp_dir.path().join("file2.rs");
@@ -71,10 +83,17 @@ mod tests {
     std::fs::File::create(&file2).expect("Failed to create temporary file2");
 
     let mut function_args = HashMap::new();
-    let valid_paths = format!("{},{}", file1.to_str().unwrap(), file2.to_str().unwrap());
-    function_args.insert("paths".to_string(), serde_json::Value::String(valid_paths.to_string()));
+    let valid_paths =
+      format!("{},{}", file1.to_str().unwrap(), file2.to_str().unwrap());
+    function_args.insert(
+      "paths".to_string(),
+      serde_json::Value::String(valid_paths.to_string()),
+    );
 
-    let session_config = SessionConfig { accessible_paths: vec![temp_dir.path().to_path_buf()], ..Default::default() };
+    let session_config = SessionConfig {
+      accessible_paths: vec![temp_dir.path().to_path_buf()],
+      ..Default::default()
+    };
     let result = validate_and_extract_paths_from_argument(
       &function_args,
       session_config,
@@ -89,13 +108,25 @@ mod tests {
 
   #[test]
   fn test_validate_and_extract_paths_from_argument_invalid_paths() {
-    let invalid_paths = "./nonexistent/path/to/file1.rs,./nonexistent/path/to/file2.rs";
+    let invalid_paths =
+      "./nonexistent/path/to/file1.rs,./nonexistent/path/to/file2.rs";
     let mut function_args = HashMap::new();
-    function_args.insert("paths".to_string(), serde_json::Value::String(invalid_paths.to_string()));
+    function_args.insert(
+      "paths".to_string(),
+      serde_json::Value::String(invalid_paths.to_string()),
+    );
 
-    let session_config = SessionConfig { accessible_paths: vec![PathBuf::from(".")], ..Default::default() };
+    let session_config = SessionConfig {
+      accessible_paths: vec![PathBuf::from(".")],
+      ..Default::default()
+    };
 
-    let result = validate_and_extract_paths_from_argument(&function_args, session_config, true, None);
+    let result = validate_and_extract_paths_from_argument(
+      &function_args,
+      session_config,
+      true,
+      None,
+    );
     assert!(result.is_err());
   }
   #[test]
@@ -104,10 +135,17 @@ mod tests {
     let session_config = SessionConfig::default();
     function_args.insert(
       "paths".to_string(),
-      serde_json::Value::String("./path/to/invalid_file1,./path/to/invalid_file2".to_string()),
+      serde_json::Value::String(
+        "./path/to/invalid_file1,./path/to/invalid_file2".to_string(),
+      ),
     );
 
-    let result = validate_and_extract_paths_from_argument(&function_args, session_config, true, None);
+    let result = validate_and_extract_paths_from_argument(
+      &function_args,
+      session_config,
+      true,
+      None,
+    );
 
     assert!(result.is_err());
     let error = result.unwrap_err();
@@ -122,7 +160,12 @@ mod tests {
     let function_args = HashMap::new();
     let session_config = SessionConfig::default();
 
-    let result = validate_and_extract_paths_from_argument(&function_args, session_config, true, None);
+    let result = validate_and_extract_paths_from_argument(
+      &function_args,
+      session_config,
+      true,
+      None,
+    );
 
     assert!(result.is_err());
     let error = result.unwrap_err();
@@ -134,7 +177,12 @@ mod tests {
     let function_args = HashMap::new();
     let session_config = SessionConfig::default();
 
-    let result = validate_and_extract_paths_from_argument(&function_args, session_config, false, None);
+    let result = validate_and_extract_paths_from_argument(
+      &function_args,
+      session_config,
+      false,
+      None,
+    );
 
     assert!(result.is_ok());
     assert_eq!(result.unwrap(), None);

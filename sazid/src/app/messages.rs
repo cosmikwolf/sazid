@@ -11,10 +11,13 @@ use serde::{Deserialize, Serialize};
 use async_openai::{
   self,
   types::{
-    ChatCompletionMessageToolCall, ChatCompletionRequestAssistantMessage, ChatCompletionRequestFunctionMessage,
-    ChatCompletionRequestMessage, ChatCompletionRequestMessageContentPart, ChatCompletionRequestSystemMessage,
-    ChatCompletionRequestToolMessage, ChatCompletionRequestUserMessage, ChatCompletionRequestUserMessageContent,
-    CreateChatCompletionResponse, CreateChatCompletionStreamResponse, FunctionCall, FunctionCallStream, Role,
+    ChatCompletionMessageToolCall, ChatCompletionRequestAssistantMessage,
+    ChatCompletionRequestFunctionMessage, ChatCompletionRequestMessage,
+    ChatCompletionRequestMessageContentPart,
+    ChatCompletionRequestSystemMessage, ChatCompletionRequestToolMessage,
+    ChatCompletionRequestUserMessage, ChatCompletionRequestUserMessageContent,
+    CreateChatCompletionResponse, CreateChatCompletionStreamResponse,
+    FunctionCall, FunctionCallStream, Role,
   },
 };
 
@@ -83,12 +86,22 @@ pub enum ReceiveBuffer {
 impl From<ReceiveBuffer> for ChatCompletionRequestMessage {
   fn from(buffer: ReceiveBuffer) -> Self {
     match buffer {
-      ReceiveBuffer::Response(response) => ChatCompletionRequestMessage::Assistant(
-        get_assistant_message_from_create_chat_completion_response(0, &response).unwrap(),
-      ),
-      ReceiveBuffer::StreamResponse(response) => ChatCompletionRequestMessage::Assistant(
-        get_assistant_message_from_create_chat_completion_stream_response(0, &response).unwrap(),
-      ),
+      ReceiveBuffer::Response(response) => {
+        ChatCompletionRequestMessage::Assistant(
+          get_assistant_message_from_create_chat_completion_response(
+            0, &response,
+          )
+          .unwrap(),
+        )
+      },
+      ReceiveBuffer::StreamResponse(response) => {
+        ChatCompletionRequestMessage::Assistant(
+          get_assistant_message_from_create_chat_completion_stream_response(
+            0, &response,
+          )
+          .unwrap(),
+        )
+      },
     }
   }
 }
@@ -102,7 +115,9 @@ impl From<ReceiveBuffer> for MessageContainer {
   fn from(receive_buffer: ReceiveBuffer) -> Self {
     let message = receive_buffer.clone().into();
     let (receive_complete, stream_id) = match &receive_buffer {
-      ReceiveBuffer::StreamResponse(srvec) => (false, Some(srvec[0].id.clone())),
+      ReceiveBuffer::StreamResponse(srvec) => {
+        (false, Some(srvec[0].id.clone()))
+      },
       _ => (true, None),
     };
     MessageContainer {
@@ -128,22 +143,36 @@ impl From<ReceiveBuffer> for MessageContainer {
 impl From<ChatMessage> for MessageContainer {
   fn from(message: ChatMessage) -> Self {
     match message {
-      ChatMessage::Response(response) => ReceiveBuffer::Response(response).into(),
-      ChatMessage::StreamResponse(response) => ReceiveBuffer::StreamResponse(response).into(),
+      ChatMessage::Response(response) => {
+        ReceiveBuffer::Response(response).into()
+      },
+      ChatMessage::StreamResponse(response) => {
+        ReceiveBuffer::StreamResponse(response).into()
+      },
       ChatMessage::Tool(message) => {
-        MessageContainer::new_from_completed_message(ChatCompletionRequestMessage::Tool(message))
+        MessageContainer::new_from_completed_message(
+          ChatCompletionRequestMessage::Tool(message),
+        )
       },
       ChatMessage::Function(message) => {
-        MessageContainer::new_from_completed_message(ChatCompletionRequestMessage::Function(message))
+        MessageContainer::new_from_completed_message(
+          ChatCompletionRequestMessage::Function(message),
+        )
       },
       ChatMessage::System(message) => {
-        MessageContainer::new_from_completed_message(ChatCompletionRequestMessage::System(message))
+        MessageContainer::new_from_completed_message(
+          ChatCompletionRequestMessage::System(message),
+        )
       },
       ChatMessage::User(message) => {
-        MessageContainer::new_from_completed_message(ChatCompletionRequestMessage::User(message))
+        MessageContainer::new_from_completed_message(
+          ChatCompletionRequestMessage::User(message),
+        )
       },
       ChatMessage::Assistant(message) => {
-        MessageContainer::new_from_completed_message(ChatCompletionRequestMessage::Assistant(message))
+        MessageContainer::new_from_completed_message(
+          ChatCompletionRequestMessage::Assistant(message),
+        )
       },
     }
   }
@@ -154,7 +183,8 @@ impl fmt::Display for MessageContainer {
       f,
       "{}",
       match &self.message {
-        ChatCompletionRequestMessage::System(message) => match &message.content {
+        ChatCompletionRequestMessage::System(message) => match &message.content
+        {
           Some(content) => {
             format!("{}\n{}", "System:".bright_magenta(), content)
           },
@@ -174,7 +204,11 @@ impl fmt::Display for MessageContainer {
                   format!("{}\n{}", "You:".bright_blue(), content.text)
                 },
                 ChatCompletionRequestMessageContentPart::Image(content) => {
-                  format!("{}\n{}", "You <Image>:".bright_blue(), content.image_url.url)
+                  format!(
+                    "{}\n{}",
+                    "You <Image>:".bright_blue(),
+                    content.image_url.url
+                  )
                 },
               })
             }
@@ -187,14 +221,26 @@ impl fmt::Display for MessageContainer {
         ChatCompletionRequestMessage::Assistant(message) => {
           let mut content: Vec<String> = Vec::new();
           content.push(match &message.content {
-            Some(content) => format!("{}\n{}\n", "Assistant:".bright_yellow(), content),
-            None => format!("{}\n{}\n", "Assistant:".bright_yellow(), "no content"),
+            Some(content) => {
+              format!("{}\n{}\n", "Assistant:".bright_yellow(), content)
+            },
+            None => {
+              format!("{}\n{}\n", "Assistant:".bright_yellow(), "no content")
+            },
           });
           match &message.tool_calls {
             Some(tool_calls) => {
               for tool_call in tool_calls {
-                content.push(format!("{}\n{}", "Tool:".bright_green(), tool_call.function.name));
-                content.push(format!("{}\n{}", "Arguments:".bright_green(), tool_call.function.arguments));
+                content.push(format!(
+                  "{}\n{}",
+                  "Tool:".bright_green(),
+                  tool_call.function.name
+                ));
+                content.push(format!(
+                  "{}\n{}",
+                  "Arguments:".bright_green(),
+                  tool_call.function.arguments
+                ));
               }
             },
             None => {},
@@ -203,7 +249,11 @@ impl fmt::Display for MessageContainer {
         },
         ChatCompletionRequestMessage::Tool(message) => {
           let mut content: Vec<String> = Vec::new();
-          content.push(format!("{}\n{}", "Tool:".bright_green(), message.tool_call_id));
+          content.push(format!(
+            "{}\n{}",
+            "Tool:".bright_green(),
+            message.tool_call_id
+          ));
           content.push(match &message.content {
             Some(content) => content.to_string(),
             None => "no content".to_string(),
@@ -212,7 +262,11 @@ impl fmt::Display for MessageContainer {
         },
         ChatCompletionRequestMessage::Function(message) => {
           let mut content: Vec<String> = Vec::new();
-          content.push(format!("{}\n{}", "Function:".bright_green(), message.name));
+          content.push(format!(
+            "{}\n{}",
+            "Function:".bright_green(),
+            message.name
+          ));
           content.push(match &message.content {
             Some(content) => content.to_string(),
             None => "no content".to_string(),
@@ -330,7 +384,9 @@ impl MessageContainer {
     }
   }
 
-  pub fn new_from_completed_message(message: ChatCompletionRequestMessage) -> Self {
+  pub fn new_from_completed_message(
+    message: ChatCompletionRequestMessage,
+  ) -> Self {
     let mut message_container = MessageContainer::new(message);
     message_container.receive_complete = true;
     message_container
@@ -374,13 +430,17 @@ impl MessageContainer {
         _ => Err(ParseError::new("MessageContainer::update_stream_response: message is not a stream response")),
       }
     } else {
-      Err(ParseError::new("MessageContainer::update_stream_response: stream id does not match"))
+      Err(ParseError::new(
+        "MessageContainer::update_stream_response: stream id does not match",
+      ))
     }
   }
 
   pub fn check_if_receive_is_complete(&mut self) {
     if match &self.receive_buffer {
-      Some(ReceiveBuffer::Response(response)) => response.choices.iter().all(|c| c.finish_reason.is_some()),
+      Some(ReceiveBuffer::Response(response)) => {
+        response.choices.iter().all(|c| c.finish_reason.is_some())
+      },
       Some(ReceiveBuffer::StreamResponse(srvec)) => {
         let mut indexes_with_finish_reason = HashSet::new();
 
@@ -394,13 +454,22 @@ impl MessageContainer {
         });
 
         // Now, check if every index has a corresponding finish_reason.
-        let res = srvec
-          .iter()
-          .all(|response| response.choices.iter().all(|choice| indexes_with_finish_reason.contains(&choice.index)));
+        let res = srvec.iter().all(|response| {
+          response
+            .choices
+            .iter()
+            .all(|choice| indexes_with_finish_reason.contains(&choice.index))
+        });
         if res {
-          trace_dbg!("message finished: {:#?}", self.stream_id.bright_magenta());
+          trace_dbg!(
+            "message finished: {:#?}",
+            self.stream_id.bright_magenta()
+          );
         } else {
-          trace_dbg!("message not finished: {:#?}", self.stream_id.bright_magenta());
+          trace_dbg!(
+            "message not finished: {:#?}",
+            self.stream_id.bright_magenta()
+          );
         }
         res
       },
@@ -440,7 +509,10 @@ impl From<FunctionCallStream> for RenderedFunctionCall {
 
 impl From<FunctionCall> for RenderedFunctionCall {
   fn from(function_call: FunctionCall) -> Self {
-    RenderedFunctionCall { name: function_call.name, arguments: function_call.arguments }
+    RenderedFunctionCall {
+      name: function_call.name,
+      arguments: function_call.arguments,
+    }
   }
 }
 

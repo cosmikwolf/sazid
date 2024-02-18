@@ -6,19 +6,27 @@ mod tests {
   use sazid::app::database::types::*;
 
   async fn establish_connection() -> AsyncPgConnection {
-    AsyncPgConnection::establish(&dotenv::var("TEST_DATABASE_URL").unwrap()).await.unwrap()
+    AsyncPgConnection::establish(&dotenv::var("TEST_DATABASE_URL").unwrap())
+      .await
+      .unwrap()
   }
 
   fn setup_test_container(connection: &AsyncPgConnection) -> PagesContainer {
     // Hypothetical function to create and return test PagesContainer
     // assuming pages_containers::dsl and InsertablePagesContainer are in scope
     diesel::insert_into(pages_containers::table)
-      .values(InsertablePagesContainer { filepath: "test/filepath".into(), checksum: "checksum".into() })
+      .values(InsertablePagesContainer {
+        filepath: "test/filepath".into(),
+        checksum: "checksum".into(),
+      })
       .get_result(connection)
       .unwrap()
   }
 
-  fn setup_test_textfile_embedding(connection: &AsyncPgConnection, container_id: i64) -> TextFileEmbedding {
+  fn setup_test_textfile_embedding(
+    connection: &AsyncPgConnection,
+    container_id: i64,
+  ) -> TextFileEmbedding {
     // Hypothetical function to create and return test TextFileEmbedding
     // assuming embeddings::dsl and InsertableTextFileEmbedding are in scope
     diesel::insert_into(embeddings::table)
@@ -49,8 +57,10 @@ mod tests {
     reset_database(&connection).await;
 
     let test_container = setup_test_container(&connection);
-    let test_textfile_embedding = setup_test_textfile_embedding(&connection, test_container.id);
-    let next_page_option = test_textfile_embedding.get_next_page(&mut connection).await.unwrap();
+    let test_textfile_embedding =
+      setup_test_textfile_embedding(&connection, test_container.id);
+    let next_page_option =
+      test_textfile_embedding.get_next_page(&mut connection).await.unwrap();
 
     assert!(next_page_option.is_some(), "Next page does not exist.");
     // More assertions can be added based on expected data
@@ -62,10 +72,15 @@ mod tests {
     reset_database(&connection).await;
 
     let test_container = setup_test_container(&connection);
-    let test_textfile_embedding = setup_test_textfile_embedding(&connection, test_container.id);
-    let previous_page_option = test_textfile_embedding.get_previous_page(&mut connection).await.unwrap();
+    let test_textfile_embedding =
+      setup_test_textfile_embedding(&connection, test_container.id);
+    let previous_page_option =
+      test_textfile_embedding.get_previous_page(&mut connection).await.unwrap();
 
-    assert!(previous_page_option.is_none(), "Previous page exists which should not.");
+    assert!(
+      previous_page_option.is_none(),
+      "Previous page exists which should not."
+    );
     // More assertions can be added based on expected data
   }
 

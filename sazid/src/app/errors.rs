@@ -25,13 +25,19 @@ impl fmt::Display for SazidError {
       SazidError::DieselError(err) => write!(f, "DieselError: {}", err),
       SazidError::DialoguerError(err) => write!(f, "DialoguerError: {}", err),
       SazidError::LoggingError(err) => write!(f, "LoggingError: {}", err),
-      SazidError::PanicHandlerError(err) => write!(f, "PanicHandlerError: {}", err),
-      SazidError::TokioPosgresError(err) => write!(f, "TokioPosgresError: {}", err),
+      SazidError::PanicHandlerError(err) => {
+        write!(f, "PanicHandlerError: {}", err)
+      },
+      SazidError::TokioPosgresError(err) => {
+        write!(f, "TokioPosgresError: {}", err)
+      },
       SazidError::ChunkifierError(err) => write!(f, "ChunkifierError: {}", err),
       SazidError::ParseError(err) => write!(f, "ParseError: {}", err),
       SazidError::ConfigError(err) => write!(f, "ConfigError: {}", err),
       SazidError::OpenAiError(err) => write!(f, "OpenAIError: {}", err),
-      SazidError::FunctionCallError(err) => write!(f, "FunctionCallError: {}", err),
+      SazidError::FunctionCallError(err) => {
+        write!(f, "FunctionCallError: {}", err)
+      },
       SazidError::IoError(err) => write!(f, "IO error: {}", err),
       SazidError::Other(err) => write!(f, "Error: {}", err),
     }
@@ -75,7 +81,9 @@ impl From<OpenAIError> for SazidError {
 impl TryFrom<Result<(), config::ConfigError>> for SazidError {
   type Error = config::ConfigError;
 
-  fn try_from(result: Result<(), config::ConfigError>) -> Result<Self, config::ConfigError> {
+  fn try_from(
+    result: Result<(), config::ConfigError>,
+  ) -> Result<Self, config::ConfigError> {
     match result {
       Ok(_) => Ok(SazidError::Other("".to_string())),
       Err(err) => Err(err),
@@ -168,7 +176,9 @@ impl fmt::Display for ChunkifierError {
   fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
     match self {
       ChunkifierError::IO(err) => write!(f, "IO error: {}", err),
-      ChunkifierError::Utf8(err) => write!(f, "UTF-8 conversion error: {}", err),
+      ChunkifierError::Utf8(err) => {
+        write!(f, "UTF-8 conversion error: {}", err)
+      },
       ChunkifierError::Other(err) => write!(f, "Other error: {}", err),
     }
   }
@@ -188,9 +198,15 @@ impl fmt::Display for GPTConnectorError {
 impl fmt::Display for SessionManagerError {
   fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
     match self {
-      SessionManagerError::FileChunker(err) => write!(f, "FileChunker error: {}", err),
-      SessionManagerError::GPTConnector(err) => write!(f, "GPTConnector error: {}", err),
-      SessionManagerError::PdfExtractor(err) => write!(f, "PdfExtractor error: {}", err),
+      SessionManagerError::FileChunker(err) => {
+        write!(f, "FileChunker error: {}", err)
+      },
+      SessionManagerError::GPTConnector(err) => {
+        write!(f, "GPTConnector error: {}", err)
+      },
+      SessionManagerError::PdfExtractor(err) => {
+        write!(f, "PdfExtractor error: {}", err)
+      },
       SessionManagerError::IO(err) => write!(f, "IO error: {}", err),
       SessionManagerError::Other(err) => write!(f, "Other error: {}", err),
       SessionManagerError::FileNotFound(file) => {

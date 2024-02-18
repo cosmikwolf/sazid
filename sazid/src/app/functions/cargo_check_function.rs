@@ -51,7 +51,12 @@ impl ToolCallTrait for CargoCheckFunction {
       description: Some(self.description.clone()),
       parameters: Some(FunctionParameters {
         param_type: "object".to_string(),
-        required: self.required_properties.clone().into_iter().map(|p| p.name).collect(),
+        required: self
+          .required_properties
+          .clone()
+          .into_iter()
+          .map(|p| p.name)
+          .collect(),
         properties,
       }),
     }
@@ -66,7 +71,8 @@ pub fn cargo_check() -> Result<Option<String>, ToolCallError> {
   match command.output() {
     Ok(output) => {
       if output.status.success() {
-        let cargo_check_json: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+        let cargo_check_json: serde_json::Value =
+          serde_json::from_slice(&output.stdout).unwrap();
         let _output_str = cargo_check_json
           .as_array()
           .unwrap()
@@ -77,7 +83,10 @@ pub fn cargo_check() -> Result<Option<String>, ToolCallError> {
           .join("\n");
         Ok(Some(serde_json::to_string_pretty(&output.stdout).unwrap()))
       } else {
-        Ok(Some(format!("cargo check failed: {}", String::from_utf8_lossy(&output.stderr))))
+        Ok(Some(format!(
+          "cargo check failed: {}",
+          String::from_utf8_lossy(&output.stderr)
+        )))
       }
     },
     Err(e) => Ok(Some(format!("cargo check failed: {}", e))),

@@ -1,8 +1,13 @@
-use crate::app::{functions::tool_call::ToolCallTrait, session_config::SessionConfig};
+use crate::app::{
+  functions::tool_call::ToolCallTrait, session_config::SessionConfig,
+};
 use std::{collections::HashMap, path::PathBuf};
 
 use super::{
-  argument_validation::{validate_and_extract_paths_from_argument, validate_and_extract_string_argument},
+  argument_validation::{
+    validate_and_extract_paths_from_argument,
+    validate_and_extract_string_argument,
+  },
   errors::ToolCallError,
   types::{FunctionCall, FunctionParameters, FunctionProperties},
 };
@@ -36,7 +41,10 @@ pub fn execute_pcre2grep(
     .map_err(|e| ToolCallError::new(e.to_string().as_str()))?;
 
   if !output.status.success() {
-    return Ok(Some(ToolCallError::new(output.status.code().unwrap().to_string().as_str()).to_string()));
+    return Ok(Some(
+      ToolCallError::new(output.status.code().unwrap().to_string().as_str())
+        .to_string(),
+    ));
   }
 
   Ok(Some(String::from_utf8_lossy(&output.stdout).to_string()))
@@ -83,8 +91,17 @@ impl ToolCallTrait for Pcre2GrepFunction {
     function_args: HashMap<String, serde_json::Value>,
     session_config: SessionConfig,
   ) -> Result<Option<String>, ToolCallError> {
-    match validate_and_extract_paths_from_argument(&function_args, session_config, true, None) {
-      Ok(Some(paths)) => match validate_and_extract_string_argument(&function_args, "pattern", true) {
+    match validate_and_extract_paths_from_argument(
+      &function_args,
+      session_config,
+      true,
+      None,
+    ) {
+      Ok(Some(paths)) => match validate_and_extract_string_argument(
+        &function_args,
+        "pattern",
+        true,
+      ) {
         Ok(Some(pattern)) => execute_pcre2grep(pattern, paths),
         Ok(None) => Ok(Some("pattenr is required".to_string())),
         Err(err) => Ok(Some(err.to_string())),
@@ -109,7 +126,12 @@ impl ToolCallTrait for Pcre2GrepFunction {
       description: Some(self.description.clone()),
       parameters: Some(FunctionParameters {
         param_type: "object".to_string(),
-        required: self.required_properties.clone().into_iter().map(|p| p.name).collect(),
+        required: self
+          .required_properties
+          .clone()
+          .into_iter()
+          .map(|p| p.name)
+          .collect(),
         properties,
       }),
     }

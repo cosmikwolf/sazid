@@ -1,11 +1,13 @@
 use futures::FutureExt;
 use helix_core;
 use helix_lsp::Client;
+use sazid::action::Action;
 use sazid::app::lsp::helix_lsp_interface::LanguageServerInterface;
 // use sazid::trace_dbg;
 use sazid::utils::initialize_logging;
 use std::path::Path;
 use std::str::from_utf8;
+use std::sync::{Arc, Mutex, MutexGuard};
 use tempfile::tempdir;
 use tracing::warn;
 use tracing_test::traced_test;
@@ -13,8 +15,10 @@ use url::Url;
 
 pub fn test_lang_config() -> helix_core::syntax::Configuration {
   let default_config = include_bytes!("./assets/languages_test.toml");
-  toml::from_str::<helix_core::syntax::Configuration>(from_utf8(default_config).unwrap())
-    .expect("Could not parse built-in languages.toml to valid toml")
+  toml::from_str::<helix_core::syntax::Configuration>(
+    from_utf8(default_config).unwrap(),
+  )
+  .expect("Could not parse built-in languages.toml to valid toml")
 }
 
 fn copy_dir_recursively(source: &Path, target: &Path) -> anyhow::Result<()> {
@@ -60,7 +64,8 @@ async fn test_rust_analyzer_connection() -> anyhow::Result<()> {
   // panic!();
 
   let test_workspace_src_path = "tests/assets/rust_test_project";
-  let test_src_assets = std::env::current_dir().unwrap().join(test_workspace_src_path);
+  let test_src_assets =
+    std::env::current_dir().unwrap().join(test_workspace_src_path);
 
   // create temp dir for test
   let temp_dir = tempdir()?;
@@ -74,11 +79,28 @@ async fn test_rust_analyzer_connection() -> anyhow::Result<()> {
 
   std::env::set_current_dir(&test_workspace_path).unwrap();
   let config = test_lang_config();
-  let mut lsi = LanguageServerInterface::new(Some(config));
+  let (action_tx, _rx) = tokio::sync::mpsc::unbounded_channel::<Action>();
+
+  let mut lsi = LanguageServerInterface::new(Some(config), action_tx);
+  lsi.spawn_server_notification_thread().await;
   let root_dirs = vec![test_workspace_path.clone()];
 
-  lsi.create_workspace(test_workspace_path.clone(), "rust", "rust-analyzer", None).await.unwrap();
-  let ids = lsi.language_servers.lock().await.iter_clients().map(|c| c.id()).collect::<Vec<usize>>();
+  lsi
+    .create_workspace(
+      test_workspace_path.clone(),
+      "rust",
+      "rust-analyzer",
+      None,
+    )
+    .await
+    .unwrap();
+  let ids = lsi
+    .language_servers
+    .lock()
+    .await
+    .iter_clients()
+    .map(|c| c.id())
+    .collect::<Vec<usize>>();
 
   let a = lsi.wait_for_language_server_initialization(ids.as_slice()).await;
   assert!(a.is_ok());
@@ -102,19 +124,26 @@ async fn test_rust_analyzer_connection() -> anyhow::Result<()> {
   for workspace in lsi.workspaces.iter() {
     log::error!("Workspace: {:#?}", workspace.workspace_path.display());
 
-    workspace.all_symbols_weak().iter().map(|s| s.upgrade().unwrap()).for_each(|s| {
-      println!(
-        "symbol: {:#?}\nname: {}\nrange:{:#?}\nwsp: {}\nfp::{}\n{}\n{}",
-        s.kind,
-        s.name,
-        s.range,
-        Url::from_file_path(s.workspace_path.clone().canonicalize().unwrap()).unwrap(),
-        s.file_path.to_str().unwrap(),
-        &s.get_source().unwrap().fg::<Blue>(),
-        &s.get_selection().unwrap().fg::<Green>()
-      );
-    });
-    println!("{} workspace symbols found in {} files", workspace.count_symbols(), workspace.files.len());
+    workspace.all_symbols_weak().iter().map(|s| s.upgrade().unwrap()).for_each(
+      |s| {
+        println!(
+          "symbol: {:#?}\nname: {}\nrange:{:#?}\nwsp: {}\nfp::{}\n{}\n{}",
+          s.kind,
+          s.name,
+          s.range,
+          Url::from_file_path(s.workspace_path.clone().canonicalize().unwrap())
+            .unwrap(),
+          s.file_path.to_str().unwrap(),
+          &s.get_source().unwrap().fg::<Blue>(),
+          &s.get_selection().unwrap().fg::<Green>()
+        );
+      },
+    );
+    println!(
+      "{} workspace symbols found in {} files",
+      workspace.count_symbols(),
+      workspace.files.len()
+    );
   }
 
   let capabilities = lsi.server_capabilities().await;

@@ -4,8 +4,11 @@ mod vector_custom_type_tests {
   use tokio_postgres::{Client, Error, NoTls};
 
   async fn setup_db() -> Result<Client, Box<dyn std::error::Error>> {
-    let (client, connection) =
-      tokio_postgres::connect("host=localhost user=postgres password=postgres-one-two-three-password", NoTls).await?;
+    let (client, connection) = tokio_postgres::connect(
+      "host=localhost user=postgres password=postgres-one-two-three-password",
+      NoTls,
+    )
+    .await?;
     tokio::spawn(async move {
       if let Err(e) = connection.await {
         eprintln!("connection error: {}", e);
@@ -19,7 +22,8 @@ mod vector_custom_type_tests {
   }
 
   #[tokio::test]
-  async fn test_vector_custom_type_insert_and_retrieve_batch() -> Result<(), Box<dyn std::error::Error>> {
+  async fn test_vector_custom_type_insert_and_retrieve_batch(
+  ) -> Result<(), Box<dyn std::error::Error>> {
     let client = setup_db().await?;
     let table_name = "test_vectors";
     let dimensions = 3;
@@ -44,13 +48,20 @@ mod vector_custom_type_tests {
     );
     println!("stmt: {:?}", batch);
     client.batch_execute(&batch).await?;
-    let query = format!("SELECT * FROM {} ORDER BY id DESC LIMIT 1", table_name);
+    let query =
+      format!("SELECT * FROM {} ORDER BY id DESC LIMIT 1", table_name);
     let rows = client.simple_query(&query).await?;
     println!("rows: {:?}", rows);
     let vectors = FileEmbedding::from_simple_query_messages(&rows)?;
 
     teardown(&client).await?;
-    assert_eq!(vectors, vec![FileEmbedding { data: "textomg".into(), embedding: vec![1.0, 2.0, 3.0] }]);
+    assert_eq!(
+      vectors,
+      vec![FileEmbedding {
+        data: "textomg".into(),
+        embedding: vec![1.0, 2.0, 3.0]
+      }]
+    );
     Ok(())
   }
 }

@@ -80,15 +80,23 @@ impl Component for Home<'static> {
     self.input.set_placeholder_style(Style::reset().fg(Color::Magenta));
     self.input.set_cursor_line_style(Style::reset().fg(Color::Yellow));
 
-    self.input.set_cursor_style(Style::default().add_modifier(Modifier::SLOW_BLINK));
+    self
+      .input
+      .set_cursor_style(Style::default().add_modifier(Modifier::SLOW_BLINK));
     Ok(())
   }
-  fn register_action_handler(&mut self, tx: UnboundedSender<Action>) -> Result<(), SazidError> {
+  fn register_action_handler(
+    &mut self,
+    tx: UnboundedSender<Action>,
+  ) -> Result<(), SazidError> {
     self.action_tx = Some(tx);
     Ok(())
   }
 
-  fn register_config_handler(&mut self, config: Config) -> Result<(), SazidError> {
+  fn register_config_handler(
+    &mut self,
+    config: Config,
+  ) -> Result<(), SazidError> {
     self.config = config;
     Ok(())
   }
@@ -98,8 +106,11 @@ impl Component for Home<'static> {
       Action::Render => {
         self.color_counter += 100000;
         self.color_counter %= MAX24BIT;
-        (self.rgb, self.inv_rgb) = get_rainbow_and_inverse_colors(self.color_counter, MAX24BIT);
-        self.input.set_cursor_style(self.input.cursor_style().bg(self.rgb).fg(self.inv_rgb));
+        (self.rgb, self.inv_rgb) =
+          get_rainbow_and_inverse_colors(self.color_counter, MAX24BIT);
+        self.input.set_cursor_style(
+          self.input.cursor_style().bg(self.rgb).fg(self.inv_rgb),
+        );
       },
       Action::Tick => self.tick(),
       // Action::Render => self.render_tick(),
@@ -143,7 +154,10 @@ impl Component for Home<'static> {
     Ok(None)
   }
 
-  fn handle_key_events(&mut self, key: KeyEvent) -> Result<Option<Action>, SazidError> {
+  fn handle_key_events(
+    &mut self,
+    key: KeyEvent,
+  ) -> Result<Option<Action>, SazidError> {
     let tx = self.action_tx.clone().unwrap();
     self.last_events.push(key);
 
@@ -177,7 +191,9 @@ impl Component for Home<'static> {
           }
         },
         KeyEvent { code: KeyCode::Esc, .. } => Action::EnterNormal,
-        KeyEvent { code: KeyCode::Enter, modifiers: KeyModifiers::ALT, .. } => {
+        KeyEvent {
+          code: KeyCode::Enter, modifiers: KeyModifiers::ALT, ..
+        } => {
           self.input.move_cursor(CursorMove::End);
           self.input.move_cursor(CursorMove::Bottom);
           let input = self.input.lines().join("\n");
@@ -192,7 +208,9 @@ impl Component for Home<'static> {
       Mode::Normal | Mode::Processing => return Ok(None),
       Mode::Insert => match key {
         KeyEvent { code: KeyCode::Esc, .. } => Action::EnterVisual,
-        KeyEvent { code: KeyCode::Enter, modifiers: KeyModifiers::ALT, .. } => {
+        KeyEvent {
+          code: KeyCode::Enter, modifiers: KeyModifiers::ALT, ..
+        } => {
           self.input.move_cursor(CursorMove::End);
           self.input.move_cursor(CursorMove::Bottom);
           let input = self.input.lines().join("\n");
@@ -215,20 +233,35 @@ impl Component for Home<'static> {
     let input_length = self.input.clone().into_lines().len() as u16 + 2;
     let tx = self.action_tx.clone().unwrap();
     tx.send(Action::SetInputVsize(input_length)).unwrap();
-    let rects =
-      Layout::default().constraints([Constraint::Percentage(100), Constraint::Min(input_length)].as_ref()).split(area);
+    let rects = Layout::default()
+      .constraints(
+        [Constraint::Percentage(100), Constraint::Min(input_length)].as_ref(),
+      )
+      .split(area);
     // let text: Vec<Line> = self.text.clone().iter().map(|l| Line::from(l.clone())).collect();
     let title_text = Line::from(vec![
       Span::raw("sazid semantic llvm console "),
       match self.mode {
-        Mode::Command => Span::styled("Command Mode", Style::default().fg(self.rgb)),
-        Mode::Visual => Span::styled("Visual Mode", Style::default().fg(Color::Magenta)),
-        Mode::Normal => Span::styled("Normal Mode", Style::default().fg(Color::Green)),
-        Mode::Insert => Span::styled("Insert Mode", Style::default().fg(Color::Yellow)),
-        Mode::Processing => Span::styled("Processing", Style::default().fg(self.rgb)),
+        Mode::Command => {
+          Span::styled("Command Mode", Style::default().fg(self.rgb))
+        },
+        Mode::Visual => {
+          Span::styled("Visual Mode", Style::default().fg(Color::Magenta))
+        },
+        Mode::Normal => {
+          Span::styled("Normal Mode", Style::default().fg(Color::Green))
+        },
+        Mode::Insert => {
+          Span::styled("Insert Mode", Style::default().fg(Color::Yellow))
+        },
+        Mode::Processing => {
+          Span::styled("Processing", Style::default().fg(self.rgb))
+        },
       },
       match self.status {
-        Some(ref s) => Span::styled(format!(": {}", s), Style::default().fg(Color::Yellow)),
+        Some(ref s) => {
+          Span::styled(format!(": {}", s), Style::default().fg(Color::Yellow))
+        },
         None => Span::raw(""),
       },
     ]);
@@ -259,32 +292,70 @@ impl Component for Home<'static> {
           Mode::Command => Line::from(vec![
             Span::styled("Command Mode", Style::default().fg(self.rgb)),
             Span::styled("(press ", Style::default().fg(Color::DarkGray)),
-            Span::styled("<alt>-<enter>", Style::default().add_modifier(Modifier::BOLD).fg(Color::Gray)),
-            Span::styled(" to execute command, ", Style::default().fg(Color::DarkGray)),
-            Span::styled("ESC", Style::default().add_modifier(Modifier::BOLD).fg(Color::Gray)),
-            Span::styled(" to enter Insert mode)", Style::default().fg(Color::DarkGray)),
+            Span::styled(
+              "<alt>-<enter>",
+              Style::default().add_modifier(Modifier::BOLD).fg(Color::Gray),
+            ),
+            Span::styled(
+              " to execute command, ",
+              Style::default().fg(Color::DarkGray),
+            ),
+            Span::styled(
+              "ESC",
+              Style::default().add_modifier(Modifier::BOLD).fg(Color::Gray),
+            ),
+            Span::styled(
+              " to enter Insert mode)",
+              Style::default().fg(Color::DarkGray),
+            ),
           ]),
           Mode::Insert => Line::from(vec![
             Span::raw("Input Mode"),
             Span::styled("(press", Style::default().fg(Color::DarkGray)),
-            Span::styled("<alt>-<enter>", Style::default().add_modifier(Modifier::BOLD).fg(Color::Gray)),
-            Span::styled(" to submit input, ", Style::default().fg(Color::DarkGray)),
-            Span::styled("ESC", Style::default().add_modifier(Modifier::BOLD).fg(Color::Gray)),
-            Span::styled(" to enter Visual mode)", Style::default().fg(Color::DarkGray)),
+            Span::styled(
+              "<alt>-<enter>",
+              Style::default().add_modifier(Modifier::BOLD).fg(Color::Gray),
+            ),
+            Span::styled(
+              " to submit input, ",
+              Style::default().fg(Color::DarkGray),
+            ),
+            Span::styled(
+              "ESC",
+              Style::default().add_modifier(Modifier::BOLD).fg(Color::Gray),
+            ),
+            Span::styled(
+              " to enter Visual mode)",
+              Style::default().fg(Color::DarkGray),
+            ),
           ]),
           Mode::Visual => Line::from(vec![
             Span::raw("Visual Mode "),
             Span::styled("(Press ", Style::default().fg(Color::DarkGray)),
-            Span::styled("i", Style::default().add_modifier(Modifier::BOLD).fg(Color::Gray)),
-            Span::styled(" to enter text, ", Style::default().fg(Color::DarkGray)),
+            Span::styled(
+              "i",
+              Style::default().add_modifier(Modifier::BOLD).fg(Color::Gray),
+            ),
+            Span::styled(
+              " to enter text, ",
+              Style::default().fg(Color::DarkGray),
+            ),
           ]),
-          Mode::Processing => Line::from(vec![Span::raw("Awaiting Chat Completion")]),
+          Mode::Processing => {
+            Line::from(vec![Span::raw("Awaiting Chat Completion")])
+          },
           _ => Line::from(vec![
             Span::raw("Enter Input Mode "),
             Span::styled("(Press ", Style::default().fg(Color::DarkGray)),
-            Span::styled("i", Style::default().add_modifier(Modifier::BOLD).fg(Color::Gray)),
+            Span::styled(
+              "i",
+              Style::default().add_modifier(Modifier::BOLD).fg(Color::Gray),
+            ),
             Span::styled(" to start, ", Style::default().fg(Color::DarkGray)),
-            Span::styled("ESC", Style::default().add_modifier(Modifier::BOLD).fg(Color::Gray)),
+            Span::styled(
+              "ESC",
+              Style::default().add_modifier(Modifier::BOLD).fg(Color::Gray),
+            ),
             Span::styled(" to finish)", Style::default().fg(Color::DarkGray)),
           ]),
         })

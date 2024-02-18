@@ -26,7 +26,9 @@ impl ToolCallTrait for CreateFileFunction {
   fn init() -> Self {
     CreateFileFunction {
       name: "create_file".to_string(),
-      description: "create a file at path with text. this command cannot overwrite files".to_string(),
+      description:
+        "create a file at path with text. this command cannot overwrite files"
+          .to_string(),
       required_properties: vec![
         FunctionProperties {
           name: "path".to_string(),
@@ -46,7 +48,9 @@ impl ToolCallTrait for CreateFileFunction {
           name: "overwrite".to_string(),
           required: true,
           property_type: "boolean".to_string(),
-          description: Some("overwrite an existing file. default false".to_string()),
+          description: Some(
+            "overwrite an existing file. default false".to_string(),
+          ),
           enum_values: None,
         },
       ],
@@ -61,7 +65,8 @@ impl ToolCallTrait for CreateFileFunction {
   ) -> Result<Option<String>, ToolCallError> {
     let path: Option<&str> = function_args.get("path").and_then(|s| s.as_str());
     let text: Option<&str> = function_args.get("text").and_then(|s| s.as_str());
-    let overwrite = function_args.get("overwrite").and_then(|b| b.as_bool()).unwrap_or(false);
+    let overwrite =
+      function_args.get("overwrite").and_then(|b| b.as_bool()).unwrap_or(false);
 
     if let Some(path) = path {
       if let Some(text) = text {
@@ -89,14 +94,23 @@ impl ToolCallTrait for CreateFileFunction {
       description: Some(self.description.clone()),
       parameters: Some(FunctionParameters {
         param_type: "object".to_string(),
-        required: self.required_properties.clone().into_iter().map(|p| p.name).collect(),
+        required: self
+          .required_properties
+          .clone()
+          .into_iter()
+          .map(|p| p.name)
+          .collect(),
         properties,
       }),
     }
   }
 }
 
-pub fn create_file(path: &str, text: &str, overwrite: bool) -> Result<Option<String>, ToolCallError> {
+pub fn create_file(
+  path: &str,
+  text: &str,
+  overwrite: bool,
+) -> Result<Option<String>, ToolCallError> {
   // Convert the string path to a `Path` object to manipulate file paths.
   let path = Path::new(path);
 
@@ -231,7 +245,8 @@ mod tests {
     let file_path = tmp_dir.path().join("large_test_file.txt");
     let file_contents = "a".repeat(10_000_000); // 10 MB of 'a'.
 
-    let result = create_file(file_path.to_str().unwrap(), &file_contents, false);
+    let result =
+      create_file(file_path.to_str().unwrap(), &file_contents, false);
     assert!(result.is_ok());
     check_file_contents(&file_path, &file_contents);
   }

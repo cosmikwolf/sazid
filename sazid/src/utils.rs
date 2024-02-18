@@ -7,18 +7,26 @@ use tracing::error;
 
 use tracing_error::ErrorLayer;
 use tracing_subscriber::{
-  self, fmt::format, prelude::__tracing_subscriber_SubscriberExt, util::SubscriberInitExt, Layer,
+  self, fmt::format, prelude::__tracing_subscriber_SubscriberExt,
+  util::SubscriberInitExt, Layer,
 };
 
 lazy_static! {
-  pub static ref PROJECT_NAME: String = env!("CARGO_CRATE_NAME").to_uppercase().to_string();
+  pub static ref PROJECT_NAME: String =
+    env!("CARGO_CRATE_NAME").to_uppercase().to_string();
   pub static ref DATA_FOLDER: Option<PathBuf> =
-    std::env::var(format!("{}_DATA", PROJECT_NAME.clone())).ok().map(PathBuf::from);
+    std::env::var(format!("{}_DATA", PROJECT_NAME.clone()))
+      .ok()
+      .map(PathBuf::from);
   pub static ref CONFIG_FOLDER: Option<PathBuf> =
-    std::env::var(format!("{}_CONFIG", PROJECT_NAME.clone())).ok().map(PathBuf::from);
+    std::env::var(format!("{}_CONFIG", PROJECT_NAME.clone()))
+      .ok()
+      .map(PathBuf::from);
   pub static ref GIT_COMMIT_HASH: String =
-    std::env::var(format!("{}_GIT_INFO", PROJECT_NAME.clone())).unwrap_or_else(|_| String::from("UNKNOWN"));
-  pub static ref LOG_ENV: String = format!("{}_LOG_LEVEL", PROJECT_NAME.clone());
+    std::env::var(format!("{}_GIT_INFO", PROJECT_NAME.clone()))
+      .unwrap_or_else(|_| String::from("UNKNOWN"));
+  pub static ref LOG_ENV: String =
+    format!("{}_LOG_LEVEL", PROJECT_NAME.clone());
   pub static ref LOG_FILE: String = format!("{}.log", env!("CARGO_PKG_NAME"));
 }
 
@@ -45,7 +53,10 @@ pub fn ansi_to_plain_text(text: &str) -> String {
 
 pub fn initialize_panic_handler() -> Result<()> {
   let (panic_hook, eyre_hook) = color_eyre::config::HookBuilder::default()
-    .panic_section(format!("This is a bug. Consider reporting it at {}", env!("CARGO_PKG_REPOSITORY")))
+    .panic_section(format!(
+      "This is a bug. Consider reporting it at {}",
+      env!("CARGO_PKG_REPOSITORY")
+    ))
     .capture_span_trace_by_default(false)
     .display_location_section(false)
     .display_env_section(false)
@@ -126,7 +137,8 @@ pub fn initialize_logging() -> Result<()> {
       .or_else(|_| std::env::var(LOG_ENV.clone()))
       .unwrap_or_else(|_| format!("{}=info", env!("CARGO_CRATE_NAME"))),
   );
-  let console_layer = console_subscriber::ConsoleLayer::builder().with_default_env().spawn();
+  let console_layer =
+    console_subscriber::ConsoleLayer::builder().with_default_env().spawn();
   let file_subscriber = tracing_subscriber::fmt::layer()
     .with_file(true)
     .with_line_number(true)
@@ -139,7 +151,11 @@ pub fn initialize_logging() -> Result<()> {
     .with_filter(tracing_subscriber::filter::EnvFilter::from_default_env());
   // a filter that removes the trace level
 
-  tracing_subscriber::registry().with(file_subscriber).with(console_layer).with(ErrorLayer::default()).init();
+  tracing_subscriber::registry()
+    .with(file_subscriber)
+    .with(console_layer)
+    .with(ErrorLayer::default())
+    .init();
   Ok(())
 }
 

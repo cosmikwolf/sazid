@@ -57,11 +57,18 @@ impl ToolCallTrait for ReadFileLinesFunction {
     function_args: HashMap<String, serde_json::Value>,
     session_config: SessionConfig,
   ) -> Result<Option<String>, ToolCallError> {
-    let start_line: Option<usize> = function_args.get("start_line").and_then(|s| s.as_u64().map(|u| u as usize));
-    let end_line: Option<usize> = function_args.get("end_line").and_then(|s| s.as_u64().map(|u| u as usize));
+    let start_line: Option<usize> = function_args
+      .get("start_line")
+      .and_then(|s| s.as_u64().map(|u| u as usize));
+    let end_line: Option<usize> = function_args
+      .get("end_line")
+      .and_then(|s| s.as_u64().map(|u| u as usize));
     if let Some(v) = function_args.get("path") {
       if let Some(file) = v.as_str() {
-        let accesible_paths = get_accessible_file_paths(session_config.accessible_paths.clone(), None);
+        let accesible_paths = get_accessible_file_paths(
+          session_config.accessible_paths.clone(),
+          None,
+        );
         if !accesible_paths.contains_key(Path::new(file).to_str().unwrap()) {
           Err(ToolCallError::new(
             format!("File path is not accessible: {:?}. Suggest using file_search command", file).as_str(),
@@ -99,7 +106,12 @@ impl ToolCallTrait for ReadFileLinesFunction {
       description: Some(self.description.clone()),
       parameters: Some(FunctionParameters {
         param_type: "object".to_string(),
-        required: self.required_properties.clone().into_iter().map(|p| p.name).collect(),
+        required: self
+          .required_properties
+          .clone()
+          .into_iter()
+          .map(|p| p.name)
+          .collect(),
         properties,
       }),
     }
@@ -115,7 +127,9 @@ pub fn read_file_lines(
 ) -> Result<Option<String>, ToolCallError> {
   // trace_dbg!("list_file_paths: {:?}", list_file_paths);
   // trace_dbg!("file: {:?} {:#?}", get_accessible_file_paths(list_file_paths.clone()).get(file), file);
-  if let Some(file_path) = get_accessible_file_paths(list_file_paths, None).get(file) {
+  if let Some(file_path) =
+    get_accessible_file_paths(list_file_paths, None).get(file)
+  {
     let file_contents = match read_lines(file_path) {
       Ok(contents) => contents,
       Err(error) => {
@@ -138,13 +152,17 @@ pub fn read_file_lines(
         return Err(ToolCallError::new("Invalid end line number."));
       }
     }
-    let selected_lines: Vec<String> =
-      file_contents[start_line.unwrap_or(0)..end_line.unwrap_or(file_contents.len())].to_vec();
+    let selected_lines: Vec<String> = file_contents
+      [start_line.unwrap_or(0)..end_line.unwrap_or(file_contents.len())]
+      .to_vec();
     let contents = selected_lines.join("\n");
 
     let token_count = count_tokens(&contents);
     if token_count > reply_max_tokens {
-      return Ok(Some(format!("Function Token limit exceeded: {} tokens.", token_count)));
+      return Ok(Some(format!(
+        "Function Token limit exceeded: {} tokens.",
+        token_count
+      )));
     }
     Ok(Some(contents))
   } else {
@@ -174,7 +192,8 @@ mod tests {
     fs::write(&file_path, "1\n2\n3\n4\n5").unwrap();
     let list_file_paths = vec![file_path];
 
-    let result = read_file_lines("5.txt", Some(1), Some(3), 10, list_file_paths);
+    let result =
+      read_file_lines("5.txt", Some(1), Some(3), 10, list_file_paths);
 
     assert!(result.is_ok());
     let output = result.unwrap().unwrap();
@@ -226,7 +245,8 @@ mod tests {
   fn test_read_file_lines_file_not_found() {
     let list_file_paths = vec![]; // No files available
 
-    let result = read_file_lines("nonexistent.txt", None, None, 10, list_file_paths);
+    let result =
+      read_file_lines("nonexistent.txt", None, None, 10, list_file_paths);
 
     assert!(result.is_err());
     assert_eq!(

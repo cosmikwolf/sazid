@@ -1,13 +1,16 @@
 use crate::app::functions::tool_call::ToolCallTrait;
 use crate::{action::Action, app::messages::ChatMessage, trace_dbg};
-use async_openai::types::{ChatCompletionMessageToolCall, ChatCompletionRequestToolMessage, Role};
+use async_openai::types::{
+  ChatCompletionMessageToolCall, ChatCompletionRequestToolMessage, Role,
+};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use tokio::sync::mpsc::UnboundedSender;
 
 use self::edit_file_function::EditFileFunction;
 use self::{
-  create_file_function::CreateFileFunction, errors::ToolCallError, file_search_function::FileSearchFunction,
+  create_file_function::CreateFileFunction, errors::ToolCallError,
+  file_search_function::FileSearchFunction,
   read_file_lines_function::ReadFileLinesFunction, types::FunctionCall,
 };
 

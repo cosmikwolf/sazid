@@ -12,13 +12,19 @@ use tokio::sync::mpsc::UnboundedSender;
 use super::Component;
 
 impl Component for DataManager {
-  fn register_action_handler(&mut self, tx: UnboundedSender<Action>) -> Result<(), SazidError> {
+  fn register_action_handler(
+    &mut self,
+    tx: UnboundedSender<Action>,
+  ) -> Result<(), SazidError> {
     trace_dbg!("register_session_action_handler");
     self.action_tx = Some(tx);
     Ok(())
   }
 
-  fn register_config_handler(&mut self, config: Config) -> Result<(), SazidError> {
+  fn register_config_handler(
+    &mut self,
+    config: Config,
+  ) -> Result<(), SazidError> {
     Ok(())
   }
 
@@ -26,10 +32,15 @@ impl Component for DataManager {
     Ok(())
   }
 
-  fn handle_events(&mut self, event: Option<Event>) -> Result<Option<Action>, SazidError> {
+  fn handle_events(
+    &mut self,
+    event: Option<Event>,
+  ) -> Result<Option<Action>, SazidError> {
     let r = match event {
       Some(Event::Key(key_event)) => self.handle_key_events(key_event)?,
-      Some(Event::Mouse(mouse_event)) => self.handle_mouse_events(mouse_event)?,
+      Some(Event::Mouse(mouse_event)) => {
+        self.handle_mouse_events(mouse_event)?
+      },
       _ => None,
     };
     Ok(r)
@@ -57,11 +68,22 @@ impl Component for DataManager {
       Action::AddMessageEmbedding(id, message_container) => {
         if message_container.receive_complete {
           tokio::spawn(async move {
-            match add_message_embedding(&db_url, id, message_container.message_id, model, message_container.message)
-              .await
+            match add_message_embedding(
+              &db_url,
+              id,
+              message_container.message_id,
+              model,
+              message_container.message,
+            )
+            .await
             {
               Ok(id) => tx.send(Action::MessageEmbeddingSuccess(id)).unwrap(),
-              Err(e) => tx.send(Action::Error(format!("embeddings_manager- update: {:#?}", e))).unwrap(),
+              Err(e) => tx
+                .send(Action::Error(format!(
+                  "embeddings_manager- update: {:#?}",
+                  e
+                )))
+                .unwrap(),
             }
           });
         }

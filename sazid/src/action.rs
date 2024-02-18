@@ -4,6 +4,7 @@ use crate::app::{
   session_config::SessionConfig,
   types::Model,
 };
+use helix_lsp::Call;
 use serde::{
   de::{self, Deserializer, Visitor},
   Deserialize, Serialize,
@@ -22,6 +23,8 @@ pub enum Action {
   Error(String),
   Help,
 
+  LspCheckServerNotifications,
+  LspServerMessageReceived((usize, Call)),
   // embeddings manager actions
   CreateSession(SessionConfig),
   LoadSession(i64),
@@ -76,11 +79,16 @@ impl<'de> Deserialize<'de> for Action {
           "EnterInsert" => Ok(Action::EnterInsert),
           "EnterNormal" => Ok(Action::EnterNormal),
           data if data.starts_with("Error(") => {
-            let error_msg = data.trim_start_matches("Error(").trim_end_matches(')');
+            let error_msg =
+              data.trim_start_matches("Error(").trim_end_matches(')');
             Ok(Action::Error(error_msg.to_string()))
           },
           data if data.starts_with("Resize(") => {
-            let parts: Vec<&str> = data.trim_start_matches("Resize(").trim_end_matches(')').split(',').collect();
+            let parts: Vec<&str> = data
+              .trim_start_matches("Resize(")
+              .trim_end_matches(')')
+              .split(',')
+              .collect();
             if parts.len() == 2 {
               let width: u16 = parts[0].trim().parse().map_err(E::custom)?;
               let height: u16 = parts[1].trim().parse().map_err(E::custom)?;

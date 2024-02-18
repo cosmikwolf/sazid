@@ -57,7 +57,10 @@ impl EmbeddingModel {
     texts.iter().map(|s| count_tokens(s)).sum::<usize>() > self.token_limit()
   }
 
-  pub async fn create_embedding_vector(&self, text: &str) -> Result<Vector, SazidError> {
+  pub async fn create_embedding_vector(
+    &self,
+    text: &str,
+  ) -> Result<Vector, SazidError> {
     if self.exceeds_token_limit(text) {
       return Err(
         ParseError::new(&format!(
@@ -72,8 +75,13 @@ impl EmbeddingModel {
     let vector = match self {
       Self::Ada002(openai_config) => {
         let client = create_openai_client(openai_config);
-        let request = CreateEmbeddingRequestArgs::default().model(self.model_string()).input(text).build().unwrap();
-        let embedding_response = client.embeddings().create(request).await.unwrap();
+        let request = CreateEmbeddingRequestArgs::default()
+          .model(self.model_string())
+          .input(text)
+          .build()
+          .unwrap();
+        let embedding_response =
+          client.embeddings().create(request).await.unwrap();
         // embedding_response.data.iter().map(|e| e.embedding.clone()).collect::<Vec<Vec<f32>>>();
         //let embedding = embedding_response.data.first().unwrap().embedding.clone();
         embedding_response

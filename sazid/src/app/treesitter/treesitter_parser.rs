@@ -61,7 +61,9 @@ pub fn offset_for_position(input: &[u8], position: Point) -> Result<usize> {
     return Err(anyhow!("Failed to address a row: {}", position.row));
   }
   if let Some(pos) = iter.next() {
-    if (pos - offset < position.column) || (input[offset] == b'\n' && position.column > 0) {
+    if (pos - offset < position.column)
+      || (input[offset] == b'\n' && position.column > 0)
+    {
       return Err(anyhow!("Failed to address a column: {}", position.column));
     };
   } else if input.len() - offset < position.column {
