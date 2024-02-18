@@ -7,3 +7,9 @@
 [submodule "lib/bat"]
 	path = lib/bat
 	url = git@github.com:sharkdp/bat.git
+[submodule "tracing"]
+	path = lib/tracing
+	url = git@github.com:tokio-rs/tracing.git
+[submodule "lib/helix"]
+	path = lib/helix
+	url = git@github.com:helix-editor/helix.git
