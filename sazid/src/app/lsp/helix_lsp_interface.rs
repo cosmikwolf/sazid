@@ -91,10 +91,13 @@ impl LanguageServerInterface {
   }
 
   pub async fn spawn_server_notification_thread(&mut self) {
+    log::info!("spawn_server_notification_thread");
     use futures_util::StreamExt;
     let ls_mutex = self.language_servers.clone();
     let action_tx = self.action_tx.as_mut().unwrap().clone();
 
+    let mut interval =
+      tokio::time::interval(std::time::Duration::from_millis(100));
     tokio::spawn(async move {
       loop {
         let mut ls = ls_mutex.lock().await;
@@ -102,6 +105,7 @@ impl LanguageServerInterface {
         if let Some((id, call)) = ls.incoming.next().await {
           action_tx.send(Action::LspServerMessageReceived((id, call))).unwrap();
         }
+        interval.tick().await;
       }
     })
     .await
@@ -388,6 +392,11 @@ impl LanguageServerInterface {
     &mut self,
     language_server_ids: &[usize],
   ) -> anyhow::Result<()> {
+    log::info!(
+      "wait_for_language_server_initialization: {:#?}",
+      language_server_ids
+    );
+
     let ls = self.language_servers.lock().await;
     let active_clients = ls
       .iter_clients()
@@ -415,23 +424,23 @@ impl LanguageServerInterface {
     ids: &[usize],
   ) -> anyhow::Result<()> {
     log::info!("wait_for_progress_token_completion: {:#?}", ids);
-    let ls = self.language_servers.lock().await;
-
-    let active_clients = ls
-      .iter_clients()
-      .filter(|client| ids.contains(&client.id()))
-      .cloned()
-      .collect::<Vec<Arc<Client>>>();
-
-    // log::info!("active_clients: {:#?}", active_clients);
-
-    if active_clients.is_empty() {
-      trace_dbg!("no language servers with matching ids found: {:#?}", ids);
-      return Err(anyhow::anyhow!(
-        "no language servers with matching ids found"
-      ));
-    }
-
+    // let ls = self.language_servers.lock().await;
+    //
+    // let active_clients = ls
+    //   .iter_clients()
+    //   .filter(|client| ids.contains(&client.id()))
+    //   .cloned()
+    //   .collect::<Vec<Arc<Client>>>();
+    //
+    // // log::info!("active_clients: {:#?}", active_clients);
+    //
+    // if active_clients.is_empty() {
+    //   trace_dbg!("no language servers with matching ids found: {:#?}", ids);
+    //   return Err(anyhow::anyhow!(
+    //     "no language servers with matching ids found"
+    //   ));
+    // }
+    //
     // self
     //   .wait_for_language_server_initialization(ids)
     //   .then(|_| async { log::info!("language server initialized") })
@@ -440,9 +449,9 @@ impl LanguageServerInterface {
     log::info!("waiting for progress token completion loop");
     let mut interval =
       tokio::time::interval(std::time::Duration::from_millis(1000));
-    while active_clients.iter().any(|c| {
-      log::info!("lsp_progress: {:#?}", self.lsp_progress.progress_map(c.id()));
-      self.lsp_progress.is_progressing(c.id())
+    while ids.iter().any(|c| {
+      log::info!("lsp_progress: {:#?}", self.lsp_progress.progress_map(*c));
+      self.lsp_progress.is_progressing(*c)
     }) {
       interval.tick().await;
     }
