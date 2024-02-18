@@ -35,6 +35,7 @@ helix-loader = { path = "../lib/helix/helix-loader" }
 
 [patch.crates-io]
 tracing-subscriber = { path = "../lib/tracing-subscriber" }
+
 [dependencies]
 helix-stdx = { path = "../lib/helix/helix-stdx" }
 helix-lsp = { path = "../lib/helix/helix-lsp" }
