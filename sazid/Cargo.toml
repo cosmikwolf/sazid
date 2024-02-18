@@ -24,30 +24,41 @@ insta = { version = "1.34.0", features = [
   "redactions",
 ] }
 # ntest = "0.9.0"
-# helix-lsp = { path = "../helix-lsp" }
+# helix-lsp = { path = "../lib/helix/helix-lsp" }
 # helix-loader = { path = "../helix-loader" }
 # helix-core = { path = "../helix-core" }
 
-[patch.tracing-subscriber]
-nu-ansi-term = { version = "0.50.0", features = ["serde"] }
 
 [build-dependencies]
 prost-build = "0.12.3"
-helix-loader = { path = "../helix-loader" }
+helix-loader = { path = "../lib/helix/helix-loader" }
 
+[patch.crates-io]
+tracing-subscriber = { path = "../lib/tracing-subscriber" }
 [dependencies]
-helix-stdx = { path = "../helix-stdx" }
-helix-lsp = { path = "../helix-lsp" }
-helix-loader = { path = "../helix-loader" }
-helix-core = { path = "../helix-core" }
+helix-stdx = { path = "../lib/helix/helix-stdx" }
+helix-lsp = { path = "../lib/helix/helix-lsp" }
+helix-loader = { path = "../lib/helix/helix-loader" }
+helix-core = { path = "../lib/helix/helix-core" }
 
 uuid = { version = "1.5.0", features = ["serde", "v4"] }
 ansi-to-tui = { path = "./lib/ansi-to-tui" }
-tui-textarea = { path = "../tui-textarea", features = [
+tui-textarea = { path = "../lib/tui-textarea", features = [
   "crossterm",
   "ratatui",
   "ansi-escapes",
 ] }
+
+tracing = "0.1.40"
+tracing-error = "0.2.0"
+tracing-subscriber = { version = "0.3.18", features = [
+  "env-filter",
+  "serde",
+  "fmt",
+  "std",
+  "ansi",
+] }
+
 bwrap = { version = "1.3.0", features = ["use_std"] }
 async-openai = "0.17.1"
 async-recursion = "1.0.5"
@@ -107,15 +118,6 @@ tempfile = "3.8.0"
 tiktoken-rs = { version = "0.5.4", features = ["async-openai"] }
 tokio-console = "0.1.10"
 tokio-util = "0.7.9"
-tracing = "0.1.40"
-tracing-error = "0.2.0"
-tracing-subscriber = { version = "0.3.18", features = [
-  "env-filter",
-  "serde",
-  "fmt",
-  "std",
-  "ansi",
-] }
 tui-input = { version = "0.8.0", features = ["serde"] }
 walkdir = "2.4.0"
 pulldown-cmark = "0.9.3"
