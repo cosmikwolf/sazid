@@ -12,4 +12,4 @@
 	url = git@github.com:tokio-rs/tracing.git
 [submodule "lib/helix"]
 	path = lib/helix
-	url = git@github.com:helix-editor/helix.git
+	url = git@github.com:cosmikwolf/helix.git
