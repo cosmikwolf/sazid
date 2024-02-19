@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 use crate::app::session_config::SessionConfig;
 use crate::trace_dbg;
 use serde::{Deserialize, Serialize};
-use serde_json::json;
+
 
 use super::argument_validation::{count_tokens, get_accessible_file_paths};
 use super::errors::ToolCallError;

@@ -213,7 +213,7 @@ impl Component for Session<'static> {
         self.execute_tool_calls();
         self.generate_new_message_embeddings();
       },
-      Action::ExecuteCommand(command) => {
+      Action::ExecuteCommand(_command) => {
         // tx.send(Action::CommandResult(self.execute_command(command).unwrap())).unwrap();
       },
       Action::SaveSession => {
@@ -919,7 +919,9 @@ pub fn construct_request(
   user: Option<String>,
   tools: Option<Vec<ChatCompletionTool>>,
 ) -> CreateChatCompletionRequest {
-  let request = CreateChatCompletionRequest {
+  
+  // trace_dbg!("request:\n{:#?}", request);
+  CreateChatCompletionRequest {
     model,
     messages,
     stream,
@@ -927,9 +929,7 @@ pub fn construct_request(
     user,
     tools,
     ..Default::default()
-  };
-  // trace_dbg!("request:\n{:#?}", request);
-  request
+  }
 }
 pub fn create_openai_client(
   openai_config: &OpenAIConfig,

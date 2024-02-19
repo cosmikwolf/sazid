@@ -23,7 +23,7 @@ impl Component for DataManager {
 
   fn register_config_handler(
     &mut self,
-    config: Config,
+    _config: Config,
   ) -> Result<(), SazidError> {
     Ok(())
   }
@@ -92,7 +92,7 @@ impl Component for DataManager {
       _ => Ok(None),
     }
   }
-  fn draw(&mut self, _f: &mut Frame<'_>, area: Rect) -> Result<(), SazidError> {
+  fn draw(&mut self, _f: &mut Frame<'_>, _area: Rect) -> Result<(), SazidError> {
     Ok(())
   }
 }

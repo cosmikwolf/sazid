@@ -1,6 +1,6 @@
 use std::{collections::HashMap, path::PathBuf};
 
-use crate::{app::session_config::SessionConfig, trace_dbg};
+use crate::{app::session_config::SessionConfig};
 use clap::Parser;
 use globset::{Glob, GlobMatcher};
 use serde_json::json;

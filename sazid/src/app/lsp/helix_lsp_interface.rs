@@ -15,11 +15,11 @@ use helix_lsp::Call;
 use helix_lsp::Client;
 use helix_lsp::LspProgressMap;
 use helix_lsp::Registry;
-use log::{debug, error, info, warn};
+use log::{error, info};
 use lsp::DocumentSymbol;
 use lsp::NumberOrString;
 use serde_json::json;
-use std::sync::MutexGuard;
+
 use tokio::sync::mpsc::UnboundedSender;
 use url::Url;
 
@@ -900,7 +900,7 @@ impl LanguageServerInterface {
             // let result = self.handle_show_document(params, offset_encoding);:w
             log::error!("need to handle show document");
             todo!("need to handle show document");
-            let result = serde_json::Value::Null;
+            let _result = serde_json::Value::Null;
             // Ok(json!(result))
           },
         };

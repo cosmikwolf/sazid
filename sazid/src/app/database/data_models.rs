@@ -80,11 +80,10 @@ impl EmbeddingModel {
           .input(text)
           .build()
           .unwrap();
-        let embedding_response =
-          client.embeddings().create(request).await.unwrap();
+        
         // embedding_response.data.iter().map(|e| e.embedding.clone()).collect::<Vec<Vec<f32>>>();
         //let embedding = embedding_response.data.first().unwrap().embedding.clone();
-        embedding_response
+        client.embeddings().create(request).await.unwrap()
       },
     }
     .data
