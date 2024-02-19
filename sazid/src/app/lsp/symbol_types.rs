@@ -224,16 +224,27 @@ impl WorkspaceFile {
     Ok(true)
   }
 
-  pub fn update(
-    &mut self,
-    doc_symbols: Vec<lsp::DocumentSymbol>,
-  ) -> anyhow::Result<DocumentChange> {
+  pub fn update_contents(&mut self) -> anyhow::Result<DocumentChange> {
     self.version += 1;
     self.checksum = Some(self.get_checksum()?);
     self.contents.insert(
       self.version,
       Rope::from_str(&std::fs::read_to_string(&self.file_path)?),
     );
+    Ok(DocumentChange {
+      original_contents: self.get_previous_version_contents(),
+      new_contents: self.get_current_contents(),
+      versioned_doc_id: lsp::VersionedTextDocumentIdentifier {
+        uri: Url::from_file_path(&self.file_path).unwrap(),
+        version: self.version,
+      },
+    })
+  }
+
+  pub fn update_symbols(
+    &mut self,
+    doc_symbols: Vec<lsp::DocumentSymbol>,
+  ) -> anyhow::Result<()> {
     self.file_tree = Rc::new(SourceSymbol {
       name: self
         .file_path
@@ -267,14 +278,7 @@ impl WorkspaceFile {
       );
     }
 
-    Ok(DocumentChange {
-      original_contents: self.get_previous_version_contents(),
-      new_contents: self.get_current_contents(),
-      versioned_doc_id: lsp::VersionedTextDocumentIdentifier {
-        uri: Url::from_file_path(&self.file_path).unwrap(),
-        version: self.version,
-      },
-    })
+    Ok(())
   }
 }
 

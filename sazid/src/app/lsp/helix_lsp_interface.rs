@@ -1,3 +1,5 @@
+use futures_util::FutureExt;
+use helix_core::diff::compare_ropes;
 use std::borrow::Cow;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -22,6 +24,7 @@ use tokio::sync::mpsc::UnboundedSender;
 use url::Url;
 
 use crate::action::Action;
+use crate::app::lsp::symbol_types::DocumentChange;
 use crate::trace_dbg;
 
 use super::symbol_types::SourceSymbol;
@@ -94,10 +97,10 @@ impl LanguageServerInterface {
     log::info!("spawn_server_notification_thread");
     use futures_util::StreamExt;
     let ls_mutex = self.language_servers.clone();
-    let action_tx = self.action_tx.as_mut().unwrap().clone();
+    let action_tx = self.action_tx.clone().unwrap();
 
     let mut interval =
-      tokio::time::interval(std::time::Duration::from_millis(100));
+      tokio::time::interval(std::time::Duration::from_millis(500));
     tokio::spawn(async move {
       loop {
         let mut ls = ls_mutex.lock().await;
@@ -107,9 +110,7 @@ impl LanguageServerInterface {
         }
         interval.tick().await;
       }
-    })
-    .await
-    .unwrap();
+    });
   }
 
   pub async fn check_server_notifications(&mut self) -> Option<(usize, Call)> {
@@ -209,6 +210,8 @@ impl LanguageServerInterface {
     languge_server_name: &str,
     doc_path: Option<&PathBuf>,
   ) -> anyhow::Result<()> {
+    log::info!("create_workspace: {:#?}", workspace_path);
+
     let root_dirs = &[workspace_path.clone()];
     let enable_snippets = false;
     let language_server = self
@@ -240,30 +243,79 @@ impl LanguageServerInterface {
     log::info!("update_workspace_symbols");
 
     let ls = self.language_servers.lock().await;
+
     let clients = ls.iter_clients().cloned().collect::<Vec<Arc<Client>>>();
     let ids = clients.iter().map(|client| client.id()).collect::<Vec<usize>>();
     match self.wait_for_progress_token_completion(ids.as_slice()).await {
       Ok(_) => {
-        trace_dbg!("update_workspace_symbols: {:#?}", ids);
+        log::info!("update_workspace_symbols: {:#?}", ids);
         for workspace in self.workspaces.iter_mut() {
           workspace.scan_workspace_files().unwrap();
-          trace_dbg!("workspace files: {:#?}", workspace.files.len());
+          log::info!("workspace files: {:#?}", workspace.files.len());
           for workspace_file in
             workspace.files.iter_mut().filter(|workspace_file| {
               workspace_file.needs_update().unwrap_or_default()
             })
           {
-            trace_dbg!(
-              "updating workspace file: {:#?}",
-              workspace_file.file_path
-            );
-
             let language_server = clients
               .iter()
               .find(|client| client.id() == workspace.language_server_id)
               .expect("cannot find workspace language server");
 
             workspace.offset_encoding = language_server.offset_encoding();
+            log::info!(
+              "updating workspace file: {:#?}",
+              workspace_file.file_path
+            );
+
+            // update workspace file contents
+            let doc_change = workspace_file.update_contents().unwrap();
+            log::info!("document change: {:#?}", doc_change);
+            if let DocumentChange {
+              original_contents: Some(original_contents),
+              new_contents,
+              versioned_doc_id,
+            } = doc_change
+            {
+              log::info!(
+                "updating document with language server {}",
+                workspace_file.file_path.display()
+              );
+
+              let changes = compare_ropes(&original_contents, &new_contents);
+              language_server
+                .text_document_did_change(
+                  versioned_doc_id,
+                  &original_contents,
+                  &new_contents,
+                  changes.changes(),
+                )
+                .unwrap()
+                .then(|res| async move {
+                  log::info!("updated document with language server");
+                  res
+                })
+                .await
+                .expect("failed to update document with language server")
+            } else {
+              log::info!(
+                "opening document with language server {}",
+                workspace_file.file_path.display()
+              );
+              language_server
+                .text_document_did_open(
+                  doc_change.versioned_doc_id.uri,
+                  workspace_file.version,
+                  &doc_change.new_contents,
+                  workspace.language_id.clone(),
+                )
+                .then(|res| async move {
+                  log::info!("opened document with language server");
+                  res
+                })
+                .await
+                .expect("failed to open document with language server")
+            }
 
             if let Some(request) = language_server
               .document_symbols(workspace_file.get_text_document_id().unwrap())
@@ -278,6 +330,7 @@ impl LanguageServerInterface {
 
               let doc_symbols = match response_parsed {
                 Some(lsp::DocumentSymbolResponse::Nested(symbols)) => {
+                  log::info!("nested symbols: {:#?}", symbols);
                   symbols
                   // let mut flat_symbols = Vec::new();
                   // for symbol in symbols {
@@ -286,50 +339,20 @@ impl LanguageServerInterface {
                   // flat_symbols
                 },
                 Some(lsp::DocumentSymbolResponse::Flat(_symbols)) => {
+                  log::info!("flat symbols: {:#?}", _symbols);
                   // symbols.into_iter().map(|symbol| SymbolInformationItem { symbol, offset_encoding }).collect()
                   return Err(anyhow::anyhow!(
                     "document symbol support is required"
                   ));
                 },
                 None => {
+                  log::info!("document symbol response is None");
                   return Err(anyhow::anyhow!(
                     "document symbol response is None"
-                  ))
+                  ));
                 },
               };
-              let doc_change = workspace_file.update(doc_symbols).unwrap();
-              log::info!("document change: {:#?}", doc_change);
-              // if let DocumentChange { original_contents: Some(original_contents), new_contents, versioned_doc_id } =
-              //   doc_change
-              // {
-              //   log::info!("updating document with language server {}", workspace_file.file_path.display());
-              //
-              //   let changes = compare_ropes(&original_contents, &new_contents);
-              //   language_server
-              //     .text_document_did_change(versioned_doc_id, &original_contents, &new_contents, changes.changes())
-              //     .unwrap()
-              //     .then(|res| async move {
-              //       log::info!("updated document with language server");
-              //       res
-              //     })
-              //     .await
-              //     .expect("failed to update document with language server")
-              // } else {
-              //   log::info!("opening document with language server {}", workspace_file.file_path.display());
-              //   language_server
-              //     .text_document_did_open(
-              //       doc_change.versioned_doc_id.uri,
-              //       workspace_file.version,
-              //       &doc_change.new_contents,
-              //       workspace.language_id.clone(),
-              //     )
-              //     .then(|res| async move {
-              //       log::info!("opened document with language server");
-              //       res
-              //     })
-              //     .await
-              //     .expect("failed to open document with language server")
-              // }
+              workspace_file.update_symbols(doc_symbols).unwrap();
             }
           }
         }
@@ -522,6 +545,7 @@ impl LanguageServerInterface {
     status_msg: &mut StatusMessage,
     workspaces: &mut [Workspace],
   ) {
+    log::debug!("handle_language_server_message: {:#?}", call);
     use helix_lsp::{MethodCall, Notification};
 
     macro_rules! language_server {
@@ -667,6 +691,7 @@ impl LanguageServerInterface {
                 lsp::WorkDoneProgress::End(lsp::WorkDoneProgressEnd {
                   message,
                 }) => {
+                  log::error!("UNKNOWN MESSAGE: {:#?}", message);
                   // if message.is_some() {
                   (None, message, &None)
                   // } else {
@@ -714,8 +739,9 @@ impl LanguageServerInterface {
               },
             };
 
-            if let lsp::WorkDoneProgress::End(_) = work {
-              lsp_progress.end_progress(server_id, &token);
+            if let lsp::WorkDoneProgress::End(a) = work {
+              let res = lsp_progress.end_progress(server_id, &token);
+              log::info!("end progress: {:#?} {:#?}", res, a);
               // if !self.lsp_progress.is_progressing(server_id) {
               // editor_view.spinners_mut().get_or_create(server_id).stop();
               // }
@@ -725,6 +751,7 @@ impl LanguageServerInterface {
             //
             // self.lsp_progress.update(server_id, token, work);
             // if self.config.load().editor.lsp.display_messages {
+            log::debug!("status: {}", status);
             status_msg.set_status(status);
             // }
           },
@@ -871,6 +898,7 @@ impl LanguageServerInterface {
             // let offset_encoding = language_server.offset_encoding();
 
             // let result = self.handle_show_document(params, offset_encoding);:w
+            log::error!("need to handle show document");
             todo!("need to handle show document");
             let result = serde_json::Value::Null;
             // Ok(json!(result))
