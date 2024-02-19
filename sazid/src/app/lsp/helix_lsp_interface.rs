@@ -930,7 +930,7 @@ impl LanguageServerInterface {
             // let result = self.handle_show_document(params, offset_encoding);:w
             log::error!("need to handle show document");
             todo!("need to handle show document");
-            let _result = serde_json::Value::Null;
+            // let _result = serde_json::Value::Null;
             // Ok(json!(result))
           },
         };

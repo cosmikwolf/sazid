@@ -1,4 +1,3 @@
-use crate::app::treesitter::treesitter_query::Edit;
 use anyhow::{anyhow, Result};
 use std::path::Path;
 use std::{fmt, usize};
@@ -72,42 +71,42 @@ pub fn offset_for_position(input: &[u8], position: Point) -> Result<usize> {
   Ok(offset + position.column)
 }
 
-fn parse_edit_flag(source_code: &Vec<u8>, flag: &str) -> Result<Edit> {
-  let error = || {
-    anyhow!(
-      concat!(
-        "Invalid edit string '{}'. ",
-        "Edit strings must match the pattern '<START_BYTE_OR_POSITION> <REMOVED_LENGTH> <NEW_TEXT>'"
-      ),
-      flag
-    )
-  };
-
-  // Three whitespace-separated parts:
-  // * edit position
-  // * deleted length
-  // * inserted text
-  let mut parts = flag.split(' ');
-  let position = parts.next().ok_or_else(error)?;
-  let deleted_length = parts.next().ok_or_else(error)?;
-  let inserted_text = parts.collect::<Vec<_>>().join(" ").into_bytes();
-
-  // Position can either be a byte_offset or row,column pair, separated by a comma
-  let position = if position == "$" {
-    source_code.len()
-  } else if position.contains(',') {
-    let mut parts = position.split(',');
-    let row = parts.next().ok_or_else(error)?;
-    let row = row.parse::<usize>().map_err(|_| error())?;
-    let column = parts.next().ok_or_else(error)?;
-    let column = column.parse::<usize>().map_err(|_| error())?;
-    offset_for_position(source_code, Point { row, column })?
-  } else {
-    position.parse::<usize>().map_err(|_| error())?
-  };
-
-  // Deleted length must be a byte count.
-  let deleted_length = deleted_length.parse::<usize>().map_err(|_| error())?;
-
-  Ok(Edit { position, deleted_length, inserted_text })
-}
+// fn parse_edit_flag(source_code: &Vec<u8>, flag: &str) -> Result<Edit> {
+//   let error = || {
+//     anyhow!(
+//       concat!(
+//         "Invalid edit string '{}'. ",
+//         "Edit strings must match the pattern '<START_BYTE_OR_POSITION> <REMOVED_LENGTH> <NEW_TEXT>'"
+//       ),
+//       flag
+//     )
+//   };
+//
+//   // Three whitespace-separated parts:
+//   // * edit position
+//   // * deleted length
+//   // * inserted text
+//   let mut parts = flag.split(' ');
+//   let position = parts.next().ok_or_else(error)?;
+//   let deleted_length = parts.next().ok_or_else(error)?;
+//   let inserted_text = parts.collect::<Vec<_>>().join(" ").into_bytes();
+//
+//   // Position can either be a byte_offset or row,column pair, separated by a comma
+//   let position = if position == "$" {
+//     source_code.len()
+//   } else if position.contains(',') {
+//     let mut parts = position.split(',');
+//     let row = parts.next().ok_or_else(error)?;
+//     let row = row.parse::<usize>().map_err(|_| error())?;
+//     let column = parts.next().ok_or_else(error)?;
+//     let column = column.parse::<usize>().map_err(|_| error())?;
+//     offset_for_position(source_code, Point { row, column })?
+//   } else {
+//     position.parse::<usize>().map_err(|_| error())?
+//   };
+//
+//   // Deleted length must be a byte count.
+//   let deleted_length = deleted_length.parse::<usize>().map_err(|_| error())?;
+//
+//   Ok(Edit { position, deleted_length, inserted_text })
+// }

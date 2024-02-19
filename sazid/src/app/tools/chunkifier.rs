@@ -97,10 +97,9 @@ pub fn chunkify_input(
   input: &str,
   tokens_per_chunk: usize,
 ) -> Result<Vec<String>, ChunkifierError> {
-  let path = PathBuf::try_from(input);
+  let p = PathBuf::from(input);
   // Check if the input can be treated as a file path
-
-  if let Ok(p) = path {
+  if p.exists() {
     if p.is_file() {
       // If it's a file, chunkify its contents
       chunkify_file(&p, tokens_per_chunk)

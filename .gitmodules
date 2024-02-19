@@ -4,12 +4,6 @@
 [submodule "lib/ansi-to-tui"]
 	path = lib/ansi-to-tui
 	url = https://github.com/cosmikwolf/ansi-to-tui
-[submodule "lib/bat"]
-	path = lib/bat
-	url = git@github.com:sharkdp/bat.git
-[submodule "lib/tracing"]
-	path = lib/tracing
-	url = git@github.com:tokio-rs/tracing.git
 [submodule "lib/helix"]
 	path = lib/helix
 	url = git@github.com:cosmikwolf/helix.git

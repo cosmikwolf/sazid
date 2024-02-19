@@ -1,6 +1,5 @@
 #[cfg(test)]
 mod vector_custom_type_tests {
-  use sazid::app::database::vector_custom_type::Vector;
   use tokio_postgres::types::{FromSql, ToSql};
   use tokio_postgres::{Client, NoTls};
 

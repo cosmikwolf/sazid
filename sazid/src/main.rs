@@ -34,8 +34,7 @@ async fn tokio_main() -> Result<(), SazidError> {
     .with_api_key(api_key)
     .with_org_id("org-WagBLu0vLgiuEL12dylmcPFj");
   let mut embeddings_manager =
-    DataManager::new(config.clone(), EmbeddingModel::Ada002(openai_config))
-      .await?;
+    DataManager::new(EmbeddingModel::Ada002(openai_config)).await?;
 
   match embeddings_manager.run_cli(args.clone()).await {
     Ok(Some(output)) => {

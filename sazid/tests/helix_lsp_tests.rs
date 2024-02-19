@@ -1,18 +1,11 @@
-use futures::FutureExt;
-use helix_core;
-use helix_lsp::Client;
 use lsp_types::GotoDefinitionResponse;
 use sazid::action::Action;
 use sazid::app::lsp::helix_lsp_interface::LanguageServerInterface;
-use sazid::app::lsp::symbol_types::SymbolQuery;
-// use sazid::trace_dbg;
 use sazid::utils::{initialize_logging, initialize_panic_handler};
 use std::path::Path;
 use std::str::from_utf8;
-use std::sync::{Arc, Mutex, MutexGuard};
 use tempfile::tempdir;
 use tracing::warn;
-use tracing_test::traced_test;
 use url::Url;
 
 pub fn test_lang_config() -> helix_core::syntax::Configuration {
@@ -94,7 +87,7 @@ async fn test_rust_analyzer_connection() -> anyhow::Result<()> {
   // println!("{:#?}", std::env::vars());
 
   // std::env::set_var("RUST_LOG", std::env::var(format!("{}=info", env!("CARGO_CRATE_NAME"))));
-  let res = initialize_panic_handler();
+  let _res = initialize_panic_handler();
   let res = initialize_logging();
   assert!(res.is_ok());
   warn!("beginning workspace scan tests");
@@ -121,7 +114,6 @@ async fn test_rust_analyzer_connection() -> anyhow::Result<()> {
 
   let mut lsi = LanguageServerInterface::new(Some(config), action_tx);
   lsi.spawn_server_notification_thread().await;
-  let root_dirs = vec![test_workspace_path.clone()];
   lsi
     .create_workspace(
       test_workspace_path.clone(),
@@ -141,7 +133,7 @@ async fn test_rust_analyzer_connection() -> anyhow::Result<()> {
     .collect::<Vec<usize>>();
 
   while ids.iter().any(|c| lsi.lsp_progress.is_progressing(*c)) {
-    let result = action_loop.test_action_loop(&mut lsi).await;
+    let _result = action_loop.test_action_loop(&mut lsi).await;
   }
   let a = lsi.wait_for_language_server_initialization(ids.as_slice()).await;
   assert!(a.is_ok());
@@ -158,7 +150,7 @@ async fn test_rust_analyzer_connection() -> anyhow::Result<()> {
   // let a: Result<(), anyhow::Error> = futures::executor::block_on(async { lsi.update_workspace_symbols().await });
   while ids.iter().any(|c| lsi.lsp_progress.is_progressing(*c)) {
     interval.tick().await;
-    let result = action_loop.test_action_loop(&mut lsi).await;
+    let _result = action_loop.test_action_loop(&mut lsi).await;
     interval.tick().await;
   }
   let a: Result<(), anyhow::Error> = lsi.update_workspace_symbols().await;
@@ -168,14 +160,14 @@ async fn test_rust_analyzer_connection() -> anyhow::Result<()> {
     Some(p) => p.is_empty(),
     None => false,
   }) {
-    let result = action_loop.test_action_loop(&mut lsi).await;
+    let _result = action_loop.test_action_loop(&mut lsi).await;
   }
 
   while ids.iter().any(|c| lsi.lsp_progress.is_progressing(*c)) {
     log::debug!("Waiting for progress to complete");
 
     interval.tick().await;
-    let r = action_loop.test_action_loop(&mut lsi).await;
+    let _r = action_loop.test_action_loop(&mut lsi).await;
   }
 
   log::debug!("status: {:#?}", lsi.status_msg.msg);

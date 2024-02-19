@@ -1,0 +1,44 @@
+{
+  "cargo": {
+    "allFeatures": false,
+    "runBuildScripts": true,
+    "buildScripts": {
+      "enable": true
+    }
+  },
+  "rustfmt": {
+    "allFeatures": false
+  },
+  "numThreads": 6,
+  "cachePriming": {
+    "enable": false,
+    "numThreads": 8
+  },
+  "diagnostics": {
+    "enable": true
+  },
+  "checkOnSave": true,
+  "check": {
+    "invocationLocation": "once",
+    "invocationStrategy": "once",
+    "features": null,
+    "command": "clippy",
+    "extraArgs": ["--no-deps", "--tests"],
+    "workspace": false
+  },
+  "server": {
+    "extraEnv": {
+      "RA_LOG": null,
+      "RUST_BACKTRACE": null
+    }
+  },
+  "procMacro": {
+    "enable": true,
+    "ignored": {
+      "async-trait": ["async_trait"],
+      "napi-derive": ["napi"],
+      "async-recursion": ["async_recursion"]
+    }
+  },
+  "linkedProjects": ["sazid/Cargo.toml"]
+}

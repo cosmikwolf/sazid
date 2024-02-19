@@ -74,26 +74,23 @@ impl<'a> SessionView<'a> {
 
   pub fn post_process_new_messages(
     &mut self,
-    messages: &mut Vec<MessageContainer>,
+    messages: &mut [MessageContainer],
   ) {
     let dividing_newlines_count = 2;
     messages.iter_mut().for_each(|message| {
       let rendered_text_message_start_index =
         self.rendered_text.len_chars() - message.stylized.len_chars();
       let original_message_length = message.stylized.len_chars();
-      // trace_dbg!("message: {:#?}", message.bright_blue());
-      // let previously_rendered_bytecount = message.rendered.stylized.len_bytes();
       if !message.stylize_complete {
         let text_width = self.window_width.min(80 - 4);
         let stylized =
           self.renderer.render_message_bat(format!("{}", &message).as_str());
         let options = Options::new(text_width)
-          //.break_words(false)
-            .initial_indent("")
-            .subsequent_indent("  ")
-        .word_splitter(WordSplitter::NoHyphenation)
-        .word_separator(WordSeparator::AsciiSpace)
-        .wrap_algorithm(WrapAlgorithm::new_optimal_fit());
+          .initial_indent("")
+          .subsequent_indent("  ")
+          .word_splitter(WordSplitter::NoHyphenation)
+          .word_separator(WordSeparator::AsciiSpace)
+          .wrap_algorithm(WrapAlgorithm::new_optimal_fit());
         let wrapped = textwrap::wrap(stylized.as_str(), options);
 
         message.stylized = Rope::from_str(
@@ -105,22 +102,6 @@ impl<'a> SessionView<'a> {
             .as_str(),
         );
 
-        // message.stylized = Rope::from_str(
-        //   wrapped
-        //     .iter()
-        //     .enumerate()
-        //     .map(|(i, l)| {
-        //       if i == 0 {
-        //         format!("{}{}", " ".repeat(left_padding + 2), l)
-        //       } else {
-        //         format!("{}{}", " ".repeat(left_padding + 4), l)
-        //       }
-        //     })
-        //     .collect::<Vec<String>>()
-        //     .join("\n")
-        //     .as_str(),
-        // );
-        //message.rendered.stylized = Rope::from_str(&message.rendered.content);
         if message.receive_complete {
           message.stylized.append(Rope::from_str(
             "\n".to_string().repeat(dividing_newlines_count).as_str(),
@@ -134,17 +115,8 @@ impl<'a> SessionView<'a> {
           original_message_length,
         );
 
-        // message.stylized.to_string().lines().for_each(|l| {
-        //   trace_dbg!("line: {:#?}", l);
-        // });
-        //
         self.rendered_text.remove(rendered_text_message_start_index..);
         self.rendered_text.append(message.stylized.clone());
-
-        // message.rendered.stylized.bytes_at(previously_rendered_bytecount).for_each(|b| {
-        //   self.renderer.rendered_bytes.push(b);
-        // });
-        // trace_dbg!("bytes: {:?}", self.renderer.rendered_bytes.len());
       }
     });
   }
@@ -229,62 +201,62 @@ impl<'a> BatRenderer<'a> {
   }
 }
 
-fn visual_char_coord_to_index(
-  rope: &Rope,
-  line_number: usize,
-  x_coord: usize,
-) -> usize {
-  // Clamp line_number within the number of lines in rope
-  let line_number = line_number.min(rope.len_lines());
-  // Get the character offset of the line
-  let line_offset = rope.line_to_char(line_number);
-  // Get the line as a slice
-  let line = rope.line(line_number);
-  // Clamp x_coord within the number of characters in line
-  let x_coord = x_coord.min(line.len_chars());
-
-  let mut visual_char_index = 0;
-  let mut actual_char_index = 0;
-
-  // Iterate over the characters of the line
-  while actual_char_index < line.len_chars() {
-    let c = line.char(actual_char_index);
-
-    if c == '\\' {
-      // Detect ASCII escape sequences
-      if actual_char_index + 1 < line.len_chars() {
-        let next_c = line.char(actual_char_index + 1);
-        if matches!(next_c, 'n' | 'r' | 't' | '\\' | '0') {
-          actual_char_index += 2; // Skip the escape sequence
-          continue;
-        }
-      }
-    } else if c == '\x1B' {
-      // Detect ANSI escape codes
-      if actual_char_index + 1 < line.len_chars()
-        && line.char(actual_char_index + 1) == '['
-      {
-        actual_char_index += 2; // Skip the escape character and '['
-                                // Loop until we find a character that is not part of the code
-        while actual_char_index < line.len_chars()
-          && !line.char(actual_char_index).is_alphabetic()
-        {
-          actual_char_index += 1;
-        }
-        actual_char_index += 1; // Skip the final character of the ANSI code
-        continue;
-      }
-    }
-
-    // If we've reached the x_coord, return the index
-    if visual_char_index == x_coord {
-      return line_offset + actual_char_index;
-    }
-
-    visual_char_index += 1;
-    actual_char_index += 1;
-  }
-
-  // If x_coord was not found, return the end of the line offset
-  line_offset + line.len_chars()
-}
+// fn visual_char_coord_to_index(
+//   rope: &Rope,
+//   line_number: usize,
+//   x_coord: usize,
+// ) -> usize {
+//   // Clamp line_number within the number of lines in rope
+//   let line_number = line_number.min(rope.len_lines());
+//   // Get the character offset of the line
+//   let line_offset = rope.line_to_char(line_number);
+//   // Get the line as a slice
+//   let line = rope.line(line_number);
+//   // Clamp x_coord within the number of characters in line
+//   let x_coord = x_coord.min(line.len_chars());
+//
+//   let mut visual_char_index = 0;
+//   let mut actual_char_index = 0;
+//
+//   // Iterate over the characters of the line
+//   while actual_char_index < line.len_chars() {
+//     let c = line.char(actual_char_index);
+//
+//     if c == '\\' {
+//       // Detect ASCII escape sequences
+//       if actual_char_index + 1 < line.len_chars() {
+//         let next_c = line.char(actual_char_index + 1);
+//         if matches!(next_c, 'n' | 'r' | 't' | '\\' | '0') {
+//           actual_char_index += 2; // Skip the escape sequence
+//           continue;
+//         }
+//       }
+//     } else if c == '\x1B' {
+//       // Detect ANSI escape codes
+//       if actual_char_index + 1 < line.len_chars()
+//         && line.char(actual_char_index + 1) == '['
+//       {
+//         actual_char_index += 2; // Skip the escape character and '['
+//                                 // Loop until we find a character that is not part of the code
+//         while actual_char_index < line.len_chars()
+//           && !line.char(actual_char_index).is_alphabetic()
+//         {
+//           actual_char_index += 1;
+//         }
+//         actual_char_index += 1; // Skip the final character of the ANSI code
+//         continue;
+//       }
+//     }
+//
+//     // If we've reached the x_coord, return the index
+//     if visual_char_index == x_coord {
+//       return line_offset + actual_char_index;
+//     }
+//
+//     visual_char_index += 1;
+//     actual_char_index += 1;
+//   }
+//
+//   // If x_coord was not found, return the end of the line offset
+//   line_offset + line.len_chars()
+// }
