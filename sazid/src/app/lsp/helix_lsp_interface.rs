@@ -2,6 +2,7 @@ use futures_util::FutureExt;
 use helix_core::diff::compare_ropes;
 use std::borrow::Cow;
 use std::path::PathBuf;
+use std::rc::Rc;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
@@ -30,7 +31,7 @@ use crate::trace_dbg;
 use super::symbol_types::SourceSymbol;
 use super::symbol_types::Workspace;
 
-#[derive(Default)]
+#[derive(Debug, Default)]
 pub struct StatusMessage {
   pub msg: Option<(Cow<'static, str>, Severity)>,
 }
@@ -134,7 +135,7 @@ impl LanguageServerInterface {
 
   pub async fn goto_symbol_definition(
     &self,
-    symbol: Arc<SourceSymbol>,
+    symbol: Rc<SourceSymbol>,
     language_server_id: usize,
   ) -> anyhow::Result<lsp::GotoDefinitionResponse> {
     let text_document = lsp::TextDocumentIdentifier {
@@ -159,7 +160,7 @@ impl LanguageServerInterface {
 
   pub async fn goto_symbol_declaration(
     &self,
-    symbol: Arc<SourceSymbol>,
+    symbol: Rc<SourceSymbol>,
     language_server_id: usize,
   ) -> anyhow::Result<lsp::GotoDefinitionResponse> {
     let text_document = lsp::TextDocumentIdentifier {
@@ -353,6 +354,10 @@ impl LanguageServerInterface {
                 },
               };
               workspace_file.update_symbols(doc_symbols).unwrap();
+              log::debug!(
+                "workspace_file symbols: {:#?}",
+                workspace_file.file_tree
+              );
             }
           }
         }

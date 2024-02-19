@@ -21,10 +21,10 @@ pub struct Workspace {
 }
 
 pub struct SymbolQuery {
-  name: Option<String>,
-  kind: Option<lsp::SymbolKind>,
-  range: Option<lsp::Range>,
-  file: Option<String>,
+  pub name: Option<String>,
+  pub kind: Option<lsp::SymbolKind>,
+  pub range: Option<lsp::Range>,
+  pub file: Option<String>,
 }
 
 impl Workspace {
@@ -85,7 +85,7 @@ impl Workspace {
 
   pub async fn query_symbols(
     &self,
-    query: SymbolQuery,
+    query: &SymbolQuery,
   ) -> anyhow::Result<Vec<Rc<SourceSymbol>>> {
     Ok(
       self
@@ -103,28 +103,30 @@ impl Workspace {
                 .to_string()
                 == file_name
           } else {
-            false
+            true
           }
         })
         .filter(|s| {
           if let Some(name) = query.name.clone() {
-            s.name == name
+            s.name.contains(&name)
           } else {
-            false
+            true
           }
         })
-        .filter(|s| {
-          if let Some(kind) = query.kind {
-            s.kind == kind
-          } else {
-            false
-          }
-        })
+        .filter(
+          |s| {
+            if let Some(kind) = query.kind {
+              s.kind == kind
+            } else {
+              true
+            }
+          },
+        )
         .filter(|s| {
           if let Some(range) = query.range {
             *s.range.borrow() == range
           } else {
-            false
+            true
           }
         })
         .collect::<Vec<_>>(),
@@ -152,6 +154,7 @@ pub struct DocumentChange {
   pub versioned_doc_id: lsp::VersionedTextDocumentIdentifier,
 }
 
+#[derive(Debug)]
 pub struct WorkspaceFile {
   pub file_tree: Rc<SourceSymbol>,
   pub symbol_list: Vec<Weak<SourceSymbol>>,
@@ -274,6 +277,7 @@ impl WorkspaceFile {
         &symbol,
         &self.file_path,
         &mut self.file_tree,
+        &mut self.symbol_list,
         &self.workspace_path,
       );
     }
@@ -324,6 +328,7 @@ impl SourceSymbol {
     doc_sym: &lsp::DocumentSymbol,
     file_path: &Path,
     parent: &mut Rc<SourceSymbol>,
+    all_symbols: &mut Vec<Weak<SourceSymbol>>,
     workspace_path: &Path,
   ) -> Rc<Self> {
     let converted = Rc::new(SourceSymbol {
@@ -339,6 +344,7 @@ impl SourceSymbol {
       workspace_path: workspace_path.to_path_buf(),
     });
 
+    all_symbols.push(Rc::downgrade(&converted));
     SourceSymbol::add_child(parent, &converted);
 
     if let Some(children) = &doc_sym.children {
@@ -347,6 +353,7 @@ impl SourceSymbol {
           child,
           file_path,
           &mut Rc::clone(&converted),
+          all_symbols,
           workspace_path,
         );
       }
