@@ -1,6 +1,7 @@
 use futures::FutureExt;
 use helix_core;
 use helix_lsp::Client;
+use lsp_types::GotoDefinitionResponse;
 use sazid::action::Action;
 use sazid::app::lsp::helix_lsp_interface::LanguageServerInterface;
 use sazid::app::lsp::symbol_types::SymbolQuery;
@@ -216,24 +217,15 @@ async fn test_rust_analyzer_connection() -> anyhow::Result<()> {
     });
   assert!(a.is_ok());
 
-  let query = SymbolQuery {
-    name: Some("omgwtf".to_string()),
-    kind: None,
-    range: None,
-    file: None,
-  };
+  let omgwtf_results = lsi
+    .query_all_workspace_symbols(Some("omgwtf".to_string()), None, None, None)
+    .await;
 
-  let results =
-    lsi.workspaces.iter().map(|w| w.query_symbols(&query)).collect::<Vec<_>>();
+  assert!(omgwtf_results.len() == 1);
 
-  let results = futures_util::future::join_all(results).await;
-  let results = results.iter().flatten().flatten().collect::<Vec<_>>();
+  let omgwtf = omgwtf_results.first().unwrap().clone();
 
-  log::warn!("Results: {:#?}", results);
-  assert!(!results.is_empty());
-
-  let omgwtf = (*results.first().unwrap()).clone();
-  let language_server_id = lsi
+  let rust_analyzer_id = lsi
     .language_servers
     .lock()
     .await
@@ -245,11 +237,17 @@ async fn test_rust_analyzer_connection() -> anyhow::Result<()> {
     .unwrap()
     .id();
 
-  let definition = lsi.goto_symbol_definition(omgwtf, language_server_id).await;
+  let definition =
+    lsi.goto_symbol_definition(omgwtf, rust_analyzer_id).await.unwrap();
 
-  assert!(definition.is_ok());
+  log::warn!("definition: {:#?}", definition);
 
-  log::warn!("definition: {:#?}", definition.unwrap());
+  if let GotoDefinitionResponse::Array(arr) = &definition {
+    assert!(arr.first().unwrap().uri.scheme() == "file");
+    assert!(arr.first().unwrap().uri.path().ends_with("src/bar.rs"));
+  } else {
+    panic!("definition not an array");
+  }
 
   let capabilities = lsi.server_capabilities().await;
   assert!(capabilities.is_ok());

@@ -29,6 +29,7 @@ use crate::app::lsp::symbol_types::DocumentChange;
 use crate::trace_dbg;
 
 use super::symbol_types::SourceSymbol;
+use super::symbol_types::SymbolQuery;
 use super::symbol_types::Workspace;
 
 #[derive(Debug, Default)]
@@ -92,6 +93,30 @@ impl LanguageServerInterface {
       status_msg: StatusMessage::default(),
       workspaces: vec![],
     }
+  }
+
+  pub async fn query_all_workspace_symbols(
+    &self,
+    name: Option<String>,
+    kind: Option<lsp::SymbolKind>,
+    range: Option<lsp::Range>,
+    file: Option<String>,
+  ) -> Vec<Rc<SourceSymbol>> {
+    let query =
+      SymbolQuery { name: name.clone(), kind, range, file: file.clone() };
+    futures::future::join_all(
+      self
+        .workspaces
+        .iter()
+        .map(|w| async { w.query_symbols(&query).await })
+        .collect::<Vec<_>>(),
+    )
+    .await
+    .iter()
+    .flatten()
+    .flatten()
+    .cloned()
+    .collect()
   }
 
   pub async fn spawn_server_notification_thread(&mut self) {
