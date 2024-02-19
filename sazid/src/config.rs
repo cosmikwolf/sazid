@@ -1,4 +1,4 @@
-use std::{collections::HashMap, env, path::PathBuf};
+use std::{collections::HashMap, path::PathBuf};
 
 use color_eyre::eyre::Result;
 
@@ -39,7 +39,7 @@ pub struct Config {
 }
 
 impl Config {
-  pub fn new(local_api: bool) -> Result<Self, config::ConfigError> {
+  pub fn new(_local_api: bool) -> Result<Self, config::ConfigError> {
     let default_config: Config = json5::from_str(CONFIG).unwrap();
     let data_dir = crate::utils::get_data_dir();
     let config_dir = crate::utils::get_config_dir();

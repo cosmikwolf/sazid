@@ -4,7 +4,7 @@ use super::Component;
 
 use core::result::Result;
 use crossterm::event::{KeyEvent, MouseEvent};
-use helix_lsp::block_on;
+
 use ratatui::layout::Rect;
 use tokio::sync::mpsc::UnboundedSender;
 
@@ -63,24 +63,7 @@ impl Component for LanguageServerInterface {
   }
   #[allow(unused_variables)]
   fn update(&mut self, action: Action) -> Result<Option<Action>, SazidError> {
-    Ok(match action {
-      // Action::LspCheckServerNotifications => {
-      //   futures::executor::block_on(self.check_server_notifications());
-      //   None
-      // },
-      // Action::LspServerMessageReceived((id, call)) => {
-      //   futures::executor::block_on(Self::handle_language_server_message(
-      //     &mut self.lsp_progress,
-      //     &mut self.language_servers,
-      //     call,
-      //     id,
-      //     &mut self.status_msg,
-      //     &mut self.workspaces,
-      //   ));
-      //   None
-      // },
-      _ => None,
-    })
+    Ok(None)
   }
 
   #[allow(unused_variables)]

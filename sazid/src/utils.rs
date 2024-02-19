@@ -1,4 +1,4 @@
-use std::{fmt::Debug, path::PathBuf};
+use std::{path::PathBuf};
 
 use color_eyre::eyre::Result;
 use directories::ProjectDirs;
@@ -7,7 +7,7 @@ use tracing::error;
 
 use tracing_error::ErrorLayer;
 use tracing_subscriber::{
-  self, fmt::format, prelude::__tracing_subscriber_SubscriberExt,
+  self, prelude::__tracing_subscriber_SubscriberExt,
   util::SubscriberInitExt, Layer,
 };
 

@@ -1,7 +1,6 @@
 use std::{
   collections::HashSet,
   fmt::{self, Formatter},
-  sync::mpsc::Receiver,
 };
 
 use color_eyre::owo_colors::OwoColorize;

@@ -221,7 +221,7 @@ pub fn convert_to_vector_representation(code_constructs: &Value) -> Vec<f64> {
   let mut vectors: Vec<Vec<f64>> = Vec::new();
 
   if let Some(constructs_array) = code_constructs.as_array() {
-    for construct in constructs_array {
+    for _construct in constructs_array {
       // Placeholder: Convert each construct to a fixed-size vector representation
       let construct_vector = vec![0.0_f64; 300]; // Example fixed-size vector
       vectors.push(construct_vector);

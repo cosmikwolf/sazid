@@ -5,7 +5,7 @@ use std::str::Utf8Error;
 use std::string::FromUtf8Error;
 
 use super::ts_proto;
-use anyhow::{anyhow, Context, Result};
+use anyhow::{anyhow, Result};
 use tree_sitter::InputEdit;
 use tree_sitter::Language;
 use tree_sitter::Node;
