@@ -3,6 +3,7 @@ use helix_core;
 use helix_lsp::Client;
 use sazid::action::Action;
 use sazid::app::lsp::helix_lsp_interface::LanguageServerInterface;
+use sazid::app::lsp::symbol_types::SymbolQuery;
 // use sazid::trace_dbg;
 use sazid::utils::{initialize_logging, initialize_panic_handler};
 use std::path::Path;
@@ -150,10 +151,14 @@ async fn test_rust_analyzer_connection() -> anyhow::Result<()> {
   //     panic!("lsi poll completge");
   //   })
   //   .await;
+  let mut interval =
+    tokio::time::interval(std::time::Duration::from_millis(1000));
   use owo_colors::{colors::*, OwoColorize};
   // let a: Result<(), anyhow::Error> = futures::executor::block_on(async { lsi.update_workspace_symbols().await });
   while ids.iter().any(|c| lsi.lsp_progress.is_progressing(*c)) {
+    interval.tick().await;
     let result = action_loop.test_action_loop(&mut lsi).await;
+    interval.tick().await;
   }
   let a: Result<(), anyhow::Error> = lsi.update_workspace_symbols().await;
   assert!(a.is_ok());
@@ -165,19 +170,24 @@ async fn test_rust_analyzer_connection() -> anyhow::Result<()> {
     let result = action_loop.test_action_loop(&mut lsi).await;
   }
 
-  let mut interval =
-    tokio::time::interval(std::time::Duration::from_millis(1000));
-
   while ids.iter().any(|c| lsi.lsp_progress.is_progressing(*c)) {
+    log::debug!("Waiting for progress to complete");
+
     interval.tick().await;
     let r = action_loop.test_action_loop(&mut lsi).await;
   }
 
+  log::debug!("status: {:#?}", lsi.status_msg.msg);
   let a =
     lsi.wait_for_progress_token_completion(ids.as_slice()).await.map(|_| {
       for workspace in lsi.workspaces.iter() {
-        log::debug!("Workspace: {:#?}", workspace.workspace_path.display());
-
+        log::debug!(
+          "Workspace path: {:#?}",
+          workspace.workspace_path.display()
+        );
+        for file in workspace.files.iter() {
+          log::debug!("File: {:#?}", file);
+        }
         workspace
           .all_symbols_weak()
           .iter()
@@ -205,6 +215,41 @@ async fn test_rust_analyzer_connection() -> anyhow::Result<()> {
       }
     });
   assert!(a.is_ok());
+
+  let query = SymbolQuery {
+    name: Some("omgwtf".to_string()),
+    kind: None,
+    range: None,
+    file: None,
+  };
+
+  let results =
+    lsi.workspaces.iter().map(|w| w.query_symbols(&query)).collect::<Vec<_>>();
+
+  let results = futures_util::future::join_all(results).await;
+  let results = results.iter().flatten().flatten().collect::<Vec<_>>();
+
+  log::warn!("Results: {:#?}", results);
+  assert!(!results.is_empty());
+
+  let omgwtf = (*results.first().unwrap()).clone();
+  let language_server_id = lsi
+    .language_servers
+    .lock()
+    .await
+    .iter_clients()
+    .inspect(|c| {
+      log::warn!("Client: {:#?}", c.name());
+    })
+    .find(|c| c.name() == "rust-analyzer")
+    .unwrap()
+    .id();
+
+  let definition = lsi.goto_symbol_definition(omgwtf, language_server_id).await;
+
+  assert!(definition.is_ok());
+
+  log::warn!("definition: {:#?}", definition.unwrap());
 
   let capabilities = lsi.server_capabilities().await;
   assert!(capabilities.is_ok());
