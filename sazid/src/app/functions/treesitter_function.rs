@@ -1,10 +1,7 @@
 use crate::app::session_config::SessionConfig;
-use crate::trace_dbg;
-use std::fs::OpenOptions;
-use std::io::BufRead;
+use std::collections::HashMap;
 use std::path::PathBuf;
-use std::{collections::HashMap, fs::File, io::Write};
-use tree_sitter::{Language, Node, Parser, Query, QueryCursor, Tree};
+use tree_sitter::{Parser, Query};
 
 use super::argument_validation::*;
 use super::tool_call::ToolCallTrait;

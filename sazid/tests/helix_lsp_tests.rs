@@ -4,7 +4,7 @@ use helix_lsp::Client;
 use sazid::action::Action;
 use sazid::app::lsp::helix_lsp_interface::LanguageServerInterface;
 // use sazid::trace_dbg;
-use sazid::utils::initialize_logging;
+use sazid::utils::{initialize_logging, initialize_panic_handler};
 use std::path::Path;
 use std::str::from_utf8;
 use std::sync::{Arc, Mutex, MutexGuard};
@@ -52,12 +52,47 @@ fn test_logging() -> anyhow::Result<()> {
   Ok(())
 }
 
+struct TestActionLoop {
+  action_rx: tokio::sync::mpsc::UnboundedReceiver<Action>,
+}
+impl TestActionLoop {
+  async fn test_action_loop(
+    &mut self,
+    lsi: &mut LanguageServerInterface,
+  ) -> Result<(), tokio::time::error::Elapsed> {
+    tokio::time::timeout(tokio::time::Duration::from_secs(1), async {
+      while let Some(action) = self.action_rx.recv().await {
+        match action {
+          Action::LspServerMessageReceived((id, msg)) => {
+            println!("LSP Server message received: {:#?}", msg);
+            let mut ls = lsi.language_servers.lock().await;
+            LanguageServerInterface::handle_language_server_message(
+              &mut lsi.lsp_progress,
+              &mut ls,
+              msg,
+              id,
+              &mut lsi.status_msg,
+              &mut lsi.workspaces,
+            )
+            .await;
+          },
+          _ => {
+            println!("action: {:#?}", action);
+          },
+        }
+      }
+    })
+    .await
+  }
+}
 // #[traced_test]
+// #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
 #[tokio::test]
 async fn test_rust_analyzer_connection() -> anyhow::Result<()> {
   // println!("{:#?}", std::env::vars());
 
   // std::env::set_var("RUST_LOG", std::env::var(format!("{}=info", env!("CARGO_CRATE_NAME"))));
+  let res = initialize_panic_handler();
   let res = initialize_logging();
   assert!(res.is_ok());
   warn!("beginning workspace scan tests");
@@ -79,12 +114,12 @@ async fn test_rust_analyzer_connection() -> anyhow::Result<()> {
 
   std::env::set_current_dir(&test_workspace_path).unwrap();
   let config = test_lang_config();
-  let (action_tx, _rx) = tokio::sync::mpsc::unbounded_channel::<Action>();
+  let (action_tx, action_rx) = tokio::sync::mpsc::unbounded_channel::<Action>();
+  let mut action_loop = TestActionLoop { action_rx };
 
   let mut lsi = LanguageServerInterface::new(Some(config), action_tx);
   lsi.spawn_server_notification_thread().await;
   let root_dirs = vec![test_workspace_path.clone()];
-
   lsi
     .create_workspace(
       test_workspace_path.clone(),
@@ -94,6 +129,7 @@ async fn test_rust_analyzer_connection() -> anyhow::Result<()> {
     )
     .await
     .unwrap();
+
   let ids = lsi
     .language_servers
     .lock()
@@ -102,6 +138,9 @@ async fn test_rust_analyzer_connection() -> anyhow::Result<()> {
     .map(|c| c.id())
     .collect::<Vec<usize>>();
 
+  while ids.iter().any(|c| lsi.lsp_progress.is_progressing(*c)) {
+    let result = action_loop.test_action_loop(&mut lsi).await;
+  }
   let a = lsi.wait_for_language_server_initialization(ids.as_slice()).await;
   assert!(a.is_ok());
   println!("Initialized language servers");
@@ -112,45 +151,66 @@ async fn test_rust_analyzer_connection() -> anyhow::Result<()> {
   //   })
   //   .await;
   use owo_colors::{colors::*, OwoColorize};
-  let a: Result<(), anyhow::Error> = futures::executor::block_on(async {
-    println!("Updating workspace symbols");
-    lsi.update_workspace_symbols().await
-  });
-  assert!(a.is_ok());
-
-  let a = lsi.wait_for_progress_token_completion(ids.as_slice()).await;
-  assert!(a.is_ok());
-
-  for workspace in lsi.workspaces.iter() {
-    log::error!("Workspace: {:#?}", workspace.workspace_path.display());
-
-    workspace.all_symbols_weak().iter().map(|s| s.upgrade().unwrap()).for_each(
-      |s| {
-        println!(
-          "symbol: {:#?}\nname: {}\nrange:{:#?}\nwsp: {}\nfp::{}\n{}\n{}",
-          s.kind,
-          s.name,
-          s.range,
-          Url::from_file_path(s.workspace_path.clone().canonicalize().unwrap())
-            .unwrap(),
-          s.file_path.to_str().unwrap(),
-          &s.get_source().unwrap().fg::<Blue>(),
-          &s.get_selection().unwrap().fg::<Green>()
-        );
-      },
-    );
-    println!(
-      "{} workspace symbols found in {} files",
-      workspace.count_symbols(),
-      workspace.files.len()
-    );
+  // let a: Result<(), anyhow::Error> = futures::executor::block_on(async { lsi.update_workspace_symbols().await });
+  while ids.iter().any(|c| lsi.lsp_progress.is_progressing(*c)) {
+    let result = action_loop.test_action_loop(&mut lsi).await;
   }
+  let a: Result<(), anyhow::Error> = lsi.update_workspace_symbols().await;
+  assert!(a.is_ok());
+
+  while ids.iter().any(|id| match lsi.lsp_progress.progress_map(*id) {
+    Some(p) => p.is_empty(),
+    None => false,
+  }) {
+    let result = action_loop.test_action_loop(&mut lsi).await;
+  }
+
+  let mut interval =
+    tokio::time::interval(std::time::Duration::from_millis(1000));
+
+  while ids.iter().any(|c| lsi.lsp_progress.is_progressing(*c)) {
+    interval.tick().await;
+    let r = action_loop.test_action_loop(&mut lsi).await;
+  }
+
+  let a =
+    lsi.wait_for_progress_token_completion(ids.as_slice()).await.map(|_| {
+      for workspace in lsi.workspaces.iter() {
+        log::debug!("Workspace: {:#?}", workspace.workspace_path.display());
+
+        workspace
+          .all_symbols_weak()
+          .iter()
+          .map(|s| s.upgrade().unwrap())
+          .for_each(|s| {
+            log::warn!(
+              "symbol: {:#?}\nname: {}\nrange:{:#?}\nwsp: {}\nfp::{}\n{}\n{}",
+              s.kind,
+              s.name,
+              s.range,
+              Url::from_file_path(
+                s.workspace_path.clone().canonicalize().unwrap()
+              )
+              .unwrap(),
+              s.file_path.to_str().unwrap(),
+              &s.get_source().unwrap().fg::<Blue>(),
+              &s.get_selection().unwrap().fg::<Green>()
+            );
+          });
+        log::warn!(
+          "{} workspace symbols found in {} files",
+          workspace.count_symbols(),
+          workspace.files.len()
+        );
+      }
+    });
+  assert!(a.is_ok());
 
   let capabilities = lsi.server_capabilities().await;
   assert!(capabilities.is_ok());
   // println!("Capabilities: {:#?}", capabilities.unwrap());
   // tokio::time::sleep(std::time::Duration::from_millis(1000)).await;
-  panic!();
+  // panic!();
   /*
   let _c_client = lsi.initialize_client("c", "clangd", None, &[], false).unwrap().unwrap();
   let _cpp_client = lsi.initialize_client("cpp", "clangd", None, &[], false).unwrap().unwrap();
