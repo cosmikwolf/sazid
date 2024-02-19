@@ -1,4 +1,4 @@
-use std::{path::PathBuf};
+use std::path::PathBuf;
 
 use color_eyre::eyre::Result;
 use directories::ProjectDirs;
@@ -7,8 +7,8 @@ use tracing::error;
 
 use tracing_error::ErrorLayer;
 use tracing_subscriber::{
-  self, prelude::__tracing_subscriber_SubscriberExt,
-  util::SubscriberInitExt, Layer,
+  self, prelude::__tracing_subscriber_SubscriberExt, util::SubscriberInitExt,
+  Layer,
 };
 
 lazy_static! {

@@ -66,6 +66,7 @@ pub fn concatenate_tool_call_chunks(
   }
 }
 
+#[allow(deprecated)]
 pub fn concatenate_stream_delta(
   delta1: ChatCompletionStreamResponseDelta,
   delta2: ChatCompletionStreamResponseDelta,
@@ -208,6 +209,7 @@ pub fn get_assistant_message_from_create_chat_completion_stream_response(
   fold_stream_responses_into_assistant_message(smvec)
 }
 
+#[allow(deprecated)]
 pub fn get_assistant_message_from_create_chat_completion_response(
   choice_index: usize,
   response: &CreateChatCompletionResponse,
@@ -241,6 +243,7 @@ pub fn fold_stream_responses_into_assistant_message(
   //   None => None,
   // };
 
+  #[allow(deprecated)]
   Ok(ChatCompletionRequestAssistantMessage {
     name: None,
     role: Role::Assistant,

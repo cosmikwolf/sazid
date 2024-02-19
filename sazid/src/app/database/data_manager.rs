@@ -3,7 +3,7 @@ use super::types::*;
 use crate::action::Action;
 use crate::app::errors::SazidError;
 use crate::app::session_config::SessionConfig;
-use crate::{cli::Cli, config::Config};
+use crate::cli::Cli;
 use async_openai::types::ChatCompletionRequestMessage;
 use dialoguer;
 use diesel::{prelude::*, sql_query};
@@ -15,7 +15,6 @@ use tokio::sync::mpsc::UnboundedSender;
 #[derive(Default, Debug)]
 pub struct DataManager {
   pub action_tx: Option<UnboundedSender<Action>>,
-  config: Config,
   pub model: EmbeddingModel,
 }
 
@@ -102,11 +101,8 @@ impl DataManager {
     std::env::var("DATABASE_URL").unwrap()
   }
 
-  pub async fn new(
-    config: Config,
-    model: EmbeddingModel,
-  ) -> Result<Self, SazidError> {
-    Ok(DataManager { action_tx: None, config, model })
+  pub async fn new(model: EmbeddingModel) -> Result<Self, SazidError> {
+    Ok(DataManager { action_tx: None, model })
   }
 }
 

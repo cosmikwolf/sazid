@@ -30,6 +30,7 @@ mod vector_db_tests {
 
   #[derive(Queryable, Selectable)]
   #[diesel(table_name = plaintexts)]
+  #[allow(dead_code)]
   pub struct PlainTextEmbedding {
     id: i64,
     content: String,

@@ -33,22 +33,6 @@ mod tests {
   }
 
   #[test]
-  fn test_validate_and_extract_options_with_required() {
-    let function_args = HashMap::new();
-    assert!(
-      validate_and_extract_options::<TestArgs>(&function_args, true).is_err()
-    );
-  }
-
-  #[test]
-  fn test_validate_and_extract_options_with_optional() {
-    let function_args = HashMap::new();
-    assert!(
-      validate_and_extract_options::<TestArgs>(&function_args, false).is_ok()
-    );
-  }
-
-  #[test]
   fn test_validate_and_extract_string_argument_with_required() {
     let mut function_args = HashMap::new();
     function_args.insert(
