@@ -1,0 +1,34 @@
+---
+triple:          'arm64-apple-darwin'
+binary-path:     '/Users/tenkai/Development/gpt/sazid/crates/runtime/grammars/godot-resource.so'
+relocations:
+  - { offsetInCU: 0x27, offset: 0x27, size: 0x8, addend: 0x0, symName: _tree_sitter_godot_resource_external_scanner_scan, symObjAddr: 0x0, symBinAddr: 0x1DEC, symSize: 0xF8 }
+  - { offsetInCU: 0xA9, offset: 0xA9, size: 0x8, addend: 0x0, symName: _tree_sitter_godot_resource_external_scanner_scan, symObjAddr: 0x0, symBinAddr: 0x1DEC, symSize: 0xF8 }
+  - { offsetInCU: 0xB1, offset: 0xB1, size: 0x8, addend: 0x0, symName: _tree_sitter_godot_resource_external_scanner_create, symObjAddr: 0xF8, symBinAddr: 0x1EE4, symSize: 0x8 }
+  - { offsetInCU: 0x13A, offset: 0x13A, size: 0x8, addend: 0x0, symName: _tree_sitter_godot_resource_external_scanner_create, symObjAddr: 0xF8, symBinAddr: 0x1EE4, symSize: 0x8 }
+  - { offsetInCU: 0x142, offset: 0x142, size: 0x8, addend: 0x0, symName: _tree_sitter_godot_resource_external_scanner_serialize, symObjAddr: 0x100, symBinAddr: 0x1EEC, symSize: 0x8 }
+  - { offsetInCU: 0x15A, offset: 0x15A, size: 0x8, addend: 0x0, symName: _tree_sitter_godot_resource_external_scanner_serialize, symObjAddr: 0x100, symBinAddr: 0x1EEC, symSize: 0x8 }
+  - { offsetInCU: 0x162, offset: 0x162, size: 0x8, addend: 0x0, symName: _tree_sitter_godot_resource_external_scanner_deserialize, symObjAddr: 0x108, symBinAddr: 0x1EF4, symSize: 0x4 }
+  - { offsetInCU: 0x198, offset: 0x198, size: 0x8, addend: 0x0, symName: _tree_sitter_godot_resource_external_scanner_deserialize, symObjAddr: 0x108, symBinAddr: 0x1EF4, symSize: 0x4 }
+  - { offsetInCU: 0x1A0, offset: 0x1A0, size: 0x8, addend: 0x0, symName: _tree_sitter_godot_resource_external_scanner_destroy, symObjAddr: 0x10C, symBinAddr: 0x1EF8, symSize: 0x4 }
+  - { offsetInCU: 0x1DD, offset: 0x1DD, size: 0x8, addend: 0x0, symName: _tree_sitter_godot_resource_external_scanner_destroy, symObjAddr: 0x10C, symBinAddr: 0x1EF8, symSize: 0x4 }
+  - { offsetInCU: 0x27, offset: 0x356, size: 0x8, addend: 0x0, symName: _tree_sitter_godot_resource, symObjAddr: 0x0, symBinAddr: 0x1EFC, symSize: 0xC }
+  - { offsetInCU: 0x38, offset: 0x367, size: 0x8, addend: 0x0, symName: _tree_sitter_godot_resource, symObjAddr: 0x0, symBinAddr: 0x1EFC, symSize: 0xC }
+  - { offsetInCU: 0x40, offset: 0x36F, size: 0x8, addend: 0x0, symName: _ts_lex, symObjAddr: 0xC, symBinAddr: 0x1F08, symSize: 0x814 }
+  - { offsetInCU: 0x67, offset: 0x396, size: 0x8, addend: 0x0, symName: _tree_sitter_godot_resource.language, symObjAddr: 0x1F80, symBinAddr: 0x4010, symSize: 0x0 }
+  - { offsetInCU: 0x692, offset: 0x9C1, size: 0x8, addend: 0x0, symName: _ts_parse_table, symObjAddr: 0x177E, symBinAddr: 0x3686, symSize: 0x0 }
+  - { offsetInCU: 0x6C1, offset: 0x9F0, size: 0x8, addend: 0x0, symName: _ts_small_parse_table, symObjAddr: 0xCD8, symBinAddr: 0x2BE0, symSize: 0x0 }
+  - { offsetInCU: 0x6E4, offset: 0xA13, size: 0x8, addend: 0x0, symName: _ts_small_parse_table_map, symObjAddr: 0x1584, symBinAddr: 0x348C, symSize: 0x0 }
+  - { offsetInCU: 0x706, offset: 0xA35, size: 0x8, addend: 0x0, symName: _ts_parse_actions, symObjAddr: 0x1812, symBinAddr: 0x371A, symSize: 0x0 }
+  - { offsetInCU: 0x727, offset: 0xA56, size: 0x8, addend: 0x0, symName: _ts_symbol_names, symObjAddr: 0x2060, symBinAddr: 0x40F0, symSize: 0x0 }
+  - { offsetInCU: 0x748, offset: 0xA77, size: 0x8, addend: 0x0, symName: _ts_symbol_metadata, symObjAddr: 0x16B4, symBinAddr: 0x35BC, symSize: 0x0 }
+  - { offsetInCU: 0x769, offset: 0xA98, size: 0x8, addend: 0x0, symName: _ts_symbol_map, symObjAddr: 0x1724, symBinAddr: 0x362C, symSize: 0x0 }
+  - { offsetInCU: 0x78B, offset: 0xABA, size: 0x8, addend: 0x0, symName: _ts_non_terminal_alias_map, symObjAddr: 0x176E, symBinAddr: 0x3676, symSize: 0x0 }
+  - { offsetInCU: 0x7AD, offset: 0xADC, size: 0x8, addend: 0x0, symName: _ts_alias_sequences, symObjAddr: 0x1770, symBinAddr: 0x3678, symSize: 0x0 }
+  - { offsetInCU: 0x7D5, offset: 0xB04, size: 0x8, addend: 0x0, symName: _ts_lex_modes, symObjAddr: 0x1E42, symBinAddr: 0x3D4A, symSize: 0x0 }
+  - { offsetInCU: 0x7F7, offset: 0xB26, size: 0x8, addend: 0x0, symName: _ts_external_scanner_states, symObjAddr: 0x177A, symBinAddr: 0x3682, symSize: 0x0 }
+  - { offsetInCU: 0x81F, offset: 0xB4E, size: 0x8, addend: 0x0, symName: _ts_external_scanner_symbol_map, symObjAddr: 0x177C, symBinAddr: 0x3684, symSize: 0x0 }
+  - { offsetInCU: 0x834, offset: 0xB63, size: 0x8, addend: 0x0, symName: _ts_lex, symObjAddr: 0xC, symBinAddr: 0x1F08, symSize: 0x814 }
+  - { offsetInCU: 0x83C, offset: 0xB6B, size: 0x8, addend: 0x0, symName: _ts_lex_keywords, symObjAddr: 0x820, symBinAddr: 0x271C, symSize: 0x268 }
+  - { offsetInCU: 0x8D5, offset: 0xC04, size: 0x8, addend: 0x0, symName: _ts_lex_keywords, symObjAddr: 0x820, symBinAddr: 0x271C, symSize: 0x268 }
+...

@@ -1,0 +1,24 @@
+---
+triple:          'arm64-apple-darwin'
+binary-path:     '/Users/tenkai/Development/gpt/sazid/crates/runtime/grammars/erlang.so'
+relocations:
+  - { offsetInCU: 0x27, offset: 0x27, size: 0x8, addend: 0x0, symName: _tree_sitter_erlang, symObjAddr: 0x0, symBinAddr: 0x2410, symSize: 0xC }
+  - { offsetInCU: 0x38, offset: 0x38, size: 0x8, addend: 0x0, symName: _tree_sitter_erlang, symObjAddr: 0x0, symBinAddr: 0x2410, symSize: 0xC }
+  - { offsetInCU: 0x40, offset: 0x40, size: 0x8, addend: 0x0, symName: _ts_lex, symObjAddr: 0xC, symBinAddr: 0x241C, symSize: 0xE53C }
+  - { offsetInCU: 0x6B, offset: 0x6B, size: 0x8, addend: 0x0, symName: _tree_sitter_erlang.language, symObjAddr: 0x61668, symBinAddr: 0x64000, symSize: 0x0 }
+  - { offsetInCU: 0x6AF, offset: 0x6AF, size: 0x8, addend: 0x0, symName: _ts_parse_table, symObjAddr: 0x4866A, symBinAddr: 0x4AA7A, symSize: 0x0 }
+  - { offsetInCU: 0x6DE, offset: 0x6DE, size: 0x8, addend: 0x0, symName: _ts_small_parse_table, symObjAddr: 0xE7AA, symBinAddr: 0x10BBA, symSize: 0x0 }
+  - { offsetInCU: 0x705, offset: 0x705, size: 0x8, addend: 0x0, symName: _ts_small_parse_table_map, symObjAddr: 0x44144, symBinAddr: 0x46554, symSize: 0x0 }
+  - { offsetInCU: 0x72A, offset: 0x72A, size: 0x8, addend: 0x0, symName: _ts_parse_actions, symObjAddr: 0x5BE68, symBinAddr: 0x5E278, symSize: 0x0 }
+  - { offsetInCU: 0x74C, offset: 0x74C, size: 0x8, addend: 0x0, symName: _ts_symbol_names, symObjAddr: 0x61750, symBinAddr: 0x640E8, symSize: 0x0 }
+  - { offsetInCU: 0x76E, offset: 0x76E, size: 0x8, addend: 0x0, symName: _ts_field_names, symObjAddr: 0x61C80, symBinAddr: 0x64618, symSize: 0x0 }
+  - { offsetInCU: 0x790, offset: 0x790, size: 0x8, addend: 0x0, symName: _ts_field_map_slices, symObjAddr: 0x4579C, symBinAddr: 0x47BAC, symSize: 0x0 }
+  - { offsetInCU: 0x7B2, offset: 0x7B2, size: 0x8, addend: 0x0, symName: _ts_field_map_entries, symObjAddr: 0x458AC, symBinAddr: 0x47CBC, symSize: 0x0 }
+  - { offsetInCU: 0x7D4, offset: 0x7D4, size: 0x8, addend: 0x0, symName: _ts_symbol_metadata, symObjAddr: 0x45BB8, symBinAddr: 0x47FC8, symSize: 0x0 }
+  - { offsetInCU: 0x7F6, offset: 0x7F6, size: 0x8, addend: 0x0, symName: _ts_symbol_map, symObjAddr: 0x45DAA, symBinAddr: 0x481BA, symSize: 0x0 }
+  - { offsetInCU: 0x818, offset: 0x818, size: 0x8, addend: 0x0, symName: _ts_non_terminal_alias_map, symObjAddr: 0x45EF6, symBinAddr: 0x48306, symSize: 0x0 }
+  - { offsetInCU: 0x83A, offset: 0x83A, size: 0x8, addend: 0x0, symName: _ts_alias_sequences, symObjAddr: 0x61118, symBinAddr: 0x63528, symSize: 0x0 }
+  - { offsetInCU: 0x862, offset: 0x862, size: 0x8, addend: 0x0, symName: _ts_lex_modes, symObjAddr: 0x45F28, symBinAddr: 0x48338, symSize: 0x0 }
+  - { offsetInCU: 0x885, offset: 0x885, size: 0x8, addend: 0x0, symName: _ts_primary_state_ids, symObjAddr: 0x47954, symBinAddr: 0x49D64, symSize: 0x0 }
+  - { offsetInCU: 0x89B, offset: 0x89B, size: 0x8, addend: 0x0, symName: _ts_lex, symObjAddr: 0xC, symBinAddr: 0x241C, symSize: 0xE53C }
+...

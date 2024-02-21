@@ -13,13 +13,14 @@ homepage.workspace = true
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-helix-stdx = { path = "../lib/helix/helix-stdx" }
-helix-lsp = { path = "../lib/helix/helix-lsp" }
-helix-loader = { path = "../lib/helix/helix-loader" }
-helix-core = { path = "../lib/helix/helix-core" }
-helix-view = { path = "../lib/helix/helix-view" }
-helix-term = { path = "../lib/helix/helix-term" }
-sazid = { path = "./sazid" }
+helix-stdx = { path = "../../lib/helix/helix-stdx" }
+helix-lsp = { path = "../../lib/helix/helix-lsp" }
+helix-loader = { path = "../../lib/helix/helix-loader" }
+helix-core = { path = "../../lib/helix/helix-core" }
+helix-view = { path = "../../lib/helix/helix-view" }
+helix-term = { path = "../../lib/helix/helix-term" }
+sazid = { path = "../sazid" }
+tokio = { version = "1.32.0", features = ["full"] }
 serde = "1.0.197"
 toml = "0.8.10"
 lazy_static = "1.4.0"

@@ -1,17 +1,23 @@
 [workspace]
 members = [
   "crates/sazid",
-  "crates/helix/helix-lsp",
-  "crates/helix/helix-core",
-  "crates/helix/helix-stdx",
-  "crates/helix/helix-parsec",
-  "crates/helix/helix-loader",
-  "crates/tui-textarea",
   "crates/sazid-helix",
-  # "sazid/tests/assets/testproject",
+  "lib/helix/helix-core/",
+  "lib/helix/helix-dap/",
+  "lib/helix/helix-event/",
+  "lib/helix/helix-loader/",
+  "lib/helix/helix-lsp/",
+  "lib/helix/helix-parsec/",
+  "lib/helix/helix-stdx/",
+  "lib/helix/helix-term/",
+  "lib/helix/helix-tui/",
+  "lib/helix/helix-vcs/",
+  "lib/helix/helix-view/",
+  "lib/helix/helix-view/",
+  "lib/tui-textarea",
 ]
 resolver = "2"
-default-members = ["sazid-helix"]
+default-members = ["crates/sazid-helix"]
 
 [workspace.package]
 # name = "sazid"

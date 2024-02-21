@@ -28,18 +28,18 @@ insta = { version = "1.34.0", features = [
 
 [build-dependencies]
 prost-build = "0.12.3"
-helix-loader = { path = "../lib/helix/helix-loader" }
+helix-loader = { path = "../../lib/helix/helix-loader" }
 
 
 [dependencies]
-helix-stdx = { path = "../lib/helix/helix-stdx" }
-helix-lsp = { path = "../lib/helix/helix-lsp" }
-helix-loader = { path = "../lib/helix/helix-loader" }
-helix-core = { path = "../lib/helix/helix-core" }
+helix-stdx = { path = "../../lib/helix/helix-stdx" }
+helix-lsp = { path = "../../lib/helix/helix-lsp" }
+helix-loader = { path = "../../lib/helix/helix-loader" }
+helix-core = { path = "../../lib/helix/helix-core" }
 
 uuid = { version = "1.5.0", features = ["serde", "v4"] }
-ansi-to-tui = { path = "../lib/ansi-to-tui" }
-tui-textarea = { path = "../lib/tui-textarea", features = [
+ansi-to-tui = { path = "../../lib/ansi-to-tui" }
+tui-textarea = { path = "../../lib/tui-textarea", features = [
   "crossterm",
   "ratatui",
   "ansi-escapes",

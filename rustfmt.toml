@@ -2,6 +2,7 @@
 # array_width = 60
 # chain_width = 60
 # attr_fn_like_width = 70
+edition = "2021"
 max_width = 80
 use_small_heuristics = "Max"
 empty_item_single_line = false

@@ -1,0 +1,26 @@
+---
+triple:          'arm64-apple-darwin'
+binary-path:     '/Users/tenkai/Development/gpt/sazid/crates/runtime/grammars/verilog.so'
+relocations:
+  - { offsetInCU: 0x27, offset: 0x27, size: 0x8, addend: 0x0, symName: _tree_sitter_verilog, symObjAddr: 0x0, symBinAddr: 0x2290, symSize: 0xC }
+  - { offsetInCU: 0x38, offset: 0x38, size: 0x8, addend: 0x0, symName: _tree_sitter_verilog, symObjAddr: 0x0, symBinAddr: 0x2290, symSize: 0xC }
+  - { offsetInCU: 0x40, offset: 0x40, size: 0x8, addend: 0x0, symName: _ts_lex, symObjAddr: 0xC, symBinAddr: 0x229C, symSize: 0x17520 }
+  - { offsetInCU: 0x6B, offset: 0x6B, size: 0x8, addend: 0x0, symName: _tree_sitter_verilog.language, symObjAddr: 0x1158D88, symBinAddr: 0x1160000, symSize: 0x0 }
+  - { offsetInCU: 0x6AF, offset: 0x6AF, size: 0x8, addend: 0x0, symName: _ts_parse_table, symObjAddr: 0x11F0F8, symBinAddr: 0x121388, symSize: 0x0 }
+  - { offsetInCU: 0x6E2, offset: 0x6E2, size: 0x8, addend: 0x0, symName: _ts_small_parse_table, symObjAddr: 0x27380, symBinAddr: 0x29610, symSize: 0x0 }
+  - { offsetInCU: 0x709, offset: 0x709, size: 0x8, addend: 0x0, symName: _ts_small_parse_table_map, symObjAddr: 0xFC30C, symBinAddr: 0xFE59C, symSize: 0x0 }
+  - { offsetInCU: 0x72E, offset: 0x72E, size: 0x8, addend: 0x0, symName: _ts_parse_actions, symObjAddr: 0x1117898, symBinAddr: 0x1119B28, symSize: 0x0 }
+  - { offsetInCU: 0x751, offset: 0x751, size: 0x8, addend: 0x0, symName: _ts_symbol_names, symObjAddr: 0x1158E70, symBinAddr: 0x11600E8, symSize: 0x0 }
+  - { offsetInCU: 0x774, offset: 0x774, size: 0x8, addend: 0x0, symName: _ts_symbol_metadata, symObjAddr: 0x1097C4, symBinAddr: 0x10BA54, symSize: 0x0 }
+  - { offsetInCU: 0x797, offset: 0x797, size: 0x8, addend: 0x0, symName: _ts_symbol_map, symObjAddr: 0x10A632, symBinAddr: 0x10C8C2, symSize: 0x0 }
+  - { offsetInCU: 0x7BA, offset: 0x7BA, size: 0x8, addend: 0x0, symName: _ts_non_terminal_alias_map, symObjAddr: 0x10AFD0, symBinAddr: 0x10D260, symSize: 0x0 }
+  - { offsetInCU: 0x7DC, offset: 0x7DC, size: 0x8, addend: 0x0, symName: _ts_alias_sequences, symObjAddr: 0x1157660, symBinAddr: 0x11598F0, symSize: 0x0 }
+  - { offsetInCU: 0x804, offset: 0x804, size: 0x8, addend: 0x0, symName: _ts_lex_modes, symObjAddr: 0x10B020, symBinAddr: 0x10D2B0, symSize: 0x0 }
+  - { offsetInCU: 0x81A, offset: 0x81A, size: 0x8, addend: 0x0, symName: _ts_lex, symObjAddr: 0xC, symBinAddr: 0x229C, symSize: 0x17520 }
+  - { offsetInCU: 0x822, offset: 0x822, size: 0x8, addend: 0x0, symName: _ts_lex_keywords, symObjAddr: 0x1752C, symBinAddr: 0x197BC, symSize: 0xEE44 }
+  - { offsetInCU: 0x8B5, offset: 0x8B5, size: 0x8, addend: 0x0, symName: _ts_lex_keywords, symObjAddr: 0x1752C, symBinAddr: 0x197BC, symSize: 0xEE44 }
+  - { offsetInCU: 0x8BD, offset: 0x8BD, size: 0x8, addend: 0x0, symName: _sym_edge_symbol_character_set_1, symObjAddr: 0x26370, symBinAddr: 0x28600, symSize: 0x108 }
+  - { offsetInCU: 0x950, offset: 0x950, size: 0x8, addend: 0x0, symName: _sym_edge_symbol_character_set_1, symObjAddr: 0x26370, symBinAddr: 0x28600, symSize: 0x108 }
+  - { offsetInCU: 0x958, offset: 0x958, size: 0x8, addend: 0x0, symName: _sym_hex_number_character_set_1, symObjAddr: 0x26478, symBinAddr: 0x28708, symSize: 0x118 }
+  - { offsetInCU: 0x981, offset: 0x981, size: 0x8, addend: 0x0, symName: _sym_hex_number_character_set_1, symObjAddr: 0x26478, symBinAddr: 0x28708, symSize: 0x118 }
+...

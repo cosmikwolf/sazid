@@ -5383,7 +5383,9 @@ dependencies = [
  "helix-term",
  "helix-view",
  "lazy_static",
+ "sazid",
  "serde",
+ "tokio",
  "toml 0.8.10",
 ]
 
