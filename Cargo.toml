@@ -7,10 +7,11 @@ members = [
   "lib/helix/helix-parsec",
   "lib/helix/helix-loader",
   "lib/tui-textarea",
+  "sazid-helix",
   # "sazid/tests/assets/testproject",
 ]
 resolver = "2"
-default-members = ["sazid"]
+default-members = ["sazid-helix"]
 
 [workspace.package]
 # name = "sazid"
