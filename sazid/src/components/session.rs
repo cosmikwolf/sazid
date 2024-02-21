@@ -919,7 +919,7 @@ pub fn construct_request(
   user: Option<String>,
   tools: Option<Vec<ChatCompletionTool>>,
 ) -> CreateChatCompletionRequest {
-  
+
   // trace_dbg!("request:\n{:#?}", request);
   CreateChatCompletionRequest {
     model,
