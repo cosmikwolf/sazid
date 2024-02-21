@@ -11,7 +11,7 @@
   },
   "numThreads": 6,
   "cachePriming": {
-    "enable": false,
+    "enable": true,
     "numThreads": 8
   },
   "diagnostics": {
@@ -19,12 +19,9 @@
   },
   "checkOnSave": true,
   "check": {
-    "invocationLocation": "once",
-    "invocationStrategy": "once",
-    "features": null,
     "command": "clippy",
     "extraArgs": ["--no-deps", "--tests"],
-    "workspace": false
+    "workspace": true
   },
   "server": {
     "extraEnv": {
@@ -39,6 +36,5 @@
       "napi-derive": ["napi"],
       "async-recursion": ["async_recursion"]
     }
-  },
-  "linkedProjects": ["sazid/Cargo.toml"]
+  }
 }
