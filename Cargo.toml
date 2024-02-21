@@ -1,13 +1,13 @@
 [workspace]
 members = [
-  "sazid",
-  "lib/helix/helix-lsp",
-  "lib/helix/helix-core",
-  "lib/helix/helix-stdx",
-  "lib/helix/helix-parsec",
-  "lib/helix/helix-loader",
-  "lib/tui-textarea",
-  "sazid-helix",
+  "crates/sazid",
+  "crates/helix/helix-lsp",
+  "crates/helix/helix-core",
+  "crates/helix/helix-stdx",
+  "crates/helix/helix-parsec",
+  "crates/helix/helix-loader",
+  "crates/tui-textarea",
+  "crates/sazid-helix",
   # "sazid/tests/assets/testproject",
 ]
 resolver = "2"

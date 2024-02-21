@@ -1,0 +1,35 @@
+[package]
+name = "sazid-helix"
+version.workspace = true
+edition.workspace = true
+description.workspace = true
+repository.workspace = true
+authors.workspace = true
+categories.workspace = true
+license.workspace = true
+rust-version.workspace = true
+homepage.workspace = true
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+helix-stdx = { path = "../lib/helix/helix-stdx" }
+helix-lsp = { path = "../lib/helix/helix-lsp" }
+helix-loader = { path = "../lib/helix/helix-loader" }
+helix-core = { path = "../lib/helix/helix-core" }
+helix-view = { path = "../lib/helix/helix-view" }
+helix-term = { path = "../lib/helix/helix-term" }
+sazid = { path = "./sazid" }
+serde = "1.0.197"
+toml = "0.8.10"
+lazy_static = "1.4.0"
+color-eyre = "0.6.2"
+async-openai = "0.17.1"
+clap = { version = "4.4.5", features = [
+  "derive",
+  "cargo",
+  "wrap_help",
+  "unicode",
+  "string",
+  "unstable-styles",
+] }

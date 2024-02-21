@@ -1,9 +1,6 @@
 [package]
 name = "sazid"
 description = "Semantic GPT Programming Intelligence"
-# default-run = "sazid"
-# resolver = "2"
-# members = ["sazid", "sazid-lsp"]
 version.workspace = true
 authors.workspace = true
 edition.workspace = true
