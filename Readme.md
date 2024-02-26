@@ -1,5 +1,5 @@
-
 ![Project Banner or Logo](docs/sazid_banner_image.png)
+
 # Sazid
 
 [![CI](https://github.com/cosmikwolf/sazid/workflows/CI/badge.svg)](https://github.com/cosmikwolf/sazid/actions)
@@ -54,15 +54,21 @@ Before you start, ensure you have the following installed:
 - Diesel
 
 ### **Installation**
+
 - configure your OPENAI_API_KEY env variable
 
 ### Vector DB Setup
+
 #### Start the database service
+
 - docker-compose up -d
+
 #### Stop the database service
+
 - docker-compose down
 
 #### Run database migrations
+
 - diesel migration run
 
 ## Usage
@@ -70,6 +76,7 @@ Before you start, ensure you have the following installed:
 Sazid is currently a work in progress.
 
 It can currently be used as an LLM interface with function calls that allow GPT to:
+
 - Read files
 - Write files
 - pcre2grep files
@@ -79,10 +86,12 @@ There is also disabled code that enables GPT to use sed and a custom function to
 This is the motivating factor behind implementing tree-sitter to give GPT the capability of full syntax awareness and direct syntax tree modification so it can be specific about its modifications.
 
 There are still some basic features I need to complete in order for a non-frustrating user experience
+
 - Session Management
 - Copy / Paste from the TUI
 
 ## Retrieval Augmented Generation and the Vector Database
+
 When reading and writing source code using GPT, the context can quickly balloon, making long running API sessions become between linearly and exponentially more expensive to submit.
 A Retrieval Augmented Generation system converts your prompt into an embedding vector, then queries a vector database for text that has similar meaning, and then includes a specified amount of text as the context for the prompt.
 
@@ -93,6 +102,7 @@ Each chat interaction will also be included in this database, so previous conver
 This allows us to take advantage of the large input context capabilities of models like GPT4-Turbo, while also ensuring that we are not wasting tokens, and increasing risk of hallucinations with irrelevant context.
 
 ## Goals
+
 Some of the goals I hope for this project to achieve:
 
 - Automated datasheet to driver pipeline
@@ -108,6 +118,6 @@ The goal of Sazid is to provide support to develop for embedded hardware platfor
 Frequently embedded engineers spend many hours debugging hardware issues by analyzing trace logs, reading debug registries and stimulating GPIO inputs in order to zero in on what may be a single misplaced character in a driver for a specific IC.
 
 What if an LLM could have
+
 - complete awareness of datasheets for all ICs in the PCB
 - complete semantic awareness of the source code, including drivers
-

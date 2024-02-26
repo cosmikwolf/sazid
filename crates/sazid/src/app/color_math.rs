@@ -1,4 +1,4 @@
-use ratatui::style::Color;
+use helix_view::theme::Color;
 
 // Compute both rainbow color and its hue-inverted counterpart.
 pub fn get_rainbow_and_inverse_colors(

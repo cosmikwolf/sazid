@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use super::{Component, Frame};
+use super::Component;
 use crate::{
   action::Action,
   app::{color_math::get_rainbow_and_inverse_colors, errors::SazidError},
@@ -11,9 +11,18 @@ use crate::{
 
 use color_eyre::eyre::Result;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use helix_view::{
+  graphics::Rect,
+  theme::{Color, Modifier, Style},
+};
 use log::error;
 use rand;
-use ratatui::{prelude::*, widgets::*};
+use tui::{
+  buffer::Buffer,
+  layout::{Alignment, Constraint, Layout},
+  text::{Span, Spans},
+  widgets::*,
+};
 
 use tokio::sync::mpsc::UnboundedSender;
 use tui_textarea::{CursorMove, TextArea};
@@ -28,7 +37,6 @@ pub enum Mode {
   Command,
 }
 
-#[derive(Default)]
 pub struct Home<'a> {
   pub show_help: bool,
   pub status: Option<String>,
@@ -39,13 +47,33 @@ pub struct Home<'a> {
   pub text: Vec<String>,
   pub last_events: Vec<KeyEvent>,
   pub config: Config,
-  pub session: Session<'static>,
+  pub session: Session<'a>,
   pub control_pressed: bool,
   pub color_counter: u32,
   pub rgb: Color,
   pub inv_rgb: Color,
 }
 
+impl<'a> Default for Home<'a> {
+  fn default() -> Self {
+    Home {
+      rgb: Color::Reset,
+      inv_rgb: Color::Reset,
+      show_help: false,
+      status: None,
+      mode: Mode::default(),
+      input: TextArea::default(),
+      action_tx: None,
+      keymap: HashMap::new(),
+      text: Vec::new(),
+      last_events: Vec::new(),
+      config: Config::default(),
+      session: Session::default(),
+      control_pressed: false,
+      color_counter: 0,
+    }
+  }
+}
 const MAX24BIT: u32 = 16777216;
 
 impl<'a> Home<'a> {
@@ -75,14 +103,14 @@ impl<'a> Home<'a> {
 impl Component for Home<'static> {
   fn init(&mut self, _area: Rect) -> Result<(), SazidError> {
     self.color_counter = rand::random::<u32>() % MAX24BIT;
-    self.input = TextArea::default();
-    self.input.set_placeholder_text("press i to enter input mode");
-    self.input.set_placeholder_style(Style::reset().fg(Color::Magenta));
-    self.input.set_cursor_line_style(Style::reset().fg(Color::Yellow));
+    // self.input = TextArea::default();
+    // self.input.set_placeholder_text("press i to enter input mode");
+    // self.input.set_placeholder_style(Style::reset().fg(Color::Magenta));
+    // self.input.set_cursor_line_style(Style::reset().fg(Color::Yellow));
 
-    self
-      .input
-      .set_cursor_style(Style::default().add_modifier(Modifier::SLOW_BLINK));
+    // self
+    //   .input
+    //   .set_cursor_style(Style::default().add_modifier(Modifier::SLOW_BLINK));
     Ok(())
   }
   fn register_action_handler(
@@ -108,9 +136,9 @@ impl Component for Home<'static> {
         self.color_counter %= MAX24BIT;
         (self.rgb, self.inv_rgb) =
           get_rainbow_and_inverse_colors(self.color_counter, MAX24BIT);
-        self.input.set_cursor_style(
-          self.input.cursor_style().bg(self.rgb).fg(self.inv_rgb),
-        );
+        // self.input.set_cursor_style(
+        //   self.input.cursor_style().bg(self.rgb).fg(self.inv_rgb),
+        // );
       },
       Action::Tick => self.tick(),
       // Action::Render => self.render_tick(),
@@ -229,7 +257,7 @@ impl Component for Home<'static> {
     Ok(Some(action))
   }
 
-  fn draw(&mut self, f: &mut Frame<'_>, area: Rect) -> Result<(), SazidError> {
+  fn draw(&mut self, b: &mut Buffer) -> Result<(), SazidError> {
     let input_length = self.input.clone().into_lines().len() as u16 + 2;
     let tx = self.action_tx.clone().unwrap();
     tx.send(Action::SetInputVsize(input_length)).unwrap();
@@ -237,9 +265,9 @@ impl Component for Home<'static> {
       .constraints(
         [Constraint::Percentage(100), Constraint::Min(input_length)].as_ref(),
       )
-      .split(area);
+      .split(b.area);
     // let text: Vec<Line> = self.text.clone().iter().map(|l| Line::from(l.clone())).collect();
-    let title_text = Line::from(vec![
+    let title_text = Spans::from(vec![
       Span::raw("sazid semantic llvm console "),
       match self.mode {
         Mode::Command => {
@@ -265,19 +293,19 @@ impl Component for Home<'static> {
         None => Span::raw(""),
       },
     ]);
-    f.render_widget(
-      Block::default()
-        .title(title_text)
-        .title_alignment(Alignment::Center)
-        .borders(Borders::NONE)
-        .border_style(match self.mode {
-          Mode::Processing => Style::default().fg(Color::Yellow),
-          _ => Style::default(),
-        })
-        .border_type(BorderType::Rounded),
-      rects[0],
-    );
+    Block::default()
+      .title(title_text)
+      // .title_alignment(Alignment::Center)
+      .borders(Borders::ALL)
+      .border_style(match self.mode {
+        Mode::Processing => Style::default().fg(Color::Yellow),
+        _ => Style::default(),
+      })
+      .border_type(BorderType::Rounded)
+      .render(rects[0], b);
 
+    // BEGIN INPUT COMMENT
+    /*
     self.input.set_placeholder_text({
       match self.mode {
         Mode::Insert => "",
@@ -289,7 +317,7 @@ impl Component for Home<'static> {
       Block::default()
         .borders(Borders::ALL)
         .title(match self.mode {
-          Mode::Command => Line::from(vec![
+          Mode::Command => Spans::from(vec![
             Span::styled("Command Mode", Style::default().fg(self.rgb)),
             Span::styled("(press ", Style::default().fg(Color::DarkGray)),
             Span::styled(
@@ -367,6 +395,9 @@ impl Component for Home<'static> {
         }),
     );
     f.render_widget(self.input.widget(), rects[1]);
+    // END INPUT COMMENT ]
+    */
+
     // let scroll = self.input.visual_scroll(width as usize);
     // let input = Paragraph::new(self.input.value())
     //   .style(match self.mode {

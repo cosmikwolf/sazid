@@ -36,13 +36,24 @@ helix-stdx = { path = "../../lib/helix/helix-stdx" }
 helix-lsp = { path = "../../lib/helix/helix-lsp" }
 helix-loader = { path = "../../lib/helix/helix-loader" }
 helix-core = { path = "../../lib/helix/helix-core" }
+helix-view = { path = "../../lib/helix/helix-view" }
+helix-term = { path = "../../lib/helix/helix-term" }
+tui = { path = "../../lib/helix/helix-tui", package = "helix-tui", default-features = false, features = [
+  "crossterm",
+] }
 
 uuid = { version = "1.5.0", features = ["serde", "v4"] }
-ansi-to-tui = { path = "../../lib/ansi-to-tui" }
-tui-textarea = { path = "../../lib/tui-textarea", features = [
+# ansi-to-tui = { path = "../../lib/ansi-to-tui" }
+# tui-textarea = { path = "../../lib/tui-textarea", features = [
+#   "crossterm",
+#   "ratatui",
+#   "ansi-escapes",
+# ] }
+
+tui-textarea = { version = "0.4.0", features = [
   "crossterm",
-  "ratatui",
-  "ansi-escapes",
+  # "ratatui",
+  # "ansi-escapes",
 ] }
 
 tracing = "0.1.40"
@@ -103,7 +114,7 @@ log = "0.4.20"
 lopdf = "0.31.0"
 nu-ansi-term = "0.50.0"
 pretty_assertions = "1.4.0"
-ratatui = { version = "0.24.0", features = ["serde", "macros"] }
+# ratatui = { version = "0.24.0", features = ["serde", "macros"] }
 reqwest = "0.11.20"
 rust-fuzzy-search = "0.1.1"
 serde = { version = "1.0.188", features = ["derive"] }
@@ -164,3 +175,5 @@ humantime = "2.1.0"
 owo-colors = "4.0.0"
 async-stream = "0.3.5"
 tracing-test = { version = "0.2.4", features = ["no-env-filter"] }
+partial_application = "0.2.1"
+bitflags = "2.4.2"

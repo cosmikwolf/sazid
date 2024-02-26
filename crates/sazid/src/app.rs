@@ -1,5 +1,5 @@
 use crossterm::event::KeyEvent;
-use ratatui::prelude::Rect;
+use helix_view::graphics::{CursorKind, Rect};
 use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc;
 
@@ -11,6 +11,7 @@ pub mod functions;
 pub mod gpt_interface;
 pub mod helpers;
 pub mod lsp;
+pub mod markdown;
 pub mod messages;
 pub mod request_validation;
 pub mod session_config;
@@ -42,6 +43,7 @@ pub enum Mode {
 
 pub struct App {
   pub config: Config,
+  pub cursor: CursorKind,
   pub tick_rate: f64,
   pub frame_rate: f64,
   pub components: Vec<Box<dyn Component>>,
@@ -96,6 +98,7 @@ impl App {
       should_quit: false,
       should_suspend: false,
       config,
+      cursor: CursorKind::Block,
       mode,
       last_tick_key_events: Vec::new(),
     })
@@ -164,6 +167,10 @@ impl App {
         if action != Action::Tick && action != Action::Render {
           //          log::debug!("{action:.unwrap()}");
         }
+        let cursor_kind = tui.cursor_kind();
+        let cursor_pos =
+          if let Ok(cursor) = tui.get_cursor() { Some(cursor) } else { None };
+
         match action {
           Action::Tick => {
             self.last_tick_key_events.drain(..);
@@ -174,33 +181,30 @@ impl App {
           Action::Resize(w, h) => {
             //trace_dbg!("Action::Resize");
             tui.resize(Rect::new(0, 0, w, h)).unwrap();
-            tui
-              .draw(|f| {
-                for component in self.components.iter_mut() {
-                  let r = component.draw(f, f.size());
-                  if let Err(e) = r {
-                    action_tx
-                      .send(Action::Error(format!("Failed to draw: {:?}", e)))
-                      .unwrap();
-                  }
-                }
-              })
-              .unwrap();
+
+            let buf = tui.current_buffer_mut();
+            for component in self.components.iter_mut() {
+              let r = component.draw(buf);
+              if let Err(e) = r {
+                action_tx
+                  .send(Action::Error(format!("Failed to draw: {:?}", e)))
+                  .unwrap();
+              }
+            }
+
+            tui.draw(cursor_pos, cursor_kind).expect("Failed to draw")
           },
           Action::Render => {
             //trace_dbg!("Action::Render");
-            tui
-              .draw(|f| {
-                for component in self.components.iter_mut() {
-                  let r = component.draw(f, f.size());
-                  if let Err(e) = r {
-                    action_tx
-                      .send(Action::Error(format!("Failed to draw: {:?}", e)))
-                      .unwrap();
-                  }
-                }
-              })
-              .unwrap();
+            let buf = tui.current_buffer_mut();
+            for component in self.components.iter_mut() {
+              let r = component.draw(buf);
+              if let Err(e) = r {
+                action_tx
+                  .send(Action::Error(format!("Failed to draw: {:?}", e)))
+                  .unwrap();
+              }
+            }
           },
           _ => {},
         }

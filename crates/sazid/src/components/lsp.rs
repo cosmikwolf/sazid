@@ -5,14 +5,12 @@ use super::Component;
 use core::result::Result;
 use crossterm::event::{KeyEvent, MouseEvent};
 
-use ratatui::layout::Rect;
+use helix_view::graphics::Rect;
 use tokio::sync::mpsc::UnboundedSender;
+use tui::buffer::Buffer;
 
 use crate::{
-  action::Action,
-  app::errors::SazidError,
-  config::Config,
-  tui::{Event, Frame},
+  action::Action, app::errors::SazidError, config::Config, tui::Event,
 };
 
 impl Component for LanguageServerInterface {
@@ -67,7 +65,7 @@ impl Component for LanguageServerInterface {
   }
 
   #[allow(unused_variables)]
-  fn draw(&mut self, f: &mut Frame<'_>, area: Rect) -> Result<(), SazidError> {
+  fn draw(&mut self, b: &mut Buffer) -> Result<(), SazidError> {
     Ok(())
   }
 }

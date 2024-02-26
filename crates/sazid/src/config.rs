@@ -4,7 +4,10 @@ use color_eyre::eyre::Result;
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use derive_deref::{Deref, DerefMut};
-use ratatui::style::{Color, Modifier, Style};
+use helix_view::{
+  graphics::UnderlineStyle,
+  theme::{Color, Modifier, Style},
+};
 use serde::{de::Deserializer, Deserialize};
 
 use crate::{
@@ -335,7 +338,7 @@ pub fn parse_style(line: &str) -> Style {
   style
 }
 
-fn process_color_string(color_str: &str) -> (String, Modifier) {
+fn process_color_string(color_str: &str) -> (String, Modifier, UnderlineStyle) {
   let color = color_str
     .replace("grey", "gray")
     .replace("bright ", "")
@@ -344,8 +347,9 @@ fn process_color_string(color_str: &str) -> (String, Modifier) {
     .replace("inverse ", "");
 
   let mut modifiers = Modifier::empty();
+  let mut underline_style = UnderlineStyle::Reset;
   if color_str.contains("underline") {
-    modifiers |= Modifier::UNDERLINED;
+    underline_style = UnderlineStyle::Line;
   }
   if color_str.contains("bold") {
     modifiers |= Modifier::BOLD;
@@ -354,7 +358,7 @@ fn process_color_string(color_str: &str) -> (String, Modifier) {
     modifiers |= Modifier::REVERSED;
   }
 
-  (color, modifiers)
+  (color, modifiers, underline_style)
 }
 
 fn parse_color(s: &str) -> Option<Color> {
@@ -417,6 +421,7 @@ fn parse_color(s: &str) -> Option<Color> {
 
 #[cfg(test)]
 mod tests {
+  use helix_view::theme::Color;
   use pretty_assertions::assert_eq;
 
   use super::*;
@@ -448,10 +453,10 @@ mod tests {
 
   #[test]
   fn test_process_color_string() {
-    let (color, modifiers) =
+    let (color, modifiers, underline_style) =
       process_color_string("underline bold inverse gray");
     assert_eq!(color, "gray");
-    assert!(modifiers.contains(Modifier::UNDERLINED));
+    assert_eq!(underline_style, UnderlineStyle::Line);
     assert!(modifiers.contains(Modifier::BOLD));
     assert!(modifiers.contains(Modifier::REVERSED));
   }

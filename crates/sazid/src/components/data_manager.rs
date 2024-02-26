@@ -3,11 +3,12 @@ use crate::{
   app::{database::data_manager::*, errors::SazidError},
   config::Config,
   trace_dbg,
-  tui::{Event, Frame},
+  tui::Event,
 };
 use core::result::Result;
-use ratatui::prelude::Rect;
+use helix_view::graphics::Rect;
 use tokio::sync::mpsc::UnboundedSender;
+use tui::buffer::Buffer;
 
 use super::Component;
 
@@ -65,34 +66,28 @@ impl Component for DataManager {
         });
         Ok(None)
       },
-      Action::AddMessageEmbedding(id, message_container) => {
-        if message_container.receive_complete {
-          tokio::spawn(async move {
-            match add_message_embedding(
-              &db_url,
-              id,
-              message_container.message_id,
-              model,
-              message_container.message,
-            )
-            .await
-            {
-              Ok(id) => tx.send(Action::MessageEmbeddingSuccess(id)).unwrap(),
-              Err(e) => tx
-                .send(Action::Error(format!(
-                  "embeddings_manager- update: {:#?}",
-                  e
-                )))
-                .unwrap(),
-            }
-          });
-        }
+      Action::AddMessageEmbedding(session_id, message_id, message) => {
+        tokio::spawn(async move {
+          match add_message_embedding(
+            &db_url, session_id, message_id, model, message,
+          )
+          .await
+          {
+            Ok(id) => tx.send(Action::MessageEmbeddingSuccess(id)).unwrap(),
+            Err(e) => tx
+              .send(Action::Error(format!(
+                "embeddings_manager- update: {:#?}",
+                e
+              )))
+              .unwrap(),
+          }
+        });
         Ok(None)
       },
       _ => Ok(None),
     }
   }
-  fn draw(&mut self, _f: &mut Frame<'_>, _area: Rect) -> Result<(), SazidError> {
+  fn draw(&mut self, b: &mut Buffer) -> Result<(), SazidError> {
     Ok(())
   }
 }

@@ -1,15 +1,14 @@
 use core::result::Result;
 // This is a sample comment
 use crossterm::event::{KeyEvent, MouseEvent};
-use ratatui::layout::Rect;
+use helix_view::graphics::Rect;
 use tokio::sync::mpsc::UnboundedSender;
 
 use crate::{
-  action::Action,
-  app::errors::SazidError,
-  config::Config,
-  tui::{Event, Frame},
+  action::Action, app::errors::SazidError, config::Config, tui::Event,
 };
+
+use tui::buffer::Buffer;
 
 pub mod data_manager;
 pub mod home;
@@ -65,5 +64,5 @@ pub trait Component {
   fn update(&mut self, action: Action) -> Result<Option<Action>, SazidError> {
     Ok(None)
   }
-  fn draw(&mut self, f: &mut Frame<'_>, area: Rect) -> Result<(), SazidError>;
+  fn draw(&mut self, b: &mut Buffer) -> Result<(), SazidError>;
 }

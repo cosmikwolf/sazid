@@ -6,39 +6,42 @@ use async_openai::types::{
 };
 use clipboard::{ClipboardContext, ClipboardProvider};
 use color_eyre::owo_colors::OwoColorize;
-use crossterm::event::KeyModifiers;
-use crossterm::event::{
-  KeyCode, KeyEvent, MouseButton, MouseEvent, MouseEventKind,
-};
+use crossterm::event::{KeyEvent, MouseButton, MouseEvent, MouseEventKind};
 use futures::StreamExt;
-use ratatui::layout::Rect;
-use ratatui::{prelude::*, widgets::block::*, widgets::*};
+use helix_view::graphics::{Margin, Rect};
+use helix_view::theme::{Color, Style};
 use serde::{Deserialize, Serialize};
 use std::default::Default;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::result::Result;
+use std::sync::Arc;
 use tokio::sync::mpsc::UnboundedSender;
-use tui_textarea::{CursorMove, Scrolling};
+use tui::buffer::Buffer;
+use tui::layout::{Constraint, Direction, Layout};
+use tui::text::Text;
+use tui::widgets::*;
 
 use async_openai::{config::OpenAIConfig, Client};
 use dotenv::dotenv;
 
-use super::{Component, Frame};
+use super::Component;
 use crate::app::database::data_manager::{
   get_all_embeddings_by_session, search_message_embeddings_by_session,
   DataManager,
 };
 use crate::app::database::types::QueryableSession;
 use crate::app::functions::{all_functions, handle_tool_call};
-use crate::app::messages::{ChatMessage, MessageContainer, ReceiveBuffer};
+use crate::app::markdown::Markdown;
+use crate::app::messages::{
+  ChatMessage, MessageContainer, MessageState, ReceiveBuffer,
+};
 use crate::app::request_validation::debug_request_validation;
 use crate::app::session_config::SessionConfig;
 use crate::app::session_view::SessionView;
 use crate::app::{consts::*, errors::*, tools::chunkifier::*, types::*};
 use crate::trace_dbg;
 use crate::tui::Event;
-use crate::utils::ansi_to_plain_text;
 use crate::{action::Action, config::Config};
 use backoff::exponential::ExponentialBackoffBuilder;
 
@@ -49,25 +52,25 @@ use crate::components::home::Mode;
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Session<'a> {
   pub id: i64,
-  pub messages: Vec<MessageContainer>,
-  pub window_width: usize,
+  pub messages: Vec<MessageContainer<'a>>,
+  pub viewport_width: usize,
   pub config: SessionConfig,
   #[serde(skip)]
   pub openai_config: OpenAIConfig,
   #[serde(skip)]
   pub embeddings_manager: DataManager,
   #[serde(skip)]
-  pub view: SessionView<'a>,
+  pub view: SessionView,
   #[serde(skip)]
   pub action_tx: Option<UnboundedSender<Action>>,
   #[serde(skip)]
   pub mode: Mode,
   #[serde(skip)]
   pub last_events: Vec<KeyEvent>,
-  #[serde(skip)]
-  pub vertical_scroll_state: ScrollbarState,
-  #[serde(skip)]
-  pub horizontal_scroll_state: ScrollbarState,
+  // #[serde(skip)]
+  // pub vertical_scroll_state: ScrollbarState,
+  // #[serde(skip)]
+  // pub horizontal_scroll_state: ScrollbarState,
   #[serde(skip)]
   pub vertical_scroll: usize,
   #[serde(skip)]
@@ -77,7 +80,7 @@ pub struct Session<'a> {
   #[serde(skip)]
   pub vertical_content_height: usize,
   #[serde(skip)]
-  pub vertical_viewport_height: usize,
+  pub viewport_height: usize,
   #[serde(skip)]
   pub scroll_sticky_end: bool,
   #[serde(skip)]
@@ -105,21 +108,21 @@ impl<'a> Default for Session<'a> {
     Session {
       id: 0,
       messages: vec![],
-      window_width: 80,
       config: SessionConfig::default(),
       openai_config: OpenAIConfig::default(),
       embeddings_manager: DataManager::default(),
       action_tx: None,
       mode: Mode::Normal,
       last_events: vec![],
-      vertical_scroll_state: ScrollbarState::default(),
+      // vertical_scroll_state: ScrollbarState::default(),
       view: SessionView::default(),
-      horizontal_scroll_state: ScrollbarState::default(),
+      // horizontal_scroll_state: ScrollbarState::default(),
       vertical_scroll: 0,
       scroll_max: 0,
       horizontal_scroll: 0,
       vertical_content_height: 0,
-      vertical_viewport_height: 0,
+      viewport_width: 80,
+      viewport_height: 0,
       scroll_sticky_end: true,
       render: false,
       fn_name: None,
@@ -151,7 +154,7 @@ impl<'a> From<QueryableSession> for Session<'a> {
   }
 }
 
-impl Component for Session<'static> {
+impl<'a> Component for Session<'a> {
   fn init(&mut self, area: Rect) -> Result<(), SazidError> {
     let tx = self.action_tx.clone().unwrap();
     //let model_preference: Vec<Model> = vec![GPT4.clone(), GPT3_TURBO.clone(), WIZARDLM.clone()];
@@ -336,105 +339,105 @@ impl Component for Session<'static> {
     self.last_events.push(key);
     Ok(match self.mode {
       Mode::Normal => match key {
-        KeyEvent {
-          code: KeyCode::Char('d'),
-          modifiers: KeyModifiers::CONTROL,
-          ..
-        } => {
-          self.view.textarea.scroll(Scrolling::HalfPageDown);
-          Some(Action::Update)
-        },
-        KeyEvent {
-          code: KeyCode::Char('u'),
-          modifiers: KeyModifiers::CONTROL,
-          ..
-        } => {
-          self.view.textarea.scroll(Scrolling::HalfPageUp);
-          Some(Action::Update)
-        },
-        KeyEvent {
-          code: KeyCode::Char('f'),
-          modifiers: KeyModifiers::CONTROL,
-          ..
-        } => {
-          self.view.textarea.scroll(Scrolling::PageDown);
-          self.scroll_sticky_end =
-            self.view.textarea.cursor().0 == self.view.textarea.lines().len();
-          Some(Action::Update)
-        },
-        KeyEvent {
-          code: KeyCode::Char('b'),
-          modifiers: KeyModifiers::CONTROL,
-          ..
-        } => {
-          self.view.textarea.scroll(Scrolling::PageUp);
-          Some(Action::Update)
-        },
-        KeyEvent { code: KeyCode::Char('h'), .. } => {
-          self.view.textarea.move_cursor(CursorMove::Back);
-          Some(Action::Update)
-        },
-        KeyEvent { code: KeyCode::Char('j'), .. } => {
-          self.view.textarea.move_cursor(CursorMove::Down);
-          self.scroll_sticky_end =
-            self.view.textarea.cursor().0 == self.view.textarea.lines().len();
-          trace_dbg!("cursor: {:#?}", self.view.textarea.cursor());
-          Some(Action::Update)
-        },
-        KeyEvent { code: KeyCode::Char('k'), .. } => {
-          self.view.textarea.move_cursor(CursorMove::Up);
-          trace_dbg!("cursor: {:#?}", self.view.textarea.cursor());
-          Some(Action::Update)
-        },
-        KeyEvent { code: KeyCode::Char('l'), .. } => {
-          self.view.textarea.move_cursor(CursorMove::Forward);
-          Some(Action::Update)
-        },
-        KeyEvent { code: KeyCode::Char('w'), .. } => {
-          self.view.textarea.move_cursor(CursorMove::WordForward);
-          Some(Action::Update)
-        },
-        KeyEvent { code: KeyCode::Char('b'), .. } => {
-          self.view.textarea.move_cursor(CursorMove::WordBack);
-          Some(Action::Update)
-        },
-        KeyEvent { code: KeyCode::Char('^'), .. } => {
-          self.view.textarea.move_cursor(CursorMove::Head);
-          Some(Action::Update)
-        },
-        KeyEvent { code: KeyCode::Char('$'), .. } => {
-          self.view.textarea.move_cursor(CursorMove::End);
-          self.scroll_sticky_end =
-            self.view.textarea.cursor().0 == self.view.textarea.lines().len();
-          Some(Action::Update)
-        },
-        KeyEvent { code: KeyCode::Char('v'), .. } => {
-          self.view.textarea.start_selection();
-          Some(Action::Update)
-        },
-        KeyEvent { code: KeyCode::Char('y'), .. } => {
-          self.view.textarea.copy();
-          let mut ctx: ClipboardContext = ClipboardProvider::new().unwrap();
-          ctx
-            .set_contents(ansi_to_plain_text(&self.view.textarea.yank_text()))
-            .unwrap();
-          Some(Action::Update)
-        },
-        KeyEvent { code: KeyCode::Esc, .. } => {
-          self.view.textarea.cancel_selection();
-          Some(Action::Update)
-        },
-        KeyEvent {
-          code: KeyCode::Char('V'),
-          modifiers: KeyModifiers::SHIFT,
-          ..
-        } => {
-          self.view.textarea.start_selection();
-          self.view.textarea.move_cursor(CursorMove::Head);
-          self.view.textarea.start_selection();
-          self.view.textarea.move_cursor(CursorMove::End);
-          Some(Action::Update)
-        },
+        // KeyEvent {
+        //   code: KeyCode::Char('d'),
+        //   modifiers: KeyModifiers::CONTROL,
+        //   ..
+        // } => {
+        //   self.view.textarea.scroll(Scrolling::HalfPageDown);
+        //   Some(Action::Update)
+        // },
+        // KeyEvent {
+        //   code: KeyCode::Char('u'),
+        //   modifiers: KeyModifiers::CONTROL,
+        //   ..
+        // } => {
+        //   self.view.textarea.scroll(Scrolling::HalfPageUp);
+        //   Some(Action::Update)
+        // },
+        // KeyEvent {
+        //   code: KeyCode::Char('f'),
+        //   modifiers: KeyModifiers::CONTROL,
+        //   ..
+        // } => {
+        //   self.view.textarea.scroll(Scrolling::PageDown);
+        //   self.scroll_sticky_end =
+        //     self.view.textarea.cursor().0 == self.view.textarea.lines().len();
+        //   Some(Action::Update)
+        // },
+        // KeyEvent {
+        //   code: KeyCode::Char('b'),
+        //   modifiers: KeyModifiers::CONTROL,
+        //   ..
+        // } => {
+        //   self.view.textarea.scroll(Scrolling::PageUp);
+        //   Some(Action::Update)
+        // },
+        // KeyEvent { code: KeyCode::Char('h'), .. } => {
+        //   self.view.textarea.move_cursor(CursorMove::Back);
+        //   Some(Action::Update)
+        // },
+        // KeyEvent { code: KeyCode::Char('j'), .. } => {
+        //   self.view.textarea.move_cursor(CursorMove::Down);
+        //   self.scroll_sticky_end =
+        //     self.view.textarea.cursor().0 == self.view.textarea.lines().len();
+        //   trace_dbg!("cursor: {:#?}", self.view.textarea.cursor());
+        //   Some(Action::Update)
+        // },
+        // KeyEvent { code: KeyCode::Char('k'), .. } => {
+        //   self.view.textarea.move_cursor(CursorMove::Up);
+        //   trace_dbg!("cursor: {:#?}", self.view.textarea.cursor());
+        //   Some(Action::Update)
+        // },
+        // KeyEvent { code: KeyCode::Char('l'), .. } => {
+        //   self.view.textarea.move_cursor(CursorMove::Forward);
+        //   Some(Action::Update)
+        // },
+        // KeyEvent { code: KeyCode::Char('w'), .. } => {
+        //   self.view.textarea.move_cursor(CursorMove::WordForward);
+        //   Some(Action::Update)
+        // },
+        // KeyEvent { code: KeyCode::Char('b'), .. } => {
+        //   self.view.textarea.move_cursor(CursorMove::WordBack);
+        //   Some(Action::Update)
+        // },
+        // KeyEvent { code: KeyCode::Char('^'), .. } => {
+        //   self.view.textarea.move_cursor(CursorMove::Head);
+        //   Some(Action::Update)
+        // },
+        // KeyEvent { code: KeyCode::Char('$'), .. } => {
+        //   self.view.textarea.move_cursor(CursorMove::End);
+        //   self.scroll_sticky_end =
+        //     self.view.textarea.cursor().0 == self.view.textarea.lines().len();
+        //   Some(Action::Update)
+        // },
+        // KeyEvent { code: KeyCode::Char('v'), .. } => {
+        //   self.view.textarea.start_selection();
+        //   Some(Action::Update)
+        // },
+        // KeyEvent { code: KeyCode::Char('y'), .. } => {
+        //   self.view.textarea.copy();
+        //   let mut ctx: ClipboardContext = ClipboardProvider::new().unwrap();
+        //   ctx
+        //     .set_contents(ansi_to_plain_text(&self.view.textarea.yank_text()))
+        //     .unwrap();
+        //   Some(Action::Update)
+        // },
+        // KeyEvent { code: KeyCode::Esc, .. } => {
+        //   self.view.textarea.cancel_selection();
+        //   Some(Action::Update)
+        // },
+        // KeyEvent {
+        //   code: KeyCode::Char('V'),
+        //   modifiers: KeyModifiers::SHIFT,
+        //   ..
+        // } => {
+        //   self.view.textarea.start_selection();
+        //   self.view.textarea.move_cursor(CursorMove::Head);
+        //   self.view.textarea.start_selection();
+        //   self.view.textarea.move_cursor(CursorMove::End);
+        //   Some(Action::Update)
+        // },
         _ => None,
       },
       _ => None,
@@ -446,15 +449,15 @@ impl Component for Session<'static> {
     })
   }
 
-  fn draw(&mut self, f: &mut Frame<'_>, area: Rect) -> Result<(), SazidError> {
+  fn draw(&mut self, b: &mut Buffer) -> Result<(), SazidError> {
     let margin_width;
     let session_width;
-    if area.width <= 81 {
+    if b.area.width <= 81 {
       margin_width = 0u16;
-      session_width = area.width
+      session_width = b.area.width
     } else {
       session_width = 82;
-      margin_width = (area.width - session_width) / 2;
+      margin_width = (b.area.width - session_width) / 2;
     }
     let rects = Layout::default()
       .direction(Direction::Vertical)
@@ -462,7 +465,7 @@ impl Component for Session<'static> {
         [Constraint::Percentage(100), Constraint::Min(self.input_vsize)]
           .as_ref(),
       )
-      .split(area);
+      .split(b.area);
     let inner = Layout::default()
       .direction(Direction::Vertical)
       .constraints(vec![
@@ -480,30 +483,29 @@ impl Component for Session<'static> {
       ])
       .split(inner[1]);
 
-    let block = Block::default().borders(Borders::NONE).gray();
+    let block = Block::default()
+      .borders(Borders::ALL)
+      .border_style(Style::default().fg(Color::Gray));
 
     let debug_text = Paragraph::new(format!(
       "--debug--\nsticky end: {}\nscroll: {}\ncontent height: {}\nviewport height: {}",
-      self.scroll_sticky_end, self.vertical_scroll, self.vertical_content_height, self.vertical_viewport_height
+      self.scroll_sticky_end, self.vertical_scroll, self.vertical_content_height, self.viewport_height
     ))
     .block(block);
-    self.vertical_viewport_height = inner[1].height as usize;
+    self.viewport_height = inner[1].height as usize;
     self.vertical_content_height = self.view.rendered_text.len_lines();
-    self.vertical_scroll_state =
-      self.vertical_scroll_state.content_length(self.vertical_content_height);
+    // self.vertical_scroll_state =
+    //   self.vertical_scroll_state.content_length(self.vertical_content_height);
     self.view.set_window_width(session_width as usize, &mut self.messages);
-    self.scroll_max = self
-      .view
-      .rendered_text
-      .len_lines()
-      .saturating_sub(self.vertical_viewport_height);
+    self.scroll_max =
+      self.view.rendered_text.len_lines().saturating_sub(self.viewport_height);
 
     if self.scroll_sticky_end {
-      self.view.textarea.move_cursor(CursorMove::Bottom);
-      self.view.textarea.move_cursor(CursorMove::Head);
+      // self.view.textarea.move_cursor(CursorMove::Bottom);
+      // self.view.textarea.move_cursor(CursorMove::Head);
     }
-    f.render_widget(debug_text, inner[0]);
-    f.render_widget(self.view.textarea.widget(), inner[1]);
+    debug_text.render(inner[0], b);
+    // f.render_widget(self.view.textarea.widget(), inner[1]);
     Ok(())
   }
 }
@@ -515,16 +517,99 @@ fn _create_empty_lines(n: usize) -> String {
   }
   s
 }
-
-impl Session<'static> {
-  pub fn new() -> Session<'static> {
+//              --content-- <- scroll_top
+//
+//              --content-- <- scroll_top +rendered_line_count
+// --window-- <- vertical_scroll
+//
+//
+// --window-- <- vertical_scroll + vertical_viewport_height
+//
+//
+//              --content-- <- scroll_top
+// --window-- <- vertical_scroll
+//                                 message_line_start_index
+//              --content-- <- scroll_top +rendered_line_count
+//                                 message_line_last_index
+// --window-- <- vertical_scroll + vertical_viewport_height
+//
+//
+// --window-- <- vertical_scroll
+//              --content-- <- scroll_top
+//              --content-- <- scroll_top +rendered_line_count
+// --window-- <- vertical_scroll + vertical_viewport_height
+//
+//
+// --window-- <- vertical_scroll
+//              --content-- <- scroll_top
+// --window-- <- vertical_scroll + vertical_viewport_height
+//              --content-- <- scroll_top +rendered_line_count
+//
+// --window-- <- vertical_scroll
+// --window-- <- vertical_scroll + vertical_viewport_height
+//              --content-- <- scroll_top
+//              --content-- <- scroll_top +rendered_line_count
+impl<'a> Session<'a> {
+  pub fn new() -> Session<'a> {
     Self::default()
+  }
+
+  pub fn render_messages(
+    &self,
+    scroll: usize,
+    area: Rect,
+    surface: &mut Buffer,
+  ) {
+    self
+      .messages
+      .iter()
+      .scan(0, |scroll_top, m| {
+        let message_height = m.vertical_height(
+          self.view.window_width,
+          Arc::clone(&self.view.lang_config),
+        );
+
+        let message_line_start_index =
+          *scroll_top + message_height - self.vertical_scroll;
+        let message_line_last_index = self.vertical_scroll
+          + self.viewport_height
+          - (*scroll_top + message_height);
+
+        *scroll_top += message_height;
+
+        if *scroll_top + message_height < self.vertical_scroll
+          || self.vertical_scroll + self.viewport_height < *scroll_top
+        {
+          None
+        } else {
+          Some((m, message_line_start_index, message_line_last_index))
+        }
+      })
+      .for_each(|(m, message_line_start_index, message_line_last_index)| {
+        let content = format!("{}", m);
+        let markdown = Markdown::new(
+          content,
+          self.view.window_width,
+          Arc::clone(&self.view.lang_config),
+        );
+
+        let text = markdown.parse(None)
+          [message_line_start_index..message_line_last_index]
+          .to_vec();
+        let par = Paragraph::new(Text::from(text))
+          .wrap(Wrap { trim: false })
+          .scroll((scroll as u16, 0));
+        let margin = Margin::all(1);
+        par.render(area.inner(&margin), surface);
+      });
   }
 
   pub fn add_message(&mut self, message: ChatMessage) {
     match message {
       ChatMessage::User(_) => {
-        self.messages.push(message.set_current_transaction_flag())
+        let mut message = MessageContainer::from(message);
+        message.set_current_transaction_flag();
+        self.messages.push(message);
       },
       ChatMessage::StreamResponse(new_srvec) => {
         new_srvec.iter().for_each(|sr| {
@@ -538,15 +623,17 @@ impl Session<'static> {
           }) {
             message.update_stream_response(sr.clone()).unwrap();
           } else {
-            let message: MessageContainer =
+            let mut message: MessageContainer =
               ChatMessage::StreamResponse(vec![sr.clone()]).into();
-            self.messages.push(message.set_current_transaction_flag());
+            message.set_current_transaction_flag();
+            self.messages.push(message);
           }
         });
       },
       _ => {
-        let message: MessageContainer = message.into();
-        self.messages.push(message.set_current_transaction_flag());
+        let mut message: MessageContainer = message.into();
+        message.set_current_transaction_flag();
+        self.messages.push(message);
       },
       // ChatMessage::Tool(_) => self.messages.push(message.send_in_next_request()),
     };
@@ -557,10 +644,18 @@ impl Session<'static> {
     self
       .messages
       .iter_mut()
-      .filter(|m| m.receive_complete && !m.embedding_saved)
+      .filter(|m| {
+        m.message_state.contains(MessageState::RECEIVE_COMPLETE)
+          && !m.message_state.contains(MessageState::EMBEDDING_SAVED)
+      })
       .for_each(|m| {
-        tx.send(Action::AddMessageEmbedding(self.id, m.clone())).unwrap();
-        m.embedding_saved = true
+        tx.send(Action::AddMessageEmbedding(
+          self.id,
+          m.message_id,
+          m.message.clone(),
+        ))
+        .unwrap();
+        m.message_state.set(MessageState::EMBEDDING_SAVED, true);
       })
   }
 
@@ -627,20 +722,20 @@ impl Session<'static> {
   pub fn scroll_down(&mut self) -> Result<Option<Action>, SazidError> {
     self.vertical_scroll =
       self.vertical_scroll.saturating_add(1).min(self.scroll_max);
-    self.vertical_scroll_state =
-      self.vertical_scroll_state.position(self.vertical_scroll);
-    if self.vertical_scroll_state
-      == self.vertical_scroll_state.position(self.scroll_max)
-    {
-      if !self.scroll_sticky_end {
-        let mut debug_string = String::new();
-        for (idx, line) in self.view.rendered_text.lines().enumerate() {
-          debug_string.push_str(format!("{:02}\t", idx).as_str());
-          debug_string.push_str(line.to_string().as_str());
-        }
-      }
-      self.scroll_sticky_end = true;
-    }
+    // self.vertical_scroll_state =
+    //   self.vertical_scroll_state.position(self.vertical_scroll);
+    // if self.vertical_scroll_state
+    //   == self.vertical_scroll_state.position(self.scroll_max)
+    // {
+    //   if !self.scroll_sticky_end {
+    //     let mut debug_string = String::new();
+    //     for (idx, line) in self.view.rendered_text.lines().enumerate() {
+    //       debug_string.push_str(format!("{:02}\t", idx).as_str());
+    //       debug_string.push_str(line.to_string().as_str());
+    //     }
+    //   }
+    //   self.scroll_sticky_end = true;
+    // }
     // trace_dbg!(
     //   "previous scroll {} content height: {} vertical_viewport_height: {}",
     //   self.vertical_scroll,
@@ -919,7 +1014,6 @@ pub fn construct_request(
   user: Option<String>,
   tools: Option<Vec<ChatCompletionTool>>,
 ) -> CreateChatCompletionRequest {
-
   // trace_dbg!("request:\n{:#?}", request);
   CreateChatCompletionRequest {
     model,

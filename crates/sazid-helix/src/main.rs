@@ -16,14 +16,13 @@ use sazid::{
   },
   cli::Cli,
   config::Config,
-  trace_dbg,
   utils::{initialize_logging, initialize_panic_handler},
 };
 
 async fn tokio_main() -> Result<(), SazidError> {
   initialize_logging().map_err(SazidError::LoggingError)?;
   initialize_panic_handler().map_err(SazidError::PanicHandlerError)?;
-  trace_dbg!("app start");
+  log::info!("app start");
   let args = Cli::parse();
   let config = Config::new(args.local_api).unwrap();
   let api_key: String =

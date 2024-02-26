@@ -1,6 +1,6 @@
 {
   "cargo": {
-    "allFeatures": false,
+    "features": "all",
     "runBuildScripts": true,
     "buildScripts": {
       "enable": true
@@ -9,10 +9,10 @@
   "rustfmt": {
     "allFeatures": false
   },
-  "numThreads": 6,
+  "numThreads": 10,
   "cachePriming": {
     "enable": true,
-    "numThreads": 8
+    "numThreads": 4
   },
   "diagnostics": {
     "enable": true

@@ -2,59 +2,69 @@ use bat::{
   assets::HighlightingAssets, config::Config, controller::Controller,
   style::StyleComponents,
 };
-use ratatui::style::Modifier;
-use ratatui::widgets::Block;
-use ratatui::widgets::Borders;
+use helix_core::syntax::Configuration;
+use helix_core::syntax::Loader;
+use helix_view::Theme;
 use std::default::Default;
-use textwrap::{self, Options, WordSeparator, WordSplitter, WrapAlgorithm};
+use std::sync::Arc;
 
 use crate::trace_dbg;
-use tui_textarea::{CursorMove, TextArea};
 
 use super::messages::MessageContainer;
 use ropey::Rope;
 
-#[derive(Default, Debug)]
-pub struct SessionView<'a> {
+#[derive(Debug)]
+pub struct SessionView {
+  pub lang_config: Arc<Loader>,
+  pub theme: Theme,
   pub renderer: BatRenderer<'static>,
   pub window_width: usize,
   pub render_conditions: (usize, usize, usize, usize, bool),
   pub rendered_view: String,
-  pub textarea: TextArea<'a>,
+  // pub textarea: TextArea<'a>,
   pub selected_text: Option<String>,
   pub new_data: bool,
   pub rendered_text: Rope,
 }
 
-impl<'a> SessionView<'a> {
+impl Default for SessionView {
+  fn default() -> Self {
+    SessionView {
+      lang_config: Arc::new(Loader::new(Configuration::default())),
+      ..Default::default()
+    }
+  }
+}
+
+impl SessionView {
   pub fn unfocus_textarea(&mut self) {
-    use ratatui::style::{Color, Style};
-    self.textarea.set_cursor_line_style(Style::default());
-    self.textarea.set_cursor_style(Style::default());
-    self.textarea.set_block(
-      Block::default()
-        .borders(Borders::ALL)
-        .style(Style::default().fg(Color::DarkGray))
-        .title(" Inactive (^X to switch) "),
-    );
+    // use ratatui::style::{Color, Style};
+    // self.textarea.set_cursor_line_style(Style::default());
+    // self.textarea.set_cursor_style(Style::default());
+    // self.textarea.set_block(
+    //   Block::default()
+    //     .borders(Borders::ALL)
+    //     .style(Style::default().fg(Color::DarkGray))
+    //     .title(" Inactive (^X to switch) "),
+    // );
   }
 
   pub fn focus_textarea(&mut self) {
-    use ratatui::style::{Color, Style};
-    self.textarea.move_cursor(CursorMove::Top);
-    self.textarea.move_cursor(CursorMove::Head);
-    self.textarea.set_cursor_line_style(
-      Style::default()
-        .add_modifier(Modifier::UNDERLINED)
-        .add_modifier(Modifier::SLOW_BLINK),
-    );
-    self.textarea.set_cursor_style(Style::default().bg(Color::Yellow));
-    self.textarea.set_block(
-      Block::default()
-        .borders(Borders::ALL)
-        .style(Style::default())
-        .title(" Active "),
-    );
+    // use ratatui::style::{Color, Style};
+    // self.textarea.move_cursor(CursorMove::Top);
+    // self.textarea.move_cursor(CursorMove::Head);
+    // self.textarea.set_cursor_line_style(
+    //   Style::default()
+    //     .add_modifier(Modifier::UNDERLINED)
+    //     .add_modifier(Modifier::SLOW_BLINK),
+    // );
+    // self.textarea.set_cursor_style(Style::default().bg(Color::Yellow));
+    // self.textarea.set_block(
+    //   Block::default()
+    //     .borders(Borders::ALL)
+    //     .style(Style::default())
+    //     .title(" Active "),
+    // );
   }
 
   pub fn set_window_width(
@@ -77,47 +87,48 @@ impl<'a> SessionView<'a> {
     messages: &mut [MessageContainer],
   ) {
     let dividing_newlines_count = 2;
-    messages.iter_mut().for_each(|message| {
-      let rendered_text_message_start_index =
-        self.rendered_text.len_chars() - message.stylized.len_chars();
-      let original_message_length = message.stylized.len_chars();
-      if !message.stylize_complete {
-        let text_width = self.window_width.min(80 - 4);
-        let stylized =
-          self.renderer.render_message_bat(format!("{}", &message).as_str());
-        let options = Options::new(text_width)
-          .initial_indent("")
-          .subsequent_indent("  ")
-          .word_splitter(WordSplitter::NoHyphenation)
-          .word_separator(WordSeparator::AsciiSpace)
-          .wrap_algorithm(WrapAlgorithm::new_optimal_fit());
-        let wrapped = textwrap::wrap(stylized.as_str(), options);
-
-        message.stylized = Rope::from_str(
-          wrapped
-            .iter()
-            .map(|c| c.to_string())
-            .collect::<Vec<String>>()
-            .join("\n")
-            .as_str(),
-        );
-
-        if message.receive_complete {
-          message.stylized.append(Rope::from_str(
-            "\n".to_string().repeat(dividing_newlines_count).as_str(),
-          ));
-          message.stylize_complete = true;
-        }
-
-        self.new_data = true;
-        self.textarea.replace_at_end(
-          message.stylized.to_string(),
-          original_message_length,
-        );
-
-        self.rendered_text.remove(rendered_text_message_start_index..);
-        self.rendered_text.append(message.stylized.clone());
-      }
+    messages.iter_mut().filter(|m| !m.is_complete()).for_each(|message| {
+      // message.render_text(self.window_width, self.lang_config);
+      // let rendered_text_message_start_index
+      //   self.rendered_text.len_chars() - message.stylized.len_chars();
+      // let original_message_length = message.stylized.len_chars();
+      // if !message.stylize_complete {
+      //   let text_width = self.window_width.min(80 - 4);
+      //   let stylized =
+      //     self.renderer.render_message_bat(format!("{}", &message).as_str());
+      //   let options = Options::new(text_width)
+      //     .initial_indent("")
+      //     .subsequent_indent("  ")
+      //     .word_splitter(WordSplitter::NoHyphenation)
+      //     .word_separator(WordSeparator::AsciiSpace)
+      //     .wrap_algorithm(WrapAlgorithm::new_optimal_fit());
+      //   let wrapped = textwrap::wrap(stylized.as_str(), options);
+      //
+      //   message.stylized = Rope::from_str(
+      //     wrapped
+      //       .iter()
+      //       .map(|c| c.to_string())
+      //       .collect::<Vec<String>>()
+      //       .join("\n")
+      //       .as_str(),
+      //   );
+      //
+      //   if message.receive_complete {
+      //     message.stylized.append(Rope::from_str(
+      //       "\n".to_string().repeat(dividing_newlines_count).as_str(),
+      //     ));
+      //     message.stylize_complete = true;
+      //   }
+      //
+      //   self.new_data = true;
+      //   self.textarea.replace_at_end(
+      //     message.stylized.to_string(),
+      //     original_message_length,
+      //   );
+      //
+      //   self.rendered_text.remove(rendered_text_message_start_index..);
+      //   self.rendered_text.append(message.stylized.clone());
+      // }
     });
   }
 }

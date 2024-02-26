@@ -4,6 +4,7 @@ use crate::app::{
   session_config::SessionConfig,
   types::Model,
 };
+use async_openai::types::ChatCompletionRequestMessage;
 use helix_lsp::Call;
 use serde::{
   de::{self, Deserializer, Visitor},
@@ -29,7 +30,7 @@ pub enum Action {
   CreateSession(SessionConfig),
   LoadSession(i64),
   CreateLoadSessionResponse(QueryableSession),
-  AddMessageEmbedding(i64, MessageContainer),
+  AddMessageEmbedding(i64, i64, ChatCompletionRequestMessage),
   MessageEmbeddingSuccess(i64),
   RequestRelatedMessages(i64, String, bool),
   SubmitInput(String),

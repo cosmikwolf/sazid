@@ -1,11 +1,18 @@
+use bitflags::bitflags;
 use std::{
   collections::HashSet,
   fmt::{self, Formatter},
+  sync::Arc,
 };
 
 use color_eyre::owo_colors::OwoColorize;
+use helix_core::syntax::Loader;
 use ropey::Rope;
 use serde::{Deserialize, Serialize};
+use tui::{
+  text::Spans,
+  widgets::{Paragraph, Wrap},
+};
 
 use async_openai::{
   self,
@@ -28,10 +35,73 @@ use super::{
     get_assistant_message_from_create_chat_completion_response,
     get_assistant_message_from_create_chat_completion_stream_response,
   },
+  markdown::Markdown,
 };
 
+bitflags! {
+
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
-pub struct MessageContainer {
+pub struct MessageState:u8 {
+const RECEIVING = 1 << 0;
+const RECEIVE_COMPLETE = 1<< 1;
+const TEXT_RENDERED = 1 << 2;
+const TOOLS_COMPLETE = 1 << 3;
+const EMBEDDING_SAVED = 1 << 4;
+const IS_CURRENT_TRANSACTION = 1 << 5;
+}
+
+}
+
+impl<'a> MessageContainer<'a> {
+  pub fn is_receiving(&self) -> bool {
+    self.message_state.contains(MessageState::RECEIVING)
+  }
+
+  pub fn set_receive_complete(&mut self) {
+    self.message_state.set(MessageState::RECEIVE_COMPLETE, true);
+    self.message_state.set(MessageState::RECEIVING, false);
+  }
+
+  pub fn set_text_rendered(&mut self) {
+    self.message_state.set(MessageState::TEXT_RENDERED, true);
+  }
+  pub fn set_tools_complete(&mut self) {
+    self.message_state.set(MessageState::TOOLS_COMPLETE, true);
+  }
+  pub fn is_receive_complete(&self) -> bool {
+    self.message_state.contains(MessageState::RECEIVE_COMPLETE)
+  }
+
+  pub fn is_complete(&self) -> bool {
+    self.message_state.contains(MessageState::RECEIVE_COMPLETE)
+      && self.message_state.contains(MessageState::TEXT_RENDERED)
+      && self.message_state.contains(MessageState::TOOLS_COMPLETE)
+      && self.message_state.contains(MessageState::EMBEDDING_SAVED)
+  }
+
+  pub fn set_current_transaction_flag(&mut self) {
+    self.message_state.set(MessageState::IS_CURRENT_TRANSACTION, true);
+  }
+
+  pub fn is_current_transaction(&self) -> bool {
+    self.message_state.contains(MessageState::IS_CURRENT_TRANSACTION)
+  }
+
+  pub fn vertical_height(
+    &self,
+    window_width: usize,
+    lang_config: Arc<Loader>,
+  ) -> usize {
+    let content = format!("{}", self);
+    let markdown = Markdown::new(content, window_width, lang_config);
+
+    let text = markdown.parse(None);
+    text.len()
+  }
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+pub struct MessageContainer<'a> {
   pub message: ChatCompletionRequestMessage,
   pub receive_buffer: Option<ReceiveBuffer>,
   pub tool_calls: Vec<ChatCompletionMessageToolCall>,
@@ -48,6 +118,10 @@ pub struct MessageContainer {
   #[serde(skip)]
   pub stylized: Rope,
   pub token_usage: usize,
+  #[serde(skip)]
+  pub rendered_text: Vec<Spans<'a>>,
+  pub rendered_line_count: usize,
+  pub message_state: MessageState,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
@@ -61,21 +135,6 @@ pub enum ChatMessage {
   Function(ChatCompletionRequestFunctionMessage),
 }
 
-impl ChatMessage {
-  pub fn set_current_transaction_flag(self) -> MessageContainer {
-    let mut message: MessageContainer = self.into();
-    message.current_transaction_flag = true;
-    message
-  }
-}
-
-impl MessageContainer {
-  pub fn set_current_transaction_flag(self) -> MessageContainer {
-    let mut message: MessageContainer = self;
-    message.current_transaction_flag = true;
-    message
-  }
-}
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub enum ReceiveBuffer {
   Response(CreateChatCompletionResponse),
@@ -110,14 +169,15 @@ impl From<ChatMessage> for ChatCompletionRequestMessage {
     message.into()
   }
 }
-impl From<ReceiveBuffer> for MessageContainer {
+
+impl<'a> From<ReceiveBuffer> for MessageContainer<'a> {
   fn from(receive_buffer: ReceiveBuffer) -> Self {
     let message = receive_buffer.clone().into();
-    let (receive_complete, stream_id) = match &receive_buffer {
+    let (message_state, stream_id) = match &receive_buffer {
       ReceiveBuffer::StreamResponse(srvec) => {
-        (false, Some(srvec[0].id.clone()))
+        (MessageState::RECEIVING, Some(srvec[0].id.clone()))
       },
-      _ => (true, None),
+      _ => (MessageState::RECEIVE_COMPLETE, None),
     };
     MessageContainer {
       selected_choice: 0,
@@ -125,7 +185,7 @@ impl From<ReceiveBuffer> for MessageContainer {
       message_id: rand::random::<i64>(),
       message,
       stream_id,
-      receive_complete,
+      receive_complete: false,
       tool_calls: Vec::new(),
       wrapped_content: String::new(),
       stylized: Rope::new(),
@@ -135,11 +195,14 @@ impl From<ReceiveBuffer> for MessageContainer {
       embedding_saved: false,
       stylize_complete: false,
       current_transaction_flag: false,
+      rendered_text: Vec::new(),
+      message_state,
+      rendered_line_count: 0,
     }
   }
 }
 
-impl From<ChatMessage> for MessageContainer {
+impl<'a> From<ChatMessage> for MessageContainer<'a> {
   fn from(message: ChatMessage) -> Self {
     match message {
       ChatMessage::Response(response) => {
@@ -176,7 +239,8 @@ impl From<ChatMessage> for MessageContainer {
     }
   }
 }
-impl fmt::Display for MessageContainer {
+
+impl<'a> fmt::Display for MessageContainer<'a> {
   fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
     write!(
       f,
@@ -362,7 +426,7 @@ impl fmt::Display for MessageContainer {
   }
 }
 
-impl MessageContainer {
+impl<'a> MessageContainer<'a> {
   fn new(message: ChatCompletionRequestMessage) -> Self {
     MessageContainer {
       message,
@@ -380,6 +444,9 @@ impl MessageContainer {
       tools_called: false,
       response_count: 0,
       token_usage: 0,
+      rendered_text: Vec::new(),
+      message_state: MessageState::empty(),
+      rendered_line_count: 0,
     }
   }
 
@@ -387,7 +454,7 @@ impl MessageContainer {
     message: ChatCompletionRequestMessage,
   ) -> Self {
     let mut message_container = MessageContainer::new(message);
-    message_container.receive_complete = true;
+    message_container.message_state = MessageState::RECEIVE_COMPLETE;
     message_container
   }
 
@@ -418,6 +485,7 @@ impl MessageContainer {
     if self.stream_id == Some(stream_message.id.clone()) {
       match &mut self.receive_buffer {
         Some(ReceiveBuffer::StreamResponse(srvec)) => {
+
           srvec.push(stream_message);
 
           self.message = ChatCompletionRequestMessage::Assistant(
@@ -474,7 +542,7 @@ impl MessageContainer {
       },
       _ => true,
     } {
-      self.receive_complete = true;
+      self.set_receive_complete();
     }
   }
 }

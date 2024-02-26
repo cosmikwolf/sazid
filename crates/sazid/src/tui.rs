@@ -14,15 +14,14 @@ use crossterm::{
   terminal::{EnterAlternateScreen, LeaveAlternateScreen},
 };
 use futures::{FutureExt, StreamExt};
-use ratatui::backend::CrosstermBackend as Backend;
+use helix_view::editor::Config;
 use serde::{Deserialize, Serialize};
 use tokio::{
   sync::mpsc::{self, UnboundedReceiver, UnboundedSender},
   task::JoinHandle,
 };
 use tokio_util::sync::CancellationToken;
-
-pub type Frame<'a> = ratatui::Frame<'a>;
+use tui::backend::CrosstermBackend as Backend;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum Event {
@@ -41,7 +40,7 @@ pub enum Event {
 }
 
 pub struct Tui {
-  pub terminal: ratatui::Terminal<Backend<std::io::Stderr>>,
+  pub terminal: tui::Terminal<Backend<std::io::Stderr>>,
   pub task: JoinHandle<()>,
   pub cancellation_token: CancellationToken,
   pub event_rx: UnboundedReceiver<Event>,
@@ -56,7 +55,9 @@ impl Tui {
   pub fn new() -> Result<Self> {
     let tick_rate = 4.0;
     let frame_rate = 60.0;
-    let terminal = ratatui::Terminal::new(Backend::new(std::io::stderr()))?;
+    let config = Config::default();
+    let terminal =
+      tui::Terminal::new(Backend::new(std::io::stderr(), &config))?;
     let (event_tx, event_rx) = mpsc::unbounded_channel();
     let cancellation_token = CancellationToken::new();
     let task = tokio::spawn(async {});
@@ -231,7 +232,7 @@ impl Tui {
 }
 
 impl Deref for Tui {
-  type Target = ratatui::Terminal<Backend<std::io::Stderr>>;
+  type Target = tui::Terminal<Backend<std::io::Stderr>>;
 
   fn deref(&self) -> &Self::Target {
     &self.terminal
