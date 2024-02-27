@@ -1,10 +1,10 @@
 use std::collections::HashMap;
 
-use super::Component;
 use crate::{
   action::Action,
   app::{color_math::get_rainbow_and_inverse_colors, errors::SazidError},
   components::session::Session,
+  compositor::{Component, Context},
   config::Config,
   trace_dbg,
 };
@@ -25,6 +25,7 @@ use tui::{
 };
 
 use tokio::sync::mpsc::UnboundedSender;
+use tui::buffer::Buffer as Surface;
 use tui_textarea::{CursorMove, TextArea};
 
 #[derive(Debug, Default, Copy, Clone, PartialEq, Eq)]
@@ -47,33 +48,33 @@ pub struct Home<'a> {
   pub text: Vec<String>,
   pub last_events: Vec<KeyEvent>,
   pub config: Config,
-  pub session: Session<'a>,
+  pub session: Session,
   pub control_pressed: bool,
   pub color_counter: u32,
   pub rgb: Color,
   pub inv_rgb: Color,
 }
 
-impl<'a> Default for Home<'a> {
-  fn default() -> Self {
-    Home {
-      rgb: Color::Reset,
-      inv_rgb: Color::Reset,
-      show_help: false,
-      status: None,
-      mode: Mode::default(),
-      input: TextArea::default(),
-      action_tx: None,
-      keymap: HashMap::new(),
-      text: Vec::new(),
-      last_events: Vec::new(),
-      config: Config::default(),
-      session: Session::default(),
-      control_pressed: false,
-      color_counter: 0,
-    }
-  }
-}
+// impl<'a> Default for Home<'a> {
+//   fn default() -> Self {
+//     Home {
+//       rgb: Color::Reset,
+//       inv_rgb: Color::Reset,
+//       show_help: false,
+//       status: None,
+//       mode: Mode::default(),
+//       input: TextArea::default(),
+//       action_tx: None,
+//       keymap: HashMap::new(),
+//       text: Vec::new(),
+//       last_events: Vec::new(),
+//       config: Config::default(),
+//       session: Session::default(),
+//       control_pressed: false,
+//       color_counter: 0,
+//     }
+//   }
+// }
 const MAX24BIT: u32 = 16777216;
 
 impl<'a> Home<'a> {
@@ -101,6 +102,9 @@ impl<'a> Home<'a> {
 }
 
 impl Component for Home<'static> {
+  fn render(&mut self, area: Rect, frame: &mut Surface, ctx: &mut Context) {}
+}
+impl Home<'static> {
   fn init(&mut self, _area: Rect) -> Result<(), SazidError> {
     self.color_counter = rand::random::<u32>() % MAX24BIT;
     // self.input = TextArea::default();

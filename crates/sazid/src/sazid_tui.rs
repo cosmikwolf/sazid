@@ -21,7 +21,20 @@ use tokio::{
   task::JoinHandle,
 };
 use tokio_util::sync::CancellationToken;
-use tui::backend::CrosstermBackend as Backend;
+
+#[cfg(not(feature = "integration"))]
+use tui::backend::CrosstermBackend;
+
+#[cfg(feature = "integration")]
+use tui::backend::TestBackend;
+
+#[cfg(not(feature = "integration"))]
+type TerminalBackend = CrosstermBackend<std::io::Stdout>;
+
+#[cfg(feature = "integration")]
+type TerminalBackend = TestBackend;
+
+type Terminal = tui::terminal::Terminal<TerminalBackend>;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum Event {
@@ -40,7 +53,7 @@ pub enum Event {
 }
 
 pub struct Tui {
-  pub terminal: tui::Terminal<Backend<std::io::Stderr>>,
+  pub terminal: Terminal,
   pub task: JoinHandle<()>,
   pub cancellation_token: CancellationToken,
   pub event_rx: UnboundedReceiver<Event>,
@@ -56,8 +69,7 @@ impl Tui {
     let tick_rate = 4.0;
     let frame_rate = 60.0;
     let config = Config::default();
-    let terminal =
-      tui::Terminal::new(Backend::new(std::io::stderr(), &config))?;
+    let terminal = tui::Terminal::new(TerminalBackend::new(&config))?;
     let (event_tx, event_rx) = mpsc::unbounded_channel();
     let cancellation_token = CancellationToken::new();
     let task = tokio::spawn(async {});
@@ -158,6 +170,18 @@ impl Tui {
     });
   }
 
+  async fn claim_term(&mut self) -> std::io::Result<()> {
+    let terminal_config = tui::terminal::Config { enable_mouse_capture: true };
+    self.terminal.claim(terminal_config)
+  }
+
+  fn restore_term(&mut self) -> std::io::Result<()> {
+    let terminal_config = tui::terminal::Config { enable_mouse_capture: true };
+    use helix_view::graphics::CursorKind;
+    self.terminal.backend_mut().show_cursor(CursorKind::Block).ok();
+    self.terminal.restore(terminal_config)
+  }
+
   pub fn stop(&self) -> Result<()> {
     self.cancel();
     let mut counter = 0;
@@ -232,7 +256,7 @@ impl Tui {
 }
 
 impl Deref for Tui {
-  type Target = tui::Terminal<Backend<std::io::Stderr>>;
+  type Target = tui::Terminal<TerminalBackend>;
 
   fn deref(&self) -> &Self::Target {
     &self.terminal

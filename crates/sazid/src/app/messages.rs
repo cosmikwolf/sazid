@@ -1,3 +1,4 @@
+use arc_swap::ArcSwap;
 use bitflags::bitflags;
 use std::{
   collections::HashSet,
@@ -52,7 +53,7 @@ const IS_CURRENT_TRANSACTION = 1 << 5;
 
 }
 
-impl<'a> MessageContainer<'a> {
+impl MessageContainer {
   pub fn is_receiving(&self) -> bool {
     self.message_state.contains(MessageState::RECEIVING)
   }
@@ -90,7 +91,7 @@ impl<'a> MessageContainer<'a> {
   pub fn vertical_height(
     &self,
     window_width: usize,
-    lang_config: Arc<Loader>,
+    lang_config: Arc<ArcSwap<Loader>>,
   ) -> usize {
     let content = format!("{}", self);
     let markdown = Markdown::new(content, window_width, lang_config);
@@ -101,7 +102,7 @@ impl<'a> MessageContainer<'a> {
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
-pub struct MessageContainer<'a> {
+pub struct MessageContainer {
   pub message: ChatCompletionRequestMessage,
   pub receive_buffer: Option<ReceiveBuffer>,
   pub tool_calls: Vec<ChatCompletionMessageToolCall>,
@@ -119,7 +120,7 @@ pub struct MessageContainer<'a> {
   pub stylized: Rope,
   pub token_usage: usize,
   #[serde(skip)]
-  pub rendered_text: Vec<Spans<'a>>,
+  pub rendered_text: Vec<String>,
   pub rendered_line_count: usize,
   pub message_state: MessageState,
 }
@@ -170,7 +171,7 @@ impl From<ChatMessage> for ChatCompletionRequestMessage {
   }
 }
 
-impl<'a> From<ReceiveBuffer> for MessageContainer<'a> {
+impl From<ReceiveBuffer> for MessageContainer {
   fn from(receive_buffer: ReceiveBuffer) -> Self {
     let message = receive_buffer.clone().into();
     let (message_state, stream_id) = match &receive_buffer {
@@ -202,7 +203,7 @@ impl<'a> From<ReceiveBuffer> for MessageContainer<'a> {
   }
 }
 
-impl<'a> From<ChatMessage> for MessageContainer<'a> {
+impl From<ChatMessage> for MessageContainer {
   fn from(message: ChatMessage) -> Self {
     match message {
       ChatMessage::Response(response) => {
@@ -240,7 +241,7 @@ impl<'a> From<ChatMessage> for MessageContainer<'a> {
   }
 }
 
-impl<'a> fmt::Display for MessageContainer<'a> {
+impl fmt::Display for MessageContainer {
   fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
     write!(
       f,
@@ -426,7 +427,7 @@ impl<'a> fmt::Display for MessageContainer<'a> {
   }
 }
 
-impl<'a> MessageContainer<'a> {
+impl MessageContainer {
   fn new(message: ChatCompletionRequestMessage) -> Self {
     MessageContainer {
       message,

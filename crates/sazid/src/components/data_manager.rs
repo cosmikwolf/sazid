@@ -1,18 +1,23 @@
 use crate::{
   action::Action,
   app::{database::data_manager::*, errors::SazidError},
+  compositor::{Component, Context},
   config::Config,
+  sazid_tui::Event,
   trace_dbg,
-  tui::Event,
 };
 use core::result::Result;
 use helix_view::graphics::Rect;
 use tokio::sync::mpsc::UnboundedSender;
 use tui::buffer::Buffer;
 
-use super::Component;
+use tui::buffer::Buffer as Surface;
 
 impl Component for DataManager {
+  fn render(&mut self, area: Rect, frame: &mut Surface, ctx: &mut Context) {}
+}
+
+impl DataManager {
   fn register_action_handler(
     &mut self,
     tx: UnboundedSender<Action>,
@@ -37,14 +42,15 @@ impl Component for DataManager {
     &mut self,
     event: Option<Event>,
   ) -> Result<Option<Action>, SazidError> {
-    let r = match event {
-      Some(Event::Key(key_event)) => self.handle_key_events(key_event)?,
-      Some(Event::Mouse(mouse_event)) => {
-        self.handle_mouse_events(mouse_event)?
-      },
-      _ => None,
-    };
-    Ok(r)
+    // let r = match event {
+    //   Some(Event::Key(key_event)) => self.handle_key_events(key_event)?,
+    //   Some(Event::Mouse(mouse_event)) => {
+    //     self.handle_mouse_events(mouse_event)?
+    //   },
+    //   _ => None,
+    // };
+    // Ok(r)
+    Ok(None)
   }
 
   fn update(&mut self, action: Action) -> Result<Option<Action>, SazidError> {

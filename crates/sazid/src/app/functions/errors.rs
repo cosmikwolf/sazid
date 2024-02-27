@@ -40,8 +40,8 @@ impl From<globset::Error> for ToolCallError {
     }
   }
 }
-impl From<grep::regex::Error> for ToolCallError {
-  fn from(error: grep::regex::Error) -> Self {
+impl From<grep_regex::Error> for ToolCallError {
+  fn from(error: grep_regex::Error) -> Self {
     ToolCallError {
       message: format!("Grep Regex Error: {}", error),
       source: Some(Box::new(error)),

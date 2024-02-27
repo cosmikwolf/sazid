@@ -1,6 +1,7 @@
-use crate::app::lsp::helix_lsp_interface::LanguageServerInterface;
-
-use super::Component;
+use crate::{
+  app::lsp_interface::helix_lsp_interface::LanguageServerInterface,
+  compositor::{Component, Context},
+};
 
 use core::result::Result;
 use crossterm::event::{KeyEvent, MouseEvent};
@@ -10,10 +11,15 @@ use tokio::sync::mpsc::UnboundedSender;
 use tui::buffer::Buffer;
 
 use crate::{
-  action::Action, app::errors::SazidError, config::Config, tui::Event,
+  action::Action, app::errors::SazidError, config::Config, sazid_tui::Event,
 };
+use tui::buffer::Buffer as Surface;
 
 impl Component for LanguageServerInterface {
+  fn render(&mut self, area: Rect, frame: &mut Surface, ctx: &mut Context) {}
+}
+
+impl LanguageServerInterface {
   #[allow(unused_variables)]
   fn register_action_handler(
     &mut self,

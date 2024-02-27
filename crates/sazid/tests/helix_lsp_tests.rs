@@ -1,6 +1,6 @@
 use lsp_types::GotoDefinitionResponse;
 use sazid::action::Action;
-use sazid::app::lsp::helix_lsp_interface::LanguageServerInterface;
+use sazid::app::lsp_interface::helix_lsp_interface::LanguageServerInterface;
 use sazid::utils::{initialize_logging, initialize_panic_handler};
 use std::path::Path;
 use std::str::from_utf8;

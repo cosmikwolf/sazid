@@ -1,9 +1,10 @@
-use helix_term::compositor::{Component, Context};
+use crate::compositor::{Component, Context};
+use arc_swap::ArcSwap;
 use pulldown_cmark::{
-  CodeBlockKind, Event, HeadingLevel, Options, Parser, Tag,
+  CodeBlockKind, Event, HeadingLevel, Options, Parser, Tag, TagEnd,
 };
 use ropey::Rope;
-use std::{borrow::Cow, ops::Range, sync::Arc};
+use std::{ops::Range, sync::Arc};
 
 use tui::{
   buffer::Buffer as Surface,
@@ -20,7 +21,6 @@ use helix_view::{
   theme::Modifier,
   Theme,
 };
-use tui::buffer::Buffer;
 
 fn styled_multiline_text<'a>(text: &str, style: Style) -> Text<'a> {
   let spans: Vec<_> = text
@@ -35,7 +35,7 @@ pub fn highlighted_code_block<'a>(
   text: &str,
   language: &str,
   theme: Option<&Theme>,
-  config_loader: Arc<syntax::Loader>,
+  config_loader: Arc<ArcSwap<syntax::Loader>>,
   additional_highlight_spans: Option<Vec<(usize, std::ops::Range<usize>)>>,
 ) -> Text<'a> {
   let mut spans = Vec::new();
@@ -53,6 +53,7 @@ pub fn highlighted_code_block<'a>(
 
   let ropeslice = RopeSlice::from(text);
   let syntax = config_loader
+    .load()
     .language_configuration_for_injection_string(
       &InjectionLanguageMarker::Name(language.into()),
     )
@@ -128,7 +129,7 @@ pub struct Markdown {
   contents: String,
   len_lines: usize,
   wrap_width: usize,
-  config_loader: Arc<syntax::Loader>,
+  config_loader: Arc<ArcSwap<syntax::Loader>>,
 }
 
 // TODO: pre-render and self reference via Pin
@@ -150,15 +151,9 @@ impl Markdown {
   pub fn new(
     contents: String,
     wrap_width: usize,
-    config_loader: Arc<syntax::Loader>,
+    config_loader: Arc<ArcSwap<syntax::Loader>>,
   ) -> Self {
-    Self {
-      contents,
-      wrap_width,
-      len_lines: 0,
-      config_loader,
-      // phant: std::marker::PhantomData,
-    }
+    Self { contents, wrap_width, len_lines: 0, config_loader }
   }
 
   pub fn set_wrap_width(&mut self, wrap_width: usize) {
@@ -190,7 +185,9 @@ impl Markdown {
     //   contents_rope.slice(0..contents_rope.len_chars()).into();
     // let contents: Cow<str> = contents.to_owned();
     {
-      let parser: Parser<'_, '_> = Parser::new(self.contents.as_str());
+      let mut options = Options::empty();
+      options.insert(Options::ENABLE_STRIKETHROUGH);
+      let parser = Parser::new_ext(self.contents.as_str(), options);
 
       // TODO: if possible, render links as terminal hyperlinks: https://gist.github.com/egmontkob/eb114294efbcd5adb1944c9f3cb5feda
       let mut tags = Vec::new();
@@ -212,7 +209,6 @@ impl Markdown {
       let code_style = get_theme(Self::BLOCK_STYLE);
       let heading_styles: Vec<Style> =
         Self::HEADING_STYLES.iter().map(|key| get_theme(key)).collect();
-
       // Transform text in `<code>` blocks into `Event::Code`
       let mut in_code = false;
       let parser = parser.filter_map(|event| match event {
@@ -242,7 +238,7 @@ impl Markdown {
 
             list_stack.push(list);
           },
-          Event::End(Tag::List(_)) => {
+          Event::End(TagEnd::List(_)) => {
             list_stack.pop();
 
             // whenever top-level list closes, empty line
@@ -283,10 +279,10 @@ impl Markdown {
           Event::End(tag) => {
             tags.pop();
             match tag {
-              Tag::Heading(_, _, _)
-              | Tag::Paragraph
-              | Tag::CodeBlock(_)
-              | Tag::Item => {
+              TagEnd::Heading(_)
+              | TagEnd::Paragraph
+              | TagEnd::CodeBlock
+              | TagEnd::Item => {
                 push_line(&mut spans, &mut lines);
               },
               _ => (),
@@ -294,7 +290,7 @@ impl Markdown {
 
             // whenever heading, code block or paragraph closes, empty line
             match tag {
-              Tag::Heading(_, _, _) | Tag::Paragraph | Tag::CodeBlock(_) => {
+              TagEnd::Heading(_) | TagEnd::Paragraph | TagEnd::CodeBlock => {
                 lines.push(Spans::default());
               },
               _ => (),
@@ -316,7 +312,7 @@ impl Markdown {
               lines.extend(tui_text.lines.into_iter());
             } else {
               let style = match tags.last() {
-                Some(Tag::Heading(level, ..)) => match level {
+                Some(Tag::Heading { level, .. }) => match level {
                   HeadingLevel::H1 => heading_styles[0],
                   HeadingLevel::H2 => heading_styles[1],
                   HeadingLevel::H3 => heading_styles[2],
@@ -370,6 +366,8 @@ impl Markdown {
         }
       }
 
+      // Text::from(lines)
+
       lines
     }
   }
@@ -379,7 +377,7 @@ impl Component for Markdown {
   fn render(&mut self, area: Rect, surface: &mut Surface, cx: &mut Context) {
     use tui::widgets::{Paragraph, Wrap};
 
-    let text = self.parse(Some(&cx.editor.theme));
+    let text = self.parse(Some(&cx.session.theme));
 
     let par = Paragraph::new(text)
       .wrap(Wrap { trim: false })

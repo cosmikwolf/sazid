@@ -1,4 +1,5 @@
 use futures_util::FutureExt;
+use helix_core::config::default_lang_config;
 use helix_core::diff::compare_ropes;
 use std::borrow::Cow;
 use std::path::PathBuf;
@@ -6,7 +7,6 @@ use std::rc::Rc;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
-use helix_core::config::default_syntax_loader;
 use helix_core::diagnostic::Severity;
 use helix_core::syntax::Configuration;
 use helix_core::syntax::LanguageConfiguration;
@@ -25,7 +25,7 @@ use tokio::sync::mpsc::UnboundedSender;
 use url::Url;
 
 use crate::action::Action;
-use crate::app::lsp::symbol_types::DocumentChange;
+use crate::app::lsp_interface::symbol_types::DocumentChange;
 use crate::trace_dbg;
 
 use super::symbol_types::SourceSymbol;
@@ -83,7 +83,7 @@ impl LanguageServerInterface {
   ) -> Self {
     let loader = match config {
       Some(config) => Arc::new(Loader::new(config)),
-      None => Arc::new(Loader::new(default_syntax_loader())),
+      None => Arc::new(Loader::new(default_lang_config())),
     };
     Self {
       lsp_progress: LspProgressMap::new(),

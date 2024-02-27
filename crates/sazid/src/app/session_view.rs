@@ -2,7 +2,7 @@ use bat::{
   assets::HighlightingAssets, config::Config, controller::Controller,
   style::StyleComponents,
 };
-use helix_core::syntax::Configuration;
+use helix_core::config::default_lang_config;
 use helix_core::syntax::Loader;
 use helix_view::Theme;
 use std::default::Default;
@@ -30,7 +30,10 @@ pub struct SessionView {
 impl Default for SessionView {
   fn default() -> Self {
     SessionView {
-      lang_config: Arc::new(Loader::new(Configuration::default())),
+      lang_config: Arc::new(
+        Loader::new(default_lang_config())
+          .expect("could not initialize language config"),
+      ),
       ..Default::default()
     }
   }
