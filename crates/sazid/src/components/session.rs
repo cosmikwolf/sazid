@@ -32,7 +32,7 @@ use crate::app::database::data_manager::{
 };
 use crate::app::database::types::QueryableSession;
 use crate::app::functions::{all_functions, handle_tool_call};
-use crate::app::markdown::Markdown;
+// use crate::app::markdown::Markdown;
 use crate::app::messages::{
   ChatMessage, MessageContainer, MessageState, ReceiveBuffer,
 };
@@ -50,9 +50,9 @@ use crate::app::tools::utils::ensure_directory_exists;
 use crate::components::home::Mode;
 
 #[derive(Debug, Serialize, Deserialize)]
-pub struct Session<'a> {
+pub struct Session {
   pub id: i64,
-  pub messages: Vec<MessageContainer<'a>>,
+  pub messages: Vec<MessageContainer>,
   pub viewport_width: usize,
   pub config: SessionConfig,
   #[serde(skip)]
@@ -103,7 +103,7 @@ pub struct Session<'a> {
   pub select_end_coords: Option<(usize, usize)>,
 }
 
-impl<'a> Default for Session<'a> {
+impl Default for Session {
   fn default() -> Self {
     Session {
       id: 0,
@@ -137,7 +137,7 @@ impl<'a> Default for Session<'a> {
   }
 }
 
-impl<'a> From<QueryableSession> for Session<'a> {
+impl From<QueryableSession> for Session {
   fn from(value: QueryableSession) -> Self {
     dotenv().ok();
     let api_key = std::env::var("OPENAI_API_KEY").unwrap();
@@ -154,7 +154,7 @@ impl<'a> From<QueryableSession> for Session<'a> {
   }
 }
 
-impl<'a> Component for Session<'a> {
+impl Component for Session {
   fn init(&mut self, area: Rect) -> Result<(), SazidError> {
     let tx = self.action_tx.clone().unwrap();
     //let model_preference: Vec<Model> = vec![GPT4.clone(), GPT3_TURBO.clone(), WIZARDLM.clone()];
@@ -487,11 +487,11 @@ impl<'a> Component for Session<'a> {
       .borders(Borders::ALL)
       .border_style(Style::default().fg(Color::Gray));
 
-    let debug_text = Paragraph::new(format!(
-      "--debug--\nsticky end: {}\nscroll: {}\ncontent height: {}\nviewport height: {}",
-      self.scroll_sticky_end, self.vertical_scroll, self.vertical_content_height, self.viewport_height
-    ))
-    .block(block);
+    // let debug_text = Paragraph::new(format!(
+    //   "--debug--\nsticky end: {}\nscroll: {}\ncontent height: {}\nviewport height: {}",
+    //   self.scroll_sticky_end, self.vertical_scroll, self.vertical_content_height, self.viewport_height
+    // ))
+    // .block(block);
     self.viewport_height = inner[1].height as usize;
     self.vertical_content_height = self.view.rendered_text.len_lines();
     // self.vertical_scroll_state =
@@ -504,7 +504,7 @@ impl<'a> Component for Session<'a> {
       // self.view.textarea.move_cursor(CursorMove::Bottom);
       // self.view.textarea.move_cursor(CursorMove::Head);
     }
-    debug_text.render(inner[0], b);
+    // debug_text.render(inner[0], b);
     // f.render_widget(self.view.textarea.widget(), inner[1]);
     Ok(())
   }
@@ -549,8 +549,8 @@ fn _create_empty_lines(n: usize) -> String {
 // --window-- <- vertical_scroll + vertical_viewport_height
 //              --content-- <- scroll_top
 //              --content-- <- scroll_top +rendered_line_count
-impl<'a> Session<'a> {
-  pub fn new() -> Session<'a> {
+impl Session {
+  pub fn new() -> Session {
     Self::default()
   }
 
@@ -566,7 +566,7 @@ impl<'a> Session<'a> {
       .scan(0, |scroll_top, m| {
         let message_height = m.vertical_height(
           self.view.window_width,
-          Arc::clone(&self.view.lang_config),
+          Arc::clone(&self.view.lang_config.load()),
         );
 
         let message_line_start_index =
@@ -586,21 +586,21 @@ impl<'a> Session<'a> {
         }
       })
       .for_each(|(m, message_line_start_index, message_line_last_index)| {
-        let content = format!("{}", m);
-        let markdown = Markdown::new(
-          content,
-          self.view.window_width,
-          Arc::clone(&self.view.lang_config),
-        );
-
-        let text = markdown.parse(None)
-          [message_line_start_index..message_line_last_index]
-          .to_vec();
-        let par = Paragraph::new(Text::from(text))
-          .wrap(Wrap { trim: false })
-          .scroll((scroll as u16, 0));
-        let margin = Margin::all(1);
-        par.render(area.inner(&margin), surface);
+        // let content = format!("{}", m);
+        // let markdown = Markdown::new(
+        //   content,
+        //   self.view.window_width,
+        //   Arc::clone(&self.view.lang_config),
+        // );
+        //
+        // let text = markdown.parse(None)
+        //   [message_line_start_index..message_line_last_index]
+        //   .to_vec();
+        // let par = Paragraph::new(Text::from(text))
+        //   .wrap(Wrap { trim: false })
+        //   .scroll((scroll as u16, 0));
+        // let margin = Margin::all(1);
+        // par.render(area.inner(&margin), surface);
       });
   }
 
@@ -764,9 +764,9 @@ impl<'a> Session<'a> {
           let message = ChatMessage::User(ChatCompletionRequestUserMessage {
             role,
             name: Some(name.into()),
-            content: Some(ChatCompletionRequestUserMessageContent::Text(
+            content: ChatCompletionRequestUserMessageContent::Text(
               chunk.clone(),
-            )),
+            ),
           });
           self.update(Action::AddMessage(message.clone())).unwrap();
           new_messages.push(message);

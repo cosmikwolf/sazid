@@ -47,7 +47,7 @@ pub struct Home<'a> {
   pub text: Vec<String>,
   pub last_events: Vec<KeyEvent>,
   pub config: Config,
-  pub session: Session<'a>,
+  pub session: Session,
   pub control_pressed: bool,
   pub color_counter: u32,
   pub rgb: Color,

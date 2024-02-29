@@ -9,7 +9,7 @@
   "rustfmt": {
     "allFeatures": false
   },
-  "numThreads": 10,
+  "numThreads": 8,
   "cachePriming": {
     "enable": true,
     "numThreads": 4
@@ -21,7 +21,7 @@
   "check": {
     "command": "clippy",
     "extraArgs": ["--no-deps", "--tests"],
-    "workspace": true
+    "workspace": false
   },
   "server": {
     "extraEnv": {

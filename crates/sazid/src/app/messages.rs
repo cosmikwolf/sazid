@@ -35,7 +35,7 @@ use super::{
     get_assistant_message_from_create_chat_completion_response,
     get_assistant_message_from_create_chat_completion_stream_response,
   },
-  markdown::Markdown,
+  // markdown::Markdown,
 };
 
 bitflags! {
@@ -52,7 +52,7 @@ const IS_CURRENT_TRANSACTION = 1 << 5;
 
 }
 
-impl<'a> MessageContainer<'a> {
+impl MessageContainer {
   pub fn is_receiving(&self) -> bool {
     self.message_state.contains(MessageState::RECEIVING)
   }
@@ -93,15 +93,16 @@ impl<'a> MessageContainer<'a> {
     lang_config: Arc<Loader>,
   ) -> usize {
     let content = format!("{}", self);
-    let markdown = Markdown::new(content, window_width, lang_config);
-
-    let text = markdown.parse(None);
-    text.len()
+    // let markdown = Markdown::new(content, window_width, lang_config);
+    //
+    // let text = markdown.parse(None);
+    // text.len()
+    0
   }
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
-pub struct MessageContainer<'a> {
+pub struct MessageContainer {
   pub message: ChatCompletionRequestMessage,
   pub receive_buffer: Option<ReceiveBuffer>,
   pub tool_calls: Vec<ChatCompletionMessageToolCall>,
@@ -119,7 +120,6 @@ pub struct MessageContainer<'a> {
   pub stylized: Rope,
   pub token_usage: usize,
   #[serde(skip)]
-  pub rendered_text: Vec<Spans<'a>>,
   pub rendered_line_count: usize,
   pub message_state: MessageState,
 }
@@ -170,7 +170,7 @@ impl From<ChatMessage> for ChatCompletionRequestMessage {
   }
 }
 
-impl<'a> From<ReceiveBuffer> for MessageContainer<'a> {
+impl From<ReceiveBuffer> for MessageContainer {
   fn from(receive_buffer: ReceiveBuffer) -> Self {
     let message = receive_buffer.clone().into();
     let (message_state, stream_id) = match &receive_buffer {
@@ -195,14 +195,13 @@ impl<'a> From<ReceiveBuffer> for MessageContainer<'a> {
       embedding_saved: false,
       stylize_complete: false,
       current_transaction_flag: false,
-      rendered_text: Vec::new(),
       message_state,
       rendered_line_count: 0,
     }
   }
 }
 
-impl<'a> From<ChatMessage> for MessageContainer<'a> {
+impl From<ChatMessage> for MessageContainer {
   fn from(message: ChatMessage) -> Self {
     match message {
       ChatMessage::Response(response) => {
@@ -240,26 +239,19 @@ impl<'a> From<ChatMessage> for MessageContainer<'a> {
   }
 }
 
-impl<'a> fmt::Display for MessageContainer<'a> {
+impl fmt::Display for MessageContainer {
   fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
     write!(
       f,
       "{}",
       match &self.message {
-        ChatCompletionRequestMessage::System(message) => match &message.content
-        {
-          Some(content) => {
-            format!("{}\n{}", "System:".bright_magenta(), content)
-          },
-          None => {
-            format!("{}\n{}", "System:".bright_magenta(), "no content")
-          },
-        },
+        ChatCompletionRequestMessage::System(message) =>
+          format!("{}\n{}", "System:".bright_magenta(), &message.content),
         ChatCompletionRequestMessage::User(message) => match &message.content {
-          Some(ChatCompletionRequestUserMessageContent::Text(content)) => {
+          ChatCompletionRequestUserMessageContent::Text(content) => {
             format!("{}\n{}", "You:".bright_blue(), content)
           },
-          Some(ChatCompletionRequestUserMessageContent::Array(parts)) => {
+          ChatCompletionRequestUserMessageContent::Array(parts) => {
             let mut content: Vec<String> = Vec::new();
             for part in parts {
               content.push(match part {
@@ -276,9 +268,6 @@ impl<'a> fmt::Display for MessageContainer<'a> {
               })
             }
             content.join("\n")
-          },
-          None => {
-            format!("{}\n{}", "You:".bright_blue(), "no content")
           },
         },
         ChatCompletionRequestMessage::Assistant(message) => {
@@ -317,10 +306,7 @@ impl<'a> fmt::Display for MessageContainer<'a> {
             "Tool:".bright_green(),
             message.tool_call_id
           ));
-          content.push(match &message.content {
-            Some(content) => content.to_string(),
-            None => "no content".to_string(),
-          });
+          content.push(message.content.to_string());
           content.join("\n")
         },
         ChatCompletionRequestMessage::Function(message) => {
@@ -426,7 +412,7 @@ impl<'a> fmt::Display for MessageContainer<'a> {
   }
 }
 
-impl<'a> MessageContainer<'a> {
+impl MessageContainer {
   fn new(message: ChatCompletionRequestMessage) -> Self {
     MessageContainer {
       message,
@@ -444,7 +430,6 @@ impl<'a> MessageContainer<'a> {
       tools_called: false,
       response_count: 0,
       token_usage: 0,
-      rendered_text: Vec::new(),
       message_state: MessageState::empty(),
       rendered_line_count: 0,
     }

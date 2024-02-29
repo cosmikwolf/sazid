@@ -58,7 +58,10 @@ impl Workspace {
               e.path().extension().unwrap_or_default().to_str().unwrap()
                 == file_type
             },
-            FileType::Suffix(file_type) => e.path().ends_with(file_type),
+            FileType::Glob(glob) => {
+              let matcher = glob.compile_matcher();
+              matcher.is_match(e.path())
+            },
           })
         })
         .flat_map(|e| e.path().canonicalize())

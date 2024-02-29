@@ -1,8 +1,9 @@
+use arc_swap::ArcSwap;
 use bat::{
   assets::HighlightingAssets, config::Config, controller::Controller,
   style::StyleComponents,
 };
-use helix_core::syntax::Configuration;
+use helix_core::config::default_lang_config;
 use helix_core::syntax::Loader;
 use helix_view::Theme;
 use std::default::Default;
@@ -15,7 +16,7 @@ use ropey::Rope;
 
 #[derive(Debug)]
 pub struct SessionView {
-  pub lang_config: Arc<Loader>,
+  pub lang_config: Arc<ArcSwap<Loader>>,
   pub theme: Theme,
   pub renderer: BatRenderer<'static>,
   pub window_width: usize,
@@ -30,7 +31,9 @@ pub struct SessionView {
 impl Default for SessionView {
   fn default() -> Self {
     SessionView {
-      lang_config: Arc::new(Loader::new(Configuration::default())),
+      lang_config: Arc::new(ArcSwap::from_pointee(
+        Loader::new(default_lang_config()).unwrap(),
+      )),
       ..Default::default()
     }
   }

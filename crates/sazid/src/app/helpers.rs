@@ -1,6 +1,6 @@
 use async_openai::types::{
-  ChatCompletionMessageToolCall, ChatCompletionMessageToolCallChunk,
-  ChatCompletionRequestAssistantMessage, ChatCompletionResponseStreamMessage,
+  ChatChoiceLogprobs, ChatChoiceStream, ChatCompletionMessageToolCall,
+  ChatCompletionMessageToolCallChunk, ChatCompletionRequestAssistantMessage,
   ChatCompletionStreamResponseDelta, CreateChatCompletionResponse,
   CreateChatCompletionStreamResponse, FinishReason, FunctionCall,
   FunctionCallStream, Role,
@@ -122,26 +122,71 @@ pub fn concatenate_finish_reason(
   }
 }
 
-pub fn concatenate_stream_response_messages(
-  sr1: &ChatCompletionResponseStreamMessage,
-  sr2: &ChatCompletionResponseStreamMessage,
-) -> Result<ChatCompletionResponseStreamMessage, ParseError> {
+fn concatenate_log_probs(
+  logprobs1: Option<ChatChoiceLogprobs>,
+  logprobs2: Option<ChatChoiceLogprobs>,
+) -> Option<ChatChoiceLogprobs> {
+  match (logprobs1, logprobs2) {
+    (Some(lp1), Some(lp2)) => {
+      let mut content = vec![];
+      content.extend(lp1.content.unwrap_or_default());
+      content.extend(lp2.content.unwrap_or_default());
+      Some(ChatChoiceLogprobs { content: Some(content) })
+    },
+    (Some(lp), None) | (None, Some(lp)) => Some(lp),
+    (None, None) => None,
+  }
+}
+
+fn concatenate_chat_choice_streams(
+  sr1: &ChatChoiceStream,
+  sr2: &ChatChoiceStream,
+) -> Result<ChatChoiceStream, ParseError> {
   if sr1.index != sr2.index {
     Err(ParseError::new(
       "Cannot concatenate two stream responses with different indexes",
     ))
   } else {
-    Ok(ChatCompletionResponseStreamMessage {
+    Ok(ChatChoiceStream {
       index: sr1.index,
       delta: concatenate_stream_delta(sr1.delta.clone(), sr2.delta.clone()),
       finish_reason: concatenate_finish_reason(
         sr1.finish_reason,
         sr2.finish_reason,
-      )
-      .unwrap(),
+      )?,
+      logprobs: concatenate_log_probs(
+        sr1.logprobs.clone(),
+        sr2.logprobs.clone(),
+      ),
     })
   }
 }
+
+// pub fn concatenate_stream_response_messages(
+//   sr1: &ChatChoiceStream ,
+//   sr2: &ChatChoiceStream ,
+// ) -> Result<ChatChoiceStream , ParseError> {
+//   if sr1.index != sr2.index {
+//     Err(ParseError::new(
+//       "Cannot concatenate two stream responses with different indexes",
+//     ))
+//   } else {
+//     Ok(ChatCompletionStreamResponseDelta {
+//       index: sr1.index,
+//       delta: concatenate_stream_delta(sr1.delta.clone(), sr2.delta.clone()),
+//       finish_reason: concatenate_finish_reason(
+//         sr1.finish_reason,
+//         sr2.finish_reason,
+//       ),
+//         function_call: concatenate_function_call_streams(
+//             sr1.function_call,
+//             sr2.function_call,
+//             )
+//     }
+//       .unwrap(),
+//     })
+//   }
+// }
 
 pub fn convert_tool_chunk_to_tool_call(
   chunk: &ChatCompletionMessageToolCallChunk,
@@ -229,11 +274,11 @@ pub fn get_assistant_message_from_create_chat_completion_response(
   }
 }
 pub fn fold_stream_responses_into_assistant_message(
-  smvec: Vec<ChatCompletionResponseStreamMessage>,
+  smvec: Vec<ChatChoiceStream>,
 ) -> Result<ChatCompletionRequestAssistantMessage, ParseError> {
   let concatenated_message =
     smvec.iter().skip(1).try_fold(smvec[0].clone(), |acc, sr| {
-      concatenate_stream_response_messages(&acc, sr)
+      concatenate_chat_choice_streams(&acc, sr)
     })?;
 
   // let function_call = match concatenated_message.delta.function_call {

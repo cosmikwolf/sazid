@@ -1,8 +1,6 @@
 use async_openai::{
   config::OpenAIConfig,
-  types::{
-    ChatCompletionFunctions, ChatCompletionTool, ChatCompletionToolType,
-  },
+  types::{ChatCompletionTool, ChatCompletionToolType, FunctionObject},
   Client,
 };
 
@@ -335,12 +333,12 @@ pub fn create_chat_completion_tool_args(
     .iter()
     .map(|command| ChatCompletionTool {
       r#type: ChatCompletionToolType::Function,
-      function: ChatCompletionFunctions {
+      function: FunctionObject {
         name: command.name.clone(),
         description: command.description.clone(),
         parameters: match &command.parameters {
-          Some(parameters) => serde_json::to_value(parameters).unwrap(),
-          None => serde_json::from_str("{}").unwrap(),
+          Some(parameters) => Some(serde_json::to_value(parameters).unwrap()),
+          None => None,
         },
       },
     })
@@ -349,16 +347,15 @@ pub fn create_chat_completion_tool_args(
 
 pub fn create_chat_completion_function_args(
   commands: Vec<FunctionCall>,
-) -> Vec<ChatCompletionFunctions> {
-  let mut chat_completion_functions: Vec<ChatCompletionFunctions> = Vec::new();
-  let empty_parameters = "{\"type\": \"object\", \"properties\": {}}";
+) -> Vec<FunctionObject> {
+  let mut chat_completion_functions: Vec<FunctionObject> = Vec::new();
   for command in commands {
-    let chat_completion_function = ChatCompletionFunctions {
+    let chat_completion_function = FunctionObject {
       name: command.name,
       description: command.description,
       parameters: match &command.parameters {
-        Some(parameters) => serde_json::to_value(parameters).unwrap(),
-        None => serde_json::from_str(empty_parameters).unwrap(),
+        Some(parameters) => Some(serde_json::to_value(parameters).unwrap()),
+        None => None,
       },
     };
     chat_completion_functions.push(chat_completion_function);

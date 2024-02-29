@@ -3,9 +3,7 @@ use std::{
   time::{SystemTime, UNIX_EPOCH},
 };
 
-use async_openai::{
-  types::ChatCompletionRequestSystemMessage,
-};
+use async_openai::types::ChatCompletionRequestSystemMessage;
 use serde::{Deserialize, Serialize};
 
 use super::{consts::*, functions::CallableFunction, types::Model};
@@ -47,7 +45,7 @@ impl Default for SessionConfig {
 impl SessionConfig {
   pub fn prompt_message(&self) -> ChatCompletionRequestSystemMessage {
     ChatCompletionRequestSystemMessage {
-      content: Some(self.prompt.clone()),
+      content: self.prompt.clone(),
       ..Default::default()
     }
   }

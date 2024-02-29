@@ -108,7 +108,7 @@ pub fn handle_tool_call(
         // trace_dbg!("tool output:\n{}", output);
         tx.send(Action::AddMessage(ChatMessage::Tool(ChatCompletionRequestToolMessage {
           tool_call_id: tc_clone.id,
-          content: Some(output),
+          content: output,
           role: Role::Tool,
         })))
         .unwrap();
@@ -121,7 +121,7 @@ pub fn handle_tool_call(
         // }));
         tx.send(Action::AddMessage(ChatMessage::Tool(ChatCompletionRequestToolMessage {
           tool_call_id: tc_clone.id,
-          content: Some(format!("Error: {:?}", e)),
+          content: format!("Error: {:?}", e),
           role: Role::Tool,
         })))
         .unwrap();

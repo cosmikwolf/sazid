@@ -1,24 +1,8 @@
 [workspace]
-members = [
-  "crates/sazid",
-  "crates/sazid-helix",
-  "crates/sazid-markdown",
-  "lib/helix/helix-core/",
-  "lib/helix/helix-dap/",
-  "lib/helix/helix-event/",
-  "lib/helix/helix-loader/",
-  "lib/helix/helix-lsp/",
-  "lib/helix/helix-parsec/",
-  "lib/helix/helix-stdx/",
-  "lib/helix/helix-term/",
-  "lib/helix/helix-tui/",
-  "lib/helix/helix-vcs/",
-  "lib/helix/helix-view/",
-  "lib/helix/helix-view/",
-  # "lib/tui-textarea",
-]
+members = ["crates/sazid", "crates/sazid-term", "crates/sazid-view"]
+exclude = ["archive/*"]
 resolver = "2"
-default-members = ["crates/sazid-helix"]
+default-members = ["crates/sazid-term"]
 
 [workspace.package]
 # name = "sazid"
@@ -32,6 +16,7 @@ license = "Apache 2.0 / MIT"
 rust-version = "1.75"
 homepage = "https://github.com/cosmikwolf/sazid"
 
+
 [profile.dev.package]
 insta.opt-level = 3
 similar.opt-level = 3
@@ -39,3 +24,17 @@ similar.opt-level = 3
 [workspace.dependencies]
 tree-sitter = { version = "0.20", git = "https://github.com/helix-editor/tree-sitter", rev = "660481dbf71413eba5a928b0b0ab8da50c1109e0" }
 nucleo = "0.2.0"
+
+tui = { path = "lib/helix/helix-tui", package = "helix-tui", default-features = false }
+helix-stdx = { path = "lib/helix/helix-stdx" }
+helix-lsp = { path = "lib/helix/helix-lsp" }
+helix-vcs = { path = "lib/helix/helix-vcs" }
+helix-loader = { path = "lib/helix/helix-loader" }
+helix-core = { path = "lib/helix/helix-core" }
+helix-view = { path = "lib/helix/helix-view" }
+helix-dap = { path = "lib/helix/helix-dap" }
+helix-event = { path = "lib/helix/helix-event" }
+helix-tui = { path = "lib/helix/helix-tui" }
+sazid = { path = "crates/sazid" }
+sazid-view = { path = "crates/sazid-view" }
+sazid-term = { path = "crates/sazid-term" }

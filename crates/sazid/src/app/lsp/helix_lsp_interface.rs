@@ -1,3 +1,4 @@
+use arc_swap::{access::Map, ArcSwap};
 use futures_util::FutureExt;
 use helix_core::diff::compare_ropes;
 use std::borrow::Cow;
@@ -6,7 +7,7 @@ use std::rc::Rc;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
-use helix_core::config::default_syntax_loader;
+use helix_core::config::default_lang_config;
 use helix_core::diagnostic::Severity;
 use helix_core::syntax::Configuration;
 use helix_core::syntax::LanguageConfiguration;
@@ -73,7 +74,7 @@ pub struct LanguageServerInterface {
   pub language_servers: Arc<Mutex<helix_lsp::Registry>>,
   pub status_msg: StatusMessage,
   pub action_tx: Option<UnboundedSender<Action>>,
-  loader: Arc<Loader>,
+  loader: Arc<ArcSwap<Loader>>,
 }
 
 impl LanguageServerInterface {
@@ -81,14 +82,19 @@ impl LanguageServerInterface {
     config: Option<Configuration>,
     action_tx: tokio::sync::mpsc::UnboundedSender<Action>,
   ) -> Self {
-    let loader = match config {
-      Some(config) => Arc::new(Loader::new(config)),
-      None => Arc::new(Loader::new(default_syntax_loader())),
+    let loader: Arc<ArcSwap<Loader>> = match config {
+      Some(config) => {
+        Arc::new(ArcSwap::from_pointee(Loader::new(config).unwrap()))
+      },
+      None => Arc::new(ArcSwap::from_pointee(
+        Loader::new(default_lang_config()).unwrap(),
+      )),
     };
+    let language_servers = Arc::new(Mutex::new(Registry::new(loader.clone())));
     Self {
       lsp_progress: LspProgressMap::new(),
-      loader: loader.clone(),
-      language_servers: Arc::new(Mutex::new(Registry::new(loader))),
+      loader,
+      language_servers,
       action_tx: Some(action_tx),
       status_msg: StatusMessage::default(),
       workspaces: vec![],
@@ -544,7 +550,7 @@ impl LanguageServerInterface {
     &self,
     name: &str,
   ) -> Option<Arc<LanguageConfiguration>> {
-    self.loader.language_config_for_name(name)
+    self.loader.load().language_config_for_name(name)
   }
 
   pub async fn language_server_by_name(
