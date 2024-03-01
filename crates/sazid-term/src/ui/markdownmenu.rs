@@ -1,14 +1,16 @@
-use std::{borrow::Cow, cmp::Reverse, path::PathBuf};
+use std::{borrow::Cow, cmp::Reverse, path::PathBuf, sync::Arc};
 
 use crate::{
   compositor::{Callback, Component, Compositor, Context, Event, EventResult},
   ctrl, key, shift,
 };
-use helix_core::fuzzy::MATCHER;
+use arc_swap::ArcSwap;
+use helix_core::{fuzzy::MATCHER, syntax};
 use nucleo::pattern::{Atom, AtomKind, CaseMatching};
 use nucleo::{Config, Utf32Str};
 use tui::{
   buffer::Buffer as Surface,
+  text::Text,
   widgets::{Block, Borders, Table, Widget},
 };
 
@@ -17,51 +19,62 @@ pub use tui::widgets::{Cell, Row};
 use helix_view::{
   editor::SmartTabConfig,
   graphics::{Margin, Rect},
-  Editor,
+  Editor, Theme,
 };
 use tui::layout::Constraint;
 
-pub trait RichItem: Sync + Send + 'static {
+pub trait MarkdownItem: Sync + Send + 'static {
   /// Additional editor state that is used for label calculation.
   type Data: Sync + Send + 'static;
 
-  fn format(&self, data: &Self::Data) -> Row;
+  fn format(
+    &self,
+    data: &Self::Data,
+    config_loader: Arc<ArcSwap<syntax::Loader>>,
 
-  fn sort_text(&self, data: &Self::Data) -> Cow<str> {
-    let label: String = self.format(data).cell_text().collect();
+    theme: Option<&Theme>,
+  ) -> tui::text::Text;
+
+  fn sort_text(
+    &self,
+    data: &Self::Data,
+    config_loader: Arc<ArcSwap<syntax::Loader>>,
+
+    theme: Option<&Theme>,
+  ) -> Cow<str> {
+    let label: String = self.format(data, config_loader, theme).into();
     label.into()
   }
 
-  fn filter_text(&self, data: &Self::Data) -> Cow<str> {
-    let label: String = self.format(data).cell_text().collect();
+  fn filter_text(
+    &self,
+    data: &Self::Data,
+    config_loader: Arc<ArcSwap<syntax::Loader>>,
+
+    theme: Option<&Theme>,
+  ) -> Cow<str> {
+    let label: String = self.format(data, config_loader, theme).into();
     label.into()
   }
 }
 
-impl RichItem for PathBuf {
-  /// Root prefix to strip.
-  type Data = PathBuf;
+pub type MarkdownMenuCallback<T> =
+  Box<dyn Fn(&mut Editor, Option<&T>, MarkdownMenuEvent)>;
 
-  fn format(&self, root_path: &Self::Data) -> Row {
-    self.strip_prefix(root_path).unwrap_or(self).to_string_lossy().into()
-  }
-}
-
-pub type RichMenuCallback<T> =
-  Box<dyn Fn(&mut Editor, Option<&T>, RichMenuEvent)>;
-
-pub struct RichMenu<T: RichItem> {
-  options: Vec<T>,
+pub struct MarkdownMenu<T: MarkdownItem> {
+  items: Vec<T>,
   editor_data: T::Data,
 
   cursor: Option<usize>,
 
+  config_loader: Arc<ArcSwap<syntax::Loader>>,
+  theme: Option<Theme>,
   /// (index, score)
   matches: Vec<(u32, u32)>,
 
   widths: Vec<Constraint>,
 
-  callback_fn: RichMenuCallback<T>,
+  callback_fn: MarkdownMenuCallback<T>,
 
   scroll: usize,
   size: (u16, u16),
@@ -69,19 +82,23 @@ pub struct RichMenu<T: RichItem> {
   recalculate: bool,
 }
 
-impl<T: RichItem> RichMenu<T> {
+impl<T: MarkdownItem> MarkdownMenu<T> {
   const LEFT_PADDING: usize = 1;
 
   // TODO: it's like a slimmed down picker, share code? (picker = menu + prompt with different
   // rendering)
   pub fn new(
-    options: Vec<T>,
-    editor_data: <T as RichItem>::Data,
-    callback_fn: impl Fn(&mut Editor, Option<&T>, RichMenuEvent) + 'static,
+    items: Vec<T>,
+    editor_data: <T as MarkdownItem>::Data,
+    callback_fn: impl Fn(&mut Editor, Option<&T>, MarkdownMenuEvent) + 'static,
+    config_loader: Arc<ArcSwap<syntax::Loader>>,
+    theme: Option<Theme>,
   ) -> Self {
-    let matches = (0..options.len() as u32).map(|i| (i, 0)).collect();
+    let matches = (0..items.len() as u32).map(|i| (i, 0)).collect();
     Self {
-      options,
+      items,
+      config_loader,
+      theme,
       editor_data,
       matches,
       cursor: None,
@@ -102,8 +119,12 @@ impl<T: RichItem> RichMenu<T> {
     let mut buf = Vec::new();
     if incremental {
       self.matches.retain_mut(|(index, score)| {
-        let option = &self.options[*index as usize];
-        let text = option.filter_text(&self.editor_data);
+        let option = &self.items[*index as usize];
+        let text = option.filter_text(
+          &self.editor_data,
+          self.config_loader.clone(),
+          self.theme.as_ref(),
+        );
         let new_score =
           pattern.score(Utf32Str::new(&text, &mut buf), &mut matcher);
         match new_score {
@@ -116,13 +137,16 @@ impl<T: RichItem> RichMenu<T> {
       })
     } else {
       self.matches.clear();
-      let matches =
-        self.options.iter().enumerate().filter_map(|(i, option)| {
-          let text = option.filter_text(&self.editor_data);
-          pattern
-            .score(Utf32Str::new(&text, &mut buf), &mut matcher)
-            .map(|score| (i as u32, score as u32))
-        });
+      let matches = self.items.iter().enumerate().filter_map(|(i, option)| {
+        let text = option.filter_text(
+          &self.editor_data,
+          self.config_loader.clone(),
+          self.theme.as_ref(),
+        );
+        pattern
+          .score(Utf32Str::new(&text, &mut buf), &mut matcher)
+          .map(|score| (i as u32, score as u32))
+      });
       self.matches.extend(matches);
     }
     self.matches.sort_unstable_by_key(|&(i, score)| (Reverse(score), i));
@@ -158,15 +182,28 @@ impl<T: RichItem> RichMenu<T> {
 
   fn recalculate_size(&mut self, viewport: (u16, u16)) {
     let n = self
-      .options
+      .items
       .first()
-      .map(|option| option.format(&self.editor_data).cells.len())
+      .map(|option| {
+        option
+          .format(
+            &self.editor_data,
+            self.config_loader.clone(),
+            self.theme.as_ref(),
+          )
+          .lines
+          .len()
+      })
       .unwrap_or_default();
-    let max_lens = self.options.iter().fold(vec![0; n], |mut acc, option| {
-      let row = option.format(&self.editor_data);
+    let max_lens = self.items.iter().fold(vec![0; n], |mut acc, option| {
+      let text = option.format(
+        &self.editor_data,
+        self.config_loader.clone(),
+        self.theme.as_ref(),
+      );
       // maintain max for each column
-      for (acc, cell) in acc.iter_mut().zip(row.cells.iter()) {
-        let width = cell.content.width();
+      for (acc, spans) in acc.iter_mut().zip(text.lines.iter()) {
+        let width = spans.width();
         if width > *acc {
           *acc = width;
         }
@@ -174,25 +211,26 @@ impl<T: RichItem> RichMenu<T> {
 
       acc
     });
-
+    log::debug!("max_lens: {:?}", max_lens);
     let height = self.matches.len().min(10).min(viewport.1 as usize);
     // do all the matches fit on a single screen?
     let fits = self.matches.len() <= height;
 
     let mut len = max_lens.iter().sum::<usize>() + n;
-
+    log::debug!("len: {}", len);
     if !fits {
       len += 1; // +1: reserve some space for scrollbar
     }
 
     len += Self::LEFT_PADDING;
     let width = len.min(viewport.0 as usize);
+    log::debug!("width: {}", width);
 
-    self.widths =
-      max_lens.into_iter().map(|len| Constraint::Length(len as u16)).collect();
-
+    // self.widths =
+    //   max_lens.into_iter().map(|len| Constraint::Length(len as u16)).collect();
+    self.widths = vec![Constraint::Length(width as u16)];
     self.size = (width as u16, height as u16);
-
+    log::debug!("size: {:?}", self.size);
     // adjust scroll offsets if size changed
     self.adjust_scroll();
     self.recalculate = false;
@@ -218,7 +256,7 @@ impl<T: RichItem> RichMenu<T> {
       self
         .matches
         .get(cursor)
-        .map(|(index, _score)| &self.options[*index as usize])
+        .map(|(index, _score)| &self.items[*index as usize])
     })
   }
 
@@ -227,7 +265,7 @@ impl<T: RichItem> RichMenu<T> {
       self
         .matches
         .get(cursor)
-        .map(|(index, _score)| &mut self.options[*index as usize])
+        .map(|(index, _score)| &mut self.items[*index as usize])
     })
   }
 
@@ -240,9 +278,9 @@ impl<T: RichItem> RichMenu<T> {
   }
 }
 
-impl<T: RichItem + PartialEq> RichMenu<T> {
+impl<T: MarkdownItem + PartialEq> MarkdownMenu<T> {
   pub fn replace_option(&mut self, old_option: T, new_option: T) {
-    for option in &mut self.options {
+    for option in &mut self.items {
       if old_option == *option {
         *option = new_option;
         break;
@@ -251,9 +289,9 @@ impl<T: RichItem + PartialEq> RichMenu<T> {
   }
 }
 
-use super::PromptEvent as RichMenuEvent;
+use super::PromptEvent as MarkdownMenuEvent;
 
-impl<T: RichItem + 'static> Component for RichMenu<T> {
+impl<T: MarkdownItem + 'static> Component for MarkdownMenu<T> {
   fn handle_event(&mut self, event: &Event, cx: &mut Context) -> EventResult {
     let event = match event {
       Event::Key(event) => *event,
@@ -281,19 +319,31 @@ impl<T: RichItem + 'static> Component for RichMenu<T> {
     match event {
       // esc or ctrl-c aborts the completion and closes the menu
       key!(Esc) | ctrl!('c') => {
-        (self.callback_fn)(cx.editor, self.selection(), RichMenuEvent::Abort);
+        (self.callback_fn)(
+          cx.editor,
+          self.selection(),
+          MarkdownMenuEvent::Abort,
+        );
         return EventResult::Consumed(close_fn);
       },
       // arrow up/ctrl-p/shift-tab prev completion choice (including updating the doc)
       shift!(Tab) | key!(Up) | ctrl!('p') => {
         self.move_up();
-        (self.callback_fn)(cx.editor, self.selection(), RichMenuEvent::Update);
+        (self.callback_fn)(
+          cx.editor,
+          self.selection(),
+          MarkdownMenuEvent::Update,
+        );
         return EventResult::Consumed(None);
       },
       key!(Tab) | key!(Down) | ctrl!('n') => {
         // arrow down/ctrl-n/tab advances completion choice (including updating the doc)
         self.move_down();
-        (self.callback_fn)(cx.editor, self.selection(), RichMenuEvent::Update);
+        (self.callback_fn)(
+          cx.editor,
+          self.selection(),
+          MarkdownMenuEvent::Update,
+        );
         return EventResult::Consumed(None);
       },
       key!(Enter) => {
@@ -301,7 +351,7 @@ impl<T: RichItem + 'static> Component for RichMenu<T> {
           (self.callback_fn)(
             cx.editor,
             Some(selection),
-            RichMenuEvent::Validate,
+            MarkdownMenuEvent::Validate,
           );
           return EventResult::Consumed(close_fn);
         } else {
@@ -313,7 +363,7 @@ impl<T: RichItem + 'static> Component for RichMenu<T> {
       //     modifiers: KeyModifiers::NONE,
       // } => {
       //     self.insert_char(c);
-      //     (self.callback_fn)(cx.editor, &self.line, RichMenuEvent::Update);
+      //     (self.callback_fn)(cx.editor, &self.line, MarkdownMenuEvent::Update);
       // }
 
       // / -> edit_filter?
@@ -354,13 +404,14 @@ impl<T: RichItem + 'static> Component for RichMenu<T> {
     };
 
     let scroll = self.scroll;
+    self.required_size((area.width, area.height));
 
     let options: Vec<_> = self
       .matches
       .iter()
       .map(|(index, _score)| {
         // (index, self.options.get(*index).unwrap()) // get_unchecked
-        &self.options[*index as usize] // get_unchecked
+        &self.items[*index as usize] // get_unchecked
       })
       .collect();
 
@@ -372,13 +423,24 @@ impl<T: RichItem + 'static> Component for RichMenu<T> {
       (a + b - 1) / b
     }
 
-    let rows = options.iter().map(|option| option.format(&self.editor_data));
+    let rows = options.iter().map(|option| {
+      let text = option.format(
+        &self.editor_data,
+        self.config_loader.clone(),
+        self.theme.as_ref(),
+      );
+      let height = text.height() as u16;
+      Row::from(text).height(height)
+    });
+
+    log::debug!("widths: {:?}", self.widths);
     let table = Table::new(rows)
       .style(style)
       .highlight_style(selected)
       .column_spacing(1)
       .widths(&self.widths);
 
+    log::debug!("table: {:?}", table.get_columns_widths(1000, false));
     use tui::widgets::TableState;
 
     table.render_table(

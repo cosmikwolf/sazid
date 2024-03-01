@@ -33,11 +33,13 @@ use std::{
 };
 
 use crate::ui::{Prompt, PromptEvent};
+
 use helix_core::{
   char_idx_at_visual_offset, fuzzy::MATCHER, movement::Direction,
   text_annotations::TextAnnotations,
   unicode::segmentation::UnicodeSegmentation, Position, Syntax,
 };
+
 use helix_view::{
   editor::Action,
   graphics::{CursorKind, Margin, Modifier, Rect},
@@ -48,8 +50,8 @@ use helix_view::{
 
 pub const ID: &str = "session";
 use super::{
-  overlay::Overlay,
   menu::Item,
+  overlay::Overlay,
   textbox::{Textbox, TextboxEvent},
 };
 

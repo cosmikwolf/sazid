@@ -34,7 +34,14 @@ impl Default for SessionView {
       lang_config: Arc::new(ArcSwap::from_pointee(
         Loader::new(default_lang_config()).unwrap(),
       )),
-      ..Default::default()
+      theme: Theme::default(),
+      renderer: BatRenderer::default(),
+      window_width: 0,
+      render_conditions: (0, 0, 0, 0, false),
+      rendered_view: "".to_string(),
+      selected_text: None,
+      new_data: false,
+      rendered_text: Rope::default(),
     }
   }
 }

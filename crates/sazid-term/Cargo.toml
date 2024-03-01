@@ -60,10 +60,21 @@ futures-util = { version = "0.3", features = [
 arc-swap = { version = "1.6.0" }
 termini = "1"
 async-openai = "0.18.3"
+
 # Logging
 fern = "0.6"
 chrono = { version = "0.4", default-features = false, features = ["clock"] }
 log = "0.4"
+tracing = "0.1.40"
+tracing-error = "0.2.0"
+tracing-subscriber = { version = "0.3.18", features = [
+  "env-filter",
+  "serde",
+  "fmt",
+  "std",
+  "ansi",
+] }
+console-subscriber = "0.2.0"
 
 # File picker
 nucleo.workspace = true

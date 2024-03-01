@@ -16,6 +16,7 @@ use helix_view::{
   tree::Layout,
   Align, Editor,
 };
+use sazid::components::session::Session;
 use serde_json::json;
 use tui::backend::Backend;
 
@@ -60,6 +61,7 @@ pub struct Application {
   compositor: Compositor,
   terminal: Terminal,
   pub editor: Editor,
+  pub session: Session,
 
   config: Arc<ArcSwap<Config>>,
 
@@ -224,6 +226,8 @@ impl Application {
 
     editor.set_theme(theme);
 
+    let session = Session::default();
+
     #[cfg(windows)]
     let signals = futures_util::stream::empty();
     #[cfg(not(windows))]
@@ -237,6 +241,7 @@ impl Application {
     .context("build signal handler")?;
 
     let app = Self {
+      session,
       compositor,
       terminal,
       editor,
@@ -261,6 +266,7 @@ impl Application {
     }
 
     let mut cx = crate::compositor::Context {
+      session: &mut self.session,
       editor: &mut self.editor,
       jobs: &mut self.jobs,
       scroll: None,
@@ -530,6 +536,7 @@ impl Application {
 
   pub async fn handle_idle_timeout(&mut self) {
     let mut cx = crate::compositor::Context {
+      session: &mut self.session,
       editor: &mut self.editor,
       jobs: &mut self.jobs,
       scroll: None,
@@ -632,6 +639,7 @@ impl Application {
     event: std::io::Result<CrosstermEvent>,
   ) {
     let mut cx = crate::compositor::Context {
+      session: &mut self.session,
       editor: &mut self.editor,
       jobs: &mut self.jobs,
       scroll: None,

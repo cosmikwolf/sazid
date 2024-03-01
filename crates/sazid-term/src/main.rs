@@ -1,9 +1,57 @@
+use std::path::Path;
+
 use anyhow::{Context, Error, Result};
 use crossterm::event::EventStream;
 use helix_loader::VERSION_AND_GIT_HASH;
 use sazid_term::application::Application;
 use sazid_term::args::Args;
 use sazid_term::config::{Config, ConfigLoadError};
+use tracing_error::ErrorLayer;
+use tracing_subscriber::{self, prelude::*};
+
+pub fn setup_tracing_logging(verbosity: u64, log_path: &Path) -> Result<()> {
+  let log_file = std::fs::File::create(log_path)?;
+
+  let filter_level = match verbosity {
+    0 => "warn".to_string(),
+    1 => "info".to_string(),
+    2 => "debug".to_string(),
+    _3_or_more => "trace".to_string(),
+  };
+
+  std::env::set_var(
+    "RUST_LOG",
+    std::env::var("RUST_LOG").unwrap_or_else(|_| {
+      format!("{}={}", env!("CARGO_CRATE_NAME"), filter_level)
+    }),
+  );
+
+  let file_subscriber = tracing_subscriber::fmt::layer()
+    .with_writer(log_file)
+    .event_format(
+      tracing_subscriber::fmt::format::format()
+        .pretty()
+        .with_source_location(true),
+    )
+    .without_time()
+    // .with_file(false)
+    // .with_line_number(false)
+    .with_target(false)
+    .with_ansi(true)
+   .with_filter(tracing_subscriber::filter::EnvFilter::from_default_env());
+
+  tracing_subscriber::registry()
+    .with(file_subscriber)
+    .with(
+      console_subscriber::ConsoleLayer::builder().with_default_env().spawn(),
+    )
+    .with(ErrorLayer::default())
+    .init();
+
+  println!("RUST_LOG: {}", std::env::var("RUST_LOG").unwrap());
+  println!("Log file: {}", log_path.display());
+  Ok(())
+}
 
 fn setup_logging(verbosity: u64) -> Result<()> {
   let mut base_config = fern::Dispatch::new();
@@ -114,7 +162,9 @@ FLAGS:
     return Ok(0);
   }
 
-  setup_logging(args.verbosity).context("failed to initialize logging")?;
+  // setup_logging(args.verbosity).context("failed to initialize logging")?;
+
+  setup_tracing_logging(args.verbosity, &helix_loader::log_file())?;
 
   // Before setting the working directory, resolve all the paths in args.files
   for (path, _) in args.files.iter_mut() {

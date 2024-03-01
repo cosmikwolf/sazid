@@ -8,6 +8,7 @@ use helix_stdx::rope::{self, RopeSliceExt};
 use helix_vcs::Hunk;
 pub use lsp::*;
 pub use llm::*;
+use sazid::components::session::Session;
 use tui::widgets::Row;
 pub use typed::*;
 
@@ -82,6 +83,7 @@ use ignore::{DirEntry, WalkBuilder, WalkState};
 pub type OnKeyCallback = Box<dyn FnOnce(&mut Context, KeyEvent)>;
 
 pub struct Context<'a> {
+    pub session: &'a mut Session,
     pub register: Option<char>,
     pub count: Option<NonZeroUsize>,
     pub editor: &'a mut Editor,
@@ -199,6 +201,7 @@ impl MappableCommand {
                 let args: Vec<Cow<str>> = args.iter().map(Cow::from).collect();
                 if let Some(command) = typed::TYPABLE_COMMAND_MAP.get(name.as_str()) {
                     let mut cx = compositor::Context {
+                        session: cx.session,
                         editor: cx.editor,
                         jobs: cx.jobs,
                         scroll: None,
@@ -2986,6 +2989,7 @@ pub fn command_palette(cx: &mut Context) {
 
             let picker = Picker::new(commands, keymap, move |cx, command, _action| {
                 let mut ctx = Context {
+                    session: cx.session,
                     register,
                     count,
                     editor: cx.editor,
