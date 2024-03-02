@@ -1,4 +1,9 @@
 use arc_swap::{access::Map, ArcSwap};
+use async_openai::types::{
+  ChatCompletionRequestAssistantMessage, ChatCompletionRequestSystemMessage,
+  ChatCompletionRequestUserMessage, ChatCompletionRequestUserMessageContent,
+  Role,
+};
 use futures_util::Stream;
 use helix_core::{diagnostic::Severity, pos_at_coords, syntax, Selection};
 use helix_lsp::{
@@ -16,13 +21,17 @@ use helix_view::{
   tree::Layout,
   Align, Editor,
 };
-use sazid::components::session::Session;
+use sazid::{
+  app::messages::{get_chat_message_text, ChatMessage},
+  components::session::Session,
+};
 use serde_json::json;
 use tui::backend::Backend;
 
 use crate::{
   args::Args,
-  compositor::{Compositor, Event},
+  commands::ChatMessageItem,
+  compositor::{self, Compositor, Event},
   config::Config,
   handlers,
   job::Jobs,
@@ -152,8 +161,11 @@ impl Application {
 
     let keys =
       Box::new(Map::new(Arc::clone(&config), |config: &Config| &config.keys));
-    let editor_view = Box::new(ui::EditorView::new(Keymaps::new(keys)));
-    compositor.push(editor_view);
+
+    let mut session = Session::default();
+
+    // let editor_view = Box::new(ui::EditorView::new(Keymaps::new(keys)));
+    // compositor.push(editor_view);
 
     if args.load_tutor {
       let path = helix_loader::runtime_file(Path::new("tutor"));
@@ -226,8 +238,93 @@ impl Application {
 
     editor.set_theme(theme);
 
-    let session = Session::default();
+    let content1 = r#"## **Table of Contents**
 
+- [**Features**](#features)
+- [**Getting Started**](#getting-started)
+  - [**Prerequisites**](#prerequisites)
+  - [**Installation**](#installation)
+- [**Usage**](#usage)
+- [**Contributing**](#contributing)
+- [**License**](#license)
+- [**Acknowledgements**](#acknowledgements)"#;
+
+    let content2 = r#"### **Installation**
+
+- configure your OPENAI_API_KEY env variable
+
+### Vector DB Setup
+
+#### Start the database service
+
+- docker-compose up -d
+"#;
+    let content3 = r#"## Usage
+
+Sazid is currently a work in progress.
+
+It can currently be used as an LLM interface with function calls that allow GPT to:
+
+- Read files
+- Write files
+- pcre2grep files
+
+There is also disabled code that enables GPT to use sed and a custom function to modify files directly, but I have found that GPT consistently makes annoying mistakes that are extremely frustrating to resolve when it is forced to use regular expressions and line numbers to modify files.
+"#;
+
+    let fixture_msg1 = ChatCompletionRequestSystemMessage {
+      content: content1.to_string(),
+      role: Role::System,
+      name: Some("sazid".to_string()),
+    };
+
+    let fixture_msg2 = ChatCompletionRequestUserMessage {
+      content: ChatCompletionRequestUserMessageContent::Text(
+        "omg plz help me with things... tell me the things...".to_string(),
+      ),
+      role: Role::Assistant,
+      name: Some("sazid".to_string()),
+    };
+
+    let fixture_msg3 = ChatCompletionRequestAssistantMessage {
+      content: Some(content1.to_string()),
+      role: Role::User,
+      name: Some("sazid".to_string()),
+      tool_calls: None,
+      function_call: None,
+    };
+
+    session.add_message(ChatMessage::System(fixture_msg1));
+    session.add_message(ChatMessage::User(fixture_msg2));
+    session.add_message(ChatMessage::Assistant(fixture_msg3));
+
+    let messages = session
+      .messages
+      .clone()
+      .iter()
+      .map(|message| ChatMessageItem {
+        markdown: ui::Markdown::new(
+          message.to_string(),
+          editor.syn_loader.clone(),
+        ),
+        message: message.message.clone(),
+      })
+      .collect::<Vec<_>>();
+
+    let session_callback =
+      |context: &mut compositor::Context,
+       message: &ChatMessageItem,
+       action: helix_view::editor::Action| {};
+
+    let editor_data = get_chat_message_text(&messages[0].message);
+    let markdown_session = ui::Session::new(
+      messages,
+      Some(editor.theme.clone()),
+      editor_data,
+      session_callback,
+    );
+    // compositor.replace_or_push("markdown text", overlaid(markdown_session));
+    compositor.push(Box::new(markdown_session));
     #[cfg(windows)]
     let signals = futures_util::stream::empty();
     #[cfg(not(windows))]

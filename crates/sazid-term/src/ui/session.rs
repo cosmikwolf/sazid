@@ -3,7 +3,7 @@ use crate::{
   compositor::{self, Component, Compositor, Context, Event, EventResult},
   ctrl,
   job::Callback,
-  key, shift,
+  key, keymap, shift,
   ui::{
     self,
     document::{render_document, LineDecoration, LinePos, TextRenderer},
@@ -17,7 +17,7 @@ use tui::{
   buffer::Buffer as Surface,
   layout::Constraint,
   text::{Span, Spans},
-  widgets::{Block, BorderType, Borders, Cell, Table},
+  widgets::{Block, BorderType, Borders, Cell, Row, Table},
 };
 
 use tui::widgets::Widget;
@@ -45,12 +45,12 @@ use helix_view::{
   graphics::{CursorKind, Margin, Modifier, Rect},
   theme::Style,
   view::ViewPosition,
-  Document, DocumentId, Editor,
+  Document, DocumentId, Editor, Theme,
 };
 
 pub const ID: &str = "session";
 use super::{
-  menu::Item,
+  markdownmenu::MarkdownItem,
   overlay::Overlay,
   textbox::{Textbox, TextboxEvent},
 };
@@ -129,39 +129,21 @@ impl Preview<'_, '_> {
   }
 }
 
-fn item_to_nucleo<T: Item>(
+fn item_to_nucleo<T: MarkdownItem>(
   item: T,
   editor_data: &T::Data,
 ) -> Option<(T, Utf32String)> {
-  let row = item.format(editor_data);
-  let mut cells = row.cells.iter();
-  let mut text =
-    String::with_capacity(row.cell_text().map(|cell| cell.len()).sum());
-  let cell = cells.next()?;
-  if let Some(cell) = cell.content.lines.first() {
-    for span in &cell.0 {
-      text.push_str(&span.content);
-    }
-  }
-
-  for cell in cells {
-    text.push(' ');
-    if let Some(cell) = cell.content.lines.first() {
-      for span in &cell.0 {
-        text.push_str(&span.content);
-      }
-    }
-  }
+  let text: String = item.format(editor_data, None).into();
   Some((item, text.into()))
 }
 
-pub struct Injector<T: Item> {
+pub struct Injector<T: MarkdownItem> {
   dst: nucleo::Injector<T>,
   editor_data: Arc<T::Data>,
   shutown: Arc<AtomicBool>,
 }
 
-impl<T: Item> Clone for Injector<T> {
+impl<T: MarkdownItem> Clone for Injector<T> {
   fn clone(&self) -> Self {
     Injector {
       dst: self.dst.clone(),
@@ -173,7 +155,7 @@ impl<T: Item> Clone for Injector<T> {
 
 pub struct InjectorShutdown;
 
-impl<T: Item> Injector<T> {
+impl<T: MarkdownItem> Injector<T> {
   pub fn push(&self, item: T) -> Result<(), InjectorShutdown> {
     if self.shutown.load(atomic::Ordering::Relaxed) {
       return Err(InjectorShutdown);
@@ -187,7 +169,7 @@ impl<T: Item> Injector<T> {
   }
 }
 
-pub struct Session<T: Item> {
+pub struct Session<T: MarkdownItem> {
   editor_data: Arc<T::Data>,
   shutdown: Arc<AtomicBool>,
   matcher: Nucleo<T>,
@@ -195,8 +177,10 @@ pub struct Session<T: Item> {
   /// Current height of the completions box
   completion_height: u16,
 
+  theme: Option<Theme>,
   cursor: u32,
   textbox: ui::textbox::Textbox,
+  input: EditorView,
   previous_pattern: String,
 
   // whether to show the messages list
@@ -216,7 +200,7 @@ pub struct Session<T: Item> {
   file_fn: Option<FileCallback<T>>,
 }
 
-impl<T: Item + 'static> Session<T> {
+impl<T: MarkdownItem + 'static> Session<T> {
   pub fn stream(editor_data: T::Data) -> (Nucleo<T>, Injector<T>) {
     let matcher = Nucleo::new(
       Config::DEFAULT,
@@ -234,6 +218,7 @@ impl<T: Item + 'static> Session<T> {
 
   pub fn new(
     options: Vec<T>,
+    theme: Option<Theme>,
     editor_data: T::Data,
     callback_fn: impl Fn(&mut Context, &T, Action) + 'static,
   ) -> Self {
@@ -251,6 +236,7 @@ impl<T: Item + 'static> Session<T> {
     }
     Self::with(
       matcher,
+      theme,
       Arc::new(editor_data),
       Arc::new(AtomicBool::new(false)),
       callback_fn,
@@ -259,14 +245,22 @@ impl<T: Item + 'static> Session<T> {
 
   pub fn with_stream(
     matcher: Nucleo<T>,
+    theme: Option<Theme>,
     injector: Injector<T>,
     callback_fn: impl Fn(&mut Context, &T, Action) + 'static,
   ) -> Self {
-    Self::with(matcher, injector.editor_data, injector.shutown, callback_fn)
+    Self::with(
+      matcher,
+      theme,
+      injector.editor_data,
+      injector.shutown,
+      callback_fn,
+    )
   }
 
   fn with(
     matcher: Nucleo<T>,
+    theme: Option<Theme>,
     editor_data: Arc<T::Data>,
     shutdown: Arc<AtomicBool>,
     callback_fn: impl Fn(&mut Context, &T, Action) + 'static,
@@ -277,13 +271,15 @@ impl<T: Item + 'static> Session<T> {
       ui::completers::none,
       |_editor: &mut Context, _pattern: &str, _event: TextboxEvent| {},
     );
-
+    let input = EditorView::new(crate::keymap::minimal_keymap());
     Self {
       matcher,
       editor_data,
+      theme,
       shutdown,
       cursor: 0,
       textbox,
+      input,
       previous_pattern: String::new(),
       truncate_start: true,
       show_message_list: false,
@@ -577,9 +573,10 @@ impl<T: Item + 'static> Session<T> {
 
     // -- Render the input bar:
 
-    let area = inner.clip_left(1).with_height(1);
+    let area = inner.clip_left(0).with_height(10);
     // render the prompt first since it will clear its background
-    self.textbox.render(area, surface, cx);
+    // self.textbox.render(area, surface, cx);
+    self.input.render(area, surface, cx);
 
     let count = format!(
       "{}{}/{}",
@@ -618,77 +615,97 @@ impl<T: Item + 'static> Session<T> {
       matcher.config.set_match_paths()
     }
 
-    let options = snapshot.matched_items(offset..end).map(|item| {
-      snapshot.pattern().column_pattern(0).indices(
-        item.matcher_columns[0].slice(..),
-        &mut matcher,
-        &mut indices,
-      );
-      indices.sort_unstable();
-      indices.dedup();
-      let mut row = item.data.format(&self.editor_data);
+    // let options = snapshot.matched_items(offset..end).map(|item| {
+    //   snapshot.pattern().column_pattern(0).indices(
+    //     item.matcher_columns[0].slice(..),
+    //     &mut matcher,
+    //     &mut indices,
+    //   );
+    //   indices.sort_unstable();
+    //   indices.dedup();
+    //   let mut text = item.data.format(&self.editor_data, self.theme.as_ref());
+    //
+    //   let mut grapheme_idx = 0u32;
+    //   let mut indices = indices.drain(..);
+    //   let mut next_highlight_idx = indices.next().unwrap_or(u32::MAX);
+    //
+    //   if self.widths.len() < text.width() {
+    //     self.widths.resize(text.width(), Constraint::Length(0));
+    //   }
+    //   let mut widths = self.widths.iter_mut();
+    //   for cell in &mut row.cells {
+    //     let Some(Constraint::Length(max_width)) = widths.next() else {
+    //       unreachable!();
+    //     };
+    //
+    //     // merge index highlights on top of existing hightlights
+    //     let mut span_list = Vec::new();
+    //     let mut current_span = String::new();
+    //     let mut current_style = Style::default();
+    //     let mut width = 0;
+    //
+    //     let spans: &[Span] =
+    //       cell.content.lines.first().map_or(&[], |it| it.0.as_slice());
+    //     for span in spans {
+    //       // this looks like a bug on first glance, we are iterating
+    //       // graphemes but treating them as char indices. The reason that
+    //       // this is correct is that nucleo will only ever consider the first char
+    //       // of a grapheme (and discard the rest of the grapheme) so the indices
+    //       // returned by nucleo are essentially grapheme indecies
+    //       for grapheme in span.content.graphemes(true) {
+    //         let style = if grapheme_idx == next_highlight_idx {
+    //           next_highlight_idx = indices.next().unwrap_or(u32::MAX);
+    //           span.style.patch(highlight_style)
+    //         } else {
+    //           span.style
+    //         };
+    //         if style != current_style {
+    //           if !current_span.is_empty() {
+    //             span_list.push(Span::styled(current_span, current_style))
+    //           }
+    //           current_span = String::new();
+    //           current_style = style;
+    //         }
+    //         current_span.push_str(grapheme);
+    //         grapheme_idx += 1;
+    //       }
+    //       width += span.width();
+    //     }
+    //
+    //     span_list.push(Span::styled(current_span, current_style));
+    //     if width as u16 > *max_width {
+    //       *max_width = width as u16;
+    //     }
+    //     *cell = Cell::from(Spans::from(span_list));
+    //
+    //     // spacer
+    //     if grapheme_idx == next_highlight_idx {
+    //       next_highlight_idx = indices.next().unwrap_or(u32::MAX);
+    //     }
+    //     grapheme_idx += 1;
+    //   }
+    //
+    //   row
+    // });
 
-      let mut grapheme_idx = 0u32;
-      let mut indices = indices.drain(..);
-      let mut next_highlight_idx = indices.next().unwrap_or(u32::MAX);
-      if self.widths.len() < row.cells.len() {
-        self.widths.resize(row.cells.len(), Constraint::Length(0));
-      }
-      let mut widths = self.widths.iter_mut();
-      for cell in &mut row.cells {
-        let Some(Constraint::Length(max_width)) = widths.next() else {
-          unreachable!();
-        };
+    let options: Vec<Row> = snapshot
+       .matched_items(0..snapshot.matched_item_count())
+       // .matched_items(offset..end)
+      .map(|item| {
+        snapshot.pattern().column_pattern(0).indices(
+          item.matcher_columns[0].slice(..),
+          &mut matcher,
+          &mut indices,
+        );
+        indices.sort_unstable();
+        indices.dedup();
+        let text = item.data.format(&self.editor_data, self.theme.as_ref());
+        let height = text.height() as u16;
+        Row::from(text).height(height)
+      })
+      .collect();
 
-        // merge index highlights on top of existing hightlights
-        let mut span_list = Vec::new();
-        let mut current_span = String::new();
-        let mut current_style = Style::default();
-        let mut width = 0;
-
-        let spans: &[Span] =
-          cell.content.lines.first().map_or(&[], |it| it.0.as_slice());
-        for span in spans {
-          // this looks like a bug on first glance, we are iterating
-          // graphemes but treating them as char indices. The reason that
-          // this is correct is that nucleo will only ever consider the first char
-          // of a grapheme (and discard the rest of the grapheme) so the indices
-          // returned by nucleo are essentially grapheme indecies
-          for grapheme in span.content.graphemes(true) {
-            let style = if grapheme_idx == next_highlight_idx {
-              next_highlight_idx = indices.next().unwrap_or(u32::MAX);
-              span.style.patch(highlight_style)
-            } else {
-              span.style
-            };
-            if style != current_style {
-              if !current_span.is_empty() {
-                span_list.push(Span::styled(current_span, current_style))
-              }
-              current_span = String::new();
-              current_style = style;
-            }
-            current_span.push_str(grapheme);
-            grapheme_idx += 1;
-          }
-          width += span.width();
-        }
-
-        span_list.push(Span::styled(current_span, current_style));
-        if width as u16 > *max_width {
-          *max_width = width as u16;
-        }
-        *cell = Cell::from(Spans::from(span_list));
-
-        // spacer
-        if grapheme_idx == next_highlight_idx {
-          next_highlight_idx = indices.next().unwrap_or(u32::MAX);
-        }
-        grapheme_idx += 1;
-      }
-
-      row
-    });
+    self.widths = vec![Constraint::Length(area.width as u16)];
 
     let table = Table::new(options)
       .style(text_style)
@@ -833,7 +850,7 @@ impl<T: Item + 'static> Session<T> {
   }
 }
 
-impl<T: Item + 'static + Send + Sync> Component for Session<T> {
+impl<T: MarkdownItem + 'static + Send + Sync> Component for Session<T> {
   fn render(&mut self, area: Rect, surface: &mut Surface, cx: &mut Context) {
     // +---------+ +---------+
     // |prompt   | |preview  |
@@ -978,7 +995,7 @@ impl<T: Item + 'static + Send + Sync> Component for Session<T> {
     Some(ID)
   }
 }
-impl<T: Item> Drop for Session<T> {
+impl<T: MarkdownItem> Drop for Session<T> {
   fn drop(&mut self) {
     // ensure we cancel any ongoing background threads streaming into the session
     self.shutdown.store(true, atomic::Ordering::Relaxed)
@@ -995,13 +1012,13 @@ pub type DynQueryCallback<T> = Box<
 
 /// A session that updates its contents via a callback whenever the
 /// query string changes. Useful for live grep, workspace symbols, etc.
-pub struct DynamicSession<T: ui::menu::Item + Send + Sync> {
+pub struct DynamicSession<T: MarkdownItem + Send + Sync> {
   file_session: Session<T>,
   query_callback: DynQueryCallback<T>,
   query: String,
 }
 
-impl<T: ui::menu::Item + Send + Sync> DynamicSession<T> {
+impl<T: MarkdownItem + Send + Sync> DynamicSession<T> {
   pub fn new(
     file_session: Session<T>,
     query_callback: DynQueryCallback<T>,
@@ -1010,7 +1027,7 @@ impl<T: ui::menu::Item + Send + Sync> DynamicSession<T> {
   }
 }
 
-impl<T: Item + Send + Sync + 'static> Component for DynamicSession<T> {
+impl<T: MarkdownItem + Send + Sync + 'static> Component for DynamicSession<T> {
   fn render(&mut self, area: Rect, surface: &mut Surface, cx: &mut Context) {
     self.file_session.render(area, surface, cx);
   }

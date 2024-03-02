@@ -27,33 +27,16 @@ pub trait MarkdownItem: Sync + Send + 'static {
   /// Additional editor state that is used for label calculation.
   type Data: Sync + Send + 'static;
 
-  fn format(
-    &self,
-    data: &Self::Data,
-    config_loader: Arc<ArcSwap<syntax::Loader>>,
+  fn format(&self, data: &Self::Data, theme: Option<&Theme>)
+    -> tui::text::Text;
 
-    theme: Option<&Theme>,
-  ) -> tui::text::Text;
-
-  fn sort_text(
-    &self,
-    data: &Self::Data,
-    config_loader: Arc<ArcSwap<syntax::Loader>>,
-
-    theme: Option<&Theme>,
-  ) -> Cow<str> {
-    let label: String = self.format(data, config_loader, theme).into();
+  fn sort_text(&self, data: &Self::Data, theme: Option<&Theme>) -> Cow<str> {
+    let label: String = self.format(data, theme).into();
     label.into()
   }
 
-  fn filter_text(
-    &self,
-    data: &Self::Data,
-    config_loader: Arc<ArcSwap<syntax::Loader>>,
-
-    theme: Option<&Theme>,
-  ) -> Cow<str> {
-    let label: String = self.format(data, config_loader, theme).into();
+  fn filter_text(&self, data: &Self::Data, theme: Option<&Theme>) -> Cow<str> {
+    let label: String = self.format(data, theme).into();
     label.into()
   }
 }
@@ -120,11 +103,7 @@ impl<T: MarkdownItem> MarkdownMenu<T> {
     if incremental {
       self.matches.retain_mut(|(index, score)| {
         let option = &self.items[*index as usize];
-        let text = option.filter_text(
-          &self.editor_data,
-          self.config_loader.clone(),
-          self.theme.as_ref(),
-        );
+        let text = option.filter_text(&self.editor_data, self.theme.as_ref());
         let new_score =
           pattern.score(Utf32Str::new(&text, &mut buf), &mut matcher);
         match new_score {
@@ -138,11 +117,7 @@ impl<T: MarkdownItem> MarkdownMenu<T> {
     } else {
       self.matches.clear();
       let matches = self.items.iter().enumerate().filter_map(|(i, option)| {
-        let text = option.filter_text(
-          &self.editor_data,
-          self.config_loader.clone(),
-          self.theme.as_ref(),
-        );
+        let text = option.filter_text(&self.editor_data, self.theme.as_ref());
         pattern
           .score(Utf32Str::new(&text, &mut buf), &mut matcher)
           .map(|score| (i as u32, score as u32))
@@ -185,22 +160,11 @@ impl<T: MarkdownItem> MarkdownMenu<T> {
       .items
       .first()
       .map(|option| {
-        option
-          .format(
-            &self.editor_data,
-            self.config_loader.clone(),
-            self.theme.as_ref(),
-          )
-          .lines
-          .len()
+        option.format(&self.editor_data, self.theme.as_ref()).lines.len()
       })
       .unwrap_or_default();
     let max_lens = self.items.iter().fold(vec![0; n], |mut acc, option| {
-      let text = option.format(
-        &self.editor_data,
-        self.config_loader.clone(),
-        self.theme.as_ref(),
-      );
+      let text = option.format(&self.editor_data, self.theme.as_ref());
       // maintain max for each column
       for (acc, spans) in acc.iter_mut().zip(text.lines.iter()) {
         let width = spans.width();
@@ -424,11 +388,7 @@ impl<T: MarkdownItem + 'static> Component for MarkdownMenu<T> {
     }
 
     let rows = options.iter().map(|option| {
-      let text = option.format(
-        &self.editor_data,
-        self.config_loader.clone(),
-        self.theme.as_ref(),
-      );
+      let text = option.format(&self.editor_data, self.theme.as_ref());
       let height = text.height() as u16;
       Row::from(text).height(height)
     });
@@ -440,7 +400,6 @@ impl<T: MarkdownItem + 'static> Component for MarkdownMenu<T> {
       .column_spacing(1)
       .widths(&self.widths);
 
-    log::debug!("table: {:?}", table.get_columns_widths(1000, false));
     use tui::widgets::TableState;
 
     table.render_table(

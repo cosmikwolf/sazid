@@ -1,9 +1,13 @@
 use super::Context;
 use crate::{
-  compositor::Compositor,
+  compositor::{self, Compositor},
   job::Callback,
   ui::{
-    self, markdownmenu::MarkdownMenu, overlay::overlaid, Picker, Popup, Text,
+    self,
+    markdownmenu::MarkdownMenu,
+    overlay::overlaid,
+    textbox::{Textbox, TextboxEvent},
+    Picker, Popup, PromptEvent, Text,
   },
 };
 use arc_swap::ArcSwap;
@@ -13,6 +17,7 @@ use async_openai::types::{
   ChatCompletionRequestUserMessageContent, Role,
 };
 use futures_util::{stream::FuturesUnordered, Future};
+use helix_lsp::block_on;
 use helix_view::{
   theme::{Color, Style},
   Editor, Theme,
@@ -31,7 +36,10 @@ use tui::{
   widgets::Row,
 };
 
-use helix_core::{fuzzy::MATCHER, syntax};
+use helix_core::{
+  fuzzy::MATCHER,
+  syntax::{self, LanguageServerFeature},
+};
 
 use std::{fmt::Write, path::PathBuf, sync::Arc};
 
@@ -41,9 +49,9 @@ use std::{fmt::Write, path::PathBuf, sync::Arc};
 /// (instead of when the user explicitly does so via a keybind like `gd`)
 /// will spam the "No configured language server supports \<feature>" status message confusingly.
 
-struct ChatMessageItem {
-  markdown: ui::Markdown,
-  message: ChatCompletionRequestMessage,
+pub struct ChatMessageItem {
+  pub markdown: ui::Markdown,
+  pub message: ChatCompletionRequestMessage,
 }
 
 type MessagePicker = Picker<ChatMessageItem>;
@@ -55,7 +63,6 @@ impl ui::markdownmenu::MarkdownItem for ChatMessageItem {
   fn format(
     &self,
     data: &Self::Data,
-    config_loader: Arc<ArcSwap<syntax::Loader>>,
     theme: Option<&Theme>,
   ) -> tui::text::Text {
     // The preallocation here will overallocate a few characters since it will account for the
@@ -182,6 +189,11 @@ There is also disabled code that enables GPT to use sed and a custom function to
                      _item: Option<&ChatMessageItem>,
                      _event: ui::PromptEvent| {};
 
+  let session_callback =
+    |context: &mut compositor::Context,
+     message: &ChatMessageItem,
+     action: helix_view::editor::Action| {};
+
   cx.jobs.callback(async move {
     // let mut messages = Vec::new();
     // // TODO if one symbol request errors, all other requests are discarded (even if they're valid)
@@ -191,16 +203,68 @@ There is also disabled code that enables GPT to use sed and a custom function to
     let messages = messages_fut.await;
     let call = move |editor: &mut Editor, compositor: &mut Compositor| {
       let editor_data = get_chat_message_text(&messages[0].message);
-      let markdown_message = MarkdownMenu::new(
+      // let markdown_message = MarkdownMenu::new(
+      //   messages.clone(),
+      //   editor_data.clone(),
+      //   callback_fn,
+      //   editor.syn_loader.clone(),
+      //   Some(editor.theme.clone()),
+      // );
+      //
+      let markdown_session = ui::Session::new(
         messages,
-        editor_data,
-        callback_fn,
-        editor.syn_loader.clone(),
         Some(editor.theme.clone()),
+        editor_data,
+        session_callback,
       );
-      compositor.replace_or_push("markdown text", overlaid(markdown_message))
+      let textbox = create_textbox(editor, "".to_string(), None);
+      compositor.replace_or_push("markdown text", overlaid(markdown_session));
+      // compositor.push(Box::new(textbox))
+      // compositor.replace_or_push("textbox test", Popup::new("textbox", textbox))
     };
 
     Ok(Callback::EditorCompositor(Box::new(call)))
+    // Ok(Callback::EditorCompositor(textbox))
   });
+}
+
+fn create_textbox(
+  editor: &Editor,
+  prefill: String,
+  language_server_id: Option<usize>,
+) -> Textbox {
+  Textbox::new(
+    "textbox:".into(),
+    None,
+    ui::completers::none,
+    move |cx: &mut compositor::Context, input: &str, event: TextboxEvent| {
+      if event != TextboxEvent::Validate {
+        return;
+      }
+      let (view, doc) = current!(cx.editor);
+
+      let Some(language_server) = doc
+        .language_servers_with_feature(LanguageServerFeature::RenameSymbol)
+        .find(|ls| language_server_id.map_or(true, |id| id == ls.id()))
+      else {
+        cx.editor
+          .set_error("No configured language server supports symbol renaming");
+        return;
+      };
+
+      let offset_encoding = language_server.offset_encoding();
+      let pos = doc.position(view.id, offset_encoding);
+      let future = language_server
+        .rename_symbol(doc.identifier(), pos, input.to_string())
+        .unwrap();
+
+      match block_on(future) {
+        Ok(edits) => {
+          let _ = cx.editor.apply_workspace_edit(offset_encoding, &edits);
+        },
+        Err(err) => cx.editor.set_error(err.to_string()),
+      }
+    },
+  )
+  .with_line(prefill, editor)
 }

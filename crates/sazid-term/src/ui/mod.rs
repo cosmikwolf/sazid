@@ -14,7 +14,7 @@ pub mod session;
 mod spinner;
 mod statusline;
 mod text;
-mod textbox;
+pub mod textbox;
 
 use crate::compositor::{Component, Compositor};
 use crate::filter_picker_entry;
@@ -27,6 +27,7 @@ pub use menu::Menu;
 pub use picker::{DynamicPicker, FileLocation, Picker};
 pub use popup::Popup;
 pub use prompt::{Prompt, PromptEvent};
+pub use session::Session;
 pub use spinner::{ProgressSpinners, Spinner};
 pub use text::Text;
 
