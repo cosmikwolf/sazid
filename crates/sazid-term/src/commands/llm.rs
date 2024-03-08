@@ -13,8 +13,9 @@ use crate::{
 use arc_swap::ArcSwap;
 use async_openai::types::{
   ChatCompletionRequestAssistantMessage, ChatCompletionRequestMessage,
-  ChatCompletionRequestSystemMessage, ChatCompletionRequestUserMessage,
-  ChatCompletionRequestUserMessageContent, Role,
+  ChatCompletionRequestSystemMessage, ChatCompletionRequestToolMessage,
+  ChatCompletionRequestUserMessage, ChatCompletionRequestUserMessageContent,
+  Role,
 };
 use futures_util::{stream::FuturesUnordered, Future};
 use helix_lsp::block_on;
@@ -110,15 +111,15 @@ impl ui::markdownmenu::MarkdownItem for ChatMessageItem {
 pub fn session_messages(cx: &mut Context) {
   let (view, doc) = current!(cx.editor);
 
-  let content1 = r#"## **Table of Contents**
+  let content1 = r#"# **Table of Contents**
 
 - [**Features**](#features)
-- [**Getting Started**](#getting-started)
-  - [**Prerequisites**](#prerequisites)
-  - [**Installation**](#installation)
-- [**Usage**](#usage)
-- [**Contributing**](#contributing)
-- [**License**](#license)
+- [**Features**](#features)
+- [**Features**](#features)
+- [**Features**](#features)
+- [**Features**](#features)
+- [**Features**](#features)
+- [**Features**](#features)
 - [**Acknowledgements**](#acknowledgements)"#;
 
   let content2 = r#"### **Installation**
@@ -159,17 +160,26 @@ There is also disabled code that enables GPT to use sed and a custom function to
   };
 
   let fixture_msg3 = ChatCompletionRequestAssistantMessage {
-    content: Some(content1.to_string()),
+    content: Some(content3.to_string()),
     role: Role::User,
     name: Some("sazid".to_string()),
     tool_calls: None,
     function_call: None,
   };
 
-  cx.session.add_message(ChatMessage::System(fixture_msg1));
+  let fixture_msg4 = ChatCompletionRequestToolMessage {
+    content: "omgwtfbbq".to_string(),
+    role: Role::Tool,
+    tool_call_id: "tool 123".into(),
+  };
+
+  cx.session.add_message(ChatMessage::System(fixture_msg1.clone()));
+  cx.session.add_message(ChatMessage::Tool(fixture_msg4));
   cx.session.add_message(ChatMessage::User(fixture_msg2));
+  cx.session.add_message(ChatMessage::System(fixture_msg1));
   cx.session.add_message(ChatMessage::Assistant(fixture_msg3));
 
+  log::debug!("*&*&*&*&*&*&*&*& messages count: {}", cx.session.messages.len());
   let messages_fut = futures_util::future::ready(
     cx.session
       .messages
@@ -211,6 +221,8 @@ There is also disabled code that enables GPT to use sed and a custom function to
       //   Some(editor.theme.clone()),
       // );
       //
+      log::debug!("messages count: {}", messages.len());
+
       let markdown_session = ui::Session::new(
         messages,
         Some(editor.theme.clone()),

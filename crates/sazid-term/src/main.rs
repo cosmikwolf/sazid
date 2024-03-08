@@ -3,8 +3,10 @@ use std::path::Path;
 use anyhow::{Context, Error, Result};
 use crossterm::event::EventStream;
 use helix_loader::VERSION_AND_GIT_HASH;
+use sazid::app::errors::SazidError;
 use sazid_term::application::Application;
 use sazid_term::args::Args;
+
 use sazid_term::config::{Config, ConfigLoadError};
 use tracing_error::ErrorLayer;
 use tracing_subscriber::{self, prelude::*};
@@ -128,7 +130,9 @@ FLAGS:
 
   helix_loader::initialize_config_file(args.config_file.clone());
   helix_loader::initialize_log_file(args.log_file.clone());
-
+  sazid::utils::initialize_panic_handler()
+    .map_err(SazidError::PanicHandlerError)
+    .unwrap();
   // Help has a higher priority and should be handled separately.
   if args.display_help {
     print!("{}", help);

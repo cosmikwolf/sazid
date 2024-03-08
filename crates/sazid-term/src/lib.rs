@@ -11,6 +11,7 @@ pub mod health;
 pub mod job;
 pub mod keymap;
 pub mod ui;
+pub mod widgets;
 
 use std::path::Path;
 

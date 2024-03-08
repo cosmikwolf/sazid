@@ -81,11 +81,11 @@ impl App {
     frame_rate: f64,
     config: Config,
     data_manager: DataManager,
+    db_url: &str,
   ) -> Result<Self, SazidError> {
     let home = Home::new();
-    let db_url = data_manager.get_database_url();
     let session: Session =
-      add_session(&db_url, config.session_config.clone()).await.unwrap().into();
+      add_session(db_url, config.session_config.clone()).await.unwrap().into();
     let mode = Mode::Home;
     Ok(Self {
       tick_rate,

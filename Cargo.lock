@@ -5332,6 +5332,7 @@ dependencies = [
  "content_inspector",
  "copy_dir",
  "crossterm 0.27.0",
+ "dotenv",
  "fern",
  "futures-util",
  "grep-regex",

@@ -49,8 +49,8 @@ impl Component for DataManager {
 
   fn update(&mut self, action: Action) -> Result<Option<Action>, SazidError> {
     let tx = self.action_tx.clone().unwrap();
-    let db_url = self.get_database_url();
     let model = self.model.clone();
+    let db_url = self.db_url.clone();
     match action {
       Action::CreateSession(config) => {
         tokio::spawn(async move {

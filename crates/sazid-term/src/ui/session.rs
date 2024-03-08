@@ -9,6 +9,7 @@ use crate::{
     document::{render_document, LineDecoration, LinePos, TextRenderer},
     EditorView,
   },
+  widgets::table::{Row, Table},
 };
 use futures_util::{future::BoxFuture, FutureExt};
 use nucleo::pattern::CaseMatching;
@@ -17,7 +18,7 @@ use tui::{
   buffer::Buffer as Surface,
   layout::Constraint,
   text::{Span, Spans},
-  widgets::{Block, BorderType, Borders, Cell, Row, Table},
+  widgets::{Block, BorderType, Borders},
 };
 
 use tui::widgets::Widget;
@@ -272,6 +273,7 @@ impl<T: MarkdownItem + 'static> Session<T> {
       |_editor: &mut Context, _pattern: &str, _event: TextboxEvent| {},
     );
     let input = EditorView::new(crate::keymap::minimal_keymap());
+
     Self {
       matcher,
       editor_data,
@@ -376,6 +378,27 @@ impl<T: MarkdownItem + 'static> Session<T> {
 
   pub fn toggle_preview(&mut self) {
     self.show_preview = !self.show_preview;
+  }
+
+  fn editor_handle_event(
+    &mut self,
+    event: &Event,
+    cx: &mut Context,
+  ) -> EventResult {
+    if let EventResult::Consumed(_) = self.input.handle_event(event, cx) {
+      // let pattern = self.textbox.line();
+      // // TODO: better track how the pattern has changed
+      // if pattern != &self.previous_pattern {
+      //   self.matcher.pattern.reparse(
+      //     0,
+      //     pattern,
+      //     CaseMatching::Smart,
+      //     pattern.starts_with(&self.previous_pattern),
+      //   );
+      //   self.previous_pattern = pattern.clone();
+      // }
+    }
+    EventResult::Consumed(None)
   }
 
   fn prompt_handle_event(
@@ -572,11 +595,10 @@ impl<T: MarkdownItem + 'static> Session<T> {
     block.render(area, surface);
 
     // -- Render the input bar:
-
-    let area = inner.clip_left(0).with_height(10);
+    let input_height = 5;
+    let textbox_area = inner.clip_left(0).with_height(input_height);
     // render the prompt first since it will clear its background
-    // self.textbox.render(area, surface, cx);
-    self.input.render(area, surface, cx);
+    self.input.render(textbox_area, surface, cx);
 
     let count = format!(
       "{}{}/{}",
@@ -584,6 +606,7 @@ impl<T: MarkdownItem + 'static> Session<T> {
       snapshot.matched_item_count(),
       snapshot.item_count(),
     );
+    log::debug!("snapshot item_count: {} ", snapshot.item_count(),);
     surface.set_stringn(
       (area.x + area.width).saturating_sub(count.len() as u16 + 1),
       area.y,
@@ -593,21 +616,24 @@ impl<T: MarkdownItem + 'static> Session<T> {
     );
 
     // -- Separator
+    let readout_area = inner.clip_top(input_height);
+
     let sep_style = cx.editor.theme.get("ui.background.separator");
     let borders = BorderType::line_symbols(BorderType::Plain);
-    for x in inner.left()..inner.right() {
-      if let Some(cell) = surface.get_mut(x, inner.y + 1) {
+    for x in readout_area.left()..readout_area.right() {
+      if let Some(cell) = surface.get_mut(x, input_height) {
         cell.set_symbol(borders.horizontal).set_style(sep_style);
       }
     }
 
     // -- Render the contents:
-    // subtract area of prompt from top
-    let inner = inner.clip_top(2);
-    let rows = inner.height as u32;
-    let offset = self.cursor - (self.cursor % std::cmp::max(1, rows));
+    // subtract readout_area of prompt from top
+    let offset = self.cursor
+      - (self.cursor % std::cmp::max(1, readout_area.height as u32));
     let cursor = self.cursor.saturating_sub(offset);
-    let end = offset.saturating_add(rows).min(snapshot.matched_item_count());
+    let end = offset
+      .saturating_add(readout_area.height as u32)
+      .min(snapshot.matched_item_count());
     let mut indices = Vec::new();
     let mut matcher = MATCHER.lock();
     matcher.config = Config::DEFAULT;
@@ -615,82 +641,11 @@ impl<T: MarkdownItem + 'static> Session<T> {
       matcher.config.set_match_paths()
     }
 
-    // let options = snapshot.matched_items(offset..end).map(|item| {
-    //   snapshot.pattern().column_pattern(0).indices(
-    //     item.matcher_columns[0].slice(..),
-    //     &mut matcher,
-    //     &mut indices,
-    //   );
-    //   indices.sort_unstable();
-    //   indices.dedup();
-    //   let mut text = item.data.format(&self.editor_data, self.theme.as_ref());
-    //
-    //   let mut grapheme_idx = 0u32;
-    //   let mut indices = indices.drain(..);
-    //   let mut next_highlight_idx = indices.next().unwrap_or(u32::MAX);
-    //
-    //   if self.widths.len() < text.width() {
-    //     self.widths.resize(text.width(), Constraint::Length(0));
-    //   }
-    //   let mut widths = self.widths.iter_mut();
-    //   for cell in &mut row.cells {
-    //     let Some(Constraint::Length(max_width)) = widths.next() else {
-    //       unreachable!();
-    //     };
-    //
-    //     // merge index highlights on top of existing hightlights
-    //     let mut span_list = Vec::new();
-    //     let mut current_span = String::new();
-    //     let mut current_style = Style::default();
-    //     let mut width = 0;
-    //
-    //     let spans: &[Span] =
-    //       cell.content.lines.first().map_or(&[], |it| it.0.as_slice());
-    //     for span in spans {
-    //       // this looks like a bug on first glance, we are iterating
-    //       // graphemes but treating them as char indices. The reason that
-    //       // this is correct is that nucleo will only ever consider the first char
-    //       // of a grapheme (and discard the rest of the grapheme) so the indices
-    //       // returned by nucleo are essentially grapheme indecies
-    //       for grapheme in span.content.graphemes(true) {
-    //         let style = if grapheme_idx == next_highlight_idx {
-    //           next_highlight_idx = indices.next().unwrap_or(u32::MAX);
-    //           span.style.patch(highlight_style)
-    //         } else {
-    //           span.style
-    //         };
-    //         if style != current_style {
-    //           if !current_span.is_empty() {
-    //             span_list.push(Span::styled(current_span, current_style))
-    //           }
-    //           current_span = String::new();
-    //           current_style = style;
-    //         }
-    //         current_span.push_str(grapheme);
-    //         grapheme_idx += 1;
-    //       }
-    //       width += span.width();
-    //     }
-    //
-    //     span_list.push(Span::styled(current_span, current_style));
-    //     if width as u16 > *max_width {
-    //       *max_width = width as u16;
-    //     }
-    //     *cell = Cell::from(Spans::from(span_list));
-    //
-    //     // spacer
-    //     if grapheme_idx == next_highlight_idx {
-    //       next_highlight_idx = indices.next().unwrap_or(u32::MAX);
-    //     }
-    //     grapheme_idx += 1;
-    //   }
-    //
-    //   row
-    // });
-
     let options: Vec<Row> = snapshot
-       .matched_items(0..snapshot.matched_item_count())
+       // .matched_items(0..snapshot.matched_item_count())
        // .matched_items(offset..end)
+        // .matched_items(0..snapshot.item_count())
+        .matched_items(0..end)
       .map(|item| {
         snapshot.pattern().column_pattern(0).indices(
           item.matcher_columns[0].slice(..),
@@ -700,12 +655,13 @@ impl<T: MarkdownItem + 'static> Session<T> {
         indices.sort_unstable();
         indices.dedup();
         let text = item.data.format(&self.editor_data, self.theme.as_ref());
+
         let height = text.height() as u16;
         Row::from(text).height(height)
       })
       .collect();
 
-    self.widths = vec![Constraint::Length(area.width as u16)];
+    self.widths = vec![Constraint::Length(area.width)];
 
     let table = Table::new(options)
       .style(text_style)
@@ -714,12 +670,15 @@ impl<T: MarkdownItem + 'static> Session<T> {
       .column_spacing(1)
       .widths(&self.widths);
 
-    use tui::widgets::TableState;
-
+    use crate::widgets::table::TableState;
     table.render_table(
-      inner,
+      readout_area,
       surface,
-      &mut TableState { offset: 0, selected: Some(cursor as usize) },
+      &mut TableState {
+        offset: 0,
+        vertical_scroll_lines: 0,
+        selected: Some(cursor as usize),
+      },
       self.truncate_start,
     );
   }
@@ -880,7 +839,6 @@ impl<T: MarkdownItem + 'static + Send + Sync> Component for Session<T> {
       return self.handle_idle_timeout(ctx);
     }
     // TODO: keybinds for scrolling preview
-
     let key_event = match event {
       Event::Key(event) => *event,
       Event::Paste(..) => return self.prompt_handle_event(event, ctx),
@@ -933,18 +891,18 @@ impl<T: MarkdownItem + 'static + Send + Sync> Component for Session<T> {
       key!(End) => {
         self.to_end();
       },
-      key!(Esc) | ctrl!('c') => return close_fn(self),
-      alt!(Enter) => {
-        if let Some(option) = self.selection() {
-          (self.callback_fn)(ctx, option, Action::Load);
-        }
-      },
-      key!(Enter) => {
-        if let Some(option) = self.selection() {
-          (self.callback_fn)(ctx, option, Action::Replace);
-        }
-        return close_fn(self);
-      },
+      // key!(Esc) | ctrl!('c') => return close_fn(self),
+      // alt!(Enter) => {
+      //   if let Some(option) = self.selection() {
+      //     (self.callback_fn)(ctx, option, Action::Load);
+      //   }
+      // },
+      // key!(Enter) => {
+      //   if let Some(option) = self.selection() {
+      //     (self.callback_fn)(ctx, option, Action::Replace);
+      //   }
+      //   return close_fn(self);
+      // },
       ctrl!('s') => {
         if let Some(option) = self.selection() {
           (self.callback_fn)(ctx, option, Action::HorizontalSplit);
@@ -961,7 +919,8 @@ impl<T: MarkdownItem + 'static + Send + Sync> Component for Session<T> {
         self.toggle_preview();
       },
       _ => {
-        self.prompt_handle_event(event, ctx);
+        self.editor_handle_event(event, ctx);
+        // self.input.handle_event(event, ctx);
       },
     }
 

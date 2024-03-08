@@ -1329,12 +1329,16 @@ impl Component for EditorView {
 
         let mode = cx.editor.mode();
 
+        log::debug!("key: {:#?}", key);
         if let Some(on_next_key) = self.on_next_key.take() {
           // if there's a command waiting input, do that first
           on_next_key(&mut cx, key);
         } else {
+          log::debug!("match mode");
           match mode {
             Mode::Insert => {
+              log::debug!("mode insert");
+
               // let completion swallow the event if necessary
               let mut consumed = false;
               if let Some(completion) = &mut self.completion {

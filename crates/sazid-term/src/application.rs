@@ -287,15 +287,19 @@ There is also disabled code that enables GPT to use sed and a custom function to
     };
 
     let fixture_msg3 = ChatCompletionRequestAssistantMessage {
-      content: Some(content1.to_string()),
+      content: Some(content3.to_string()),
       role: Role::User,
       name: Some("sazid".to_string()),
       tool_calls: None,
       function_call: None,
     };
 
-    session.add_message(ChatMessage::System(fixture_msg1));
+    session.add_message(ChatMessage::User(fixture_msg2.clone()));
+    session.add_message(ChatMessage::System(fixture_msg1.clone()));
+    session.add_message(ChatMessage::User(fixture_msg2.clone()));
+    session.add_message(ChatMessage::Assistant(fixture_msg3.clone()));
     session.add_message(ChatMessage::User(fixture_msg2));
+    session.add_message(ChatMessage::System(fixture_msg1));
     session.add_message(ChatMessage::Assistant(fixture_msg3));
 
     let messages = session
@@ -323,6 +327,9 @@ There is also disabled code that enables GPT to use sed and a custom function to
       editor_data,
       session_callback,
     );
+    // let current = view!(editor).doc;
+    // let id = *id;
+    // editor.switch(id, Action::Replace);
     // compositor.replace_or_push("markdown text", overlaid(markdown_session));
     compositor.push(Box::new(markdown_session));
     #[cfg(windows)]

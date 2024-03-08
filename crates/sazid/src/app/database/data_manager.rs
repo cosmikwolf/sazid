@@ -8,7 +8,6 @@ use async_openai::types::ChatCompletionRequestMessage;
 use dialoguer;
 use diesel::{prelude::*, sql_query};
 use diesel_async::{AsyncConnection, AsyncPgConnection, RunQueryDsl};
-use dotenv::dotenv;
 use pgvector::{Vector, VectorExpressionMethods};
 use tokio::sync::mpsc::UnboundedSender;
 
@@ -16,19 +15,20 @@ use tokio::sync::mpsc::UnboundedSender;
 pub struct DataManager {
   pub action_tx: Option<UnboundedSender<Action>>,
   pub model: EmbeddingModel,
+  pub db_url: String,
 }
 
 impl DataManager {
   pub async fn run_cli(
     &mut self,
     args: Cli,
+    db_url: &str,
   ) -> Result<Option<String>, SazidError> {
-    let db_url = self.get_database_url();
     println!("args: {:#?}", args);
     Ok(match args {
       Cli { list_embeddings: true, .. } => {
         // let categories = self.list_embeddings_categories().await?;
-        let embeddings = get_all_embeddings(&db_url).await?;
+        let embeddings = get_all_embeddings(db_url).await?;
 
         if embeddings.is_empty() {
           Some("No embeddings found".to_string())
@@ -61,7 +61,7 @@ impl DataManager {
       },
       Cli { search_embeddings: Some(text), .. } => {
         let embeddings =
-          search_all_embeddings(&db_url, &self.model, &text).await?;
+          search_all_embeddings(db_url, &self.model, &text).await?;
         if embeddings.is_empty() {
           Some("No embeddings found".to_string())
         } else {
@@ -81,7 +81,7 @@ impl DataManager {
       },
       Cli { add_text_file_embeddings: Some(filepath), .. } => {
         // read the file at filepath
-        match add_textfile_embedding(&db_url, &self.model, &filepath).await {
+        match add_textfile_embedding(db_url, &self.model, &filepath).await {
           Ok(_) => Some(format!("Added embedding for file at {}", filepath)),
           Err(e) => Some(format!(
             "Error adding embedding for file at {}: {}",
@@ -97,12 +97,14 @@ impl DataManager {
   }
 
   pub fn get_database_url(&self) -> String {
-    dotenv().ok();
     std::env::var("DATABASE_URL").unwrap()
   }
 
-  pub async fn new(model: EmbeddingModel) -> Result<Self, SazidError> {
-    Ok(DataManager { action_tx: None, model })
+  pub async fn new(
+    model: EmbeddingModel,
+    db_url: &str,
+  ) -> Result<Self, SazidError> {
+    Ok(DataManager { action_tx: None, model, db_url: db_url.to_string() })
   }
 }
 

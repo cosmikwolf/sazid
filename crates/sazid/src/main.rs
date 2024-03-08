@@ -29,20 +29,27 @@ async fn tokio_main() -> Result<(), SazidError> {
   let openai_config = OpenAIConfig::new()
     .with_api_key(api_key)
     .with_org_id("org-WagBLu0vLgiuEL12dylmcPFj");
-  let mut embeddings_manager =
-    DataManager::new(EmbeddingModel::Ada002(openai_config)).await?;
+  let db_url = "databse::url";
 
-  match embeddings_manager.run_cli(args.clone()).await {
+  let mut embeddings_manager =
+    DataManager::new(EmbeddingModel::Ada002(openai_config), db_url).await?;
+
+  match embeddings_manager.run_cli(args.clone(), db_url).await {
     Ok(Some(output)) => {
       println!("{}", output);
       Ok(())
     },
     Ok(None) => {
       println!("No output");
-      let mut app =
-        App::new(args.tick_rate, args.frame_rate, config, embeddings_manager)
-          .await
-          .unwrap();
+      let mut app = App::new(
+        args.tick_rate,
+        args.frame_rate,
+        config,
+        embeddings_manager,
+        db_url,
+      )
+      .await
+      .unwrap();
       app.run().await.unwrap();
       Ok(())
     },
