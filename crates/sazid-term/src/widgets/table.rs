@@ -289,81 +289,57 @@ impl<'a> Table<'a> {
     chunks.iter().step_by(2).map(|c| c.width).collect()
   }
 
-  fn get_row_bounds(
+  fn get_rows(
     &self,
     selected: Option<usize>,
     vertical_scroll: u16,
     // offset: usize, // first message index to display
     max_height: u16,
-  ) -> (usize, usize, usize, usize) {
-    // let mut start = offset;
-    // let mut end = offset;
-    let mut start = 0;
-    let mut end = 0;
-    let mut height_truncate_start = vertical_scroll as i16;
-    let mut height_truncate_end = 0;
-    let mut height = -1 * height_truncate_start;
+  ) -> Vec<(usize, &Row<'_>, usize, usize)> {
+    let table_start_index = vertical_scroll as u16;
+    let table_end_index = table_start_index + max_height;
+    let mut lines_consumed = 0;
 
-    let rows = self
+    //line index
+    //0 -- -3 <- row start idx
+    //1    -2
+    //2 -- -1 <- row end idx
+    //3     0               [ ---- <- table start idx - scroll 3]
+    //4 --  1
+    //5     2               [ ---- <- table end idx]
+    //6 --  3 <- row start index
+    //7     4
+    //8 --  5 <- row end index
+    //9 --  6
+
+    self
       .rows
       .iter()
       // .skip(offset)
       .enumerate()
-      .filter(|(i, row)| {
-        // filter out the rows from the start, and determine the number of lines to hide from the first row
-        if height < max_height as i16 {
-          // if there is still space left....
-          if row.height as i16 > height_truncate_start {
-            if height + row.height as i16 > max_height as i16 {
-              height_truncate_end = height + row.height as i16 - max_height as i16;
-              height += row.height  as i16 - height_truncate_end;
-            } else {
-              height += row.height as i16;
-            }
-            start = start.min(*i);
-            end = end.max(*i);
-            true // if row.height is > height truncate start, then the row is at least partially visible
-          } else {
-            // skipping early rows that are not visible
-            height_truncate_start -= row.height as i16;
-            false
-          }
+      .filter_map(|(i, row)| {
+          let row_start_index = lines_consumed as i16 - vertical_scroll as i16;
+          let row_end_index = (max_height as i16).min(row_start_index + row.height as i16 );
+
+          if row_end_index <= 0 {
+            // row is above the table
+            None
+          } else if row_start_index > table_end_index as i16 {
+            // row is below the table, return none to end scan
+            None
         } else {
-          // skipping rows that are past the end
-          false
+          let row_height = row_end_index - row_start_index;
+          lines_consumed += row_height as u16;
+          let row_iter = Row::from(row.cells.iter()
+          .map(|c| c.content.lines)
+          .skip(row_start_index as usize)
+          .take(row_height as usize)
+          .flatten()
+          .collect::<Vec<_>>());
+          Some((i, row , row_start_index as usize, row_end_index as usize) )
         }
       })
-      .collect::<Vec<(usize, &Row<'_>)>>();
-
-    (start, end, height_truncate_start as usize, height_truncate_end as usize)
-
-    // for item in self.rows.iter().skip(offset) {
-    //   if height + item.height > max_height {
-    //     height = max_height;
-    //   } else {
-    //     height += item.total_height();
-    //   }
-    //   end += 1;
-    // }
-    // log::debug!("row count: {}", self.rows.len());
-
-    // let selected = selected.unwrap_or(0).min(self.rows.len() - 1);
-    // while selected >= end {
-    //   height = height.saturating_add(self.rows[end].total_height());
-    //   end += 1;
-    //   while height > max_height {
-    //     height = height.saturating_sub(self.rows[start].total_height());
-    //     start += 1;
-    //   }
-    // }
-    // while selected < start {
-    //   start -= 1;
-    //   height = height.saturating_add(self.rows[start].total_height());
-    //   while height > max_height {
-    //     end -= 1;
-    //     height = height.saturating_sub(self.rows[end].total_height());
-    //   }
-    // }
+    .collect::<Vec<(usize, &Row<'_>, usize, usize)>>()
   }
 }
 
@@ -458,13 +434,13 @@ impl<'a> Table<'a> {
       return;
     }
 
-    let (start, end, height_truncate_start, height_truncate_end) = self
-      .get_row_bounds(
-        state.selected,
-        // state.offset,
-        state.vertical_scroll_lines as u16,
-        rows_height,
-      );
+    // let (start, end, start_line, height_truncate_end) = self
+    //   .get_row_bounds(
+    //     state.selected,
+    //     // state.offset,
+    //     state.vertical_scroll_lines as u16,
+    //     rows_height,
+    //   );
 
     log::debug!(
       "row bounds: {}-{}
@@ -524,6 +500,7 @@ impl<'a> Table<'a> {
             height: table_row_area.height,
           },
           // Rect { x: col, y: row, width: *width, height: table_row.height },
+          0,
           truncate,
         );
         col += *width + self.column_spacing;
@@ -532,10 +509,19 @@ impl<'a> Table<'a> {
   }
 }
 
-fn render_cell(buf: &mut Buffer, cell: &Cell, area: Rect, truncate: bool) {
+fn render_cell(
+  buf: &mut Buffer,
+  cell: &Cell,
+  area: Rect,
+  skip_lines: u16,
+  truncate: bool,
+) {
   buf.set_style(area, cell.style);
   for (i, spans) in cell.content.lines.iter().enumerate() {
-    if i as u16 >= area.height {
+    if i < skip_lines as usize {
+      continue;
+    }
+    if i as u16 >= area.height + skip_lines {
       break;
     }
     if truncate {
