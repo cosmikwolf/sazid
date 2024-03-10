@@ -3,7 +3,7 @@ use helix_view::graphics::{Rect, Style};
 use tui::{
   buffer::Buffer,
   layout::Constraint,
-  text::Text,
+  text::{Spans, Text},
   widgets::{Block, Widget},
 };
 
@@ -289,57 +289,73 @@ impl<'a> Table<'a> {
     chunks.iter().step_by(2).map(|c| c.width).collect()
   }
 
-  fn get_rows(
+  fn get_row_extents(
     &self,
-    selected: Option<usize>,
+    // selected: Option<usize>,
     vertical_scroll: u16,
     // offset: usize, // first message index to display
     max_height: u16,
-  ) -> Vec<(usize, &Row<'_>, usize, usize)> {
-    let table_start_index = vertical_scroll as u16;
-    let table_end_index = table_start_index + max_height;
-    let mut lines_consumed = 0;
+  ) -> Vec<Option<(usize, u16, u16)>> {
+    // example scroll mechanics diagram
+    // row_start_index  row_line                 line_offset_index
+    // 0                0  S -----------------------         -7
+    // 1                1                                    -6
+    // 2                2                                    -5
+    // 3                3  E -----------------------         -4
+    // 4                0  S -----------------------         -3
+    // 5                1                                    -2
+    // 6                2                                    -1 vertical_scroll = 7
+    // 7  srt+end       3  E -- row_skip_lines: 3 -- 11111    0 [table start index = 7]    start_idx
+    // 8  srt idx       0  S -- row_skip_lines: 0 -- 22222    1 TABLE AREA
+    // 9  end idx       1    row_visible_lines: 2    22222    2 TABLE AREA
+    // 10               2  E ----------------------- 22222    3 TABLE AREA
+    // 11 srt idx       0  S -- row_skip_lines: 0 -- 33333    4 TABLE AREA
+    // 12               1                            33333    5 TABLE AREA
+    // 13               2                            33333    6 TABLE AREA
+    // 14               3                            33333    7 TABLE_AREA
+    // 15 end idx       4     row_visible_lines: 5   33333    8 [table end index = 15]
+    // 16               5  E -----------------------          9 max_height = 9
+    // 17
 
-    //line index
-    //0 -- -3 <- row start idx
-    //1    -2
-    //2 -- -1 <- row end idx
-    //3     0               [ ---- <- table start idx - scroll 3]
-    //4 --  1
-    //5     2               [ ---- <- table end idx]
-    //6 --  3 <- row start index
-    //7     4
-    //8 --  5 <- row end index
-    //9 --  6
+    let table_start_index = vertical_scroll;
+    let table_end_index = table_start_index + max_height - 1;
+    let mut row_start_index = 0;
 
+    log::debug!(
+      "table start index: {}\tend index: {}",
+      table_start_index,
+      table_end_index
+    );
     self
       .rows
       .iter()
       // .skip(offset)
       .enumerate()
-      .filter_map(|(i, row)| {
-          let row_start_index = lines_consumed as i16 - vertical_scroll as i16;
-          let row_end_index = (max_height as i16).min(row_start_index + row.height as i16 );
+      .map(|(i, row)| {
+          let row_end_index= row_start_index + row.height - 1;
 
-          if row_end_index <= 0 {
-            // row is above the table
+          if row_end_index < table_start_index || row_start_index > table_end_index {
+              // row is not visible
+            row_start_index += row.height;
             None
-          } else if row_start_index > table_end_index as i16 {
-            // row is below the table, return none to end scan
-            None
-        } else {
-          let row_height = row_end_index - row_start_index;
-          lines_consumed += row_height as u16;
-          let row_iter = Row::from(row.cells.iter()
-          .map(|c| c.content.lines)
-          .skip(row_start_index as usize)
-          .take(row_height as usize)
-          .flatten()
-          .collect::<Vec<_>>());
-          Some((i, row , row_start_index as usize, row_end_index as usize) )
-        }
+          } else {
+
+          // let row_skip_lines = if row_start_index < table_start_index  {
+          //   table_start_index - row_start_index
+          // } else {
+          //  0
+          // };
+            let row_skip_lines = table_start_index.saturating_sub(row_start_index);
+            log::debug!("row: {}\tstart: {}\tend: {}\tskip: {} ",i, row_start_index, row_end_index, row_skip_lines );
+
+            let row_visible_lines = row.height - row_skip_lines - (table_end_index.saturating_sub( row_end_index)).min(0);
+
+
+            row_start_index += row.height;
+            Some((i, row_skip_lines , row_visible_lines ))
+          }
       })
-    .collect::<Vec<(usize, &Row<'_>, usize, usize)>>()
+    .collect::<Vec<Option<(usize, u16, u16)>>>()
   }
 }
 
@@ -378,6 +394,7 @@ impl<'a> Table<'a> {
       return;
     }
     buf.set_style(area, self.style);
+
     let table_area = match self.block.take() {
       Some(b) => {
         let inner_area = b.inner(area);
@@ -421,6 +438,7 @@ impl<'a> Table<'a> {
             width: *width,
             height: max_header_height,
           },
+          0u16,
           truncate,
         );
         col += *width + self.column_spacing;
@@ -442,68 +460,79 @@ impl<'a> Table<'a> {
     //     rows_height,
     //   );
 
-    log::debug!(
-      "row bounds: {}-{}
-      selected: {:?}
-      offset: {}
-      rows_height: {}
-      table_area: {:?} ",
-      start,
-      end,
-      state.selected,
-      state.offset,
-      rows_height,
-      table_area
-    );
+    // log::debug!(
+    //   "row bounds: {}-{}
+    //   selected: {:?}
+    //   offset: {}
+    //   rows_height: {}
+    //   table_area: {:?} ",
+    //   start,
+    //   end,
+    //   state.selected,
+    //   state.offset,
+    //   rows_height,
+    //   table_area
+    // );
 
-    state.offset = start;
-    for (i, table_row) in
-      self.rows.iter_mut().enumerate().skip(state.offset).take(end - start)
-    {
-      let (row, col) = (table_area.top() + current_height, table_area.left());
-      current_height += table_row.total_height();
-      let table_row_height =
-        table_row.height.min(buf.area.bottom().saturating_sub(row + 1));
-      let table_row_area = Rect {
-        x: col,
-        y: row,
-        width: table_area.width,
-        height: table_row_height,
-      };
-      buf.set_style(table_row_area, table_row.style);
-      let is_selected = state.selected.map(|s| s == i).unwrap_or(false);
-      let table_row_start_col = if has_selection {
-        let symbol = if is_selected { highlight_symbol } else { &blank_symbol };
-        let (col, _) = buf.set_stringn(
-          col,
-          row,
-          symbol,
-          table_area.width as usize,
-          table_row.style,
-        );
-        col
-      } else {
-        col
-      };
-      if is_selected {
-        buf.set_style(table_row_area, self.highlight_style);
-      }
-      let mut col = table_row_start_col;
-      for (width, cell) in columns_widths.iter().zip(table_row.cells.iter()) {
-        render_cell(
-          buf,
-          cell,
-          Rect {
+    // state.offset = start;
+    for (table_row, extents) in self.rows.iter().zip(self.get_row_extents(
+      // state.selected,
+      state.vertical_scroll_lines as u16,
+      rows_height,
+    )) {
+      log::debug!("row extents: {:?}", extents);
+      match extents {
+        None => continue,
+        Some((i, row_skip_lines, row_visible_lines)) => {
+          let (row, col) =
+            (table_area.top() + current_height, table_area.left());
+          current_height += table_row.total_height();
+          let table_row_height =
+            row_visible_lines.min(buf.area.bottom().saturating_sub(row + 1));
+          let table_row_area = Rect {
             x: col,
-            y: table_row_area.y,
-            width: *width,
-            height: table_row_area.height,
-          },
-          // Rect { x: col, y: row, width: *width, height: table_row.height },
-          0,
-          truncate,
-        );
-        col += *width + self.column_spacing;
+            y: row,
+            width: table_area.width,
+            height: table_row_height,
+          };
+          buf.set_style(table_row_area, table_row.style);
+          let is_selected = state.selected.map(|s| s == i).unwrap_or(false);
+          let table_row_start_col = if has_selection {
+            let symbol =
+              if is_selected { highlight_symbol } else { &blank_symbol };
+            let (col, _) = buf.set_stringn(
+              col,
+              row,
+              symbol,
+              table_area.width as usize,
+              table_row.style,
+            );
+            col
+          } else {
+            col
+          };
+          if is_selected {
+            buf.set_style(table_row_area, self.highlight_style);
+          }
+          let mut col = table_row_start_col;
+          for (width, cell) in columns_widths.iter().zip(table_row.cells.iter())
+          {
+            render_cell(
+              buf,
+              cell,
+              Rect {
+                x: col,
+                y: table_row_area.y,
+                width: *width,
+                height: table_row_area.height,
+              },
+              // Rect { x: col, y: row, width: *width, height: table_row.height },
+              row_skip_lines,
+              truncate,
+            );
+            col += *width + self.column_spacing;
+          }
+        },
       }
     }
   }
