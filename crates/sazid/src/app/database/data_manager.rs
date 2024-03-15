@@ -96,10 +96,6 @@ impl DataManager {
     })
   }
 
-  pub fn get_database_url(&self) -> String {
-    std::env::var("DATABASE_URL").unwrap()
-  }
-
   pub async fn new(
     model: EmbeddingModel,
     db_url: &str,

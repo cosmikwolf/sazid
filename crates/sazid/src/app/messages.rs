@@ -9,10 +9,6 @@ use color_eyre::owo_colors::OwoColorize;
 use helix_core::syntax::Loader;
 use ropey::Rope;
 use serde::{Deserialize, Serialize};
-use tui::{
-  text::Spans,
-  widgets::{Paragraph, Wrap},
-};
 
 use async_openai::{
   self,
@@ -48,6 +44,7 @@ const TEXT_RENDERED = 1 << 2;
 const TOOLS_COMPLETE = 1 << 3;
 const EMBEDDING_SAVED = 1 << 4;
 const IS_CURRENT_TRANSACTION = 1 << 5;
+const HAS_UNRENDERED_CONTENT = 1 << 6;
 }
 
 }
@@ -60,6 +57,18 @@ impl MessageContainer {
   pub fn set_receive_complete(&mut self) {
     self.message_state.set(MessageState::RECEIVE_COMPLETE, true);
     self.message_state.set(MessageState::RECEIVING, false);
+  }
+
+  pub fn set_has_unrendered_content(&mut self) {
+    self.message_state.set(MessageState::HAS_UNRENDERED_CONTENT, true);
+  }
+
+  pub fn unset_has_unrendered_content(&mut self) {
+    self.message_state.set(MessageState::HAS_UNRENDERED_CONTENT, false);
+  }
+
+  pub fn has_unrendered_content(&self) -> bool {
+    self.message_state.contains(MessageState::HAS_UNRENDERED_CONTENT)
   }
 
   pub fn set_text_rendered(&mut self) {
@@ -239,15 +248,43 @@ impl From<ChatMessage> for MessageContainer {
   }
 }
 
-pub fn get_chat_message_type_string(
+pub fn chat_completion_request_message_as_str(
   message: &ChatCompletionRequestMessage,
-) -> String {
-  match message {
-    ChatCompletionRequestMessage::System(_) => "System".to_string(),
-    ChatCompletionRequestMessage::User(_) => "User".to_string(),
-    ChatCompletionRequestMessage::Assistant(_) => "Assistant".to_string(),
-    ChatCompletionRequestMessage::Tool(_) => "Tool".to_string(),
-    ChatCompletionRequestMessage::Function(_) => "Function".to_string(),
+) -> &str {
+  match &message {
+    ChatCompletionRequestMessage::System(system_message) => {
+      &system_message.content
+    },
+    ChatCompletionRequestMessage::User(user_message) => {
+      match &user_message.content {
+        ChatCompletionRequestUserMessageContent::Text(text) => text,
+        ChatCompletionRequestUserMessageContent::Array(parts) => parts
+          .iter()
+          .map(|part| match part {
+            ChatCompletionRequestMessageContentPart::Text(text) => {
+              text.text.as_str()
+            },
+            ChatCompletionRequestMessageContentPart::Image(image) => {
+              image.image_url.url.as_str()
+            },
+          })
+          .next()
+          .unwrap_or(""),
+      }
+    },
+    ChatCompletionRequestMessage::Assistant(assistant_message) => {
+      match &assistant_message.content {
+        Some(content) => content,
+        None => "",
+      }
+    },
+    ChatCompletionRequestMessage::Tool(tool_message) => &tool_message.content,
+    ChatCompletionRequestMessage::Function(function_message) => {
+      match &function_message.content {
+        Some(content) => content,
+        None => "",
+      }
+    },
   }
 }
 

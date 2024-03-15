@@ -40,6 +40,7 @@ pub enum Action {
   AddMessage(ChatMessage),
   SelectModel(Model),
   UpdateStatus(Option<String>),
+  MessageUpdate(ChatCompletionRequestMessage, i64),
   SetInputVsize(u16),
   SaveSession,
   EnterVisual,

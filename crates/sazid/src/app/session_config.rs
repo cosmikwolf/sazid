@@ -22,6 +22,7 @@ pub struct SessionConfig {
   pub stream_response: bool,
   pub function_result_max_tokens: usize,
   pub response_max_tokens: usize,
+  pub database_url: String,
 }
 
 impl Default for SessionConfig {
@@ -39,6 +40,7 @@ impl Default for SessionConfig {
       response_max_tokens: 4095,
       include_functions: true,
       stream_response: true,
+      database_url: String::new(),
     }
   }
 }

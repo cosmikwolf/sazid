@@ -3,7 +3,7 @@ use helix_view::graphics::{Rect, Style};
 use tui::{
   buffer::Buffer,
   layout::Constraint,
-  text::{Spans, Text},
+  text::Text,
   widgets::{Block, Widget},
 };
 
@@ -289,6 +289,10 @@ impl<'a> Table<'a> {
     chunks.iter().step_by(2).map(|c| c.width).collect()
   }
 
+  pub fn row_heights(&self) -> Vec<u16> {
+    self.rows.iter().map(|r| r.total_height()).collect()
+  }
+
   fn get_row_extents(
     &self,
     // selected: Option<usize>,
@@ -321,11 +325,6 @@ impl<'a> Table<'a> {
     let table_end_index = table_start_index + max_height - 1;
     let mut row_start_index = 0;
 
-    log::debug!(
-      "table start index: {}\tend index: {}",
-      table_start_index,
-      table_end_index
-    );
     self
       .rows
       .iter()
@@ -340,13 +339,7 @@ impl<'a> Table<'a> {
             None
           } else {
 
-          // let row_skip_lines = if row_start_index < table_start_index  {
-          //   table_start_index - row_start_index
-          // } else {
-          //  0
-          // };
             let row_skip_lines = table_start_index.saturating_sub(row_start_index);
-            log::debug!("row: {}\tstart: {}\tend: {}\tskip: {} ",i, row_start_index, row_end_index, row_skip_lines );
 
             let row_visible_lines = row.height - row_skip_lines - (table_end_index.saturating_sub( row_end_index)).min(0);
 
@@ -362,11 +355,47 @@ impl<'a> Table<'a> {
 #[derive(Debug, Default, Clone)]
 pub struct TableState {
   pub offset: usize,
-  pub vertical_scroll_lines: usize,
+  pub vertical_scroll: u32,
+  pub selection_heights: Vec<u16>,
+  pub viewport_height: u32,
   pub selected: Option<usize>,
 }
 
 impl TableState {
+  pub fn scroll_to_selection(&mut self) {
+    if let Some(selected) = self.selected {
+      let selection_top: u32 =
+        self.selection_heights.iter().take(selected).sum::<u16>().into();
+
+      let selection_bottom: u32 =
+        self.selection_heights.iter().take(selected + 1).sum::<u16>().into();
+
+      log::info!(
+        "scroll to selection: {}-{}, {} {} {} {}",
+        self.vertical_scroll,
+        self.vertical_scroll + self.viewport_height,
+        self.viewport_height,
+        self.selection_heights[selected],
+        selection_top,
+        selection_bottom
+      );
+
+      if selection_bottom > self.vertical_scroll + self.viewport_height {
+        self.vertical_scroll =
+          selection_bottom.saturating_sub(self.viewport_height);
+      }
+
+      if selection_top < self.vertical_scroll {
+        self.vertical_scroll = selection_top
+      }
+    }
+    log::info!(
+      "scroll to selection: {} {:?}",
+      self.vertical_scroll,
+      self.selected
+    );
+  }
+
   pub fn selected(&self) -> Option<usize> {
     self.selected
   }
@@ -394,7 +423,8 @@ impl<'a> Table<'a> {
       return;
     }
     buf.set_style(area, self.style);
-
+    state.selection_heights = self.row_heights();
+    state.viewport_height = area.height as u32;
     let table_area = match self.block.take() {
       Some(b) => {
         let inner_area = b.inner(area);
@@ -475,18 +505,22 @@ impl<'a> Table<'a> {
     // );
 
     // state.offset = start;
+    log::debug!(
+      "Vertical scroll: {}\tTable area: {:?}",
+      state.vertical_scroll,
+      table_area
+    );
     for (table_row, extents) in self.rows.iter().zip(self.get_row_extents(
       // state.selected,
-      state.vertical_scroll_lines as u16,
+      state.vertical_scroll as u16,
       rows_height,
     )) {
-      log::debug!("row extents: {:?}", extents);
       match extents {
         None => continue,
         Some((i, row_skip_lines, row_visible_lines)) => {
           let (row, col) =
             (table_area.top() + current_height, table_area.left());
-          current_height += table_row.total_height();
+          current_height += row_visible_lines;
           let table_row_height =
             row_visible_lines.min(buf.area.bottom().saturating_sub(row + 1));
           let table_row_area = Rect {
@@ -546,11 +580,10 @@ fn render_cell(
   truncate: bool,
 ) {
   buf.set_style(area, cell.style);
-  for (i, spans) in cell.content.lines.iter().enumerate() {
-    if i < skip_lines as usize {
-      continue;
-    }
-    if i as u16 >= area.height + skip_lines {
+  for (i, spans) in
+    cell.content.lines.iter().skip(skip_lines.into()).enumerate()
+  {
+    if i as u16 >= area.height {
       break;
     }
     if truncate {

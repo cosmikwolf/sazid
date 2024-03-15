@@ -1,23 +1,24 @@
 use crate::{
-  alt,
+  commands::ChatMessageItem,
   compositor::{self, Component, Compositor, Context, Event, EventResult},
   ctrl,
   job::Callback,
-  key, keymap, shift,
+  key, shift,
   ui::{
     self,
     document::{render_document, LineDecoration, LinePos, TextRenderer},
     EditorView,
   },
-  widgets::table::{Row, Table},
+  widgets::table::{Row, Table, TableState},
 };
+
 use futures_util::{future::BoxFuture, FutureExt};
 use nucleo::pattern::CaseMatching;
 use nucleo::{Config, Nucleo, Utf32String};
+
 use tui::{
   buffer::Buffer as Surface,
   layout::Constraint,
-  text::{Span, Spans},
   widgets::{Block, BorderType, Borders},
 };
 
@@ -33,18 +34,14 @@ use std::{
   },
 };
 
-use crate::ui::{Prompt, PromptEvent};
-
 use helix_core::{
   char_idx_at_visual_offset, fuzzy::MATCHER, movement::Direction,
-  text_annotations::TextAnnotations,
-  unicode::segmentation::UnicodeSegmentation, Position, Syntax,
+  text_annotations::TextAnnotations, Position, Syntax,
 };
 
 use helix_view::{
   editor::Action,
   graphics::{CursorKind, Margin, Modifier, Rect},
-  theme::Style,
   view::ViewPosition,
   Document, DocumentId, Editor, Theme,
 };
@@ -130,7 +127,7 @@ impl Preview<'_, '_> {
   }
 }
 
-fn item_to_nucleo<T: MarkdownItem>(
+pub fn item_to_nucleo<T: MarkdownItem>(
   item: T,
   editor_data: &T::Data,
 ) -> Option<(T, Utf32String)> {
@@ -174,18 +171,17 @@ pub struct Session<T: MarkdownItem> {
   editor_data: Arc<T::Data>,
   shutdown: Arc<AtomicBool>,
   matcher: Nucleo<T>,
+  messages: Vec<ChatMessageItem>,
 
   /// Current height of the completions box
   completion_height: u16,
 
   theme: Option<Theme>,
-  cursor: u32,
+  selected_option: u32,
   textbox: ui::textbox::Textbox,
   input: EditorView,
   previous_pattern: String,
-
-  // whether to show the messages list
-  show_message_list: bool,
+  tablestate: TableState,
   /// Whether to show the preview panel (default true)
   show_preview: bool,
   /// Constraints for tabular formatting
@@ -273,18 +269,26 @@ impl<T: MarkdownItem + 'static> Session<T> {
       |_editor: &mut Context, _pattern: &str, _event: TextboxEvent| {},
     );
     let input = EditorView::new(crate::keymap::minimal_keymap());
+    let tablestate = TableState {
+      offset: 0,
+      vertical_scroll: 0,
+      selected: None,
+      selection_heights: Vec::new(),
+      viewport_height: 0,
+    };
 
     Self {
+      messages: Vec::new(),
       matcher,
       editor_data,
       theme,
       shutdown,
-      cursor: 0,
+      selected_option: 0,
       textbox,
+      tablestate,
       input,
       previous_pattern: String::new(),
       truncate_start: true,
-      show_message_list: false,
       show_preview: true,
       callback_fn: Box::new(callback_fn),
       completion_height: 0,
@@ -295,6 +299,9 @@ impl<T: MarkdownItem + 'static> Session<T> {
     }
   }
 
+  pub fn add_message(&mut self, message: ChatMessageItem) {
+    self.messages.push(message);
+  }
   pub fn injector(&self) -> Injector<T> {
     Injector {
       dst: self.matcher.injector(),
@@ -331,10 +338,29 @@ impl<T: MarkdownItem + 'static> Session<T> {
     }
   }
 
+  pub fn scroll_by(&mut self, amount: u32, direction: Direction) {
+    match direction {
+      Direction::Forward => {
+        self.tablestate.vertical_scroll =
+          self.tablestate.vertical_scroll.saturating_sub(amount).clamp(
+            0,
+            self.tablestate.selection_heights.iter().sum::<u16>() as u32,
+          );
+      },
+      Direction::Backward => {
+        self.tablestate.vertical_scroll =
+          self.tablestate.vertical_scroll.saturating_add(amount).clamp(
+            0,
+            self.tablestate.selection_heights.iter().sum::<u16>() as u32,
+          );
+      },
+    }
+    log::info!("scrolling to {}", self.tablestate.vertical_scroll)
+  }
+
   /// Move the cursor by a number of lines, either down (`Forward`) or up (`Backward`)
   pub fn move_by(&mut self, amount: u32, direction: Direction) {
     let len = self.matcher.snapshot().matched_item_count();
-
     if len == 0 {
       // No results, can't move.
       return;
@@ -342,11 +368,20 @@ impl<T: MarkdownItem + 'static> Session<T> {
 
     match direction {
       Direction::Forward => {
-        self.cursor = self.cursor.saturating_add(amount) % len;
+        self.tablestate.selected = match self.tablestate.selected {
+          Some(selected) => Some(
+            selected.saturating_add(amount as usize).clamp(0, len as usize - 1),
+          ),
+          None => Some(0_usize),
+        };
+        self.tablestate.scroll_to_selection()
       },
       Direction::Backward => {
-        self.cursor =
-          self.cursor.saturating_add(len).saturating_sub(amount) % len;
+        self.tablestate.selected = match self.tablestate.selected {
+          Some(selected) => Some(selected.saturating_sub(amount as usize)),
+          None => Some(0_usize),
+        };
+        self.tablestate.scroll_to_selection()
       },
     }
   }
@@ -363,17 +398,21 @@ impl<T: MarkdownItem + 'static> Session<T> {
 
   /// Move the cursor to the first entry
   pub fn to_start(&mut self) {
-    self.cursor = 0;
+    self.selected_option = 0;
   }
 
   /// Move the cursor to the last entry
   pub fn to_end(&mut self) {
-    self.cursor =
+    self.selected_option =
       self.matcher.snapshot().matched_item_count().saturating_sub(1);
   }
 
   pub fn selection(&self) -> Option<&T> {
-    self.matcher.snapshot().get_matched_item(self.cursor).map(|item| item.data)
+    self
+      .matcher
+      .snapshot()
+      .get_matched_item(self.selected_option)
+      .map(|item| item.data)
   }
 
   pub fn toggle_preview(&mut self) {
@@ -572,13 +611,14 @@ impl<T: MarkdownItem + 'static> Session<T> {
     let status = self.matcher.tick(10);
     let snapshot = self.matcher.snapshot();
     if status.changed {
-      self.cursor =
-        self.cursor.min(snapshot.matched_item_count().saturating_sub(1))
+      self.selected_option = self
+        .selected_option
+        .min(snapshot.matched_item_count().saturating_sub(1))
     }
 
     let text_style = cx.editor.theme.get("ui.text");
-    let selected = cx.editor.theme.get("ui.text.focus");
-    let highlight_style =
+    let selected = cx.editor.theme.get("ui.selection");
+    let _highlight_style =
       cx.editor.theme.get("special").add_modifier(Modifier::BOLD);
 
     // -- Render the frame:
@@ -596,17 +636,25 @@ impl<T: MarkdownItem + 'static> Session<T> {
 
     // -- Render the input bar:
     let input_height = 5;
-    let textbox_area = inner.clip_left(0).with_height(input_height);
+    let input_on_top = false;
+
+    let textbox_area = if input_on_top {
+      inner.with_height(input_height)
+    } else {
+      inner.clip_top(inner.height - input_height)
+    };
+
     // render the prompt first since it will clear its background
     self.input.render(textbox_area, surface, cx);
 
+    // -- upper right hand corner readout
     let count = format!(
       "{}{}/{}",
       if status.running { "(running) " } else { "" },
       snapshot.matched_item_count(),
       snapshot.item_count(),
     );
-    log::debug!("snapshot item_count: {} ", snapshot.item_count(),);
+
     surface.set_stringn(
       (area.x + area.width).saturating_sub(count.len() as u16 + 1),
       area.y,
@@ -616,69 +664,82 @@ impl<T: MarkdownItem + 'static> Session<T> {
     );
 
     // -- Separator
-    let readout_area = inner.clip_top(input_height);
+    let readout_area = if input_on_top {
+      inner.clip_top(input_height)
+    } else {
+      inner.clip_bottom(input_height)
+    };
 
+    let sep_height =
+      if input_on_top { input_height } else { inner.height - input_height };
     let sep_style = cx.editor.theme.get("ui.background.separator");
     let borders = BorderType::line_symbols(BorderType::Plain);
     for x in readout_area.left()..readout_area.right() {
-      if let Some(cell) = surface.get_mut(x, input_height) {
+      if let Some(cell) = surface.get_mut(x, sep_height) {
         cell.set_symbol(borders.horizontal).set_style(sep_style);
       }
     }
 
     // -- Render the contents:
     // subtract readout_area of prompt from top
-    let offset = self.cursor
-      - (self.cursor % std::cmp::max(1, readout_area.height as u32));
-    let cursor = self.cursor.saturating_sub(offset);
-    let end = offset
-      .saturating_add(readout_area.height as u32)
-      .min(snapshot.matched_item_count());
-    let mut indices = Vec::new();
+    // let offset = self.selected_option
+    //   - (self.selected_option % std::cmp::max(1, readout_area.height as u32));
+    // self.tablestate.selected =
+    //   Some(self.selected_option.saturating_sub(offset) as usize);
+    // let end = offset
+    // .saturating_add(readout_area.height as u32)
+    // .min(snapshot.matched_item_count());
+    // let mut indices = Vec::new();
     let mut matcher = MATCHER.lock();
     matcher.config = Config::DEFAULT;
     if self.file_fn.is_some() {
       matcher.config.set_match_paths()
     }
 
-    let options: Vec<Row> = snapshot
-       // .matched_items(0..snapshot.matched_item_count())
-       // .matched_items(offset..end)
-        // .matched_items(0..snapshot.item_count())
-        .matched_items(0..end)
-      .map(|item| {
-        snapshot.pattern().column_pattern(0).indices(
-          item.matcher_columns[0].slice(..),
-          &mut matcher,
-          &mut indices,
-        );
-        indices.sort_unstable();
-        indices.dedup();
-        let text = item.data.format(&self.editor_data, self.theme.as_ref());
-
+    let rows: Vec<Row> = self
+      .messages
+      .iter()
+      .map(|message| {
+        let text =
+          message.format(&message.content().to_string(), self.theme.as_ref());
         let height = text.height() as u16;
         Row::from(text).height(height)
       })
       .collect();
 
+    // let options: Vec<Row> = snapshot
+    //    // .matched_items(0..snapshot.matched_item_count())
+    //    // .matched_items(offset..end)
+    //     .matched_items(0..snapshot.item_count())
+    //     // .matched_items(0..end)
+    //   .map(|item| {
+    //     snapshot.pattern().column_pattern(0).indices(
+    //       item.matcher_columns[0].slice(..),
+    //       &mut matcher,
+    //       &mut indices,
+    //     );
+    //     indices.sort_unstable();
+    //     indices.dedup();
+    //     let text = item.data.format(&self.editor_data, self.theme.as_ref());
+    //
+    //     let height = text.height() as u16;
+    //     Row::from(text).height(height)
+    //   })
+    //   .collect();
+
     self.widths = vec![Constraint::Length(area.width)];
 
-    let table = Table::new(options)
+    let table = Table::new(rows)
       .style(text_style)
       .highlight_style(selected)
       .highlight_symbol(" > ")
       .column_spacing(1)
       .widths(&self.widths);
 
-    use crate::widgets::table::TableState;
     table.render_table(
       readout_area,
       surface,
-      &mut TableState {
-        offset: 0,
-        vertical_scroll_lines: 0,
-        selected: Some(cursor as usize),
-      },
+      &mut self.tablestate,
       self.truncate_start,
     );
   }
@@ -873,11 +934,19 @@ impl<T: MarkdownItem + 'static + Send + Sync> Component for Session<T> {
     ctx.editor.reset_idle_timer();
 
     match key_event {
-      shift!(Tab) | key!(Up) | ctrl!('p') => {
-        self.move_by(1, Direction::Backward);
+      shift!('j') | key!(Up) => {
+        self.scroll_by(1, Direction::Forward);
       },
-      key!(Tab) | key!(Down) | ctrl!('n') => {
+      shift!('k') | key!(Down) => {
+        self.scroll_by(1, Direction::Backward);
+      },
+      shift!(Tab) | ctrl!('p') => {
+        self.move_by(1, Direction::Backward);
+        log::info!("shift tab")
+      },
+      key!(Tab) | ctrl!('n') => {
         self.move_by(1, Direction::Forward);
+        log::info!("tab")
       },
       key!(PageDown) | ctrl!('d') => {
         self.page_down();

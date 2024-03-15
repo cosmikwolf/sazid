@@ -1,11 +1,7 @@
 use arc_swap::{access::Map, ArcSwap};
-use async_openai::types::{
-  ChatCompletionRequestAssistantMessage, ChatCompletionRequestSystemMessage,
-  ChatCompletionRequestUserMessage, ChatCompletionRequestUserMessageContent,
-  Role,
-};
+use async_openai::types::{ChatCompletionRequestSystemMessage, Role};
 use futures_util::Stream;
-use helix_core::{diagnostic::Severity, pos_at_coords, syntax, Selection};
+use helix_core::{diagnostic::Severity, syntax, Selection};
 use helix_lsp::{
   lsp::{self, notification::Notification},
   util::lsp_range_to_range,
@@ -17,36 +13,35 @@ use helix_view::{
   document::DocumentSavedEventResult,
   editor::{ConfigEvent, EditorEvent},
   graphics::Rect,
-  theme,
-  tree::Layout,
-  Align, Editor,
+  theme, Align, Editor,
 };
 use sazid::{
   app::messages::{get_chat_message_text, ChatMessage},
   components::session::Session,
 };
 use serde_json::json;
+use tokio::sync::mpsc;
+use tokio_stream::wrappers::UnboundedReceiverStream;
 use tui::backend::Backend;
 
 use crate::{
   args::Args,
-  commands::ChatMessageItem,
+  commands::{ChatMessageItem, ChatMessageType},
   compositor::{self, Compositor, Event},
   config::Config,
   handlers,
   job::Jobs,
-  keymap::Keymaps,
-  ui::{self, overlay::overlaid, Markdown},
+  ui,
 };
 
 use log::{debug, error, info, warn};
 #[cfg(not(feature = "integration"))]
 use std::io::stdout;
-use std::{collections::btree_map::Entry, io::stdin, path::Path, sync::Arc};
+use std::{collections::btree_map::Entry, sync::Arc};
 
 use anyhow::{Context, Error};
 
-use crossterm::{event::Event as CrosstermEvent, tty::IsTty};
+use crossterm::event::Event as CrosstermEvent;
 #[cfg(not(windows))]
 use {signal_hook::consts::signal, signal_hook_tokio::Signals};
 #[cfg(windows)]
@@ -69,9 +64,10 @@ type Terminal = tui::terminal::Terminal<TerminalBackend>;
 pub struct Application {
   compositor: Compositor,
   terminal: Terminal,
+
   pub editor: Editor,
   pub session: Session,
-
+  session_events: UnboundedReceiverStream<sazid::action::Action>,
   config: Arc<ArcSwap<Config>>,
 
   #[allow(dead_code)]
@@ -108,7 +104,7 @@ fn setup_integration_logging() {
 
 impl Application {
   pub fn new(
-    args: Args,
+    _args: Args,
     config: Config,
     lang_loader: syntax::Loader,
   ) -> Result<Self, Error> {
@@ -136,7 +132,8 @@ impl Application {
           .ok()
           .filter(|theme| (true_color || theme.is_16_color()))
       })
-      .unwrap_or_else(|| theme_loader.default_theme(true_color));
+      .unwrap_or_else(|| theme_loader.load("gruvbox_dark_soft").unwrap());
+    // .unwrap_or_else(|| theme_loader.default_theme(true_color));
 
     let syn_loader = Arc::new(ArcSwap::from_pointee(lang_loader));
 
@@ -159,179 +156,81 @@ impl Application {
       handlers,
     );
 
-    let keys =
+    let _keys =
       Box::new(Map::new(Arc::clone(&config), |config: &Config| &config.keys));
+
+    editor.new_file(Action::VerticalSplit);
+    editor.set_theme(theme);
 
     let mut session = Session::default();
 
-    // let editor_view = Box::new(ui::EditorView::new(Keymaps::new(keys)));
-    // compositor.push(editor_view);
-
-    if args.load_tutor {
-      let path = helix_loader::runtime_file(Path::new("tutor"));
-      editor.open(&path, Action::VerticalSplit)?;
-      // Unset path to prevent accidentally saving to the original tutor file.
-      doc_mut!(editor).set_path(None);
-    } else if !args.files.is_empty() {
-      let mut files_it = args.files.into_iter().peekable();
-
-      // If the first file is a directory, skip it and open a picker
-      if let Some((first, _)) = files_it.next_if(|(p, _)| p.is_dir()) {
-        let picker = ui::file_picker(first, &config.load().editor);
-        compositor.push(Box::new(overlaid(picker)));
-      }
-
-      // If there are any more files specified, open them
-      if files_it.peek().is_some() {
-        let mut nr_of_files = 0;
-        for (file, pos) in files_it {
-          nr_of_files += 1;
-          if file.is_dir() {
-            return Err(anyhow::anyhow!(
-                            "expected a path to file, found a directory. (to open a directory pass it as first argument)"
-                        ));
-          } else {
-            // If the user passes in either `--vsplit` or
-            // `--hsplit` as a command line argument, all the given
-            // files will be opened according to the selected
-            // option. If neither of those two arguments are passed
-            // in, just load the files normally.
-            let action = match args.split {
-              _ if nr_of_files == 1 => Action::VerticalSplit,
-              Some(Layout::Vertical) => Action::VerticalSplit,
-              Some(Layout::Horizontal) => Action::HorizontalSplit,
-              None => Action::Load,
-            };
-            let doc_id = editor
-              .open(&file, action)
-              .context(format!("open '{}'", file.to_string_lossy()))?;
-            // with Action::Load all documents have the same view
-            // NOTE: this isn't necessarily true anymore. If
-            // `--vsplit` or `--hsplit` are used, the file which is
-            // opened last is focused on.
-            let view_id = editor.tree.focus;
-            let doc = doc_mut!(editor, &doc_id);
-            let pos =
-              Selection::point(pos_at_coords(doc.text().slice(..), pos, true));
-            doc.set_selection(view_id, pos);
-          }
-        }
-        editor.set_status(format!(
-          "Loaded {} file{}.",
-          nr_of_files,
-          if nr_of_files == 1 { "" } else { "s" } // avoid "Loaded 1 files." grammo
-        ));
-        // align the view to center after all files are loaded,
-        // does not affect views without pos since it is at the top
-        let (view, doc) = current!(editor);
-        align_view(doc, view, Align::Center);
-      } else {
-        editor.new_file(Action::VerticalSplit);
-      }
-    } else if stdin().is_tty() || cfg!(feature = "integration") {
-      editor.new_file(Action::VerticalSplit);
-    } else {
-      editor
-        .new_file_from_stdin(Action::VerticalSplit)
-        .unwrap_or_else(|_| editor.new_file(Action::VerticalSplit));
-    }
-
-    editor.set_theme(theme);
-
-    let content1 = r#"## **Table of Contents**
-
-- [**Features**](#features)
-- [**Getting Started**](#getting-started)
-  - [**Prerequisites**](#prerequisites)
-  - [**Installation**](#installation)
-- [**Usage**](#usage)
-- [**Contributing**](#contributing)
-- [**License**](#license)
-- [**Acknowledgements**](#acknowledgements)"#;
-
-    let content2 = r#"### **Installation**
-
-- configure your OPENAI_API_KEY env variable
-
-### Vector DB Setup
-
-#### Start the database service
-
-- docker-compose up -d
-"#;
-    let content3 = r#"## Usage
-
-Sazid is currently a work in progress.
-
-It can currently be used as an LLM interface with function calls that allow GPT to:
-
-- Read files
-- Write files
-- pcre2grep files
-
-There is also disabled code that enables GPT to use sed and a custom function to modify files directly, but I have found that GPT consistently makes annoying mistakes that are extremely frustrating to resolve when it is forced to use regular expressions and line numbers to modify files.
-"#;
+    let (session_tx, session_rx) = mpsc::unbounded_channel();
+    let session_events = UnboundedReceiverStream::new(session_rx);
+    session.register_action_handler(session_tx).unwrap();
 
     let fixture_msg1 = ChatCompletionRequestSystemMessage {
-      content: content1.to_string(),
+      content: "you are an expert programming assistant".to_string(),
       role: Role::System,
       name: Some("sazid".to_string()),
     };
 
-    let fixture_msg2 = ChatCompletionRequestUserMessage {
-      content: ChatCompletionRequestUserMessageContent::Text(
-        "omg plz help me with things... tell me the things...".to_string(),
-      ),
-      role: Role::Assistant,
-      name: Some("sazid".to_string()),
-    };
-
-    let fixture_msg3 = ChatCompletionRequestAssistantMessage {
-      content: Some(content3.to_string()),
-      role: Role::User,
-      name: Some("sazid".to_string()),
-      tool_calls: None,
-      function_call: None,
-    };
-
-    session.add_message(ChatMessage::User(fixture_msg2.clone()));
     session.add_message(ChatMessage::System(fixture_msg1.clone()));
-    session.add_message(ChatMessage::User(fixture_msg2.clone()));
-    session.add_message(ChatMessage::Assistant(fixture_msg3.clone()));
-    session.add_message(ChatMessage::User(fixture_msg2));
-    session.add_message(ChatMessage::System(fixture_msg1));
-    session.add_message(ChatMessage::Assistant(fixture_msg3));
 
     let messages = session
       .messages
       .clone()
       .iter()
-      .map(|message| ChatMessageItem {
-        markdown: ui::Markdown::new(
-          message.to_string(),
+      .map(|message| {
+        ChatMessageItem::new_chat(
+          message.message_id,
+          message.message.clone(),
           editor.syn_loader.clone(),
-        ),
-        message: message.message.clone(),
+        )
       })
       .collect::<Vec<_>>();
 
     let session_callback =
-      |context: &mut compositor::Context,
-       message: &ChatMessageItem,
-       action: helix_view::editor::Action| {};
+      |_context: &mut compositor::Context,
+       _message: &ChatMessageItem,
+       _action: helix_view::editor::Action| {};
 
-    let editor_data = get_chat_message_text(&messages[0].message);
+    let editor_data = match &messages[0].message {
+      ChatMessageType::Chat(message) => get_chat_message_text(message),
+      ChatMessageType::Error(error) => error.to_string(),
+    };
+
+    // code for session stream mode
+    // disabled for now, use later when implementing session search
+    // let (session_matcher, session_injector) =
+    //   ui::Session::stream(editor_data.clone());
+
+    // let markdown_stream = ui::Session::with_stream(
+    //   session_matcher,
+    //   Some(editor.theme.clone()),
+    //   session_injector.clone(),
+    //   move |cx,
+    //         ChatMessageItem {
+    //           config_loader,
+    //           message,
+    //           id,
+    //           len_lines,
+    //           len_chars,
+    //         },
+    //         action| {},
+    // );
+    // compositor.push(Box::new(markdown_stream));
+
     let markdown_session = ui::Session::new(
       messages,
       Some(editor.theme.clone()),
       editor_data,
       session_callback,
     );
-    // let current = view!(editor).doc;
+    let doc_id = view!(editor).doc;
     // let id = *id;
-    // editor.switch(id, Action::Replace);
-    // compositor.replace_or_push("markdown text", overlaid(markdown_session));
+    editor.switch(doc_id, Action::Replace);
     compositor.push(Box::new(markdown_session));
+
     #[cfg(windows)]
     let signals = futures_util::stream::empty();
     #[cfg(not(windows))]
@@ -346,10 +245,10 @@ There is also disabled code that enables GPT to use sed and a custom function to
 
     let app = Self {
       session,
+      session_events,
       compositor,
       terminal,
       editor,
-
       config,
 
       theme_loader,
@@ -445,10 +344,33 @@ There is also disabled code that enables GPT to use sed and a custom function to
               self.editor.status_msg = Some((msg.message, severity));
               helix_event::request_redraw();
           }
+
           Some(callback) = self.jobs.wait_futures.next() => {
               self.jobs.handle_callback(&mut self.editor, &mut self.compositor, callback);
               self.render().await;
           }
+
+          Some(action) = self.session_events.next() => {
+                  match action.clone() {
+                   sazid::action::Action::MessageUpdate(message, id) => {
+                       self.compositor.find::<ui::Session<ChatMessageItem>>().unwrap()
+                           .add_message(ChatMessageItem::new_chat(id,message,self.syn_loader.clone() ));
+                                       self.render().await;
+                                   },
+                                   sazid::action::Action::Error(error) => {
+                    self.editor.set_error(error.to_string());
+                       self.compositor.find::<ui::Session<ChatMessageItem>>().unwrap()
+                           .add_message(ChatMessageItem::new_error(error,self.syn_loader.clone() ));
+                                       self.render().await;
+                                   },
+                                   _ => {}
+                  };
+            match self.session.update(action) {
+                Ok(_) => {},
+                Err(err) => log::debug!("session update error: {:#?}", err),
+            }
+          }
+
           event = self.editor.wait_event() => {
               let _idle_handled = self.handle_editor_event(event).await;
 
@@ -853,7 +775,7 @@ There is also disabled code that enables GPT to use sed and a custom function to
           },
           Notification::PublishDiagnostics(mut params) => {
             let path = match params.uri.to_file_path() {
-              Ok(path) => helix_stdx::path::normalize(&path),
+              Ok(path) => helix_stdx::path::normalize(path),
               Err(_) => {
                 log::error!("Unsupported file URI: {}", params.uri);
                 return;

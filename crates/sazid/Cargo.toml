@@ -179,3 +179,4 @@ tracing-test = { version = "0.2.4", features = ["no-env-filter"] }
 partial_application = "0.2.1"
 bitflags = "2.4.2"
 arc-swap = "1.6.0"
+tokio-stream = "0.1.14"

@@ -4,35 +4,35 @@ use async_openai::types::{
   ChatCompletionTool, CreateChatCompletionRequest, CreateEmbeddingRequestArgs,
   CreateEmbeddingResponse, Role,
 };
-use clipboard::{ClipboardContext, ClipboardProvider};
 use color_eyre::owo_colors::OwoColorize;
-use crossterm::event::{KeyEvent, MouseButton, MouseEvent, MouseEventKind};
+use crossterm::event::KeyEvent;
 use futures::StreamExt;
-use helix_view::graphics::{Margin, Rect};
-use helix_view::theme::{Color, Style};
+use futures_util::future::{ready, Ready};
+use futures_util::stream::select_all::SelectAll;
+use helix_view::graphics::Rect;
 use serde::{Deserialize, Serialize};
 use std::default::Default;
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::pin::Pin;
 use std::result::Result;
 use std::sync::Arc;
-use tokio::sync::mpsc::UnboundedSender;
+use std::time::Duration;
+use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
+use tokio::time::Sleep;
+use tokio_stream::wrappers::UnboundedReceiverStream;
 use tui::buffer::Buffer;
-use tui::layout::{Constraint, Direction, Layout};
-use tui::text::Text;
-use tui::widgets::*;
 
 use async_openai::{config::OpenAIConfig, Client};
 use dotenv::dotenv;
 
-use super::Component;
+use crate::action::Action;
 use crate::app::database::data_manager::{
   get_all_embeddings_by_session, search_message_embeddings_by_session,
   DataManager,
 };
 use crate::app::database::types::QueryableSession;
 use crate::app::functions::{all_functions, handle_tool_call};
-// use crate::app::markdown::Markdown;
 use crate::app::messages::{
   ChatMessage, MessageContainer, MessageState, ReceiveBuffer,
 };
@@ -41,8 +41,6 @@ use crate::app::session_config::SessionConfig;
 use crate::app::session_view::SessionView;
 use crate::app::{consts::*, errors::*, tools::chunkifier::*, types::*};
 use crate::trace_dbg;
-use crate::tui::Event;
-use crate::{action::Action, config::Config};
 use backoff::exponential::ExponentialBackoffBuilder;
 
 use crate::app::gpt_interface::create_chat_completion_tool_args;
@@ -63,6 +61,8 @@ pub struct Session {
   pub view: SessionView,
   #[serde(skip)]
   pub action_tx: Option<UnboundedSender<Action>>,
+  #[serde(skip)]
+  pub action_rx: Option<UnboundedReceiver<Action>>,
   #[serde(skip)]
   pub mode: Mode,
   #[serde(skip)]
@@ -101,6 +101,15 @@ pub struct Session {
   pub select_start_coords: Option<(usize, usize)>,
   #[serde(skip)]
   pub select_end_coords: Option<(usize, usize)>,
+  #[serde(skip)]
+  pub new_messages: SelectAll<UnboundedReceiverStream<i64>>,
+  #[serde(skip)]
+  #[serde(default = "default_idle_timer")]
+  pub idle_timer: Pin<Box<Sleep>>,
+}
+
+fn default_idle_timer() -> Pin<Box<Sleep>> {
+  Box::pin(tokio::time::sleep(Duration::from_secs(5)))
 }
 
 impl Default for Session {
@@ -112,6 +121,7 @@ impl Default for Session {
       openai_config: OpenAIConfig::default(),
       embeddings_manager: DataManager::default(),
       action_tx: None,
+      action_rx: None,
       mode: Mode::Normal,
       last_events: vec![],
       // vertical_scroll_state: ScrollbarState::default(),
@@ -133,6 +143,8 @@ impl Default for Session {
       cursor_coords: None,
       select_start_coords: None,
       select_end_coords: None,
+      idle_timer: Box::pin(tokio::time::sleep(Duration::from_secs(5))),
+      new_messages: SelectAll::new(),
     }
   }
 }
@@ -145,19 +157,49 @@ impl From<QueryableSession> for Session {
       .with_api_key(api_key)
       .with_org_id("org-WagBLu0vLgiuEL12dylmcPFj");
     // let openai_config = OpenAIConfig::new().with_api_base("http://localhost:1234/v1".to_string());
+    let idle_timer = Box::pin(tokio::time::sleep(Duration::from_secs(5)));
     Session {
       id: value.id,
       openai_config,
       config: value.config.0,
+      idle_timer,
       ..Default::default()
     }
   }
 }
 
-impl Component for Session {
+impl Session {
+  pub fn message_with_unrendered_content(
+    &mut self,
+  ) -> Ready<Option<(ChatCompletionRequestMessage, i64)>> {
+    match self.messages.iter_mut().find(|m| m.has_unrendered_content()) {
+      Some(m) => {
+        m.unset_has_unrendered_content();
+        ready(Some((m.message.clone(), m.message_id)))
+      },
+      None => ready(None),
+    }
+  }
+
+  pub fn message_id_with_unrendered_content(&self) -> Ready<Option<i64>> {
+    match self.messages.iter().find(|m| m.has_unrendered_content()) {
+      Some(message) => ready(Some(message.message_id)),
+      None => ready(None),
+    }
+  }
+}
+
+impl Session {
+  pub fn new() -> Self {
+    Self::default()
+  }
+
   fn init(&mut self, area: Rect) -> Result<(), SazidError> {
-    let tx = self.action_tx.clone().unwrap();
-    //let model_preference: Vec<Model> = vec![GPT4.clone(), GPT3_TURBO.clone(), WIZARDLM.clone()];
+    let (action_tx, action_rx) = tokio::sync::mpsc::unbounded_channel();
+    self.action_tx = Some(action_tx);
+    self.action_rx = Some(action_rx);
+
+    //let model_preference: Vec<Model> = vec![GPT4.clone(), GPT3_TURBO.clone(), WIZARDLM.clone()];)
     //Session::select_model(model_preference, create_openai_client(self.openai_config.clone()));
     trace_dbg!("init session");
     self.config.prompt =
@@ -179,6 +221,7 @@ impl Component for Session {
     "- When evaluating function tests, make it a priority to determine if the problems exist in the source code, or if the test code itself is not properly designed"].join("\n").to_string();
     // self.config.prompt = "act as a very terse assistant".into();
     self.view.set_window_width(area.width as usize, &mut self.messages);
+    let tx = self.action_tx.clone().unwrap();
     tx.send(Action::AddMessage(ChatMessage::System(
       self.config.prompt_message(),
     )))
@@ -188,22 +231,11 @@ impl Component for Session {
     self.config.available_functions = all_functions();
     Ok(())
   }
-  fn register_action_handler(
+
+  pub fn update(
     &mut self,
-    tx: UnboundedSender<Action>,
-  ) -> Result<(), SazidError> {
-    trace_dbg!("register_session_action_handler");
-    self.action_tx = Some(tx);
-    Ok(())
-  }
-  fn register_config_handler(
-    &mut self,
-    config: Config,
-  ) -> Result<(), SazidError> {
-    self.config = config.session_config;
-    Ok(())
-  }
-  fn update(&mut self, action: Action) -> Result<Option<Action>, SazidError> {
+    action: Action,
+  ) -> Result<Option<Action>, SazidError> {
     let tx = self.action_tx.clone().unwrap();
     match action {
       Action::Error(e) => {
@@ -224,7 +256,7 @@ impl Component for Session {
       },
       Action::SubmitInput(s) => {
         self.scroll_sticky_end = true;
-        self.submit_chat_completion_request(s, tx);
+        self.submit_chat_completion_request(s);
       },
       Action::RequestChatCompletion() => {
         trace_dbg!(level: tracing::Level::INFO, "requesting chat completion");
@@ -276,284 +308,42 @@ impl Component for Session {
     Ok(None)
   }
 
-  fn handle_events(
+  pub fn register_action_handler(
     &mut self,
-    event: Option<Event>,
-  ) -> Result<Option<Action>, SazidError> {
-    let r = match event {
-      Some(Event::Key(key_event)) => self.handle_key_events(key_event)?,
-      Some(Event::Mouse(mouse_event)) => {
-        self.handle_mouse_events(mouse_event)?
-      },
-      _ => None,
-    };
-    Ok(r)
-  }
-
-  fn handle_mouse_events(
-    &mut self,
-    mouse_event: MouseEvent,
-  ) -> Result<Option<Action>, SazidError> {
-    match mouse_event {
-      MouseEvent { kind: MouseEventKind::ScrollUp, .. } => self.scroll_up(),
-      MouseEvent { kind: MouseEventKind::ScrollDown, .. } => self.scroll_down(),
-      MouseEvent {
-        kind: MouseEventKind::Drag(MouseButton::Left),
-        column,
-        row,
-        modifiers,
-      } => {
-        // translate mouse click coordinates to text column and row
-        self.select_end_coords = Some((column as usize, row as usize));
-        // self.select_coords = Some((column as usize, row as usize));
-        self.cursor_coords = Some((column as usize, row as usize));
-        self.view.new_data = true;
-        trace_dbg!(
-          "mouse drag: column: {}, row: {}, modifiers: {:?}",
-          column,
-          row,
-          modifiers
-        );
-        Ok(Some(Action::Update))
-      },
-      MouseEvent {
-        kind: MouseEventKind::Down(MouseButton::Left),
-        column,
-        row,
-        ..
-      } => {
-        // translate mouse click coordinates to text column and row
-        self.select_start_coords = Some((column as usize, row as usize));
-        self.cursor_coords = Some((column as usize, row as usize));
-        self.view.new_data = true;
-        Ok(Some(Action::Update))
-      },
-      _ => Ok(None),
-    }
-  }
-
-  fn handle_key_events(
-    &mut self,
-    key: KeyEvent,
-  ) -> Result<Option<Action>, SazidError> {
-    self.last_events.push(key);
-    Ok(match self.mode {
-      Mode::Normal => match key {
-        // KeyEvent {
-        //   code: KeyCode::Char('d'),
-        //   modifiers: KeyModifiers::CONTROL,
-        //   ..
-        // } => {
-        //   self.view.textarea.scroll(Scrolling::HalfPageDown);
-        //   Some(Action::Update)
-        // },
-        // KeyEvent {
-        //   code: KeyCode::Char('u'),
-        //   modifiers: KeyModifiers::CONTROL,
-        //   ..
-        // } => {
-        //   self.view.textarea.scroll(Scrolling::HalfPageUp);
-        //   Some(Action::Update)
-        // },
-        // KeyEvent {
-        //   code: KeyCode::Char('f'),
-        //   modifiers: KeyModifiers::CONTROL,
-        //   ..
-        // } => {
-        //   self.view.textarea.scroll(Scrolling::PageDown);
-        //   self.scroll_sticky_end =
-        //     self.view.textarea.cursor().0 == self.view.textarea.lines().len();
-        //   Some(Action::Update)
-        // },
-        // KeyEvent {
-        //   code: KeyCode::Char('b'),
-        //   modifiers: KeyModifiers::CONTROL,
-        //   ..
-        // } => {
-        //   self.view.textarea.scroll(Scrolling::PageUp);
-        //   Some(Action::Update)
-        // },
-        // KeyEvent { code: KeyCode::Char('h'), .. } => {
-        //   self.view.textarea.move_cursor(CursorMove::Back);
-        //   Some(Action::Update)
-        // },
-        // KeyEvent { code: KeyCode::Char('j'), .. } => {
-        //   self.view.textarea.move_cursor(CursorMove::Down);
-        //   self.scroll_sticky_end =
-        //     self.view.textarea.cursor().0 == self.view.textarea.lines().len();
-        //   trace_dbg!("cursor: {:#?}", self.view.textarea.cursor());
-        //   Some(Action::Update)
-        // },
-        // KeyEvent { code: KeyCode::Char('k'), .. } => {
-        //   self.view.textarea.move_cursor(CursorMove::Up);
-        //   trace_dbg!("cursor: {:#?}", self.view.textarea.cursor());
-        //   Some(Action::Update)
-        // },
-        // KeyEvent { code: KeyCode::Char('l'), .. } => {
-        //   self.view.textarea.move_cursor(CursorMove::Forward);
-        //   Some(Action::Update)
-        // },
-        // KeyEvent { code: KeyCode::Char('w'), .. } => {
-        //   self.view.textarea.move_cursor(CursorMove::WordForward);
-        //   Some(Action::Update)
-        // },
-        // KeyEvent { code: KeyCode::Char('b'), .. } => {
-        //   self.view.textarea.move_cursor(CursorMove::WordBack);
-        //   Some(Action::Update)
-        // },
-        // KeyEvent { code: KeyCode::Char('^'), .. } => {
-        //   self.view.textarea.move_cursor(CursorMove::Head);
-        //   Some(Action::Update)
-        // },
-        // KeyEvent { code: KeyCode::Char('$'), .. } => {
-        //   self.view.textarea.move_cursor(CursorMove::End);
-        //   self.scroll_sticky_end =
-        //     self.view.textarea.cursor().0 == self.view.textarea.lines().len();
-        //   Some(Action::Update)
-        // },
-        // KeyEvent { code: KeyCode::Char('v'), .. } => {
-        //   self.view.textarea.start_selection();
-        //   Some(Action::Update)
-        // },
-        // KeyEvent { code: KeyCode::Char('y'), .. } => {
-        //   self.view.textarea.copy();
-        //   let mut ctx: ClipboardContext = ClipboardProvider::new().unwrap();
-        //   ctx
-        //     .set_contents(ansi_to_plain_text(&self.view.textarea.yank_text()))
-        //     .unwrap();
-        //   Some(Action::Update)
-        // },
-        // KeyEvent { code: KeyCode::Esc, .. } => {
-        //   self.view.textarea.cancel_selection();
-        //   Some(Action::Update)
-        // },
-        // KeyEvent {
-        //   code: KeyCode::Char('V'),
-        //   modifiers: KeyModifiers::SHIFT,
-        //   ..
-        // } => {
-        //   self.view.textarea.start_selection();
-        //   self.view.textarea.move_cursor(CursorMove::Head);
-        //   self.view.textarea.start_selection();
-        //   self.view.textarea.move_cursor(CursorMove::End);
-        //   Some(Action::Update)
-        // },
-        _ => None,
-      },
-      _ => None,
-      //     KeyCode::Char('j') => self.scroll_down(),
-      //     KeyCode::Char('k') => self.scroll_up(),
-      //     _ => Ok(None),
-      //   },
-      //   _ => Ok(None),
-    })
-  }
-
-  fn draw(&mut self, b: &mut Buffer) -> Result<(), SazidError> {
-    let margin_width;
-    let session_width;
-    if b.area.width <= 81 {
-      margin_width = 0u16;
-      session_width = b.area.width
-    } else {
-      session_width = 82;
-      margin_width = (b.area.width - session_width) / 2;
-    }
-    let rects = Layout::default()
-      .direction(Direction::Vertical)
-      .constraints(
-        [Constraint::Percentage(100), Constraint::Min(self.input_vsize)]
-          .as_ref(),
-      )
-      .split(b.area);
-    let inner = Layout::default()
-      .direction(Direction::Vertical)
-      .constraints(vec![
-        Constraint::Length(1),
-        Constraint::Min(10),
-        Constraint::Length(0),
-      ])
-      .split(rects[0]);
-    let inner = Layout::default()
-      .direction(Direction::Horizontal)
-      .constraints(vec![
-        Constraint::Length(margin_width),
-        Constraint::Length(session_width),
-        Constraint::Length(margin_width),
-      ])
-      .split(inner[1]);
-
-    let block = Block::default()
-      .borders(Borders::ALL)
-      .border_style(Style::default().fg(Color::Gray));
-
-    // let debug_text = Paragraph::new(format!(
-    //   "--debug--\nsticky end: {}\nscroll: {}\ncontent height: {}\nviewport height: {}",
-    //   self.scroll_sticky_end, self.vertical_scroll, self.vertical_content_height, self.viewport_height
-    // ))
-    // .block(block);
-    self.viewport_height = inner[1].height as usize;
-    self.vertical_content_height = self.view.rendered_text.len_lines();
-    // self.vertical_scroll_state =
-    //   self.vertical_scroll_state.content_length(self.vertical_content_height);
-    self.view.set_window_width(session_width as usize, &mut self.messages);
-    self.scroll_max =
-      self.view.rendered_text.len_lines().saturating_sub(self.viewport_height);
-
-    if self.scroll_sticky_end {
-      // self.view.textarea.move_cursor(CursorMove::Bottom);
-      // self.view.textarea.move_cursor(CursorMove::Head);
-    }
-    // debug_text.render(inner[0], b);
-    // f.render_widget(self.view.textarea.widget(), inner[1]);
+    tx: UnboundedSender<Action>,
+  ) -> Result<(), SazidError> {
+    trace_dbg!("register_session_action_handler");
+    self.action_tx = Some(tx);
     Ok(())
   }
-}
 
-fn _create_empty_lines(n: usize) -> String {
-  let mut s = String::with_capacity(n + 1);
-  for _ in 0..n {
-    s.push('\n');
-  }
-  s
-}
-//              --content-- <- scroll_top
-//
-//              --content-- <- scroll_top +rendered_line_count
-// --window-- <- vertical_scroll
-//
-//
-// --window-- <- vertical_scroll + vertical_viewport_height
-//
-//
-//              --content-- <- scroll_top
-// --window-- <- vertical_scroll
-//                                 message_line_start_index
-//              --content-- <- scroll_top +rendered_line_count
-//                                 message_line_last_index
-// --window-- <- vertical_scroll + vertical_viewport_height
-//
-//
-// --window-- <- vertical_scroll
-//              --content-- <- scroll_top
-//              --content-- <- scroll_top +rendered_line_count
-// --window-- <- vertical_scroll + vertical_viewport_height
-//
-//
-// --window-- <- vertical_scroll
-//              --content-- <- scroll_top
-// --window-- <- vertical_scroll + vertical_viewport_height
-//              --content-- <- scroll_top +rendered_line_count
-//
-// --window-- <- vertical_scroll
-// --window-- <- vertical_scroll + vertical_viewport_height
-//              --content-- <- scroll_top
-//              --content-- <- scroll_top +rendered_line_count
-impl Session {
-  pub fn new() -> Session {
-    Self::default()
+  pub fn update_ui_message(&self, message_id: i64) {
+    let tx = self.action_tx.clone().unwrap();
+    let message =
+      self.messages.iter().find(|m| m.message_id == message_id).unwrap();
+    tx.send(Action::MessageUpdate(message.message.clone(), message_id))
+      .unwrap();
   }
 
+  pub fn process_pending_actions(&mut self) -> Option<Action> {
+    let tx = self.action_tx.clone().unwrap();
+    let pending_action = if let Some(action_rx) = &mut self.action_rx {
+      if let Ok(action) = &action_rx.try_recv() {
+        Some(action.clone())
+      } else {
+        None
+      }
+    } else {
+      None
+    };
+    if let Some(pending_action) = pending_action {
+      if let Ok(Some(new_action)) = self.update(pending_action.clone()) {
+        tx.send(new_action.clone()).unwrap();
+        return Some(new_action);
+      };
+    }
+    None
+  }
   pub fn render_messages(
     &self,
     scroll: usize,
@@ -609,7 +399,10 @@ impl Session {
       ChatMessage::User(_) => {
         let mut message = MessageContainer::from(message);
         message.set_current_transaction_flag();
+        message.set_has_unrendered_content();
+        let id = message.message_id;
         self.messages.push(message);
+        self.update_ui_message(id);
       },
       ChatMessage::StreamResponse(new_srvec) => {
         new_srvec.iter().for_each(|sr| {
@@ -621,19 +414,27 @@ impl Session {
                 Some(ReceiveBuffer::StreamResponse(_))
               )
           }) {
+            let id = message.message_id;
             message.update_stream_response(sr.clone()).unwrap();
+            self.update_ui_message(id);
           } else {
             let mut message: MessageContainer =
               ChatMessage::StreamResponse(vec![sr.clone()]).into();
             message.set_current_transaction_flag();
+            message.set_has_unrendered_content();
+            let id = message.message_id;
             self.messages.push(message);
+            self.update_ui_message(id);
           }
         });
       },
       _ => {
         let mut message: MessageContainer = message.into();
         message.set_current_transaction_flag();
+        message.set_has_unrendered_content();
+        let id = message.message_id;
         self.messages.push(message);
+        self.update_ui_message(id);
       },
       // ChatMessage::Tool(_) => self.messages.push(message.send_in_next_request()),
     };
@@ -781,11 +582,8 @@ impl Session {
     s.chars().filter(|c| c.is_ascii()).collect()
   }
 
-  pub fn submit_chat_completion_request(
-    &mut self,
-    input: String,
-    tx: UnboundedSender<Action>,
-  ) {
+  pub fn submit_chat_completion_request(&mut self, input: String) {
+    let tx = self.action_tx.clone().unwrap();
     let config = self.config.clone();
     self
       .messages
@@ -818,7 +616,7 @@ impl Session {
       .unwrap();
     let stream_response = self.config.stream_response;
     let openai_config = self.openai_config.clone();
-    let db_url = self.embeddings_manager.get_database_url();
+    let db_url = self.config.database_url.clone();
     let model = self.config.model.clone();
     let embedding_model = self.embeddings_manager.model.clone();
     let user = self.config.user.clone();

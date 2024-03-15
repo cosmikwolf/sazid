@@ -12,6 +12,9 @@ pub fn minimal_keymap() -> Keymaps {
 
 pub fn minimal() -> HashMap<Mode, KeyTrie> {
   let normal = keymap!({ "Normal mode"
+      "C-ret" => submit_input_to_session,
+      "C-c" => quit,
+
       "h" | "left" => move_char_left,
       "j" | "down" => move_visual_line_down,
       "k" | "up" => move_visual_line_up,
@@ -211,7 +214,7 @@ pub fn minimal() -> HashMap<Mode, KeyTrie> {
       // },
 
       // move under <space>c
-      "C-c" => toggle_comments,
+      // "C-c" => toggle_comments,
 
       // z family for save/restore/combine from/to sels from register
 
@@ -370,6 +373,9 @@ pub fn minimal() -> HashMap<Mode, KeyTrie> {
       },
   }));
   let insert = keymap!({ "Insert mode"
+      "C-ret" => submit_input_to_session,
+      "C-c" => quit,
+
       "esc" => normal_mode,
 
       "C-s" => commit_undo_checkpoint,

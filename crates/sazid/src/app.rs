@@ -84,7 +84,7 @@ impl App {
     db_url: &str,
   ) -> Result<Self, SazidError> {
     let home = Home::new();
-    let session: Session =
+    let _session: Session =
       add_session(db_url, config.session_config.clone()).await.unwrap().into();
     let mode = Mode::Home;
     Ok(Self {
@@ -92,7 +92,7 @@ impl App {
       frame_rate,
       components: vec![
         Box::new(home),
-        Box::new(session),
+        // Box::new(session),
         Box::new(data_manager),
       ],
       should_quit: false,

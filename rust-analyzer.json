@@ -7,7 +7,10 @@
     }
   },
   "rustfmt": {
-    "allFeatures": false
+    "extraArgs": ["--color=always"]
+  },
+  "typing": {
+    "autoClosingAngleBrackets": true
   },
   "numThreads": 8,
   "cachePriming": {
@@ -19,6 +22,7 @@
   },
   "checkOnSave": true,
   "check": {
+    "allTargets": false,
     "command": "clippy",
     "extraArgs": ["--no-deps", "--tests"],
     "workspace": false

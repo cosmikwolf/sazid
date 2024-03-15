@@ -1,4 +1,4 @@
-use std::{borrow::Cow, cmp::Reverse, path::PathBuf, sync::Arc};
+use std::{borrow::Cow, cmp::Reverse, sync::Arc};
 
 use crate::{
   compositor::{Callback, Component, Compositor, Context, Event, EventResult},
@@ -10,7 +10,6 @@ use nucleo::pattern::{Atom, AtomKind, CaseMatching};
 use nucleo::{Config, Utf32Str};
 use tui::{
   buffer::Buffer as Surface,
-  text::Text,
   widgets::{Block, Borders, Table, Widget},
 };
 
@@ -50,7 +49,7 @@ pub struct MarkdownMenu<T: MarkdownItem> {
 
   cursor: Option<usize>,
 
-  config_loader: Arc<ArcSwap<syntax::Loader>>,
+  _config_loader: Arc<ArcSwap<syntax::Loader>>,
   theme: Option<Theme>,
   /// (index, score)
   matches: Vec<(u32, u32)>,
@@ -74,13 +73,13 @@ impl<T: MarkdownItem> MarkdownMenu<T> {
     items: Vec<T>,
     editor_data: <T as MarkdownItem>::Data,
     callback_fn: impl Fn(&mut Editor, Option<&T>, MarkdownMenuEvent) + 'static,
-    config_loader: Arc<ArcSwap<syntax::Loader>>,
+    _config_loader: Arc<ArcSwap<syntax::Loader>>,
     theme: Option<Theme>,
   ) -> Self {
     let matches = (0..items.len() as u32).map(|i| (i, 0)).collect();
     Self {
       items,
-      config_loader,
+      _config_loader,
       theme,
       editor_data,
       matches,
