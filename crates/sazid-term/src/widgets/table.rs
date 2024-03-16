@@ -343,7 +343,7 @@ impl<'a> Table<'a> {
     max_height: u16,
   ) -> Vec<Option<(usize, u16, u16, u16)>> {
     // example scroll mechanics diagram
-    // row__index  row_line                 line_offset_index
+    // row_index         row_line                 line_offset_index
     // 0  start          1   S -----------------------         -4
     // 1                 2       row_skip_lines: 4           -3
     // 2                 3                                   -2
@@ -372,36 +372,54 @@ impl<'a> Table<'a> {
       // .skip(offset)
       .enumerate()
       .map(|(i, row_text)| {
-          let row_max_height= (max_height + vertical_scroll).saturating_sub(row_index);
+          let row_start_index = row_index;
+          let row_end_index = (row_start_index + row_text.height).saturating_sub(1);
 
+          let table_start_index = vertical_scroll;
+          let table_end_index = (vertical_scroll + max_height).saturating_sub(  1);
 
-          if row_text.height >
-          let row_skip_lines = table_start_index.saturating_sub(row_start_index);
-          let row_height = row_text.height.saturating_sub(row_skip_lines).min(row_max_bound);
+          row_index += row_text.height + row_spacing;
 
+          let row_skip_lines = if row_start_index < table_start_index {
+            table_start_index.saturating_sub(row_start_index)
+          } else {
+              0
+          };
 
-            if i< 3{
-          log::info!("\nspacing:{}\nrow index: {}\nrow_text.height: {}\nrow_skip_lines: {}\ntable_start_index: {}\nrow_start_index: {}\n\nmax_height: {}", row_spacing, i,
+          let row_y =  row_start_index.saturating_sub(table_start_index).saturating_sub(row_skip_lines) ;
+
+          let row_visible_lines =
+              row_end_index.min(table_end_index).saturating_sub(row_start_index).saturating_sub(row_skip_lines);
+
+        if i< 3{
+          log::info!("
+              row index: {}
+              row_text.height: {}
+              row_y: {}
+              row_skip_lines: {}
+              row_visible_lines: {}
+              row_start_index: {}
+              row_end_index: {}
+              table_start_index: {}
+              max_height: {}",
+              i,
             row_text.height,
+            row_y,
             row_skip_lines,
-              table_start_index,
+            row_visible_lines,
               row_start_index,
+              row_end_index,
+              table_start_index,
               max_height, );
-
             };
 
-          let row_y = row_start_index;
-
-          row_index += row_height + row_spacing;
-            if i< 3{
-            log::info!("row_y: {}\nrow_height: {}\n",  row_y, row_height );
-            }
-          if row_height == 0 {
-            // row is not visible
+        if row_end_index < table_start_index {
             None
-          } else {
-            Some((i, row_y, row_skip_lines , row_height ))
-          }
+        } else if row_start_index > table_end_index {
+            None
+        } else {
+            Some((i, row_y, row_skip_lines , row_visible_lines ))
+        }
       })
     .collect::<Vec<Option<(usize, u16, u16, u16)>>>()
   }
