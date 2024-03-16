@@ -44,7 +44,7 @@ fn get_line_offset(
 ///     .alignment(Alignment::Center)
 ///     .wrap(Wrap { trim: true });
 /// ```
-#[derive(Debug, Clone, Eq, PartialEq)]
+#[derive(Debug, Clone)]
 pub struct Paragraph<'a> {
   /// A block to wrap the widget in
   block: Option<Block<'a>>,
@@ -53,7 +53,7 @@ pub struct Paragraph<'a> {
   /// How to wrap the text
   wrap: Option<Wrap>,
   /// The text to display
-  pub text: &'a Text<'a>,
+  text: &'a Text<'a>,
   /// Scroll
   scroll: (u16, u16),
   /// Alignment of the text
@@ -87,7 +87,7 @@ pub struct Paragraph<'a> {
 /// //     - Here is another point
 /// // that is long enough to wrap
 /// ```
-#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+#[derive(Debug, Clone, Copy)]
 pub struct Wrap {
   /// Should leading whitespace be trimmed
   pub trim: bool,
@@ -105,49 +105,53 @@ impl<'a> Paragraph<'a> {
     }
   }
 
-  pub fn with_block(mut self, block: Block<'a>) -> Paragraph<'a> {
+  pub fn block(mut self, block: Block<'a>) -> Paragraph<'a> {
     self.block = Some(block);
     self
   }
 
-  pub fn with_style(mut self, style: Style) -> Paragraph<'a> {
+  pub fn style(mut self, style: Style) -> Paragraph<'a> {
     self.style = style;
     self
   }
 
-  pub fn with_wrap(mut self, wrap: Wrap) -> Paragraph<'a> {
+  pub fn wrap(mut self, wrap: Wrap) -> Paragraph<'a> {
     self.wrap = Some(wrap);
     self
   }
 
-  pub fn with_scroll(mut self, offset: (u16, u16)) -> Paragraph<'a> {
+  pub fn scroll(mut self, offset: (u16, u16)) -> Paragraph<'a> {
     self.scroll = offset;
     self
   }
 
-  pub fn with_alignment(mut self, alignment: Alignment) -> Paragraph<'a> {
+  pub fn alignment(mut self, alignment: Alignment) -> Paragraph<'a> {
     self.alignment = alignment;
     self
   }
 
-  pub fn block(&mut self, block: Block<'a>) {
-    self.block = Some(block);
-  }
+  pub fn wrapped_line_count(&self, width: u16) -> usize {
+    let mut styled = self.text.lines.iter().flat_map(|spans| {
+      spans
+        .0
+        .iter()
+        .flat_map(|span| span.styled_graphemes(self.style))
+        .chain(iter::once(StyledGrapheme { symbol: "\n", style: self.style }))
+    });
 
-  pub fn style(&mut self, style: Style) {
-    self.style = style;
-  }
+    let mut line_composer: Box<dyn LineComposer> =
+      if let Some(Wrap { trim }) = self.wrap {
+        Box::new(WordWrapper::new(&mut styled, width, trim))
+      } else {
+        Box::new(LineTruncator::new(&mut styled, width))
+      };
 
-  pub fn wrap(&mut self, wrap: Wrap) {
-    self.wrap = Some(wrap);
-  }
+    let mut line_count = 0;
+    while line_composer.next_line().is_some() {
+      line_count += 1;
+    }
 
-  pub fn scroll(&mut self, offset: (u16, u16)) {
-    self.scroll = offset;
-  }
-
-  pub fn alignment(&mut self, alignment: Alignment) {
-    self.alignment = alignment;
+    line_count
   }
 }
 
@@ -162,11 +166,9 @@ impl<'a> Widget for Paragraph<'a> {
       },
       None => area,
     };
-
     if text_area.height < 1 {
       return;
     }
-
     let style = self.style;
     let mut styled = self.text.lines.iter().flat_map(|spans| {
       spans
@@ -180,7 +182,6 @@ impl<'a> Widget for Paragraph<'a> {
                     style: self.style,
                 }))
     });
-
     let mut line_composer: Box<dyn LineComposer> =
       if let Some(Wrap { trim }) = self.wrap {
         Box::new(WordWrapper::new(&mut styled, text_area.width, trim))

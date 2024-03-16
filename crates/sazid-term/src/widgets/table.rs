@@ -4,8 +4,10 @@ use tui::{
   buffer::Buffer,
   layout::{Alignment, Constraint},
   text::Text,
-  widgets::{Block, Widget, Wrap},
+  widgets::{Block, Widget},
 };
+
+use super::paragraph::{Paragraph, Wrap};
 
 /// A [`Cell`] contains the [`Text`] to be displayed in a [`Row`] of a [`Table`].
 ///
@@ -52,6 +54,24 @@ pub struct Cell<'a> {
 }
 
 impl<'a> Cell<'a> {
+  pub fn calculate_height(&self, width: u16) -> u16 {
+    if let Some(paragraph_options) = &self.paragraph_options {
+      let paragraph = Paragraph::new(&self.content)
+        .style(self.style)
+        .alignment(paragraph_options.alignment)
+        .scroll(paragraph_options.scroll);
+
+      let paragraph = if let Some(wrap_trim) = paragraph_options.wrap_trim {
+        paragraph.wrap(Wrap { trim: wrap_trim })
+      } else {
+        paragraph
+      };
+
+      paragraph.wrapped_line_count(width) as u16
+    } else {
+      1
+    }
+  }
   /// Set the `Style` of this cell.
   pub fn style(mut self, style: Style) -> Self {
     self.style = style;
@@ -154,6 +174,16 @@ impl<'a> Row<'a> {
   /// Returns the contents of cells as plain text, without styles and colors.
   pub fn cell_text(&self) -> impl Iterator<Item = String> + '_ {
     self.cells.iter().map(|cell| String::from(&cell.content))
+  }
+
+  /// Update height to cell max height, for a specific cell width
+  pub fn update_wrapped_heights(&mut self, column_widths: Vec<u16>) {
+    self.cells.iter().zip(column_widths.iter()).for_each(|(cell, width)| {
+      let cell_height = cell.calculate_height(*width);
+      if cell_height > self.height {
+        self.height = cell_height;
+      }
+    });
   }
 }
 
@@ -367,7 +397,7 @@ impl<'a> Table<'a> {
     let mut row_index = 0;
 
     self
-      .rows
+    .rows
       .iter()
       // .skip(offset)
       .enumerate()
@@ -386,10 +416,10 @@ impl<'a> Table<'a> {
               0
           };
 
-          let row_y =  row_start_index.saturating_sub(table_start_index).saturating_sub(row_skip_lines) ;
+          let row_y =  row_start_index.saturating_sub(table_start_index).saturating_sub(row_skip_lines);
 
           let row_visible_lines =
-              row_end_index.min(table_end_index).saturating_sub(row_start_index).saturating_sub(row_skip_lines);
+              (row_end_index + 1).min(table_end_index).saturating_sub(row_start_index).saturating_sub(row_skip_lines);
 
         if i< 3{
           log::info!("
@@ -401,7 +431,8 @@ impl<'a> Table<'a> {
               row_start_index: {}
               row_end_index: {}
               table_start_index: {}
-              max_height: {}",
+              max_height: {}
+              row_text: {:?}",
               i,
             row_text.height,
             row_y,
@@ -410,7 +441,9 @@ impl<'a> Table<'a> {
               row_start_index,
               row_end_index,
               table_start_index,
-              max_height, );
+              max_height,
+              String::from(&row_text.cells[1].content)
+              );
             };
 
         if row_end_index < table_start_index {
@@ -508,7 +541,7 @@ impl<'a> Table<'a> {
     };
 
     let has_selection = state.selected.is_some();
-    let columns_widths =
+    let column_widths =
       self.get_columns_widths(table_area.width, has_selection);
     let highlight_symbol = self.highlight_symbol.unwrap_or("");
     let blank_symbol = " ".repeat(highlight_symbol.width());
@@ -530,7 +563,7 @@ impl<'a> Table<'a> {
       if has_selection {
         col += (highlight_symbol.width() as u16).min(table_area.width);
       }
-      for (width, cell) in columns_widths.iter().zip(header.cells.iter()) {
+      for (width, cell) in column_widths.iter().zip(header.cells.iter()) {
         render_cell(
           buf,
           cell,
@@ -582,6 +615,11 @@ impl<'a> Table<'a> {
       table_area,
       current_height
     );
+
+    self
+      .rows
+      .iter_mut()
+      .for_each(|row| row.update_wrapped_heights(column_widths.clone()));
 
     for (table_row, extents) in self.rows.iter().zip(self.get_row_extents(
       state.vertical_scroll as u16,
@@ -636,7 +674,7 @@ impl<'a> Table<'a> {
             buf.set_style(table_row_area, self.highlight_style);
           }
           let mut col = table_row_start_col;
-          for (width, cell) in columns_widths.iter().zip(table_row.cells.iter())
+          for (width, cell) in column_widths.iter().zip(table_row.cells.iter())
           {
             render_cell(
               buf,
@@ -668,7 +706,7 @@ fn render_cell(
 ) {
   match cell.paragraph_options.clone() {
     Some(options) => {
-      let mut paragraph = tui::widgets::Paragraph::new(&cell.content);
+      let mut paragraph = Paragraph::new(&cell.content);
       if let Some(block) = options.block {
         paragraph = paragraph.block(block);
       }

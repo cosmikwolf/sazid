@@ -170,23 +170,13 @@ impl Application {
 
     let fixture_msg1 = ChatCompletionRequestSystemMessage {
       content: "you
-          are an
-          expert
-          programming
-          assistant"
+          are an expert
+          programming assistant"
         .to_string(),
       role: Role::System,
       name: Some("sazid".to_string()),
     };
 
-    session.add_message(ChatMessage::System(fixture_msg1.clone()));
-    session.add_message(ChatMessage::System(fixture_msg1.clone()));
-    session.add_message(ChatMessage::System(fixture_msg1.clone()));
-    session.add_message(ChatMessage::System(fixture_msg1.clone()));
-    session.add_message(ChatMessage::System(fixture_msg1.clone()));
-    session.add_message(ChatMessage::System(fixture_msg1.clone()));
-    session.add_message(ChatMessage::System(fixture_msg1.clone()));
-    session.add_message(ChatMessage::System(fixture_msg1.clone()));
     session.add_message(ChatMessage::System(fixture_msg1.clone()));
 
     let messages = session
