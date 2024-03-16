@@ -1,18 +1,13 @@
 use core::result::Result;
 // This is a sample comment
-use crossterm::event::{KeyEvent, MouseEvent};
 use helix_view::graphics::Rect;
 use tokio::sync::mpsc::UnboundedSender;
 
-use crate::{
-  action::Action, app::errors::SazidError, config::Config, tui::Event,
-};
+use crate::{action::Action, app::errors::SazidError, config::Config};
 
 use tui::buffer::Buffer;
 
 pub mod data_manager;
-pub mod home;
-pub mod lsp;
 pub mod session;
 
 pub trait Component {
@@ -32,33 +27,6 @@ pub trait Component {
   }
   fn init(&mut self, _area: Rect) -> Result<(), SazidError> {
     Ok(())
-  }
-  fn handle_events(
-    &mut self,
-    event: Option<Event>,
-  ) -> Result<Option<Action>, SazidError> {
-    let r = match event {
-      Some(Event::Key(key_event)) => self.handle_key_events(key_event)?,
-      Some(Event::Mouse(mouse_event)) => {
-        self.handle_mouse_events(mouse_event)?
-      },
-      _ => None,
-    };
-    Ok(r)
-  }
-  #[allow(unused_variables)]
-  fn handle_key_events(
-    &mut self,
-    key: KeyEvent,
-  ) -> Result<Option<Action>, SazidError> {
-    Ok(None)
-  }
-  #[allow(unused_variables)]
-  fn handle_mouse_events(
-    &mut self,
-    mouse: MouseEvent,
-  ) -> Result<Option<Action>, SazidError> {
-    Ok(None)
   }
   #[allow(unused_variables)]
   fn update(&mut self, action: Action) -> Result<Option<Action>, SazidError> {

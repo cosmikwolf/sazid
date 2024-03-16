@@ -354,5 +354,3 @@ impl MarkdownRenderer {
 //       crate::ui::text::required_size(&contents, max_text_width);
 //
 //     Some((width + padding, height + padding))
-//   }
-// }

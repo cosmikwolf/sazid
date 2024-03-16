@@ -59,7 +59,7 @@ futures-util = { version = "0.3", features = [
 ], default-features = false }
 arc-swap = { version = "1.6.0" }
 termini = "1"
-async-openai = "0.18.3"
+async-openai = "0.19.1"
 
 # Logging
 fern = "0.6"
@@ -98,6 +98,7 @@ serde = { version = "1.0", features = ["derive"] }
 grep-regex = "0.1.12"
 grep-searcher = "0.1.13"
 dotenv = "0.15.0"
+unicode-segmentation = "1.11.0"
 
 [target.'cfg(not(windows))'.dependencies] # https://github.com/vorner/signal-hook/issues/100
 signal-hook-tokio = { version = "0.3", features = ["futures-v0_3"] }

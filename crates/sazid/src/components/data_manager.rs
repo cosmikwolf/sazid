@@ -3,7 +3,6 @@ use crate::{
   app::{database::data_manager::*, errors::SazidError},
   config::Config,
   trace_dbg,
-  tui::Event,
 };
 use core::result::Result;
 use helix_view::graphics::Rect;
@@ -31,20 +30,6 @@ impl Component for DataManager {
 
   fn init(&mut self, _area: Rect) -> Result<(), SazidError> {
     Ok(())
-  }
-
-  fn handle_events(
-    &mut self,
-    event: Option<Event>,
-  ) -> Result<Option<Action>, SazidError> {
-    let r = match event {
-      Some(Event::Key(key_event)) => self.handle_key_events(key_event)?,
-      Some(Event::Mouse(mouse_event)) => {
-        self.handle_mouse_events(mouse_event)?
-      },
-      _ => None,
-    };
-    Ok(r)
   }
 
   fn update(&mut self, action: Action) -> Result<Option<Action>, SazidError> {
@@ -87,7 +72,7 @@ impl Component for DataManager {
       _ => Ok(None),
     }
   }
-  fn draw(&mut self, b: &mut Buffer) -> Result<(), SazidError> {
+  fn draw(&mut self, _b: &mut Buffer) -> Result<(), SazidError> {
     Ok(())
   }
 }

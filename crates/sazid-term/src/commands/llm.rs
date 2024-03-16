@@ -15,7 +15,10 @@ use helix_view::{
   Editor, Theme,
 };
 use sazid::app::messages::chat_completion_request_message_as_str;
-use tui::text::{Span, Spans};
+use tui::{
+  text::{Span, Spans},
+  widgets::{Paragraph, Wrap},
+};
 
 use helix_core::syntax;
 
@@ -25,11 +28,13 @@ use helix_core::syntax;
 /// (instead of when the user explicitly does so via a keybind like `gd`)
 /// will spam the "No configured language server supports \<feature>" status message confusingly.
 
+#[derive(Clone)]
 pub enum ChatMessageType {
   Error(String),
   Chat(ChatCompletionRequestMessage),
 }
 
+#[derive(Clone)]
 pub struct ChatMessageItem {
   pub id: Option<i64>,
   pub len_lines: usize,
@@ -63,12 +68,6 @@ impl ChatMessageItem {
     let id = None;
     let message = ChatMessageType::Error(message);
     Self { id, len_lines, len_chars, config_loader, message }
-  }
-
-  pub fn update_message(&mut self, message: ChatCompletionRequestMessage) {
-    self.message = ChatMessageType::Chat(message);
-    self.len_lines = self.content().lines().count();
-    self.len_chars = self.content().chars().count();
   }
 
   pub fn content(&self) -> &str {
@@ -145,15 +144,12 @@ impl ui::markdownmenu::MarkdownItem for ChatMessageItem {
     };
     let header = Spans::from(vec![Span::styled(header, style)]);
     let mut lines = vec![header];
-    let mut text = MarkdownRenderer::parse(
+    let text = MarkdownRenderer::parse(
       self.content(),
       theme,
       self.config_loader.clone(),
     );
-    let message_text_indent = "  ";
-    text.lines.iter_mut().for_each(|line| {
-      line.0.insert(0, Span::raw(message_text_indent));
-    });
+
     lines.extend(text);
     lines.into()
 

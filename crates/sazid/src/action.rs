@@ -1,8 +1,6 @@
 use crate::app::{
-  database::types::QueryableSession,
-  messages::{ChatMessage, MessageContainer},
-  session_config::SessionConfig,
-  types::Model,
+  database::types::QueryableSession, messages::ChatMessage,
+  session_config::SessionConfig, types::Model,
 };
 use async_openai::types::ChatCompletionRequestMessage;
 use helix_lsp::Call;

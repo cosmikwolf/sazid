@@ -169,11 +169,24 @@ impl Application {
     session.register_action_handler(session_tx).unwrap();
 
     let fixture_msg1 = ChatCompletionRequestSystemMessage {
-      content: "you are an expert programming assistant".to_string(),
+      content: "you
+          are an
+          expert
+          programming
+          assistant"
+        .to_string(),
       role: Role::System,
       name: Some("sazid".to_string()),
     };
 
+    session.add_message(ChatMessage::System(fixture_msg1.clone()));
+    session.add_message(ChatMessage::System(fixture_msg1.clone()));
+    session.add_message(ChatMessage::System(fixture_msg1.clone()));
+    session.add_message(ChatMessage::System(fixture_msg1.clone()));
+    session.add_message(ChatMessage::System(fixture_msg1.clone()));
+    session.add_message(ChatMessage::System(fixture_msg1.clone()));
+    session.add_message(ChatMessage::System(fixture_msg1.clone()));
+    session.add_message(ChatMessage::System(fixture_msg1.clone()));
     session.add_message(ChatMessage::System(fixture_msg1.clone()));
 
     let messages = session
@@ -352,19 +365,30 @@ impl Application {
 
           Some(action) = self.session_events.next() => {
                   match action.clone() {
+                      sazid::action::Action::UpdateStatus(Some(status)) => {
+                    self.editor.set_status(status);
+                        self.render().await;
+                      }
                    sazid::action::Action::MessageUpdate(message, id) => {
-                       self.compositor.find::<ui::Session<ChatMessageItem>>().unwrap()
-                           .add_message(ChatMessageItem::new_chat(id,message,self.syn_loader.clone() ));
-                                       self.render().await;
-                                   },
+                       self.compositor
+                           .find::<ui::Session<ChatMessageItem>>()
+                           .unwrap()
+                           .upsert_message(
+                               ChatMessageItem::new_chat(
+                                   id,
+                                   message,
+                                   self.syn_loader.clone() ));
+                        self.render().await;
+                    },
                                    sazid::action::Action::Error(error) => {
                     self.editor.set_error(error.to_string());
                        self.compositor.find::<ui::Session<ChatMessageItem>>().unwrap()
-                           .add_message(ChatMessageItem::new_error(error,self.syn_loader.clone() ));
+                           .upsert_message(ChatMessageItem::new_error(error,self.syn_loader.clone() ));
                                        self.render().await;
                                    },
                                    _ => {}
                   };
+
             match self.session.update(action) {
                 Ok(_) => {},
                 Err(err) => log::debug!("session update error: {:#?}", err),

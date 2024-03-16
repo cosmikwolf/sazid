@@ -1,4 +1,4 @@
-use arc_swap::{access::Map, ArcSwap};
+use arc_swap::{ArcSwap};
 use futures_util::FutureExt;
 use helix_core::diff::compare_ropes;
 use std::borrow::Cow;

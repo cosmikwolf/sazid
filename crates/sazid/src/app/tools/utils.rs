@@ -220,7 +220,7 @@ pub fn initialize_tracing() -> Result<(), Box<dyn std::error::Error>> {
   // create file at log_path, ensuring the parent directory exists
   let log_file = std::fs::OpenOptions::new()
     .create(true)
-    .write(true)
+    
     .append(true)
     .open(log_path)?;
 

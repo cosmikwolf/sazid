@@ -98,10 +98,10 @@ impl MessageContainer {
 
   pub fn vertical_height(
     &self,
-    window_width: usize,
-    lang_config: Arc<Loader>,
+    _window_width: usize,
+    _lang_config: Arc<Loader>,
   ) -> usize {
-    let content = format!("{}", self);
+    let _content = format!("{}", self);
     // let markdown = Markdown::new(content, window_width, lang_config);
     //
     // let text = markdown.parse(None);

@@ -2,9 +2,9 @@ use helix_core::unicode::width::UnicodeWidthStr;
 use helix_view::graphics::{Rect, Style};
 use tui::{
   buffer::Buffer,
-  layout::Constraint,
+  layout::{Alignment, Constraint},
   text::Text,
-  widgets::{Block, Widget},
+  widgets::{Block, Widget, Wrap},
 };
 
 /// A [`Cell`] contains the [`Text`] to be displayed in a [`Row`] of a [`Table`].
@@ -28,16 +28,45 @@ use tui::{
 ///
 /// You can apply a [`Style`] on the entire [`Cell`] using [`Cell::style`] or rely on the styling
 /// capabilities of [`Text`].
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ParagraphCell<'a> {
+  /// A block to wrap the widget in
+  block: Option<Block<'a>>,
+  /// How to wrap the text
+  wrap_trim: Option<bool>,
+  /// Scroll
+  scroll: (u16, u16),
+  /// Alignment of the text
+  alignment: Alignment,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct Cell<'a> {
+  /// The text to display
   pub content: Text<'a>,
+  /// Widget style
   style: Style,
+  //// Paragraph options for multi line cells
+  pub paragraph_options: Option<ParagraphCell<'a>>,
 }
 
 impl<'a> Cell<'a> {
   /// Set the `Style` of this cell.
   pub fn style(mut self, style: Style) -> Self {
     self.style = style;
+    self
+  }
+
+  pub fn paragraph_cell(
+    mut self,
+    block: Option<Block<'a>>,
+    wrap_trim: Option<bool>,
+    scroll: (u16, u16),
+    alignment: Alignment,
+  ) -> Self {
+    self.paragraph_options =
+      Some(ParagraphCell { block, wrap_trim, scroll, alignment });
     self
   }
 }
@@ -47,7 +76,11 @@ where
   T: Into<Text<'a>>,
 {
   fn from(content: T) -> Cell<'a> {
-    Cell { content: content.into(), style: Style::default() }
+    Cell {
+      content: content.into(),
+      style: Style::default(),
+      paragraph_options: None,
+    }
   }
 }
 
@@ -189,6 +222,8 @@ pub struct Table<'a> {
   style: Style,
   /// Width constraints for each column
   widths: &'a [Constraint],
+  /// Space between each row
+  row_spacing: u16,
   /// Space between each column
   column_spacing: u16,
   /// Style used to render the selected row
@@ -211,6 +246,7 @@ impl<'a> Table<'a> {
       style: Style::default(),
       widths: &[],
       column_spacing: 1,
+      row_spacing: 0,
       highlight_style: Style::default(),
       highlight_symbol: None,
       header: None,
@@ -261,6 +297,11 @@ impl<'a> Table<'a> {
     self
   }
 
+  pub fn row_spacing(mut self, spacing: u16) -> Self {
+    self.row_spacing = spacing;
+    self
+  }
+
   fn get_columns_widths(
     &self,
     max_width: u16,
@@ -297,58 +338,72 @@ impl<'a> Table<'a> {
     &self,
     // selected: Option<usize>,
     vertical_scroll: u16,
+    row_spacing: u16,
     // offset: usize, // first message index to display
     max_height: u16,
-  ) -> Vec<Option<(usize, u16, u16)>> {
+  ) -> Vec<Option<(usize, u16, u16, u16)>> {
     // example scroll mechanics diagram
-    // row_start_index  row_line                 line_offset_index
-    // 0                0  S -----------------------         -7
-    // 1                1                                    -6
-    // 2                2                                    -5
-    // 3                3  E -----------------------         -4
-    // 4                0  S -----------------------         -3
-    // 5                1                                    -2
-    // 6                2                                    -1 vertical_scroll = 7
-    // 7  srt+end       3  E -- row_skip_lines: 3 -- 11111    0 [table start index = 7]    start_idx
-    // 8  srt idx       0  S -- row_skip_lines: 0 -- 22222    1 TABLE AREA
-    // 9  end idx       1    row_visible_lines: 2    22222    2 TABLE AREA
-    // 10               2  E ----------------------- 22222    3 TABLE AREA
-    // 11 srt idx       0  S -- row_skip_lines: 0 -- 33333    4 TABLE AREA
-    // 12               1                            33333    5 TABLE AREA
-    // 13               2                            33333    6 TABLE AREA
-    // 14               3                            33333    7 TABLE_AREA
-    // 15 end idx       4     row_visible_lines: 5   33333    8 [table end index = 15]
-    // 16               5  E -----------------------          9 max_height = 9
-    // 17
-
-    let table_start_index = vertical_scroll;
-    let table_end_index = table_start_index + max_height - 1;
-    let mut row_start_index = 0;
+    // row__index  row_line                 line_offset_index
+    // 0  start          1   S -----------------------         -4
+    // 1                 2       row_skip_lines: 4           -3
+    // 2                 3                                   -2
+    // 3                 4                                   -1 vertical_scroll = 4
+    // 4                 5                                    0 [table_start_index = 4]
+    // 5                 6   E -----------------------        1 TABLE AREA
+    // 6                 7                                    2 TABLE AREA
+    // 7                 8   S -----------------------        3 TABLE AREA
+    // 8  srt+end        9                                    4 TABLE AREA
+    // 9                 10                                   5 TABLE AREA
+    // 10 srt idx        11                                   6 TABLE AREA
+    // 11                12                                   7 TABLE_AREA
+    // 12 end idx        13  <-- row max                      8 [table end index = 12]
+    // 13                   E-----------------------          9 max_height = 9
+    // 14                8
+    // 15                1  S -----------------------
+    // 16 end idx        2
+    // 17                3 E -----------------------
+    //                   5
+    //
+    let mut row_index = 0;
 
     self
       .rows
       .iter()
       // .skip(offset)
       .enumerate()
-      .map(|(i, row)| {
-          let row_end_index= row_start_index + row.height - 1;
+      .map(|(i, row_text)| {
+          let row_max_height= (max_height + vertical_scroll).saturating_sub(row_index);
 
-          if row_end_index < table_start_index || row_start_index > table_end_index {
-              // row is not visible
-            row_start_index += row.height;
+
+          if row_text.height >
+          let row_skip_lines = table_start_index.saturating_sub(row_start_index);
+          let row_height = row_text.height.saturating_sub(row_skip_lines).min(row_max_bound);
+
+
+            if i< 3{
+          log::info!("\nspacing:{}\nrow index: {}\nrow_text.height: {}\nrow_skip_lines: {}\ntable_start_index: {}\nrow_start_index: {}\n\nmax_height: {}", row_spacing, i,
+            row_text.height,
+            row_skip_lines,
+              table_start_index,
+              row_start_index,
+              max_height, );
+
+            };
+
+          let row_y = row_start_index;
+
+          row_index += row_height + row_spacing;
+            if i< 3{
+            log::info!("row_y: {}\nrow_height: {}\n",  row_y, row_height );
+            }
+          if row_height == 0 {
+            // row is not visible
             None
           } else {
-
-            let row_skip_lines = table_start_index.saturating_sub(row_start_index);
-
-            let row_visible_lines = row.height - row_skip_lines - (table_end_index.saturating_sub( row_end_index)).min(0);
-
-
-            row_start_index += row.height;
-            Some((i, row_skip_lines , row_visible_lines ))
+            Some((i, row_y, row_skip_lines , row_height ))
           }
       })
-    .collect::<Vec<Option<(usize, u16, u16)>>>()
+    .collect::<Vec<Option<(usize, u16, u16, u16)>>>()
   }
 }
 
@@ -440,7 +495,6 @@ impl<'a> Table<'a> {
     let highlight_symbol = self.highlight_symbol.unwrap_or("");
     let blank_symbol = " ".repeat(highlight_symbol.width());
     let mut current_height = 0;
-    let mut rows_height = table_area.height;
 
     // Draw header
     if let Some(ref header) = self.header {
@@ -474,7 +528,6 @@ impl<'a> Table<'a> {
         col += *width + self.column_spacing;
       }
       current_height += max_header_height;
-      rows_height = rows_height.saturating_sub(max_header_height);
     }
 
     // Draw rows
@@ -506,29 +559,45 @@ impl<'a> Table<'a> {
 
     // state.offset = start;
     log::debug!(
-      "Vertical scroll: {}\tTable area: {:?}",
+      "Vertical scroll: {}\nTable area: {:#?}\ncurrent_height: {}",
       state.vertical_scroll,
-      table_area
+      table_area,
+      current_height
     );
+
     for (table_row, extents) in self.rows.iter().zip(self.get_row_extents(
-      // state.selected,
       state.vertical_scroll as u16,
-      rows_height,
+      self.row_spacing,
+      table_area.height - current_height,
     )) {
       match extents {
         None => continue,
-        Some((i, row_skip_lines, row_visible_lines)) => {
-          let (row, col) =
-            (table_area.top() + current_height, table_area.left());
-          current_height += row_visible_lines;
-          let table_row_height =
-            row_visible_lines.min(buf.area.bottom().saturating_sub(row + 1));
+        Some((i, row_y, row_skip_lines, row_height)) => {
+          if row_height == 0 {
+            continue;
+          }
+          let (row, col) = (table_area.top() + row_y, table_area.left());
+          // row_height.min(table_area.height.saturating_sub(current_height));
           let table_row_area = Rect {
             x: col,
             y: row,
             width: table_area.width,
-            height: table_row_height,
+            height: row_height,
           };
+          // log::info!(
+          //   "row index: {}
+          //       table_row_area: {:#?}
+          //       current_height: {},
+          //       row_visible_lines: {}
+          //       skip_lines: {}
+          //       ",
+          //   i,
+          //   table_row_area,
+          //   current_height,
+          //   row_height,
+          //   row_skip_lines
+          // );
+
           buf.set_style(table_row_area, table_row.style);
           let is_selected = state.selected.map(|s| s == i).unwrap_or(false);
           let table_row_start_col = if has_selection {
@@ -557,8 +626,8 @@ impl<'a> Table<'a> {
               Rect {
                 x: col,
                 y: table_row_area.y,
-                width: *width,
                 height: table_row_area.height,
+                width: *width,
               },
               // Rect { x: col, y: row, width: *width, height: table_row.height },
               row_skip_lines,
@@ -579,18 +648,34 @@ fn render_cell(
   skip_lines: u16,
   truncate: bool,
 ) {
-  buf.set_style(area, cell.style);
-  for (i, spans) in
-    cell.content.lines.iter().skip(skip_lines.into()).enumerate()
-  {
-    if i as u16 >= area.height {
-      break;
-    }
-    if truncate {
-      buf.set_spans_truncated(area.x, area.y + i as u16, spans, area.width);
-    } else {
-      buf.set_spans(area.x, area.y + i as u16, spans, area.width);
-    }
+  match cell.paragraph_options.clone() {
+    Some(options) => {
+      let mut paragraph = tui::widgets::Paragraph::new(&cell.content);
+      if let Some(block) = options.block {
+        paragraph = paragraph.block(block);
+      }
+      if let Some(wrap) = options.wrap_trim {
+        paragraph = paragraph.wrap(Wrap { trim: wrap });
+      }
+      paragraph = paragraph.scroll((skip_lines, 0));
+      paragraph = paragraph.alignment(options.alignment);
+      paragraph.render(area, buf);
+    },
+    None => {
+      buf.set_style(area, cell.style);
+      for (i, spans) in
+        cell.content.lines.iter().skip(skip_lines.into()).enumerate()
+      {
+        if i as u16 >= area.height {
+          break;
+        }
+        if truncate {
+          buf.set_spans_truncated(area.x, area.y + i as u16, spans, area.width);
+        } else {
+          buf.set_spans(area.x, area.y + i as u16, spans, area.width);
+        }
+      }
+    },
   }
 }
 

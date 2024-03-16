@@ -16,12 +16,10 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::pin::Pin;
 use std::result::Result;
-use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 use tokio::time::Sleep;
 use tokio_stream::wrappers::UnboundedReceiverStream;
-use tui::buffer::Buffer;
 
 use async_openai::{config::OpenAIConfig, Client};
 use dotenv::dotenv;
@@ -38,14 +36,12 @@ use crate::app::messages::{
 };
 use crate::app::request_validation::debug_request_validation;
 use crate::app::session_config::SessionConfig;
-use crate::app::session_view::SessionView;
 use crate::app::{consts::*, errors::*, tools::chunkifier::*, types::*};
 use crate::trace_dbg;
 use backoff::exponential::ExponentialBackoffBuilder;
 
 use crate::app::gpt_interface::create_chat_completion_tool_args;
 use crate::app::tools::utils::ensure_directory_exists;
-use crate::components::home::Mode;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Session {
@@ -58,31 +54,11 @@ pub struct Session {
   #[serde(skip)]
   pub embeddings_manager: DataManager,
   #[serde(skip)]
-  pub view: SessionView,
-  #[serde(skip)]
   pub action_tx: Option<UnboundedSender<Action>>,
   #[serde(skip)]
   pub action_rx: Option<UnboundedReceiver<Action>>,
   #[serde(skip)]
-  pub mode: Mode,
-  #[serde(skip)]
   pub last_events: Vec<KeyEvent>,
-  // #[serde(skip)]
-  // pub vertical_scroll_state: ScrollbarState,
-  // #[serde(skip)]
-  // pub horizontal_scroll_state: ScrollbarState,
-  #[serde(skip)]
-  pub vertical_scroll: usize,
-  #[serde(skip)]
-  pub horizontal_scroll: usize,
-  #[serde(skip)]
-  pub scroll_max: usize,
-  #[serde(skip)]
-  pub vertical_content_height: usize,
-  #[serde(skip)]
-  pub viewport_height: usize,
-  #[serde(skip)]
-  pub scroll_sticky_end: bool,
   #[serde(skip)]
   pub render: bool,
   #[serde(skip)]
@@ -93,14 +69,6 @@ pub struct Session {
   pub request_buffer: Vec<ChatCompletionRequestMessage>,
   #[serde(skip)]
   pub request_buffer_token_count: usize,
-  #[serde(skip)]
-  pub input_vsize: u16,
-  #[serde(skip)]
-  pub cursor_coords: Option<(usize, usize)>,
-  #[serde(skip)]
-  pub select_start_coords: Option<(usize, usize)>,
-  #[serde(skip)]
-  pub select_end_coords: Option<(usize, usize)>,
   #[serde(skip)]
   pub new_messages: SelectAll<UnboundedReceiverStream<i64>>,
   #[serde(skip)]
@@ -122,27 +90,13 @@ impl Default for Session {
       embeddings_manager: DataManager::default(),
       action_tx: None,
       action_rx: None,
-      mode: Mode::Normal,
       last_events: vec![],
-      // vertical_scroll_state: ScrollbarState::default(),
-      view: SessionView::default(),
-      // horizontal_scroll_state: ScrollbarState::default(),
-      vertical_scroll: 0,
-      scroll_max: 0,
-      horizontal_scroll: 0,
-      vertical_content_height: 0,
       viewport_width: 80,
-      viewport_height: 0,
-      scroll_sticky_end: true,
       render: false,
       fn_name: None,
       fn_args: None,
       request_buffer: Vec::new(),
       request_buffer_token_count: 0,
-      input_vsize: 1,
-      cursor_coords: None,
-      select_start_coords: None,
-      select_end_coords: None,
       idle_timer: Box::pin(tokio::time::sleep(Duration::from_secs(5))),
       new_messages: SelectAll::new(),
     }
@@ -220,14 +174,11 @@ impl Session {
     "- If you require additional information about the codebase, you can use pcre2grep to gather information about the codebase",
     "- When evaluating function tests, make it a priority to determine if the problems exist in the source code, or if the test code itself is not properly designed"].join("\n").to_string();
     // self.config.prompt = "act as a very terse assistant".into();
-    self.view.set_window_width(area.width as usize, &mut self.messages);
     let tx = self.action_tx.clone().unwrap();
     tx.send(Action::AddMessage(ChatMessage::System(
       self.config.prompt_message(),
     )))
     .unwrap();
-    self.view.post_process_new_messages(&mut self.messages);
-    // self.text_area = TextArea::new(self.view.rendered_text.lines().map(|l| l.to_string()).collect());
     self.config.available_functions = all_functions();
     Ok(())
   }
@@ -244,7 +195,6 @@ impl Session {
       Action::AddMessage(chat_message) => {
         //trace_dbg!(level: tracing::Level::INFO, "adding message to session");
         self.add_message(chat_message);
-        self.view.post_process_new_messages(&mut self.messages);
         self.execute_tool_calls();
         self.generate_new_message_embeddings();
       },
@@ -255,7 +205,6 @@ impl Session {
         // self.save_session().unwrap();
       },
       Action::SubmitInput(s) => {
-        self.scroll_sticky_end = true;
         self.submit_chat_completion_request(s);
       },
       Action::RequestChatCompletion() => {
@@ -270,38 +219,7 @@ impl Session {
           .unwrap()
           .embedding_saved = true;
       },
-      Action::Resize(width, _height) => {
-        self.view.set_window_width(width.into(), &mut self.messages);
-        self.redraw_messages()
-      },
       Action::SelectModel(model) => self.config.model = model,
-      Action::SetInputVsize(vsize) => {
-        self.input_vsize = vsize;
-      },
-      Action::EnterCommand => {
-        self.view.unfocus_textarea();
-        self.mode = Mode::Command;
-      },
-      Action::EnterNormal => {
-        self.view.focus_textarea();
-        self.mode = Mode::Normal;
-      },
-      Action::EnterVisual => {
-        self.view.unfocus_textarea();
-        self.mode = Mode::Visual;
-      },
-      Action::EnterInsert => {
-        self.view.unfocus_textarea();
-        self.mode = Mode::Insert;
-      },
-      Action::EnterProcessing => {
-        self.view.unfocus_textarea();
-        self.mode = Mode::Processing;
-      },
-      Action::ExitProcessing => {
-        self.view.focus_textarea();
-        self.mode = Mode::Normal;
-      },
       _ => (),
     }
     //self.action_tx.clone().unwrap().send(Action::Render).unwrap();
@@ -343,55 +261,6 @@ impl Session {
       };
     }
     None
-  }
-  pub fn render_messages(
-    &self,
-    scroll: usize,
-    area: Rect,
-    surface: &mut Buffer,
-  ) {
-    self
-      .messages
-      .iter()
-      .scan(0, |scroll_top, m| {
-        let message_height = m.vertical_height(
-          self.view.window_width,
-          Arc::clone(&self.view.lang_config.load()),
-        );
-
-        let message_line_start_index =
-          *scroll_top + message_height - self.vertical_scroll;
-        let message_line_last_index = self.vertical_scroll
-          + self.viewport_height
-          - (*scroll_top + message_height);
-
-        *scroll_top += message_height;
-
-        if *scroll_top + message_height < self.vertical_scroll
-          || self.vertical_scroll + self.viewport_height < *scroll_top
-        {
-          None
-        } else {
-          Some((m, message_line_start_index, message_line_last_index))
-        }
-      })
-      .for_each(|(m, message_line_start_index, message_line_last_index)| {
-        // let content = format!("{}", m);
-        // let markdown = Markdown::new(
-        //   content,
-        //   self.view.window_width,
-        //   Arc::clone(&self.view.lang_config),
-        // );
-        //
-        // let text = markdown.parse(None)
-        //   [message_line_start_index..message_line_last_index]
-        //   .to_vec();
-        // let par = Paragraph::new(Text::from(text))
-        //   .wrap(Wrap { trim: false })
-        //   .scroll((scroll as u16, 0));
-        // let margin = Margin::all(1);
-        // par.render(area.inner(&margin), surface);
-      });
   }
 
   pub fn add_message(&mut self, message: ChatMessage) {
@@ -505,46 +374,6 @@ impl Session {
     self.messages.iter_mut().for_each(|m| {
       m.stylize_complete = false;
     });
-    self.view.post_process_new_messages(&mut self.messages);
-  }
-
-  pub fn scroll_up(&mut self) -> Result<Option<Action>, SazidError> {
-    self.vertical_scroll = self.vertical_scroll.saturating_sub(1);
-    self.scroll_sticky_end = false;
-    // trace_dbg!(
-    //   "next scroll {} content height: {} vertical_viewport_height: {}",
-    //   self.vertical_scroll,
-    //   self.vertical_content_height,
-    //   self.vertical_viewport_height
-    // );
-    Ok(Some(Action::Update))
-  }
-
-  pub fn scroll_down(&mut self) -> Result<Option<Action>, SazidError> {
-    self.vertical_scroll =
-      self.vertical_scroll.saturating_add(1).min(self.scroll_max);
-    // self.vertical_scroll_state =
-    //   self.vertical_scroll_state.position(self.vertical_scroll);
-    // if self.vertical_scroll_state
-    //   == self.vertical_scroll_state.position(self.scroll_max)
-    // {
-    //   if !self.scroll_sticky_end {
-    //     let mut debug_string = String::new();
-    //     for (idx, line) in self.view.rendered_text.lines().enumerate() {
-    //       debug_string.push_str(format!("{:02}\t", idx).as_str());
-    //       debug_string.push_str(line.to_string().as_str());
-    //     }
-    //   }
-    //   self.scroll_sticky_end = true;
-    // }
-    // trace_dbg!(
-    //   "previous scroll {} content height: {} vertical_viewport_height: {}",
-    //   self.vertical_scroll,
-    //   self.vertical_content_height,
-    //   self.vertical_viewport_height
-    // );
-
-    Ok(Some(Action::Update))
   }
 
   pub fn add_chunked_chat_completion_request_messages(
@@ -635,7 +464,7 @@ impl Session {
     let new_messages = self
       .messages
       .iter_mut()
-      .filter(|m| m.current_transaction_flag)
+      // .filter(|m| m.current_transaction_flag)
       .map(|m| {
         // m.current_transaction_flag = false;
         m.message.clone()
@@ -646,8 +475,12 @@ impl Session {
     // let token_count = self.request_buffer_token_count;
     tx.send(Action::UpdateStatus(Some("Assembling request...".to_string())))
       .unwrap();
+
     tokio::spawn(async move {
-      let mut embeddings_and_messages = match (input, rag) {
+      let mut embeddings_and_messages: Vec<ChatCompletionRequestMessage> =
+        Vec::new();
+
+      embeddings_and_messages.extend(match (input, rag) {
         (Some(input), Some(count)) => search_message_embeddings_by_session(
           &db_url,
           session_id,
@@ -661,12 +494,10 @@ impl Session {
           get_all_embeddings_by_session(&db_url, session_id).await.unwrap()
         },
         (None, _) => Vec::new(),
-      };
+      });
 
-      for message in new_messages {
-        embeddings_and_messages.push(message);
-      }
-
+      embeddings_and_messages.extend(new_messages);
+      log::info!("embeddings_and_messages: {:#?}", embeddings_and_messages);
       let request = construct_request(
         model.name.clone(),
         embeddings_and_messages,

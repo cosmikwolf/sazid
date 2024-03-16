@@ -9,7 +9,10 @@ use crate::{
     document::{render_document, LineDecoration, LinePos, TextRenderer},
     EditorView,
   },
-  widgets::table::{Row, Table, TableState},
+  widgets::{
+    paragraph::{Paragraph, Wrap},
+    table::{Cell, ParagraphCell, Row, Table, TableState},
+  },
 };
 
 use futures_util::{future::BoxFuture, FutureExt};
@@ -299,8 +302,14 @@ impl<T: MarkdownItem + 'static> Session<T> {
     }
   }
 
-  pub fn add_message(&mut self, message: ChatMessageItem) {
-    self.messages.push(message);
+  pub fn upsert_message(&mut self, message: ChatMessageItem) {
+    if let Some(existing_message) =
+      self.messages.iter_mut().find(|m| m.id.is_some() && m.id == message.id)
+    {
+      *existing_message = message;
+    } else {
+      self.messages.push(message);
+    }
   }
   pub fn injector(&self) -> Injector<T> {
     Injector {
@@ -699,11 +708,25 @@ impl<T: MarkdownItem + 'static> Session<T> {
     let rows: Vec<Row> = self
       .messages
       .iter()
-      .map(|message| {
+      .enumerate()
+      .map(|(msg_idx, message)| {
         let text =
           message.format(&message.content().to_string(), self.theme.as_ref());
         let height = text.height() as u16;
-        Row::from(text).height(height)
+        let message_cell = Cell::from(text).paragraph_cell(
+          // Some(Block::default().borders(Borders::LEFT)),
+          None,
+          Some(false),
+          (0, 0),
+          tui::layout::Alignment::Left,
+        );
+        let index_cell = Cell::from(msg_idx.to_string()).paragraph_cell(
+          Some(Block::default().borders(Borders::RIGHT)),
+          Some(false),
+          (0, 0),
+          tui::layout::Alignment::Center,
+        );
+        Row::new(vec![index_cell, message_cell]).height(height)
       })
       .collect();
 
@@ -727,13 +750,14 @@ impl<T: MarkdownItem + 'static> Session<T> {
     //   })
     //   .collect();
 
-    self.widths = vec![Constraint::Length(area.width)];
+    self.widths = vec![Constraint::Length(5), Constraint::Percentage(25)];
 
     let table = Table::new(rows)
       .style(text_style)
       .highlight_style(selected)
       .highlight_symbol(" > ")
       .column_spacing(1)
+      .row_spacing(1)
       .widths(&self.widths);
 
     table.render_table(
