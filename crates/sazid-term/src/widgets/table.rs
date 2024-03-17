@@ -1,4 +1,4 @@
-use helix_core::unicode::width::UnicodeWidthStr;
+use helix_core::{movement::Direction, unicode::width::UnicodeWidthStr};
 use helix_view::graphics::{Rect, Style};
 use tui::{
   buffer::Buffer,
@@ -69,7 +69,7 @@ impl<'a> Cell<'a> {
 
       paragraph.wrapped_line_count(width) as u16
     } else {
-      1
+      self.content.lines.len() as u16
     }
   }
   /// Set the `Style` of this cell.
@@ -421,30 +421,30 @@ impl<'a> Table<'a> {
           let row_visible_lines =
               (row_end_index + 1).min(table_end_index).saturating_sub(row_start_index).saturating_sub(row_skip_lines);
 
-        if i< 3{
-          log::info!("
-              row index: {}
-              row_text.height: {}
-              row_y: {}
-              row_skip_lines: {}
-              row_visible_lines: {}
-              row_start_index: {}
-              row_end_index: {}
-              table_start_index: {}
-              max_height: {}
-              row_text: {:?}",
-              i,
-            row_text.height,
-            row_y,
-            row_skip_lines,
-            row_visible_lines,
-              row_start_index,
-              row_end_index,
-              table_start_index,
-              max_height,
-              String::from(&row_text.cells[1].content)
-              );
-            };
+        // if i< 3{
+        //   log::info!("
+        //       row index: {}
+        //       row_text.height: {}
+        //       row_y: {}
+        //       row_skip_lines: {}
+        //       row_visible_lines: {}
+        //       row_start_index: {}
+        //       row_end_index: {}
+        //       table_start_index: {}
+        //       max_height: {}
+        //       row_text: {:?}",
+        //       i,
+        //     row_text.height,
+        //     row_y,
+        //     row_skip_lines,
+        //     row_visible_lines,
+        //       row_start_index,
+        //       row_end_index,
+        //       table_start_index,
+        //       max_height,
+        //       String::from(&row_text.cells[1].content)
+        //       );
+        //     };
 
         if row_end_index < table_start_index {
             None
@@ -461,27 +461,72 @@ impl<'a> Table<'a> {
 #[derive(Debug, Default, Clone)]
 pub struct TableState {
   pub offset: usize,
-  pub vertical_scroll: u32,
-  pub selection_heights: Vec<u16>,
-  pub viewport_height: u32,
+  pub vertical_scroll: u16,
+  pub scroll_max: u16,
+  pub row_heights: Vec<u16>,
+  pub sticky_scroll: bool,
+  pub viewport_height: u16,
   pub selected: Option<usize>,
 }
 
 impl TableState {
+  // if the scroll is at the end, scroll with incoming text
+  pub fn update_sticky_scroll(&mut self) {
+    self.scroll_max = self
+      .row_heights
+      .iter()
+      .sum::<u16>()
+      .saturating_sub(self.viewport_height * 3 / 4);
+    if self.sticky_scroll {
+      self.vertical_scroll = self.scroll_max;
+    }
+    log::info!(
+      "sticky scroll by: {} {} {} {}",
+      self.vertical_scroll,
+      self.scroll_max,
+      self.viewport_height,
+      self.sticky_scroll
+    );
+  }
+
+  pub fn scroll_by(&mut self, amount: u16, direction: Direction) {
+    match direction {
+      Direction::Forward => {
+        self.vertical_scroll =
+          self.vertical_scroll.saturating_add(amount).clamp(0, self.scroll_max);
+      },
+      Direction::Backward => {
+        self.sticky_scroll = false;
+        self.vertical_scroll =
+          self.vertical_scroll.saturating_sub(amount).clamp(0, self.scroll_max);
+      },
+    }
+
+    if self.vertical_scroll == self.scroll_max {
+      self.sticky_scroll = true;
+    }
+
+    log::info!(
+      "scroll by: {} {} {} {}",
+      self.vertical_scroll,
+      self.scroll_max,
+      self.viewport_height,
+      self.sticky_scroll
+    );
+  }
+
   pub fn scroll_to_selection(&mut self) {
     if let Some(selected) = self.selected {
-      let selection_top: u32 =
-        self.selection_heights.iter().take(selected).sum::<u16>().into();
-
-      let selection_bottom: u32 =
-        self.selection_heights.iter().take(selected + 1).sum::<u16>().into();
+      let selection_top: u16 = self.row_heights.iter().take(selected).sum();
+      let selection_bottom: u16 =
+        self.row_heights.iter().take(selected + 1).sum();
 
       log::info!(
         "scroll to selection: {}-{}, {} {} {} {}",
         self.vertical_scroll,
         self.vertical_scroll + self.viewport_height,
         self.viewport_height,
-        self.selection_heights[selected],
+        self.row_heights[selected],
         selection_top,
         selection_bottom
       );
@@ -529,8 +574,9 @@ impl<'a> Table<'a> {
       return;
     }
     buf.set_style(area, self.style);
-    state.selection_heights = self.row_heights();
-    state.viewport_height = area.height as u32;
+    state.viewport_height = area.height;
+
+    state.update_sticky_scroll();
     let table_area = match self.block.take() {
       Some(b) => {
         let inner_area = b.inner(area);
@@ -543,6 +589,13 @@ impl<'a> Table<'a> {
     let has_selection = state.selected.is_some();
     let column_widths =
       self.get_columns_widths(table_area.width, has_selection);
+    self
+      .rows
+      .iter_mut()
+      .for_each(|row| row.update_wrapped_heights(column_widths.clone()));
+
+    state.row_heights = self.row_heights();
+
     let highlight_symbol = self.highlight_symbol.unwrap_or("");
     let blank_symbol = " ".repeat(highlight_symbol.width());
     let mut current_height = 0;
@@ -615,11 +668,6 @@ impl<'a> Table<'a> {
       table_area,
       current_height
     );
-
-    self
-      .rows
-      .iter_mut()
-      .for_each(|row| row.update_wrapped_heights(column_widths.clone()));
 
     for (table_row, extents) in self.rows.iter().zip(self.get_row_extents(
       state.vertical_scroll as u16,

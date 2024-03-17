@@ -15,10 +15,7 @@ use helix_view::{
   Editor, Theme,
 };
 use sazid::app::messages::chat_completion_request_message_as_str;
-use tui::{
-  text::{Span, Spans},
-  widgets::{Paragraph, Wrap},
-};
+use tui::text::{Span, Spans};
 
 use helix_core::syntax;
 
@@ -160,7 +157,6 @@ impl ui::markdownmenu::MarkdownItem for ChatMessageItem {
 pub fn session_messages(cx: &mut Context) {
   let (_view, _doc) = current!(cx.editor);
 
-  log::debug!("*&*&*&*&*&*&*&*& messages count: {}", cx.session.messages.len());
   let messages_fut = futures_util::future::ready(
     cx.session
       .messages

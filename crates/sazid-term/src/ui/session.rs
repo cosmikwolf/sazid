@@ -9,10 +9,7 @@ use crate::{
     document::{render_document, LineDecoration, LinePos, TextRenderer},
     EditorView,
   },
-  widgets::{
-    paragraph::{Paragraph, Wrap},
-    table::{Cell, ParagraphCell, Row, Table, TableState},
-  },
+  widgets::table::{Cell, Row, Table, TableState},
 };
 
 use futures_util::{future::BoxFuture, FutureExt};
@@ -184,7 +181,7 @@ pub struct Session<T: MarkdownItem> {
   textbox: ui::textbox::Textbox,
   input: EditorView,
   previous_pattern: String,
-  tablestate: TableState,
+  state: TableState,
   /// Whether to show the preview panel (default true)
   show_preview: bool,
   /// Constraints for tabular formatting
@@ -275,8 +272,10 @@ impl<T: MarkdownItem + 'static> Session<T> {
     let tablestate = TableState {
       offset: 0,
       vertical_scroll: 0,
+      sticky_scroll: true,
+      scroll_max: 0,
       selected: None,
-      selection_heights: Vec::new(),
+      row_heights: Vec::new(),
       viewport_height: 0,
     };
 
@@ -288,7 +287,7 @@ impl<T: MarkdownItem + 'static> Session<T> {
       shutdown,
       selected_option: 0,
       textbox,
-      tablestate,
+      state: tablestate,
       input,
       previous_pattern: String::new(),
       truncate_start: true,
@@ -311,6 +310,7 @@ impl<T: MarkdownItem + 'static> Session<T> {
       self.messages.push(message);
     }
   }
+
   pub fn injector(&self) -> Injector<T> {
     Injector {
       dst: self.matcher.injector(),
@@ -347,28 +347,8 @@ impl<T: MarkdownItem + 'static> Session<T> {
     }
   }
 
-  pub fn scroll_by(&mut self, amount: u32, direction: Direction) {
-    match direction {
-      Direction::Forward => {
-        self.tablestate.vertical_scroll =
-          self.tablestate.vertical_scroll.saturating_sub(amount).clamp(
-            0,
-            self.tablestate.selection_heights.iter().sum::<u16>() as u32,
-          );
-      },
-      Direction::Backward => {
-        self.tablestate.vertical_scroll =
-          self.tablestate.vertical_scroll.saturating_add(amount).clamp(
-            0,
-            self.tablestate.selection_heights.iter().sum::<u16>() as u32,
-          );
-      },
-    }
-    log::info!("scrolling to {}", self.tablestate.vertical_scroll)
-  }
-
   /// Move the cursor by a number of lines, either down (`Forward`) or up (`Backward`)
-  pub fn move_by(&mut self, amount: u32, direction: Direction) {
+  pub fn move_by(&mut self, amount: u16, direction: Direction) {
     let len = self.matcher.snapshot().matched_item_count();
     if len == 0 {
       // No results, can't move.
@@ -377,32 +357,32 @@ impl<T: MarkdownItem + 'static> Session<T> {
 
     match direction {
       Direction::Forward => {
-        self.tablestate.selected = match self.tablestate.selected {
+        self.state.selected = match self.state.selected {
           Some(selected) => Some(
             selected.saturating_add(amount as usize).clamp(0, len as usize - 1),
           ),
           None => Some(0_usize),
         };
-        self.tablestate.scroll_to_selection()
+        self.state.scroll_to_selection()
       },
       Direction::Backward => {
-        self.tablestate.selected = match self.tablestate.selected {
+        self.state.selected = match self.state.selected {
           Some(selected) => Some(selected.saturating_sub(amount as usize)),
           None => Some(0_usize),
         };
-        self.tablestate.scroll_to_selection()
+        self.state.scroll_to_selection()
       },
     }
   }
 
   /// Move the cursor down by exactly one page. After the last page comes the first page.
   pub fn page_up(&mut self) {
-    self.move_by(self.completion_height as u32, Direction::Backward);
+    self.move_by(self.completion_height, Direction::Backward);
   }
 
   /// Move the cursor up by exactly one page. After the first page comes the last page.
   pub fn page_down(&mut self) {
-    self.move_by(self.completion_height as u32, Direction::Forward);
+    self.move_by(self.completion_height, Direction::Forward);
   }
 
   /// Move the cursor to the first entry
@@ -763,7 +743,7 @@ impl<T: MarkdownItem + 'static> Session<T> {
     table.render_table(
       readout_area,
       surface,
-      &mut self.tablestate,
+      &mut self.state,
       self.truncate_start,
     );
   }
@@ -959,10 +939,10 @@ impl<T: MarkdownItem + 'static + Send + Sync> Component for Session<T> {
 
     match key_event {
       shift!('j') | key!(Up) => {
-        self.scroll_by(1, Direction::Forward);
+        self.state.scroll_by(1, Direction::Backward);
       },
       shift!('k') | key!(Down) => {
-        self.scroll_by(1, Direction::Backward);
+        self.state.scroll_by(1, Direction::Forward);
       },
       shift!(Tab) | ctrl!('p') => {
         self.move_by(1, Direction::Backward);
