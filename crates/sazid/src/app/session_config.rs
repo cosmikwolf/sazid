@@ -13,7 +13,8 @@ pub struct SessionConfig {
   pub prompt: String,
   pub id: String,
   pub session_dir: PathBuf,
-  pub enabled_tools: Vec<String>,
+  pub disabled_tools: Vec<String>,
+  pub tools_enabled: bool,
   pub accessible_paths: Vec<PathBuf>,
   pub model: Model,
   pub retrieval_augmentation_message_count: Option<i64>,
@@ -31,7 +32,8 @@ impl Default for SessionConfig {
       prompt: String::new(),
       id: Self::generate_session_id(),
       session_dir: PathBuf::new(),
-      enabled_tools: vec![],
+      disabled_tools: vec![],
+      tools_enabled: true,
       accessible_paths: vec![],
       model: GPT4_TURBO.clone(),
       retrieval_augmentation_message_count: Some(10),
@@ -44,6 +46,7 @@ impl Default for SessionConfig {
     }
   }
 }
+
 impl SessionConfig {
   pub fn prompt_message(&self) -> ChatCompletionRequestSystemMessage {
     ChatCompletionRequestSystemMessage {

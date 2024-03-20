@@ -32,7 +32,9 @@ use crate::app::database::types::QueryableSession;
 use crate::app::messages::{
   ChatMessage, MessageContainer, MessageState, ReceiveBuffer,
 };
-use crate::app::model_tools::tool_call::{get_enabled_tools, handle_tool_call};
+use crate::app::model_tools::tool_call::{
+  get_enabled_tools, handle_tool_call, handle_tool_complete,
+};
 use crate::app::request_validation::debug_request_validation;
 use crate::app::session_config::SessionConfig;
 use crate::app::{consts::*, errors::*, tools::chunkifier::*, types::*};
@@ -185,6 +187,9 @@ impl Session {
         trace_dbg!(level: tracing::Level::INFO, "requesting chat completion");
         self.request_chat_completion(None, tx.clone())
       },
+      Action::ToolCallComplete(id, tool_call_id, output) => {
+        handle_tool_complete(id, tool_call_id, output, tx);
+      },
       Action::MessageEmbeddingSuccess(id) => {
         self
           .messages
@@ -248,10 +253,14 @@ impl Session {
                 Some(ReceiveBuffer::StreamResponse(_))
               )
           }) {
+            // stream response already exists in receive buffer
+            // update existing message
             let id = message.message_id;
             message.update_stream_response(sr.clone()).unwrap();
             self.update_ui_message(id);
           } else {
+            // stream response does not exist in stream buffer,
+            // create new message in receive buffer
             let mut message: MessageContainer =
               ChatMessage::StreamResponse(vec![sr.clone()]).into();
             message.set_current_transaction_flag();
@@ -300,7 +309,7 @@ impl Session {
       .messages
       .iter_mut()
       .filter(|m| {
-        m.receive_complete
+        m.receive_is_complete()
           && !m.tools_called
           && matches!(m.message, ChatCompletionRequestMessage::Assistant(_))
       })
@@ -480,7 +489,7 @@ impl Session {
           while let Some(response_result) = stream.next().await {
             match response_result {
               Ok(response) => {
-                trace_dbg!("Response: {:#?}", response.bright_yellow());
+                // log::debug!("Response: {:#?}", response);
                 //tx.send(Action::UpdateStatus(Some(format!("Received responses: {}", count).to_string()))).unwrap();
                 tx.send(Action::AddMessage(
                   session_id,

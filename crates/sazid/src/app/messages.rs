@@ -73,7 +73,7 @@ impl MessageContainer {
   pub fn set_tools_complete(&mut self) {
     self.message_state.set(MessageState::TOOLS_COMPLETE, true);
   }
-  pub fn is_receive_complete(&self) -> bool {
+  pub fn receive_is_complete(&self) -> bool {
     self.message_state.contains(MessageState::RECEIVE_COMPLETE)
   }
 
@@ -115,7 +115,6 @@ pub struct MessageContainer {
   pub stream_id: Option<String>,
   pub selected_choice: usize,
   pub tools_called: bool,
-  pub receive_complete: bool,
   pub embedding_saved: bool,
   pub current_transaction_flag: bool,
   pub stylize_complete: bool,
@@ -190,7 +189,6 @@ impl From<ReceiveBuffer> for MessageContainer {
       message_id: rand::random::<i64>(),
       message,
       stream_id,
-      receive_complete: false,
       tool_calls: Vec::new(),
       wrapped_content: String::new(),
       stylized: Rope::new(),
@@ -358,7 +356,6 @@ impl MessageContainer {
       selected_choice: 0,
       embedding_saved: false,
       stylize_complete: false,
-      receive_complete: false,
       current_transaction_flag: false,
       wrapped_content: String::new(),
       stylized: Rope::new(),
@@ -430,6 +427,7 @@ impl MessageContainer {
       },
       _ => true,
     } {
+      log::info!("receive is complete {:#?}", self.message);
       self.set_receive_complete();
     }
   }

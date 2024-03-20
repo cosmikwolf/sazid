@@ -78,7 +78,7 @@ pub fn get_enabled_tools(
 }
 
 pub fn enabled_tools_functions(
-  enabled_tools: Option<Vec<String>>,
+  disabled_tools: Option<Vec<String>>,
 ) -> Result<Vec<Pin<Box<dyn ToolCallTrait + 'static>>>, ToolCallError> {
   let tool_functions: Vec<Pin<Box<dyn ToolCallTrait + 'static>>> = vec![
     Box::pin(CargoCheckFunction::init()),
@@ -87,36 +87,44 @@ pub fn enabled_tools_functions(
     Box::pin(ReadFileLinesFunction::init()),
   ];
 
-  if let Some(enabled_tools) = enabled_tools.clone() {
-    for tool in &enabled_tools {
-      tool_functions
+  if let Some(disabled_tools) = &disabled_tools {
+    for tool in disabled_tools {
+      if !tool_functions
         .iter()
-        .find(|tool_func| tool_func.name() == tool)
-        .unwrap_or_else(|| panic!("enabled tool not found: {}", tool));
+        .any(|tool_func| &tool_func.name().to_string() == tool)
+      {
+        return Err(ToolCallError::new(&format!(
+          "disabled tool not found: {}",
+          tool
+        )));
+      }
     }
+    Ok(
+      tool_functions
+        .into_iter()
+        .filter(|tool| !disabled_tools.contains(&tool.name().to_string()))
+        .collect::<Vec<Pin<Box<dyn ToolCallTrait + 'static>>>>(),
+    )
+  } else {
+    Ok(tool_functions)
   }
-
-  Ok(
-    tool_functions
-      .into_iter()
-      .filter(|tool_func| {
-        enabled_tools
-          .as_ref()
-          .map(|tools| tools.contains(&tool_func.name().to_string()))
-          .unwrap_or(true)
-      })
-      .collect::<Vec<Pin<Box<dyn ToolCallTrait + 'static>>>>(),
-  )
 }
 
 pub fn get_tool_by_name(
   tool_name: &str,
-  enabled_tools: Option<Vec<String>>,
+  disabled_tools: Option<Vec<String>>,
 ) -> Result<Pin<Box<dyn ToolCallTrait>>, ToolCallError> {
-  let tools = enabled_tools_functions(enabled_tools).unwrap();
+  log::debug!("disabled tools: {:?}", disabled_tools.clone());
+  let tools = enabled_tools_functions(disabled_tools).unwrap();
+  for tool in tools.iter() {
+    log::debug!("tool: {}", tool.name());
+  }
   match tools.into_iter().find(|tool| tool.name() == tool_name) {
     Some(tool) => Ok(tool),
-    None => Err(ToolCallError::new(&format!("tool not found: {}", tool_name))),
+    None => Err(ToolCallError::new(&format!(
+      "Tool Call Error: tool not found: {}",
+      tool_name
+    ))),
   }
 }
 
@@ -130,7 +138,7 @@ pub fn call_tool(
 ) {
   match get_tool_by_name(
     tool_name.as_str(),
-    Some(session_config.enabled_tools.clone()),
+    Some(session_config.disabled_tools.clone()),
   ) {
     Ok(tool) => {
       tokio::spawn(async move {
