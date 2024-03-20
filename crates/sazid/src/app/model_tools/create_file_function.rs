@@ -3,15 +3,17 @@ use std::{
   fs::{self, File},
   io::Write,
   path::Path,
+  pin::Pin,
 };
 
 use crate::app::session_config::SessionConfig;
+use futures_util::Future;
 use serde::{Deserialize, Serialize};
 
 use super::{
   errors::ToolCallError,
   tool_call::ToolCallTrait,
-  types::{FunctionCall, FunctionParameters, FunctionProperties},
+  types::{FunctionParameters, FunctionProperties, ToolCall},
 };
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
@@ -23,6 +25,9 @@ pub struct CreateFileFunction {
 }
 
 impl ToolCallTrait for CreateFileFunction {
+  fn name(&self) -> &str {
+    &self.name
+  }
   fn init() -> Self {
     CreateFileFunction {
       name: "create_file".to_string(),
@@ -62,24 +67,36 @@ impl ToolCallTrait for CreateFileFunction {
     &self,
     function_args: HashMap<String, serde_json::Value>,
     _session_config: SessionConfig,
-  ) -> Result<Option<String>, ToolCallError> {
-    let path: Option<&str> = function_args.get("path").and_then(|s| s.as_str());
-    let text: Option<&str> = function_args.get("text").and_then(|s| s.as_str());
-    let overwrite =
-      function_args.get("overwrite").and_then(|b| b.as_bool()).unwrap_or(false);
+  ) -> Pin<
+    Box<
+      dyn Future<Output = Result<Option<String>, ToolCallError>>
+        + Send
+        + 'static,
+    >,
+  > {
+    Box::pin(async move {
+      let path: Option<&str> =
+        function_args.get("path").and_then(|s| s.as_str());
+      let text: Option<&str> =
+        function_args.get("text").and_then(|s| s.as_str());
+      let overwrite = function_args
+        .get("overwrite")
+        .and_then(|b| b.as_bool())
+        .unwrap_or(false);
 
-    if let Some(path) = path {
-      if let Some(text) = text {
-        create_file(path, text, overwrite)
+      if let Some(path) = path {
+        if let Some(text) = text {
+          create_file(path, text, overwrite)
+        } else {
+          Err(ToolCallError::new("text argument is required"))
+        }
       } else {
-        Err(ToolCallError::new("text argument is required"))
+        Err(ToolCallError::new("path argument is required"))
       }
-    } else {
-      Err(ToolCallError::new("path argument is required"))
-    }
+    })
   }
 
-  fn function_definition(&self) -> FunctionCall {
+  fn function_definition(&self) -> ToolCall {
     let mut properties: HashMap<String, FunctionProperties> = HashMap::new();
 
     self.required_properties.iter().for_each(|p| {
@@ -89,7 +106,7 @@ impl ToolCallTrait for CreateFileFunction {
       properties.insert(p.name.clone(), p.clone());
     });
 
-    FunctionCall {
+    ToolCall {
       name: self.name.clone(),
       description: Some(self.description.clone()),
       parameters: Some(FunctionParameters {

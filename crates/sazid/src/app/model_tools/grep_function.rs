@@ -1,3 +1,4 @@
+use futures_util::Future;
 use grep::{
   printer::StandardBuilder,
   regex::RegexMatcher,
@@ -5,7 +6,7 @@ use grep::{
 };
 use serde::{Deserialize, Serialize};
 
-use std::{collections::HashMap, io::Write};
+use std::{collections::HashMap, io::Write, pin::Pin};
 use std::{io::BufWriter, path::PathBuf};
 use walkdir::WalkDir;
 
@@ -16,9 +17,9 @@ use super::{
     validate_and_extract_paths_from_argument,
     validate_and_extract_string_argument,
   },
+  errors::ToolCallError,
   tool_call::ToolCallTrait,
-  types::{FunctionCall, FunctionParameters, FunctionProperties},
-  ToolCallError,
+  types::{FunctionParameters, FunctionProperties, ToolCall},
 };
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -29,8 +30,8 @@ pub struct GrepFunction {
   pub optional_properties: Vec<FunctionProperties>,
 }
 
-impl ToolCallTrait for GrepFunction {
-  fn init() -> Self {
+impl Default for GrepFunction {
+  fn default() -> Self {
     GrepFunction {
       name: "grep".to_string(),
       description: "an implementation of grep".to_string(),
@@ -65,26 +66,43 @@ impl ToolCallTrait for GrepFunction {
       ],
     }
   }
+}
+
+impl ToolCallTrait for GrepFunction {
+  fn init() -> Self {
+    GrepFunction::default()
+  }
+  fn name(&self) -> &str {
+    &self.name
+  }
 
   fn call(
     &self,
     function_args: HashMap<String, serde_json::Value>,
     session_config: SessionConfig,
-  ) -> Result<Option<String>, ToolCallError> {
+  ) -> Pin<
+    Box<
+      dyn Future<Output = Result<Option<String>, ToolCallError>>
+        + Send
+        + 'static,
+    >,
+  > {
     let paths = validate_and_extract_paths_from_argument(
       &function_args,
       session_config,
       true,
       None,
-    )?
+    )
+    .unwrap()
     .unwrap();
     let pattern =
-      validate_and_extract_string_argument(&function_args, "pattern", true)?
+      validate_and_extract_string_argument(&function_args, "pattern", true)
+        .unwrap()
         .unwrap();
-    grep(pattern.as_str(), paths)
+    Box::pin(async move { grep(pattern.as_str(), paths) })
   }
 
-  fn function_definition(&self) -> FunctionCall {
+  fn function_definition(&self) -> ToolCall {
     let mut properties: HashMap<String, FunctionProperties> = HashMap::new();
 
     self.required_properties.iter().for_each(|p| {
@@ -94,7 +112,7 @@ impl ToolCallTrait for GrepFunction {
       properties.insert(p.name.clone(), p.clone());
     });
 
-    FunctionCall {
+    ToolCall {
       name: self.name.clone(),
       description: Some(self.description.clone()),
       parameters: Some(FunctionParameters {

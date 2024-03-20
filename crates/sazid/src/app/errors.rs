@@ -1,4 +1,4 @@
-use super::functions::errors::ToolCallError;
+use super::model_tools::errors::ToolCallError;
 use crate::trace_dbg;
 use async_openai::error::OpenAIError;
 use std::{fmt, io};

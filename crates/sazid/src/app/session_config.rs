@@ -3,17 +3,17 @@ use std::{
   time::{SystemTime, UNIX_EPOCH},
 };
 
-use async_openai::types::ChatCompletionRequestSystemMessage;
+use async_openai::types::{ChatCompletionRequestSystemMessage, Role};
 use serde::{Deserialize, Serialize};
 
-use super::{consts::*, functions::CallableFunction, types::Model};
+use super::{consts::*, types::Model};
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct SessionConfig {
   pub prompt: String,
-  pub session_id: String,
+  pub id: String,
   pub session_dir: PathBuf,
-  pub available_functions: Vec<CallableFunction>,
+  pub enabled_tools: Vec<String>,
   pub accessible_paths: Vec<PathBuf>,
   pub model: Model,
   pub retrieval_augmentation_message_count: Option<i64>,
@@ -29,9 +29,9 @@ impl Default for SessionConfig {
   fn default() -> Self {
     SessionConfig {
       prompt: String::new(),
-      session_id: Self::generate_session_id(),
+      id: Self::generate_session_id(),
       session_dir: PathBuf::new(),
-      available_functions: vec![],
+      enabled_tools: vec![],
       accessible_paths: vec![],
       model: GPT4_TURBO.clone(),
       retrieval_augmentation_message_count: Some(10),
@@ -48,7 +48,8 @@ impl SessionConfig {
   pub fn prompt_message(&self) -> ChatCompletionRequestSystemMessage {
     ChatCompletionRequestSystemMessage {
       content: self.prompt.clone(),
-      ..Default::default()
+      name: Some(self.user.clone()),
+      role: Role::System,
     }
   }
 

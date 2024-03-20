@@ -9,7 +9,6 @@ use crossterm::event::KeyEvent;
 use futures::StreamExt;
 use futures_util::future::{ready, Ready};
 use futures_util::stream::select_all::SelectAll;
-use helix_view::graphics::Rect;
 use serde::{Deserialize, Serialize};
 use std::default::Default;
 use std::fs;
@@ -30,17 +29,16 @@ use crate::app::database::data_manager::{
   DataManager,
 };
 use crate::app::database::types::QueryableSession;
-use crate::app::functions::{all_functions, handle_tool_call};
 use crate::app::messages::{
   ChatMessage, MessageContainer, MessageState, ReceiveBuffer,
 };
+use crate::app::model_tools::tool_call::{get_enabled_tools, handle_tool_call};
 use crate::app::request_validation::debug_request_validation;
 use crate::app::session_config::SessionConfig;
 use crate::app::{consts::*, errors::*, tools::chunkifier::*, types::*};
 use crate::trace_dbg;
 use backoff::exponential::ExponentialBackoffBuilder;
 
-use crate::app::gpt_interface::create_chat_completion_tool_args;
 use crate::app::tools::utils::ensure_directory_exists;
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -83,7 +81,7 @@ fn default_idle_timer() -> Pin<Box<Sleep>> {
 impl Default for Session {
   fn default() -> Self {
     Session {
-      id: 0,
+      id: rand::random(),
       messages: vec![],
       config: SessionConfig::default(),
       openai_config: OpenAIConfig::default(),
@@ -144,43 +142,18 @@ impl Session {
 }
 
 impl Session {
-  pub fn new() -> Self {
-    Self::default()
+  pub fn new(tx: UnboundedSender<Action>) -> Self {
+    Session { action_tx: Some(tx), ..Default::default() }
   }
 
-  fn init(&mut self, area: Rect) -> Result<(), SazidError> {
-    let (action_tx, action_rx) = tokio::sync::mpsc::unbounded_channel();
-    self.action_tx = Some(action_tx);
-    self.action_rx = Some(action_rx);
-
-    //let model_preference: Vec<Model> = vec![GPT4.clone(), GPT3_TURBO.clone(), WIZARDLM.clone()];)
-    //Session::select_model(model_preference, create_openai_client(self.openai_config.clone()));
-    trace_dbg!("init session");
-    self.config.prompt =
-        [
-    "- act as a rust programming assistant",
-    "- you write full code when requested",
-    "- your responses are conscise and terse",
-    "- Use the functions available to execute with the user inquiry.",
-    "- Provide ==your responses== as markdown formatted text.",
-    "- Make sure to properly entabulate any code blocks",
-    "- Do not try and execute arbitrary python code.",
-    "- Do not try to infer a path to a file, if you have not been provided a path with the root ./, use the file_search function to verify the file path before you execute a function call.",
-    "- If the user asks you to create a file, use the create_file function",
-    // "- if the user asks you in a any way to modify a file, use the patch_file function",
-    "- Before you ask the user a question, consider if this information exist in the context",
-    "- Before you respond, consider if your response is applicable to the current query, ",
-    "- Before you respond, consider if your response is appropriate to further the intent of the request",
-    "- If you require additional information about the codebase, you can use pcre2grep to gather information about the codebase",
-    "- When evaluating function tests, make it a priority to determine if the problems exist in the source code, or if the test code itself is not properly designed"].join("\n").to_string();
-    // self.config.prompt = "act as a very terse assistant".into();
+  pub fn set_system_prompt(&mut self, prompt: &str) {
     let tx = self.action_tx.clone().unwrap();
-    tx.send(Action::AddMessage(ChatMessage::System(
-      self.config.prompt_message(),
-    )))
+    self.config.prompt = prompt.to_string();
+    tx.send(Action::AddMessage(
+      self.id,
+      ChatMessage::System(self.config.prompt_message()),
+    ))
     .unwrap();
-    self.config.available_functions = all_functions();
-    Ok(())
   }
 
   pub fn update(
@@ -192,11 +165,12 @@ impl Session {
       Action::Error(e) => {
         log::error!("Action::Error - {:?}", e);
       },
-      Action::AddMessage(chat_message) => {
-        //trace_dbg!(level: tracing::Level::INFO, "adding message to session");
-        self.add_message(chat_message);
-        self.execute_tool_calls();
-        self.generate_new_message_embeddings();
+      Action::AddMessage(id, chat_message) => {
+        if id == self.id {
+          self.add_message(chat_message);
+          self.execute_tool_calls();
+          self.generate_new_message_embeddings();
+        }
       },
       Action::ExecuteCommand(_command) => {
         // tx.send(Action::CommandResult(self.execute_command(command).unwrap())).unwrap();
@@ -224,15 +198,6 @@ impl Session {
     }
     //self.action_tx.clone().unwrap().send(Action::Render).unwrap();
     Ok(None)
-  }
-
-  pub fn register_action_handler(
-    &mut self,
-    tx: UnboundedSender<Action>,
-  ) -> Result<(), SazidError> {
-    trace_dbg!("register_session_action_handler");
-    self.action_tx = Some(tx);
-    Ok(())
   }
 
   pub fn update_ui_message(&self, message_id: i64) {
@@ -329,16 +294,6 @@ impl Session {
       })
   }
 
-  // pub fn get_select_coords(&self) -> Option<((usize, usize), (usize, usize))> {
-  //   match self.select_start_coords {
-  //     Some((x1, y1)) => match self.select_end_coords {
-  //       Some((x2, y2)) => Some(((x1, y1), (x2, y2))),
-  //       None => None,
-  //     },
-  //     None => None,
-  //   }
-  // }
-
   pub fn execute_tool_calls(&mut self) {
     let tx = self.action_tx.clone().unwrap();
     self
@@ -361,19 +316,12 @@ impl Session {
           tool_calls.iter().for_each(|tc| {
             // let debug_text = format!("calling tool: {:?}", tc);
             // trace_dbg!(level: tracing::Level::INFO, debug_text);
-            trace_dbg!("calling tool: {:?}", tc);
-            handle_tool_call(tx.clone(), tc, self.config.clone());
+            log::info!("calling tool: {:?}", tc);
+            handle_tool_call(tx.clone(), tc, self.config.clone(), self.id);
           });
           m.tools_called = true;
         }
       })
-  }
-
-  fn redraw_messages(&mut self) {
-    trace_dbg!("redrawing messages");
-    self.messages.iter_mut().for_each(|m| {
-      m.stylize_complete = false;
-    });
   }
 
   pub fn add_chunked_chat_completion_request_messages(
@@ -398,7 +346,7 @@ impl Session {
               chunk.clone(),
             ),
           });
-          self.update(Action::AddMessage(message.clone())).unwrap();
+          self.update(Action::AddMessage(self.id, message.clone())).unwrap();
           new_messages.push(message);
         });
         Ok(new_messages)
@@ -453,13 +401,18 @@ impl Session {
     let max_tokens = self.config.response_max_tokens;
     let rag = self.config.retrieval_augmentation_message_count;
     let stream = Some(self.config.stream_response);
-
-    let tools = match self.config.available_functions.is_empty() {
-      true => None,
-      false => Some(create_chat_completion_tool_args(
-        self.config.available_functions.iter().map(|f| f.into()).collect(),
-      )),
+    let tools = match get_enabled_tools(None)
+    // let tools = match get_enabled_tools(Some(self.config.enabled_tools.clone()))
+    {
+      Ok(tools) => tools,
+      Err(e) => {
+        log::error!("error getting enabled tools: {:?}", e);
+        tx.send(Action::Error(format!("Error: {:?}", e))).unwrap();
+        None
+      },
     };
+
+    log::info!("tools: {:#?}", tools);
 
     let new_messages = self
       .messages
@@ -470,12 +423,8 @@ impl Session {
         m.message.clone()
       })
       .collect::<Vec<ChatCompletionRequestMessage>>();
-    // debug_request_validation(&request);
-    // let request = self.request_message_buffer.clone().unwrap();
-    // let token_count = self.request_buffer_token_count;
     tx.send(Action::UpdateStatus(Some("Assembling request...".to_string())))
       .unwrap();
-
     tokio::spawn(async move {
       let mut embeddings_and_messages: Vec<ChatCompletionRequestMessage> =
         Vec::new();
@@ -533,9 +482,10 @@ impl Session {
               Ok(response) => {
                 trace_dbg!("Response: {:#?}", response.bright_yellow());
                 //tx.send(Action::UpdateStatus(Some(format!("Received responses: {}", count).to_string()))).unwrap();
-                tx.send(Action::AddMessage(ChatMessage::StreamResponse(vec![
-                  response,
-                ])))
+                tx.send(Action::AddMessage(
+                  session_id,
+                  ChatMessage::StreamResponse(vec![response]),
+                ))
                 .unwrap();
                 tx.send(Action::Update).unwrap();
               },
@@ -560,8 +510,11 @@ impl Session {
         },
         false => match client.chat().create(request).await {
           Ok(response) => {
-            tx.send(Action::AddMessage(ChatMessage::Response(response)))
-              .unwrap();
+            tx.send(Action::AddMessage(
+              session_id,
+              ChatMessage::Response(response),
+            ))
+            .unwrap();
             tx.send(Action::Update).unwrap();
           },
           Err(e) => {

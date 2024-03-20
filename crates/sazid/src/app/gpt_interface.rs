@@ -6,7 +6,7 @@ use async_openai::{
 
 use crate::app::types::*;
 
-use super::functions::types::FunctionCall;
+use super::model_tools::types::ToolCall;
 
 #[derive(Clone)]
 pub struct GPTConnector {
@@ -17,7 +17,7 @@ pub struct GPTConnector {
 }
 
 pub fn create_chat_completion_tool_args(
-  commands: Vec<FunctionCall>,
+  commands: Vec<ToolCall>,
 ) -> Vec<ChatCompletionTool> {
   commands
     .iter()
@@ -36,7 +36,7 @@ pub fn create_chat_completion_tool_args(
 }
 
 pub fn create_chat_completion_function_args(
-  commands: Vec<FunctionCall>,
+  commands: Vec<ToolCall>,
 ) -> Vec<FunctionObject> {
   let mut chat_completion_functions: Vec<FunctionObject> = Vec::new();
   for command in commands {
@@ -57,7 +57,7 @@ pub fn create_chat_completion_function_args(
 mod test {
   use std::path::PathBuf;
 
-  use crate::app::functions::{
+  use crate::app::model_tools::{
     cargo_check_function::cargo_check, file_search_function::file_search,
   };
 

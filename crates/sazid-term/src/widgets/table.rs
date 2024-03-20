@@ -480,13 +480,6 @@ impl TableState {
     if self.sticky_scroll {
       self.vertical_scroll = self.scroll_max;
     }
-    log::info!(
-      "sticky scroll by: {} {} {} {}",
-      self.vertical_scroll,
-      self.scroll_max,
-      self.viewport_height,
-      self.sticky_scroll
-    );
   }
 
   pub fn scroll_by(&mut self, amount: u16, direction: Direction) {
@@ -505,14 +498,6 @@ impl TableState {
     if self.vertical_scroll == self.scroll_max {
       self.sticky_scroll = true;
     }
-
-    log::info!(
-      "scroll by: {} {} {} {}",
-      self.vertical_scroll,
-      self.scroll_max,
-      self.viewport_height,
-      self.sticky_scroll
-    );
   }
 
   pub fn scroll_to_selection(&mut self) {
@@ -520,16 +505,6 @@ impl TableState {
       let selection_top: u16 = self.row_heights.iter().take(selected).sum();
       let selection_bottom: u16 =
         self.row_heights.iter().take(selected + 1).sum();
-
-      log::info!(
-        "scroll to selection: {}-{}, {} {} {} {}",
-        self.vertical_scroll,
-        self.vertical_scroll + self.viewport_height,
-        self.viewport_height,
-        self.row_heights[selected],
-        selection_top,
-        selection_bottom
-      );
 
       if selection_bottom > self.vertical_scroll + self.viewport_height {
         self.vertical_scroll =
@@ -540,11 +515,6 @@ impl TableState {
         self.vertical_scroll = selection_top
       }
     }
-    log::info!(
-      "scroll to selection: {} {:?}",
-      self.vertical_scroll,
-      self.selected
-    );
   }
 
   pub fn selected(&self) -> Option<usize> {
@@ -639,38 +609,8 @@ impl<'a> Table<'a> {
       return;
     }
 
-    // let (start, end, start_line, height_truncate_end) = self
-    //   .get_row_bounds(
-    //     state.selected,
-    //     // state.offset,
-    //     state.vertical_scroll_lines as u16,
-    //     rows_height,
-    //   );
-
-    // log::debug!(
-    //   "row bounds: {}-{}
-    //   selected: {:?}
-    //   offset: {}
-    //   rows_height: {}
-    //   table_area: {:?} ",
-    //   start,
-    //   end,
-    //   state.selected,
-    //   state.offset,
-    //   rows_height,
-    //   table_area
-    // );
-
-    // state.offset = start;
-    log::debug!(
-      "Vertical scroll: {}\nTable area: {:#?}\ncurrent_height: {}",
-      state.vertical_scroll,
-      table_area,
-      current_height
-    );
-
     for (table_row, extents) in self.rows.iter().zip(self.get_row_extents(
-      state.vertical_scroll as u16,
+      state.vertical_scroll,
       self.row_spacing,
       table_area.height - current_height,
     )) {
@@ -688,19 +628,6 @@ impl<'a> Table<'a> {
             width: table_area.width,
             height: row_height,
           };
-          // log::info!(
-          //   "row index: {}
-          //       table_row_area: {:#?}
-          //       current_height: {},
-          //       row_visible_lines: {}
-          //       skip_lines: {}
-          //       ",
-          //   i,
-          //   table_row_area,
-          //   current_height,
-          //   row_height,
-          //   row_skip_lines
-          // );
 
           buf.set_style(table_row_area, table_row.style);
           let is_selected = state.selected.map(|s| s == i).unwrap_or(false);

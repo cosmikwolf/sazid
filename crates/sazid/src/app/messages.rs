@@ -5,7 +5,6 @@ use std::{
   sync::Arc,
 };
 
-use color_eyre::owo_colors::OwoColorize;
 use helix_core::syntax::Loader;
 use ropey::Rope;
 use serde::{Deserialize, Serialize};
@@ -23,15 +22,12 @@ use async_openai::{
   },
 };
 
-use crate::trace_dbg;
-
 use super::{
   errors::ParseError,
   helpers::{
     get_assistant_message_from_create_chat_completion_response,
     get_assistant_message_from_create_chat_completion_stream_response,
   },
-  // markdown::Markdown,
 };
 
 bitflags! {
@@ -382,26 +378,6 @@ impl MessageContainer {
     message_container
   }
 
-  // pub fn new_from_receive_buffer(receive_buffer: ReceiveBuffer) -> Self {
-  //   match &receive_buffer {
-  //     ReceiveBuffer::Response(response) => {
-  //       let mut message = MessageContainer::new(ChatCompletionRequestMessage::Assistant(
-  //         get_assistant_message_from_create_chat_completion_response(0, response).unwrap(),
-  //       ));
-  //       message.receive_buffer = Some(receive_buffer.clone());
-  //       message
-  //     },
-  //     ReceiveBuffer::StreamResponse(response) => {
-  //       let mut message = MessageContainer::new(ChatCompletionRequestMessage::Assistant(
-  //         get_assistant_message_from_create_chat_completion_stream_response(0, response).unwrap(),
-  //       ));
-  //       message.receive_buffer = Some(receive_buffer.clone());
-  //       message.stream_id = Some(response[0].id.clone());
-  //       message
-  //     },
-  //   }
-  // }
-
   pub fn update_stream_response(
     &mut self,
     stream_message: CreateChatCompletionStreamResponse,
@@ -445,24 +421,12 @@ impl MessageContainer {
         });
 
         // Now, check if every index has a corresponding finish_reason.
-        let res = srvec.iter().all(|response| {
+        srvec.iter().all(|response| {
           response
             .choices
             .iter()
             .all(|choice| indexes_with_finish_reason.contains(&choice.index))
-        });
-        if res {
-          trace_dbg!(
-            "message finished: {:#?}",
-            self.stream_id.bright_magenta()
-          );
-        } else {
-          trace_dbg!(
-            "message not finished: {:#?}",
-            self.stream_id.bright_magenta()
-          );
-        }
-        res
+        })
       },
       _ => true,
     } {

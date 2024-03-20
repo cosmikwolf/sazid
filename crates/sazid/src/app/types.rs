@@ -179,12 +179,12 @@ fn format_chat_message(
 #[cfg(test)]
 mod tests {
   use crate::app::{
-    functions::types::FunctionProperties,
     helpers::{
       concatenate_function_call_streams,
       concatenate_option_strings,
       // concatenate_stream_delta, concatenate_stream_response_messages,
     },
+    model_tools::types::FunctionProperties,
   };
 
   use super::*;

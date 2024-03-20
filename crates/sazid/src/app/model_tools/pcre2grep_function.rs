@@ -1,7 +1,7 @@
 use crate::app::{
-  functions::tool_call::ToolCallTrait, session_config::SessionConfig,
+  model_tools::tool_call::ToolCallTrait, session_config::SessionConfig,
 };
-use std::{collections::HashMap, path::PathBuf};
+use std::{collections::HashMap, path::PathBuf, pin::Pin};
 
 use super::{
   argument_validation::{
@@ -9,9 +9,10 @@ use super::{
     validate_and_extract_string_argument,
   },
   errors::ToolCallError,
-  types::{FunctionCall, FunctionParameters, FunctionProperties},
+  types::{FunctionParameters, FunctionProperties, ToolCall},
 };
 
+use futures_util::Future;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -22,36 +23,8 @@ pub struct Pcre2GrepFunction {
   pub optional_properties: Vec<FunctionProperties>,
 }
 
-pub fn execute_pcre2grep(
-  // options: Option<Vec<String>>,
-  pattern: String,
-  paths: Vec<PathBuf>,
-) -> Result<Option<String>, ToolCallError> {
-  let output = std::process::Command::new("pcre2grep")
-    // .args({
-    //   if let Some(options) = options {
-    //     options
-    //   } else {
-    //     vec![]
-    //   }
-    // })
-    .arg(pattern)
-    .args(paths)
-    .output()
-    .map_err(|e| ToolCallError::new(e.to_string().as_str()))?;
-
-  if !output.status.success() {
-    return Ok(Some(
-      ToolCallError::new(output.status.code().unwrap().to_string().as_str())
-        .to_string(),
-    ));
-  }
-
-  Ok(Some(String::from_utf8_lossy(&output.stdout).to_string()))
-}
-
-impl ToolCallTrait for Pcre2GrepFunction {
-  fn init() -> Self {
+impl Default for Pcre2GrepFunction {
+  fn default() -> Self {
     Pcre2GrepFunction {
       name: "pcre2grep".to_string(),
       description: "an implementation of grep".to_string(),
@@ -86,32 +59,73 @@ impl ToolCallTrait for Pcre2GrepFunction {
       optional_properties: vec![],
     }
   }
+}
+
+pub fn execute_pcre2grep(
+  // options: Option<Vec<String>>,
+  pattern: String,
+  paths: Vec<PathBuf>,
+) -> Result<Option<String>, ToolCallError> {
+  let output = std::process::Command::new("pcre2grep")
+    // .args({
+    //   if let Some(options) = options {
+    //     options
+    //   } else {
+    //     vec![]
+    //   }
+    // })
+    .arg(pattern)
+    .args(paths)
+    .output()
+    .map_err(|e| ToolCallError::new(e.to_string().as_str()))?;
+
+  if !output.status.success() {
+    return Ok(Some(
+      ToolCallError::new(output.status.code().unwrap().to_string().as_str())
+        .to_string(),
+    ));
+  }
+
+  Ok(Some(String::from_utf8_lossy(&output.stdout).to_string()))
+}
+
+impl ToolCallTrait for Pcre2GrepFunction {
+  fn init() -> Self {
+    Pcre2GrepFunction::default()
+  }
+  fn name(&self) -> &str {
+    &self.name
+  }
+
   fn call(
     &self,
     function_args: HashMap<String, serde_json::Value>,
     session_config: SessionConfig,
-  ) -> Result<Option<String>, ToolCallError> {
-    match validate_and_extract_paths_from_argument(
+  ) -> Pin<
+    Box<
+      dyn Future<Output = Result<Option<String>, ToolCallError>>
+        + Send
+        + 'static,
+    >,
+  > {
+    let paths = validate_and_extract_paths_from_argument(
       &function_args,
       session_config,
       true,
       None,
-    ) {
-      Ok(Some(paths)) => match validate_and_extract_string_argument(
-        &function_args,
-        "pattern",
-        true,
-      ) {
-        Ok(Some(pattern)) => execute_pcre2grep(pattern, paths),
-        Ok(None) => Ok(Some("pattenr is required".to_string())),
-        Err(err) => Ok(Some(err.to_string())),
-      },
-      Ok(None) => Ok(Some("paths are required".to_string())),
-      Err(err) => Ok(Some(err.to_string())),
-    }
+    )
+    .expect("error parsing paths")
+    .expect("paths are required");
+
+    let pattern =
+      validate_and_extract_string_argument(&function_args, "pattern", true)
+        .expect("error parsing pattern")
+        .expect("pattern is required");
+
+    Box::pin(async move { execute_pcre2grep(pattern, paths) })
   }
 
-  fn function_definition(&self) -> FunctionCall {
+  fn function_definition(&self) -> ToolCall {
     let mut properties: HashMap<String, FunctionProperties> = HashMap::new();
 
     self.required_properties.iter().for_each(|p| {
@@ -121,7 +135,7 @@ impl ToolCallTrait for Pcre2GrepFunction {
       properties.insert(p.name.clone(), p.clone());
     });
 
-    FunctionCall {
+    ToolCall {
       name: self.name.clone(),
       description: Some(self.description.clone()),
       parameters: Some(FunctionParameters {

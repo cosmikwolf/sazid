@@ -23,7 +23,7 @@ pub struct FunctionParameters {
 }
 
 #[derive(Serialize, Deserialize, Debug)]
-pub struct FunctionCall {
+pub struct ToolCall {
   pub name: String,
   pub description: Option<String>,
   pub parameters: Option<FunctionParameters>,
@@ -31,5 +31,5 @@ pub struct FunctionCall {
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct Commands {
-  pub commands: Vec<FunctionCall>,
+  pub commands: Vec<ToolCall>,
 }

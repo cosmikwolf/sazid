@@ -4,7 +4,7 @@ use pgvector::Vector;
 use crate::{
   app::{
     errors::{ParseError, SazidError},
-    functions::argument_validation::count_tokens,
+    model_tools::argument_validation::count_tokens,
   },
   components::session::create_openai_client,
 };
@@ -80,7 +80,7 @@ impl EmbeddingModel {
           .input(text)
           .build()
           .unwrap();
-        
+
         // embedding_response.data.iter().map(|e| e.embedding.clone()).collect::<Vec<Vec<f32>>>();
         //let embedding = embedding_response.data.first().unwrap().embedding.clone();
         client.embeddings().create(request).await.unwrap()

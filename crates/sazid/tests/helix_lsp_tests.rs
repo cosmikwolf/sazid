@@ -1,9 +1,11 @@
+use arc_swap::ArcSwap;
 use lsp_types::GotoDefinitionResponse;
 use sazid::action::Action;
 use sazid::app::lsp::helix_lsp_interface::LanguageServerInterface;
 use sazid::utils::{initialize_logging, initialize_panic_handler};
 use std::path::Path;
 use std::str::from_utf8;
+use std::sync::Arc;
 use tempfile::tempdir;
 use tracing::warn;
 use url::Url;
@@ -60,10 +62,9 @@ impl TestActionLoop {
         match action {
           Action::LspServerMessageReceived((id, msg)) => {
             println!("LSP Server message received: {:#?}", msg);
-            let mut ls = lsi.language_servers.lock().await;
             LanguageServerInterface::handle_language_server_message(
               &mut lsi.lsp_progress,
-              &mut ls,
+              &mut lsi.language_servers,
               msg,
               id,
               &mut lsi.status_msg,
@@ -108,12 +109,13 @@ async fn test_rust_analyzer_connection() -> anyhow::Result<()> {
   assert!(test_workspace_path.exists());
 
   std::env::set_current_dir(&test_workspace_path).unwrap();
-  let config = test_lang_config();
   let (action_tx, action_rx) = tokio::sync::mpsc::unbounded_channel::<Action>();
   let mut action_loop = TestActionLoop { action_rx };
 
-  let mut lsi = LanguageServerInterface::new(Some(config), action_tx);
-  lsi.spawn_server_notification_thread().await;
+  let syn_loader =
+    Arc::new(ArcSwap::from_pointee(helix_core::config::default_lang_loader()));
+  let mut lsi = LanguageServerInterface::new(syn_loader);
+
   lsi
     .create_workspace(
       test_workspace_path.clone(),
@@ -124,13 +126,8 @@ async fn test_rust_analyzer_connection() -> anyhow::Result<()> {
     .await
     .unwrap();
 
-  let ids = lsi
-    .language_servers
-    .lock()
-    .await
-    .iter_clients()
-    .map(|c| c.id())
-    .collect::<Vec<usize>>();
+  let ids =
+    lsi.language_servers.iter_clients().map(|c| c.id()).collect::<Vec<usize>>();
 
   while ids.iter().any(|c| lsi.lsp_progress.is_progressing(*c)) {
     let _result = action_loop.test_action_loop(&mut lsi).await;
@@ -219,8 +216,6 @@ async fn test_rust_analyzer_connection() -> anyhow::Result<()> {
 
   let rust_analyzer_id = lsi
     .language_servers
-    .lock()
-    .await
     .iter_clients()
     .inspect(|c| {
       log::warn!("Client: {:#?}", c.name());

@@ -9,10 +9,11 @@ use crate::trace_dbg;
 use super::argument_validation::*;
 use super::tool_call::ToolCallTrait;
 use super::{
-  types::{FunctionCall, FunctionParameters, FunctionProperties},
-  ToolCallError,
+  errors::ToolCallError,
+  types::{FunctionParameters, FunctionProperties, ToolCall},
 };
 
+use futures_util::Future;
 use serde::{Deserialize, Serialize};
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
 pub struct EditFileFunction {
@@ -79,30 +80,38 @@ impl ToolCallTrait for EditFileFunction {
     &self,
     function_args: HashMap<String, serde_json::Value>,
     session_config: SessionConfig,
-  ) -> Result<Option<String>, ToolCallError> {
-    let path = validate_and_extract_path_from_argument(
-      &function_args,
-      session_config,
-      true,
-      Some(PathBuf::from("./")),
-    )?
-    .unwrap();
-    let line =
-      validate_and_extract_numeric_argument(&function_args, "line_num", true)?
-        .unwrap() as usize;
-    let col =
-      validate_and_extract_numeric_argument(&function_args, "col", true)?
-        .unwrap() as usize;
-    let del_count =
-      validate_and_extract_numeric_argument(&function_args, "del_count", true)?
-        .unwrap() as usize;
-    let text =
-      validate_and_extract_string_argument(&function_args, "text", true)?
-        .unwrap();
-    edit_file(&path, line, col, del_count, &text)
+  ) -> Pin< Box< dyn Future<Output = Result<Option<String>, ToolCallError>> + Send + 'static, >, > {
+    async move {
+      let path = validate_and_extract_path_from_argument(
+        &function_args,
+        session_config,
+        true,
+        Some(PathBuf::from("./")),
+      )?
+      .unwrap();
+      let line = validate_and_extract_numeric_argument(
+        &function_args,
+        "line_num",
+        true,
+      )?
+      .unwrap() as usize;
+      let col =
+        validate_and_extract_numeric_argument(&function_args, "col", true)?
+          .unwrap() as usize;
+      let del_count = validate_and_extract_numeric_argument(
+        &function_args,
+        "del_count",
+        true,
+      )?
+      .unwrap() as usize;
+      let text =
+        validate_and_extract_string_argument(&function_args, "text", true)?
+          .unwrap();
+      edit_file(&path, line, col, del_count, &text)
+    }
   }
 
-  fn function_definition(&self) -> FunctionCall {
+  fn function_definition(&self) -> ToolCall {
     let mut properties: HashMap<String, FunctionProperties> = HashMap::new();
 
     self.required_properties.iter().for_each(|p| {
@@ -112,7 +121,7 @@ impl ToolCallTrait for EditFileFunction {
       properties.insert(p.name.clone(), p.clone());
     });
 
-    FunctionCall {
+    ToolCall {
       name: self.name.clone(),
       description: Some(self.description.clone()),
       parameters: Some(FunctionParameters {

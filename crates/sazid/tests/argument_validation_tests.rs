@@ -4,7 +4,7 @@ mod tests {
 
   use clap::Parser;
   use sazid::app::{
-    functions::argument_validation::{
+    model_tools::argument_validation::{
       clap_args_to_json, validate_and_extract_paths_from_argument,
       validate_and_extract_string_argument,
     },

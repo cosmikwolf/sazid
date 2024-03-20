@@ -615,7 +615,6 @@ impl<T: MarkdownItem + 'static> Session<T> {
     let background = cx.editor.theme.get("ui.background");
     surface.clear_with(area, background);
 
-    // don't like this but the lifetime sucks
     let block = Block::default().borders(Borders::ALL);
 
     // calculate the inner area inside the box
@@ -652,13 +651,14 @@ impl<T: MarkdownItem + 'static> Session<T> {
       text_style,
     );
 
-    // -- Separator
+    // define input area
     let readout_area = if input_on_top {
       inner.clip_top(input_height)
     } else {
       inner.clip_bottom(input_height)
     };
 
+    // -- Separator
     let sep_height =
       if input_on_top { input_height } else { inner.height - input_height };
     let sep_style = cx.editor.theme.get("ui.background.separator");

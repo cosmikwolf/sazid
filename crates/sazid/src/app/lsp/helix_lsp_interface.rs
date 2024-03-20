@@ -1,15 +1,13 @@
-use arc_swap::{ArcSwap};
+use arc_swap::ArcSwap;
 use futures_util::FutureExt;
 use helix_core::diff::compare_ropes;
+use helix_core::syntax;
 use std::borrow::Cow;
 use std::path::PathBuf;
 use std::rc::Rc;
 use std::sync::Arc;
-use tokio::sync::Mutex;
 
-use helix_core::config::default_lang_config;
 use helix_core::diagnostic::Severity;
-use helix_core::syntax::Configuration;
 use helix_core::syntax::LanguageConfiguration;
 use helix_core::syntax::Loader;
 use helix_lsp::lsp::{self, notification::Notification};
@@ -22,10 +20,8 @@ use lsp::DocumentSymbol;
 use lsp::NumberOrString;
 use serde_json::json;
 
-use tokio::sync::mpsc::UnboundedSender;
 use url::Url;
 
-use crate::action::Action;
 use crate::app::lsp::symbol_types::DocumentChange;
 use crate::trace_dbg;
 
@@ -68,34 +64,24 @@ impl StatusMessage {
   }
 }
 
+#[derive(Debug)]
 pub struct LanguageServerInterface {
   pub workspaces: Vec<Workspace>,
   pub lsp_progress: LspProgressMap,
-  pub language_servers: Arc<Mutex<helix_lsp::Registry>>,
+  pub language_servers: helix_lsp::Registry,
   pub status_msg: StatusMessage,
-  pub action_tx: Option<UnboundedSender<Action>>,
   loader: Arc<ArcSwap<Loader>>,
 }
 
 impl LanguageServerInterface {
-  pub fn new(
-    config: Option<Configuration>,
-    action_tx: tokio::sync::mpsc::UnboundedSender<Action>,
-  ) -> Self {
-    let loader: Arc<ArcSwap<Loader>> = match config {
-      Some(config) => {
-        Arc::new(ArcSwap::from_pointee(Loader::new(config).unwrap()))
-      },
-      None => Arc::new(ArcSwap::from_pointee(
-        Loader::new(default_lang_config()).unwrap(),
-      )),
-    };
-    let language_servers = Arc::new(Mutex::new(Registry::new(loader.clone())));
+  pub fn new(syn_loader: Arc<ArcSwap<syntax::Loader>>) -> Self {
+    let loader = syn_loader.clone();
+    // let language_servers = Arc::new(Mutex::new(Registry::new(loader.clone())))
+    let language_servers = helix_lsp::Registry::new(syn_loader.clone());
     Self {
       lsp_progress: LspProgressMap::new(),
       loader,
       language_servers,
-      action_tx: Some(action_tx),
       status_msg: StatusMessage::default(),
       workspaces: vec![],
     }
@@ -125,40 +111,45 @@ impl LanguageServerInterface {
     .collect()
   }
 
-  pub async fn spawn_server_notification_thread(&mut self) {
-    log::info!("spawn_server_notification_thread");
-    use futures_util::StreamExt;
-    let ls_mutex = self.language_servers.clone();
-    let action_tx = self.action_tx.clone().unwrap();
+  // pub async fn spawn_server_notification_thread(&mut self) {
+  //   log::info!("spawn_server_notification_thread");
+  //   use futures_util::StreamExt;
+  //   let ls_mutex = self.language_servers.clone();
+  //   let action_tx = self.action_tx.clone().unwrap();
+  //
+  //   let mut interval =
+  //     tokio::time::interval(std::time::Duration::from_millis(500));
+  //   tokio::spawn(async move {
+  //     loop {
+  //       let mut ls = ls_mutex.lock().await;
+  //
+  //       if let Some((id, call)) = ls.incoming.next().await {
+  //         action_tx.send(Action::LspServerMessageReceived((id, call))).unwrap();
+  //       }
+  //       interval.tick().await;
+  //     }
+  //   });
+  // }
 
-    let mut interval =
-      tokio::time::interval(std::time::Duration::from_millis(500));
-    tokio::spawn(async move {
-      loop {
-        let mut ls = ls_mutex.lock().await;
-
-        if let Some((id, call)) = ls.incoming.next().await {
-          action_tx.send(Action::LspServerMessageReceived((id, call))).unwrap();
-        }
-        interval.tick().await;
-      }
-    });
-  }
-
-  pub async fn check_server_notifications(&mut self) -> Option<(usize, Call)> {
-    use futures_util::StreamExt;
-    trace_dbg!("check_server_notifications");
-
-    let mut ls = self.language_servers.lock().await;
-    ls.incoming.next().await
-  }
+  // pub async fn check_server_notifications(
+  //   &mut self,
+  // ) -> Next<'_, SelectAll<UnboundedReceiverStream<(usize, Call)>>> {
+  //   use futures_util::StreamExt;
+  //   trace_dbg!("check_server_notifications");
+  //
+  //   let mut ls = self.language_servers.lock().await;
+  //
+  //   ls.incoming.next()
+  // }
 
   pub async fn server_capabilities(
     &self,
   ) -> anyhow::Result<Vec<lsp::ServerCapabilities>> {
-    let ls = self.language_servers.lock().await;
+    // let ls = self.language_servers.lock().await;
     Ok(
-      ls.iter_clients()
+      self
+        .language_servers
+        .iter_clients()
         .map(|client| client.capabilities().clone())
         .collect::<Vec<_>>(),
     )
@@ -174,8 +165,8 @@ impl LanguageServerInterface {
     };
     let position = symbol.selection_range.borrow().start;
 
-    let ls = self.language_servers.lock().await;
-    let client = ls
+    let client = self
+      .language_servers
       .iter_clients()
       .find(|c| c.id() == language_server_id)
       .expect("could not obtain language server for goto request")
@@ -198,8 +189,8 @@ impl LanguageServerInterface {
       uri: Url::from_file_path(symbol.file_path.clone()).unwrap(),
     };
     let position = symbol.selection_range.borrow().start;
-    let ls = self.language_servers.lock().await;
-    let client = ls
+    let client = self
+      .language_servers
       .iter_clients()
       .find(|c| c.id() == language_server_id)
       .expect("could not obtain language server for goto request")
@@ -221,8 +212,8 @@ impl LanguageServerInterface {
       uri: Url::from_file_path(symbol.file_path.clone()).unwrap(),
     };
     let position = symbol.selection_range.borrow().start;
-    let ls = self.language_servers.lock().await;
-    let client = ls
+    let client = self
+      .language_servers
       .iter_clients()
       .find(|c| c.id() == language_server_id)
       .expect("could not obtain language server for goto request")
@@ -274,9 +265,11 @@ impl LanguageServerInterface {
   pub async fn update_workspace_symbols(&mut self) -> anyhow::Result<()> {
     log::info!("update_workspace_symbols");
 
-    let ls = self.language_servers.lock().await;
-
-    let clients = ls.iter_clients().cloned().collect::<Vec<Arc<Client>>>();
+    let clients = self
+      .language_servers
+      .iter_clients()
+      .cloned()
+      .collect::<Vec<Arc<Client>>>();
     let ids = clients.iter().map(|client| client.id()).collect::<Vec<usize>>();
     match self.wait_for_progress_token_completion(ids.as_slice()).await {
       Ok(_) => {
@@ -406,8 +399,7 @@ impl LanguageServerInterface {
     match self.wait_for_progress_token_completion(ids).await {
       Ok(_) => {
         let mut results = vec![];
-        let ls = self.language_servers.lock().await;
-        for language_server in ls.iter_clients() {
+        for language_server in self.language_servers.iter_clients() {
           if ids.contains(&language_server.id()) {
             let doc_id = lsp::TextDocumentIdentifier::new(doc_url.clone());
 
@@ -456,8 +448,8 @@ impl LanguageServerInterface {
       language_server_ids
     );
 
-    let ls = self.language_servers.lock().await;
-    let active_clients = ls
+    let active_clients = self
+      .language_servers
       .iter_clients()
       .filter(|client| language_server_ids.contains(&client.id()))
       .cloned()
@@ -527,8 +519,8 @@ impl LanguageServerInterface {
   ) -> Result<Option<Arc<Client>>, anyhow::Error> {
     match self.language_configuration_by_name(language_name) {
       Some(language_config) => {
-        let mut ls = self.language_servers.lock().await;
-        let client = ls
+        let client = self
+          .language_servers
           .get(
             //
             &language_config,
@@ -557,9 +549,10 @@ impl LanguageServerInterface {
     &self,
     language_server_name: String,
   ) -> Option<Arc<helix_lsp::Client>> {
-    let ls = self.language_servers.lock().await;
-    let client =
-      ls.iter_clients().find(|client| client.name() == language_server_name);
+    let client = self
+      .language_servers
+      .iter_clients()
+      .find(|client| client.name() == language_server_name);
     client.cloned()
   }
 
@@ -567,9 +560,10 @@ impl LanguageServerInterface {
     &self,
     language_server_id: usize,
   ) -> Option<Arc<helix_lsp::Client>> {
-    let ls = self.language_servers.lock().await;
-    let client =
-      ls.iter_clients().find(|client| client.id() == language_server_id);
+    let client = self
+      .language_servers
+      .iter_clients()
+      .find(|client| client.id() == language_server_id);
     client.cloned()
   }
 

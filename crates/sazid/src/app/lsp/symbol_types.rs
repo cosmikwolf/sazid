@@ -11,6 +11,7 @@ use url::Url;
 
 use std::sync::Arc;
 
+#[derive(Debug)]
 pub struct Workspace {
   pub files: Vec<WorkspaceFile>,
   pub workspace_path: PathBuf,

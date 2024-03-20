@@ -2,16 +2,17 @@ use std::collections::HashMap;
 use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
+use std::pin::Pin;
 
 use crate::app::session_config::SessionConfig;
 use crate::trace_dbg;
+use futures_util::Future;
 use serde::{Deserialize, Serialize};
-
 
 use super::argument_validation::{count_tokens, get_accessible_file_paths};
 use super::errors::ToolCallError;
 use super::tool_call::ToolCallTrait;
-use super::types::{FunctionCall, FunctionParameters, FunctionProperties};
+use super::types::{FunctionParameters, FunctionProperties, ToolCall};
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
 pub struct ReadFileLinesFunction {
@@ -22,6 +23,10 @@ pub struct ReadFileLinesFunction {
 }
 
 impl ToolCallTrait for ReadFileLinesFunction {
+  fn name(&self) -> &str {
+    &self.name
+  }
+
   fn init() -> Self {
     ReadFileLinesFunction {
       name: "read_file".to_string(),
@@ -56,42 +61,50 @@ impl ToolCallTrait for ReadFileLinesFunction {
     &self,
     function_args: HashMap<String, serde_json::Value>,
     session_config: SessionConfig,
-  ) -> Result<Option<String>, ToolCallError> {
-    let start_line: Option<usize> = function_args
-      .get("start_line")
-      .and_then(|s| s.as_u64().map(|u| u as usize));
-    let end_line: Option<usize> = function_args
-      .get("end_line")
-      .and_then(|s| s.as_u64().map(|u| u as usize));
-    if let Some(v) = function_args.get("path") {
-      if let Some(file) = v.as_str() {
-        let accesible_paths = get_accessible_file_paths(
-          session_config.accessible_paths.clone(),
-          None,
-        );
-        if !accesible_paths.contains_key(Path::new(file).to_str().unwrap()) {
-          Err(ToolCallError::new(
+  ) -> Pin<
+    Box<
+      dyn Future<Output = Result<Option<String>, ToolCallError>>
+        + Send
+        + 'static,
+    >,
+  > {
+    Box::pin(async move {
+      let start_line: Option<usize> = function_args
+        .get("start_line")
+        .and_then(|s| s.as_u64().map(|u| u as usize));
+      let end_line: Option<usize> = function_args
+        .get("end_line")
+        .and_then(|s| s.as_u64().map(|u| u as usize));
+      if let Some(v) = function_args.get("path") {
+        if let Some(file) = v.as_str() {
+          let accesible_paths = get_accessible_file_paths(
+            session_config.accessible_paths.clone(),
+            None,
+          );
+          if !accesible_paths.contains_key(Path::new(file).to_str().unwrap()) {
+            Err(ToolCallError::new(
             format!("File path is not accessible: {:?}. Suggest using file_search command", file).as_str(),
           ))
+          } else {
+            trace_dbg!("path: {:?} exists", file);
+            read_file_lines(
+              file,
+              start_line,
+              end_line,
+              session_config.function_result_max_tokens,
+              session_config.accessible_paths.clone(),
+            )
+          }
         } else {
-          trace_dbg!("path: {:?} exists", file);
-          read_file_lines(
-            file,
-            start_line,
-            end_line,
-            session_config.function_result_max_tokens,
-            session_config.accessible_paths.clone(),
-          )
+          Err(ToolCallError::new("path argument must be a string"))
         }
       } else {
-        Err(ToolCallError::new("path argument must be a string"))
+        Err(ToolCallError::new("path argument is required"))
       }
-    } else {
-      Err(ToolCallError::new("path argument is required"))
-    }
+    })
   }
 
-  fn function_definition(&self) -> FunctionCall {
+  fn function_definition(&self) -> ToolCall {
     let mut properties: HashMap<String, FunctionProperties> = HashMap::new();
 
     self.required_properties.iter().for_each(|p| {
@@ -101,7 +114,7 @@ impl ToolCallTrait for ReadFileLinesFunction {
       properties.insert(p.name.clone(), p.clone());
     });
 
-    FunctionCall {
+    ToolCall {
       name: self.name.clone(),
       description: Some(self.description.clone()),
       parameters: Some(FunctionParameters {

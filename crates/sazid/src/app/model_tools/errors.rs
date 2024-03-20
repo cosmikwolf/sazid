@@ -1,17 +1,19 @@
 use std::{error::Error, fmt, io};
 
-use crate::trace_dbg;
-
 #[derive(Debug)]
 pub struct ToolCallError {
   message: String,
-  source: Option<Box<dyn Error>>,
+  source: Option<Box<dyn Error + Send + Sync + 'static>>,
 }
 
 impl ToolCallError {
   pub fn new(message: &str) -> Self {
-    trace_dbg!("ModelFunctionError: {}", message);
+    log::debug!("ModelFunctionError: {}", message);
     ToolCallError { message: message.to_string(), source: None }
+  }
+
+  pub fn source(&self) -> Option<&(dyn Error + Send + Sync + 'static)> {
+    self.source.as_deref()
   }
 }
 
@@ -23,15 +25,8 @@ impl fmt::Display for ToolCallError {
 }
 
 // Implement the Error trait for your custom error type.
-impl Error for ToolCallError {
-  fn description(&self) -> &str {
-    &self.message
-  }
+impl Error for ToolCallError {}
 
-  fn source(&self) -> Option<&(dyn Error + 'static)> {
-    self.source.as_ref().map(|e| e.as_ref())
-  }
-}
 impl From<globset::Error> for ToolCallError {
   fn from(error: globset::Error) -> Self {
     ToolCallError {
@@ -40,6 +35,7 @@ impl From<globset::Error> for ToolCallError {
     }
   }
 }
+
 impl From<grep::regex::Error> for ToolCallError {
   fn from(error: grep::regex::Error) -> Self {
     ToolCallError {

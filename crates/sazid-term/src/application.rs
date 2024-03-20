@@ -1,5 +1,4 @@
 use arc_swap::{access::Map, ArcSwap};
-use async_openai::types::{ChatCompletionRequestSystemMessage, Role};
 use futures_util::Stream;
 use helix_core::{diagnostic::Severity, syntax, Selection};
 use helix_lsp::{
@@ -16,7 +15,10 @@ use helix_view::{
   theme, Align, Editor,
 };
 use sazid::{
-  app::messages::{get_chat_message_text, ChatMessage},
+  app::{
+    lsp::helix_lsp_interface::LanguageServerInterface,
+    messages::get_chat_message_text,
+  },
   components::session::Session,
 };
 use serde_json::json;
@@ -67,6 +69,7 @@ pub struct Application {
 
   pub editor: Editor,
   pub session: Session,
+  language_server_interface: LanguageServerInterface,
   session_events: UnboundedReceiverStream<sazid::action::Action>,
   config: Arc<ArcSwap<Config>>,
 
@@ -162,23 +165,19 @@ impl Application {
     editor.new_file(Action::VerticalSplit);
     editor.set_theme(theme);
 
-    let mut session = Session::default();
-
+    // Session Configuration
     let (session_tx, session_rx) = mpsc::unbounded_channel();
+
+    let language_server_interface =
+      LanguageServerInterface::new(syn_loader.clone());
+
     let session_events = UnboundedReceiverStream::new(session_rx);
-    session.register_action_handler(session_tx).unwrap();
+    let mut session = Session::new(session_tx);
 
-    let fixture_msg1 = ChatCompletionRequestSystemMessage {
-      content: "you
-          are an expert
-          programming assistant"
-        .to_string(),
-      role: Role::System,
-      name: Some("sazid".to_string()),
-    };
+    session.set_system_prompt("you are an expert programming assistant");
+    // session.config_all_functions();
 
-    session.add_message(ChatMessage::System(fixture_msg1.clone()));
-
+    // Load existing messages
     let messages = session
       .messages
       .clone()
@@ -197,10 +196,11 @@ impl Application {
        _message: &ChatMessageItem,
        _action: helix_view::editor::Action| {};
 
-    let editor_data = match &messages[0].message {
-      ChatMessageType::Chat(message) => get_chat_message_text(message),
-      ChatMessageType::Error(error) => error.to_string(),
-    };
+    let editor_data = String::new();
+    // let editor_data = match &messages[0].message {
+    //   ChatMessageType::Chat(message) => get_chat_message_text(message),
+    //   ChatMessageType::Error(error) => error.to_string(),
+    // };
 
     // code for session stream mode
     // disabled for now, use later when implementing session search
@@ -253,7 +253,7 @@ impl Application {
       terminal,
       editor,
       config,
-
+      language_server_interface,
       theme_loader,
       syn_loader,
 
@@ -351,6 +351,11 @@ impl Application {
           Some(callback) = self.jobs.wait_futures.next() => {
               self.jobs.handle_callback(&mut self.editor, &mut self.compositor, callback);
               self.render().await;
+          }
+
+        Some((id, call)) = self.language_server_interface.language_servers.incoming.next() => {
+            let tx = self.session.action_tx.clone().unwrap();
+              tx.send(sazid::action::Action::LspServerMessageReceived((id, call))).unwrap();
           }
 
           Some(action) = self.session_events.next() => {

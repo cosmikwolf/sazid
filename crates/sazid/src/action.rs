@@ -27,6 +27,8 @@ pub enum Action {
   // embeddings manager actions
   CreateSession(SessionConfig),
   LoadSession(i64),
+  ToolCallComplete(i64, String, Option<String>),
+  ToolCallError(i64, String, String),
   CreateLoadSessionResponse(QueryableSession),
   AddMessageEmbedding(i64, i64, ChatCompletionRequestMessage),
   MessageEmbeddingSuccess(i64),
@@ -35,7 +37,7 @@ pub enum Action {
   ExecuteCommand(String),
   CommandResult(String),
   RequestChatCompletion(),
-  AddMessage(ChatMessage),
+  AddMessage(i64, ChatMessage),
   SelectModel(Model),
   UpdateStatus(Option<String>),
   MessageUpdate(ChatCompletionRequestMessage, i64),

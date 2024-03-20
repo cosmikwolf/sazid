@@ -9,7 +9,7 @@
   "typing": {
     "autoClosingAngleBrackets": true
   },
-  "numThreads": 6,
+  "numThreads": 8,
   "cachePriming": {
     "enable": true,
     "numThreads": 4
@@ -19,9 +19,10 @@
   },
   "checkOnSave": true,
   "check": {
-    "ignore": ["inactive-code"],
     "allTargets": false,
-    "workspace": false
+    "command": "clippy",
+    "extraArgs": ["--no-deps", "--tests"],
+    "workspace": true
   },
   "server": {
     "extraEnv": {

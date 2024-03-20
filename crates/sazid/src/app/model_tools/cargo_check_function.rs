@@ -1,16 +1,17 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, pin::Pin};
 
+use futures_util::Future;
 use serde::{Deserialize, Serialize};
 
 use crate::app::session_config::SessionConfig;
 
 use super::{
+  errors::ToolCallError,
   tool_call::ToolCallTrait,
-  types::{FunctionCall, FunctionParameters, FunctionProperties},
-  ToolCallError,
+  types::{FunctionParameters, FunctionProperties, ToolCall},
 };
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Default, Debug, Serialize, Deserialize, Clone)]
 pub struct CargoCheckFunction {
   name: String,
   description: String,
@@ -19,10 +20,14 @@ pub struct CargoCheckFunction {
 }
 
 impl ToolCallTrait for CargoCheckFunction {
+  fn name(&self) -> &str {
+    &self.name
+  }
+
   fn init() -> Self {
     CargoCheckFunction {
       name: "cargo_check".to_string(),
-      description: "run cargo check --message-format json".to_string(),
+      description: "run cargo check".to_string(),
       required_properties: vec![],
       optional_properties: vec![],
     }
@@ -32,11 +37,17 @@ impl ToolCallTrait for CargoCheckFunction {
     &self,
     _function_args: HashMap<String, serde_json::Value>,
     _session_config: SessionConfig,
-  ) -> Result<Option<String>, ToolCallError> {
-    cargo_check()
+  ) -> Pin<
+    Box<
+      dyn Future<Output = Result<Option<String>, ToolCallError>>
+        + Send
+        + 'static,
+    >,
+  > {
+    Box::pin(async move { cargo_check() })
   }
 
-  fn function_definition(&self) -> FunctionCall {
+  fn function_definition(&self) -> ToolCall {
     let mut properties: HashMap<String, FunctionProperties> = HashMap::new();
 
     self.required_properties.iter().for_each(|p| {
@@ -46,7 +57,7 @@ impl ToolCallTrait for CargoCheckFunction {
       properties.insert(p.name.clone(), p.clone());
     });
 
-    FunctionCall {
+    ToolCall {
       name: self.name.clone(),
       description: Some(self.description.clone()),
       parameters: Some(FunctionParameters {
