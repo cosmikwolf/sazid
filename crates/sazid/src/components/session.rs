@@ -145,9 +145,13 @@ impl Session {
       },
       SessionAction::AddMessage(id, chat_message) => {
         if id == self.id {
-          self.add_message(chat_message);
+          self.add_message(chat_message.clone());
           self.execute_tool_calls();
           self.generate_new_message_embeddings();
+        }
+        if let ChatMessage::Tool(_) = chat_message {
+          let tx = self.action_tx.clone().unwrap();
+          tx.send(SessionAction::RequestChatCompletion()).unwrap()
         }
       },
       SessionAction::UpdateToolList(session_id, tool_list) => {
