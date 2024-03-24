@@ -4,7 +4,6 @@ use helix_core::diff::compare_ropes;
 use helix_core::syntax;
 use std::borrow::Cow;
 use std::path::PathBuf;
-use std::rc::Rc;
 use std::sync::Arc;
 use tokio::sync::mpsc::UnboundedSender;
 
@@ -25,6 +24,7 @@ use url::Url;
 
 use crate::action::SessionAction;
 use crate::app::lsp::symbol_types::DocumentChange;
+use crate::app::lsp::symbol_types::SerializableSourceSymbol;
 use crate::app::lsp::workspace::Workspace;
 use crate::app::model_tools::lsp_tool::LsiAction;
 use crate::trace_dbg;
@@ -168,10 +168,15 @@ impl LanguageServerInterface {
   ) {
     match workspace.query_symbols(&query).await {
       Ok(symbols) => {
-        log::info!("symbols: {:#?}", symbols.len());
+        log::info!("symbols -: {:#?}", symbols.len());
         let content = match symbols.len() {
           0 => "no symbols found".to_string(),
-          _ => match serde_json::to_string(&symbols) {
+          _ => match serde_json::to_string(
+            &symbols
+              .into_iter()
+              .map(SerializableSourceSymbol::from)
+              .collect::<Vec<_>>(),
+          ) {
             Ok(content) => content,
             Err(e) => {
               log::error!("error serializing symbols: {}", e);
@@ -205,7 +210,7 @@ impl LanguageServerInterface {
     //   kind: Option<lsp::SymbolKind>,
     //   range: Option<lsp::Range>,
     //   file: Option<String>,
-  ) -> Vec<Rc<SourceSymbol>> {
+  ) -> Vec<Arc<SourceSymbol>> {
     //   let query =
     //     SymbolQuery { name: name.clone(), kind, range, file: file.clone() };
     futures::future::join_all(
@@ -269,21 +274,19 @@ impl LanguageServerInterface {
 
   pub async fn goto_symbol_definition(
     &self,
-    symbol: Rc<SourceSymbol>,
+    symbol: Arc<SourceSymbol>,
     language_server_id: usize,
   ) -> anyhow::Result<lsp::GotoDefinitionResponse> {
     let text_document = lsp::TextDocumentIdentifier {
       uri: Url::from_file_path(symbol.file_path.clone()).unwrap(),
     };
-    let position = symbol.selection_range.borrow().start;
-
+    let position = symbol.selection_range.lock().unwrap().start;
     let client = self
       .language_servers
       .iter_clients()
       .find(|c| c.id() == language_server_id)
       .expect("could not obtain language server for goto request")
       .clone();
-
     let work_done_token =
       Some(NumberOrString::String("goto definition".to_string()));
     let request = client
@@ -294,13 +297,13 @@ impl LanguageServerInterface {
 
   pub async fn goto_symbol_declaration(
     &self,
-    symbol: Rc<SourceSymbol>,
+    symbol: Arc<SourceSymbol>,
     language_server_id: usize,
   ) -> anyhow::Result<lsp::GotoDefinitionResponse> {
     let text_document = lsp::TextDocumentIdentifier {
       uri: Url::from_file_path(symbol.file_path.clone()).unwrap(),
     };
-    let position = symbol.selection_range.borrow().start;
+    let position = symbol.selection_range.lock().unwrap().start;
     let client = self
       .language_servers
       .iter_clients()
@@ -323,7 +326,7 @@ impl LanguageServerInterface {
     let text_document = lsp::TextDocumentIdentifier {
       uri: Url::from_file_path(symbol.file_path.clone()).unwrap(),
     };
-    let position = symbol.selection_range.borrow().start;
+    let position = symbol.selection_range.lock().unwrap().start;
     let client = self
       .language_servers
       .iter_clients()

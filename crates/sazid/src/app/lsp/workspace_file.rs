@@ -1,17 +1,14 @@
-use std::cell::RefCell;
-use std::collections::HashMap;
-use std::path::{Path, PathBuf};
-use std::rc::{Rc, Weak};
-
+use super::symbol_types::{DocumentChange, SourceSymbol};
 use lsp_types as lsp;
 use ropey::Rope;
+use std::collections::HashMap;
+use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex, Weak};
 use url::Url;
-
-use super::symbol_types::{DocumentChange, SourceSymbol};
 
 #[derive(Debug)]
 pub struct WorkspaceFile {
-  pub file_tree: Rc<SourceSymbol>,
+  pub file_tree: Arc<SourceSymbol>,
   pub symbol_list: Vec<Weak<SourceSymbol>>,
   pub file_path: PathBuf,
   pub diagnostics: HashMap<i32, Vec<lsp::Diagnostic>>,
@@ -29,7 +26,7 @@ impl WorkspaceFile {
     offset_encoding: &helix_lsp::OffsetEncoding,
   ) -> Self {
     let version = 0;
-    let file_tree = Rc::new(SourceSymbol::default());
+    let file_tree = Arc::new(SourceSymbol::default());
     WorkspaceFile {
       file_tree,
       symbol_list: vec![],
@@ -42,9 +39,7 @@ impl WorkspaceFile {
       workspace_path: workspace_path.to_path_buf(),
     }
   }
-}
 
-impl WorkspaceFile {
   pub fn get_current_contents(&self) -> Rope {
     self
       .contents
@@ -70,6 +65,7 @@ impl WorkspaceFile {
       Url::from_file_path(&self.file_path).unwrap(),
     ))
   }
+
   pub fn needs_update(&self) -> anyhow::Result<bool> {
     let new_checksum = self.get_checksum()?;
     if let Some(checksum) = self.checksum {
@@ -103,7 +99,7 @@ impl WorkspaceFile {
     &mut self,
     doc_symbols: Vec<lsp::DocumentSymbol>,
   ) -> anyhow::Result<()> {
-    self.file_tree = Rc::new(SourceSymbol {
+    self.file_tree = Arc::new(SourceSymbol {
       name: self
         .file_path
         .strip_prefix(self.workspace_path.canonicalize().unwrap())
@@ -113,20 +109,19 @@ impl WorkspaceFile {
       detail: None,
       kind: lsp::SymbolKind::FILE,
       tags: None,
-      range: RefCell::new(lsp::Range {
+      range: Arc::new(Mutex::new(lsp::Range {
         start: lsp_types::Position { line: 0, character: 0 },
         end: lsp_types::Position { line: 0, character: 0 },
-      }),
-      selection_range: RefCell::new(lsp::Range {
+      })),
+      selection_range: Arc::new(Mutex::new(lsp::Range {
         start: lsp_types::Position { line: 0, character: 0 },
         end: lsp_types::Position { line: 0, character: 0 },
-      }),
+      })),
       file_path: self.file_path.to_path_buf(),
-      parent: RefCell::new(Weak::new()),
-      children: RefCell::new(vec![]),
+      parent: Arc::new(Mutex::new(Weak::new())),
+      children: Arc::new(Mutex::new(vec![])),
       workspace_path: self.workspace_path.to_path_buf(),
     });
-
     for symbol in doc_symbols {
       SourceSymbol::from_document_symbol(
         &symbol,
@@ -136,7 +131,6 @@ impl WorkspaceFile {
         &self.workspace_path,
       );
     }
-
     Ok(())
   }
 }

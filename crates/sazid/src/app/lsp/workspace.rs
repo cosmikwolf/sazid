@@ -1,12 +1,8 @@
-use std::path::{Path, PathBuf};
-use std::rc::{Rc, Weak};
-
-use helix_core::syntax::{FileType, LanguageConfiguration};
-
-use std::sync::Arc;
-
 use super::symbol_types::{SourceSymbol, SymbolQuery};
 use super::workspace_file::WorkspaceFile;
+use helix_core::syntax::{FileType, LanguageConfiguration};
+use std::path::{Path, PathBuf};
+use std::sync::{Arc, Weak};
 
 #[derive(Debug)]
 pub struct Workspace {
@@ -80,7 +76,7 @@ impl Workspace {
   pub async fn query_symbols(
     &self,
     query: &SymbolQuery,
-  ) -> anyhow::Result<Vec<Rc<SourceSymbol>>> {
+  ) -> anyhow::Result<Vec<Arc<SourceSymbol>>> {
     log::info!("query: {:#?}", query);
     Ok(
       self
@@ -119,7 +115,7 @@ impl Workspace {
         )
         .filter(|s| {
           if let Some(range) = query.range {
-            *s.range.borrow() == range
+            *s.range.lock().unwrap() == range
           } else {
             true
           }
