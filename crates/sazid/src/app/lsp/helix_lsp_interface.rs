@@ -25,12 +25,12 @@ use url::Url;
 
 use crate::action::SessionAction;
 use crate::app::lsp::symbol_types::DocumentChange;
+use crate::app::lsp::workspace::Workspace;
 use crate::app::model_tools::lsp_tool::LsiAction;
 use crate::trace_dbg;
 
 use super::symbol_types::SourceSymbol;
 use super::symbol_types::SymbolQuery;
-use super::symbol_types::Workspace;
 
 #[derive(Debug, Default)]
 pub struct StatusMessage {
