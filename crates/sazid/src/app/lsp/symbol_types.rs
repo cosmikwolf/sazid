@@ -7,6 +7,7 @@ use std::rc::{Rc, Weak};
 use helix_core::syntax::{FileType, LanguageConfiguration};
 use lsp_types as lsp;
 use ropey::Rope;
+use serde::{Deserialize, Serialize};
 use url::Url;
 
 use std::sync::Arc;
@@ -21,11 +22,12 @@ pub struct Workspace {
   pub offset_encoding: helix_lsp::OffsetEncoding,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct SymbolQuery {
   pub name: Option<String>,
   pub kind: Option<lsp::SymbolKind>,
   pub range: Option<lsp::Range>,
-  pub file: Option<String>,
+  pub file_name: Option<String>,
 }
 
 impl Workspace {
@@ -91,13 +93,14 @@ impl Workspace {
     &self,
     query: &SymbolQuery,
   ) -> anyhow::Result<Vec<Rc<SourceSymbol>>> {
+    log::info!("query: {:#?}", query);
     Ok(
       self
         .all_symbols_weak()
         .iter()
         .map(|s| s.upgrade().unwrap())
         .filter(|s| {
-          if let Some(file_name) = &query.file {
+          if let Some(file_name) = &query.file_name {
             s.file_path.file_name().unwrap().to_str().unwrap() == file_name
               || &s
                 .file_path
@@ -142,6 +145,9 @@ impl Workspace {
     for file in &self.files {
       all_symbols.extend(file.symbol_list.iter().cloned());
       log::info!("file: {:#?}", file.file_path);
+    }
+    for symbol in all_symbols.iter() {
+      log::info!("symbol: {:#?}", symbol.upgrade());
     }
     all_symbols
   }
@@ -290,7 +296,7 @@ impl WorkspaceFile {
   }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SourceSymbol {
   pub name: String,
   pub detail: Option<String>,

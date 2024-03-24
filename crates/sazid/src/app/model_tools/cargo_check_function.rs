@@ -2,12 +2,11 @@ use std::{collections::HashMap, pin::Pin};
 
 use futures_util::Future;
 use serde::{Deserialize, Serialize};
-
-use crate::app::session_config::SessionConfig;
+use serde_json::Value;
 
 use super::{
   errors::ToolCallError,
-  tool_call::ToolCallTrait,
+  tool_call::{ToolCallParams, ToolCallTrait},
   types::{FunctionParameters, FunctionProperties, ToolCall},
 };
 
@@ -35,8 +34,7 @@ impl ToolCallTrait for CargoCheckFunction {
 
   fn call(
     &self,
-    _function_args: HashMap<String, serde_json::Value>,
-    _session_config: SessionConfig,
+    _params: ToolCallParams,
   ) -> Pin<
     Box<
       dyn Future<Output = Result<Option<String>, ToolCallError>>
@@ -83,7 +81,12 @@ pub fn cargo_check() -> Result<Option<String>, ToolCallError> {
     Ok(output) => {
       if output.status.success() {
         let cargo_check_json: serde_json::Value =
-          serde_json::from_slice(&output.stdout).unwrap();
+          match serde_json::from_slice::<serde_json::Value>(&output.stdout) {
+            Ok(value) => value,
+            Err(e) => {
+              return Ok(Some(format!("cargo check failed: {}", e)));
+            },
+          };
         let _output_str = cargo_check_json
           .as_array()
           .unwrap()

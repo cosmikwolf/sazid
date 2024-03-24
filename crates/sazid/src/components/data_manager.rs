@@ -1,66 +1,74 @@
 use crate::{
-  action::Action,
-  app::{database::data_manager::*, errors::SazidError},
-  config::Config,
-  trace_dbg,
+  action::SessionAction,
+  app::{
+    database::data_manager::*, errors::SazidError,
+    session_config::SessionConfig,
+  },
 };
+use async_openai::types::ChatCompletionRequestMessage;
 use core::result::Result;
-use helix_view::graphics::Rect;
-use tokio::sync::mpsc::UnboundedSender;
+use serde::{Deserialize, Serialize};
 use tui::buffer::Buffer;
 
-use super::Component;
+use crate::action::serialize_boxed_session_action;
 
-impl Component for DataManager {
-  fn register_action_handler(
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum DataManagerAction {
+  CreateSession(SessionConfig),
+  LoadSession(i64),
+  AddMessageEmbedding(i64, i64, ChatCompletionRequestMessage),
+  #[serde(serialize_with = "serialize_boxed_session_action")]
+  SessionAction(Box<SessionAction>),
+  Error(String),
+}
+
+impl DataManager {
+  fn handle_action(
     &mut self,
-    tx: UnboundedSender<Action>,
-  ) -> Result<(), SazidError> {
-    trace_dbg!("register_session_action_handler");
-    self.action_tx = Some(tx);
-    Ok(())
-  }
-
-  fn register_config_handler(
-    &mut self,
-    _config: Config,
-  ) -> Result<(), SazidError> {
-    Ok(())
-  }
-
-  fn init(&mut self, _area: Rect) -> Result<(), SazidError> {
-    Ok(())
-  }
-
-  fn update(&mut self, action: Action) -> Result<Option<Action>, SazidError> {
+    action: DataManagerAction,
+  ) -> Result<Option<DataManagerAction>, SazidError> {
     let tx = self.action_tx.clone().unwrap();
     let model = self.model.clone();
     let db_url = self.db_url.clone();
     match action {
-      Action::CreateSession(config) => {
+      DataManagerAction::CreateSession(config) => {
         tokio::spawn(async move {
           let session = add_session(&db_url, config).await.unwrap();
-          tx.send(Action::CreateLoadSessionResponse(session)).unwrap()
+          tx.send(DataManagerAction::SessionAction(Box::new(
+            SessionAction::CreateLoadSessionResponse(session),
+          )))
+          .unwrap()
         });
         Ok(None)
       },
-      Action::LoadSession(id) => {
+      DataManagerAction::LoadSession(id) => {
         tokio::spawn(async move {
           let session = load_session(&db_url, id).await.unwrap();
-          tx.send(Action::CreateLoadSessionResponse(session)).unwrap()
+          tx.send(DataManagerAction::SessionAction(Box::new(
+            SessionAction::CreateLoadSessionResponse(session),
+          )))
+          .unwrap()
         });
         Ok(None)
       },
-      Action::AddMessageEmbedding(session_id, message_id, message) => {
+      DataManagerAction::AddMessageEmbedding(
+        session_id,
+        message_id,
+        message,
+      ) => {
         tokio::spawn(async move {
           match add_message_embedding(
             &db_url, session_id, message_id, model, message,
           )
           .await
           {
-            Ok(id) => tx.send(Action::MessageEmbeddingSuccess(id)).unwrap(),
+            Ok(id) => tx
+              .send(DataManagerAction::SessionAction(Box::new(
+                SessionAction::MessageEmbeddingSuccess(id),
+              )))
+              .unwrap(),
             Err(e) => tx
-              .send(Action::Error(format!(
+              .send(DataManagerAction::Error(format!(
                 "embeddings_manager- update: {:#?}",
                 e
               )))

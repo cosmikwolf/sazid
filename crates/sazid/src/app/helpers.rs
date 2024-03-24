@@ -66,13 +66,24 @@ pub fn concatenate_tool_call_chunks(
   }
 }
 
+fn concatenate_option_role(
+  role1: Option<Role>,
+  role2: Option<Role>,
+) -> Option<Role> {
+  match (role1, role2) {
+    (Some(_), Some(r)) => Some(r),
+    (Some(r), None) | (None, Some(r)) => Some(r),
+    (None, None) => None,
+  }
+}
+
 #[allow(deprecated)]
 pub fn concatenate_stream_delta(
   delta1: ChatCompletionStreamResponseDelta,
   delta2: ChatCompletionStreamResponseDelta,
 ) -> ChatCompletionStreamResponseDelta {
   ChatCompletionStreamResponseDelta {
-    role: delta1.role,
+    role: concatenate_option_role(delta1.role, delta2.role),
     content: concatenate_option_strings(delta1.content, delta2.content),
     tool_calls: concatenate_option_vecs::<ChatCompletionMessageToolCallChunk>(
       delta1.tool_calls,

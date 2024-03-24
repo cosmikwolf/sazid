@@ -9,6 +9,13 @@ use serde::{Deserialize, Serialize};
 use super::{consts::*, types::Model};
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+pub struct WorkspaceParams {
+  pub workspace_path: PathBuf,
+  pub language: String,
+  pub language_server: String,
+  pub doc_path: Option<PathBuf>,
+}
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct SessionConfig {
   pub prompt: String,
   pub id: String,
@@ -16,6 +23,7 @@ pub struct SessionConfig {
   pub disabled_tools: Vec<String>,
   pub tools_enabled: bool,
   pub accessible_paths: Vec<PathBuf>,
+  pub workspace: Option<WorkspaceParams>,
   pub model: Model,
   pub retrieval_augmentation_message_count: Option<i64>,
   pub user: String,
@@ -33,6 +41,7 @@ impl Default for SessionConfig {
       id: Self::generate_session_id(),
       session_dir: PathBuf::new(),
       disabled_tools: vec![],
+      workspace: None,
       tools_enabled: true,
       accessible_paths: vec![],
       model: GPT4_TURBO.clone(),

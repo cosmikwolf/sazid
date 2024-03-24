@@ -1,6 +1,4 @@
-use crate::app::{
-  model_tools::tool_call::ToolCallTrait, session_config::SessionConfig,
-};
+use crate::app::model_tools::tool_call::ToolCallTrait;
 use std::{collections::HashMap, path::PathBuf, pin::Pin};
 
 use super::{
@@ -9,6 +7,7 @@ use super::{
     validate_and_extract_string_argument,
   },
   errors::ToolCallError,
+  tool_call::ToolCallParams,
   types::{FunctionParameters, FunctionProperties, ToolCall},
 };
 
@@ -99,8 +98,7 @@ impl ToolCallTrait for Pcre2GrepFunction {
 
   fn call(
     &self,
-    function_args: HashMap<String, serde_json::Value>,
-    session_config: SessionConfig,
+    params: ToolCallParams,
   ) -> Pin<
     Box<
       dyn Future<Output = Result<Option<String>, ToolCallError>>
@@ -109,18 +107,21 @@ impl ToolCallTrait for Pcre2GrepFunction {
     >,
   > {
     let paths = validate_and_extract_paths_from_argument(
-      &function_args,
-      session_config,
+      &params.function_args,
+      params.session_config,
       true,
       None,
     )
     .expect("error parsing paths")
     .expect("paths are required");
 
-    let pattern =
-      validate_and_extract_string_argument(&function_args, "pattern", true)
-        .expect("error parsing pattern")
-        .expect("pattern is required");
+    let pattern = validate_and_extract_string_argument(
+      &params.function_args,
+      "pattern",
+      true,
+    )
+    .expect("error parsing pattern")
+    .expect("pattern is required");
 
     Box::pin(async move { execute_pcre2grep(pattern, paths) })
   }

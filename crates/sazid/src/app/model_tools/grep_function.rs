@@ -10,15 +10,13 @@ use std::{collections::HashMap, io::Write, pin::Pin};
 use std::{io::BufWriter, path::PathBuf};
 use walkdir::WalkDir;
 
-use crate::app::session_config::SessionConfig;
-
 use super::{
   argument_validation::{
     validate_and_extract_paths_from_argument,
     validate_and_extract_string_argument,
   },
   errors::ToolCallError,
-  tool_call::ToolCallTrait,
+  tool_call::{ToolCallParams, ToolCallTrait},
   types::{FunctionParameters, FunctionProperties, ToolCall},
 };
 
@@ -78,8 +76,7 @@ impl ToolCallTrait for GrepFunction {
 
   fn call(
     &self,
-    function_args: HashMap<String, serde_json::Value>,
-    session_config: SessionConfig,
+    params: ToolCallParams,
   ) -> Pin<
     Box<
       dyn Future<Output = Result<Option<String>, ToolCallError>>
@@ -88,17 +85,20 @@ impl ToolCallTrait for GrepFunction {
     >,
   > {
     let paths = validate_and_extract_paths_from_argument(
-      &function_args,
-      session_config,
+      &params.function_args,
+      params.session_config,
       true,
       None,
     )
     .unwrap()
     .unwrap();
-    let pattern =
-      validate_and_extract_string_argument(&function_args, "pattern", true)
-        .unwrap()
-        .unwrap();
+    let pattern = validate_and_extract_string_argument(
+      &params.function_args,
+      "pattern",
+      true,
+    )
+    .unwrap()
+    .unwrap();
     Box::pin(async move { grep(pattern.as_str(), paths) })
   }
 

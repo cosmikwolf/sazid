@@ -3,11 +3,9 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::pin::Pin;
 
-use crate::app::session_config::SessionConfig;
-
 use super::argument_validation::*;
 use super::errors::ToolCallError;
-use super::tool_call::ToolCallTrait;
+use super::tool_call::{ToolCallParams, ToolCallTrait};
 use super::types::*;
 
 /// The command definition structure with metadata for serialization.
@@ -56,8 +54,7 @@ impl ToolCallTrait for TemplatedFunction {
   }
   fn call(
     &self,
-    function_args: HashMap<String, serde_json::Value>,
-    session_config: SessionConfig,
+    params: ToolCallParams,
   ) -> Pin<
     Box<
       dyn Future<Output = Result<Option<String>, ToolCallError>>
@@ -66,16 +63,19 @@ impl ToolCallTrait for TemplatedFunction {
     >,
   > {
     let paths = validate_and_extract_paths_from_argument(
-      &function_args,
-      session_config,
+      &params.function_args,
+      params.session_config,
       true,
       None,
     )
     .expect("error validating paths")
     .expect("paths are required");
-    let reverse =
-      validate_and_extract_boolean_argument(&function_args, "reverse", false)
-        .expect("error validating argument reverse");
+    let reverse = validate_and_extract_boolean_argument(
+      &params.function_args,
+      "reverse",
+      false,
+    )
+    .expect("error validating argument reverse");
 
     Box::pin(async move {
       // Begin Example Call Code

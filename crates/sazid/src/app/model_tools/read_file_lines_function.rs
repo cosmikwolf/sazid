@@ -4,14 +4,13 @@ use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
 use std::pin::Pin;
 
-use crate::app::session_config::SessionConfig;
 use crate::trace_dbg;
 use futures_util::Future;
 use serde::{Deserialize, Serialize};
 
 use super::argument_validation::{count_tokens, get_accessible_file_paths};
 use super::errors::ToolCallError;
-use super::tool_call::ToolCallTrait;
+use super::tool_call::{ToolCallParams, ToolCallTrait};
 use super::types::{FunctionParameters, FunctionProperties, ToolCall};
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
@@ -59,8 +58,7 @@ impl ToolCallTrait for ReadFileLinesFunction {
 
   fn call(
     &self,
-    function_args: HashMap<String, serde_json::Value>,
-    session_config: SessionConfig,
+    params: ToolCallParams,
   ) -> Pin<
     Box<
       dyn Future<Output = Result<Option<String>, ToolCallError>>
@@ -69,16 +67,18 @@ impl ToolCallTrait for ReadFileLinesFunction {
     >,
   > {
     Box::pin(async move {
-      let start_line: Option<usize> = function_args
+      let start_line: Option<usize> = params
+        .function_args
         .get("start_line")
         .and_then(|s| s.as_u64().map(|u| u as usize));
-      let end_line: Option<usize> = function_args
+      let end_line: Option<usize> = params
+        .function_args
         .get("end_line")
         .and_then(|s| s.as_u64().map(|u| u as usize));
-      if let Some(v) = function_args.get("path") {
+      if let Some(v) = params.function_args.get("path") {
         if let Some(file) = v.as_str() {
           let accesible_paths = get_accessible_file_paths(
-            session_config.accessible_paths.clone(),
+            params.session_config.accessible_paths.clone(),
             None,
           );
           if !accesible_paths.contains_key(Path::new(file).to_str().unwrap()) {
@@ -91,8 +91,8 @@ impl ToolCallTrait for ReadFileLinesFunction {
               file,
               start_line,
               end_line,
-              session_config.function_result_max_tokens,
-              session_config.accessible_paths.clone(),
+              params.session_config.function_result_max_tokens,
+              params.session_config.accessible_paths.clone(),
             )
           }
         } else {

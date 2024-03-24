@@ -6,6 +6,7 @@ use std::borrow::Cow;
 use std::path::PathBuf;
 use std::rc::Rc;
 use std::sync::Arc;
+use tokio::sync::mpsc::UnboundedSender;
 
 use helix_core::diagnostic::Severity;
 use helix_core::syntax::LanguageConfiguration;
@@ -22,7 +23,9 @@ use serde_json::json;
 
 use url::Url;
 
+use crate::action::SessionAction;
 use crate::app::lsp::symbol_types::DocumentChange;
+use crate::app::model_tools::lsp_tool::LsiAction;
 use crate::trace_dbg;
 
 use super::symbol_types::SourceSymbol;
@@ -71,10 +74,14 @@ pub struct LanguageServerInterface {
   pub language_servers: helix_lsp::Registry,
   pub status_msg: StatusMessage,
   loader: Arc<ArcSwap<Loader>>,
+  pub tx: UnboundedSender<LsiAction>,
 }
 
 impl LanguageServerInterface {
-  pub fn new(syn_loader: Arc<ArcSwap<syntax::Loader>>) -> Self {
+  pub fn new(
+    syn_loader: Arc<ArcSwap<syntax::Loader>>,
+    tx: UnboundedSender<LsiAction>,
+  ) -> Self {
     let loader = syn_loader.clone();
     // let language_servers = Arc::new(Mutex::new(Registry::new(loader.clone())))
     let language_servers = helix_lsp::Registry::new(syn_loader.clone());
@@ -84,18 +91,123 @@ impl LanguageServerInterface {
       language_servers,
       status_msg: StatusMessage::default(),
       workspaces: vec![],
+      tx,
     }
+  }
+
+  pub async fn handle_action(
+    &mut self,
+    action: LsiAction,
+  ) -> Result<Option<LsiAction>, anyhow::Error> {
+    match action {
+      LsiAction::Error(error) => {
+        log::error!("{}", error);
+        Ok(None)
+      },
+      LsiAction::AddWorkspace(ws) => {
+        if let Err(e) = self.create_workspace(
+          ws.workspace_path,
+          &ws.language,
+          &ws.language_server,
+          ws.doc_path.as_ref(),
+        ) {
+          self
+            .tx
+            .send(LsiAction::Error(format!("error creating workspace: {}", e)))
+            .unwrap();
+        };
+        self.update_workspace_symbols().await?;
+        Ok(None)
+      },
+      LsiAction::QueryWorkspaceSymbols(
+        query,
+        workspace_root,
+        session_id,
+        tool_call_id,
+      ) => {
+        log::info!("query_workspace_symbols: {:#?}", query);
+        self.update_workspace_symbols().await?;
+        match self
+          .workspaces
+          .iter()
+          .find(|w| w.workspace_path == workspace_root)
+        {
+          Some(workspace) => {
+            self
+              .query_workspace_symbols(
+                query,
+                workspace,
+                session_id,
+                tool_call_id,
+              )
+              .await;
+            Ok(None)
+          },
+          None => {
+            self
+              .tx
+              .send(LsiAction::Error(format!(
+                "no workspace found at {}",
+                workspace_root.display()
+              )))
+              .unwrap();
+            Ok(None)
+          },
+        }
+      },
+      _ => Ok(None),
+    }
+  }
+
+  pub async fn query_workspace_symbols(
+    &self,
+    query: SymbolQuery,
+    workspace: &Workspace,
+    session_id: i64,
+    tool_call_id: String,
+  ) {
+    match workspace.query_symbols(&query).await {
+      Ok(symbols) => {
+        log::info!("symbols: {:#?}", symbols.len());
+        let content = match symbols.len() {
+          0 => "no symbols found".to_string(),
+          _ => match serde_json::to_string(&symbols) {
+            Ok(content) => content,
+            Err(e) => {
+              log::error!("error serializing symbols: {}", e);
+              "".to_string()
+            },
+          },
+        };
+        log::info!("symbols size: {:#?}", content.len());
+        self
+          .tx
+          .send(LsiAction::SessionAction(Box::new(
+            SessionAction::ToolCallComplete(session_id, tool_call_id, content),
+          )))
+          .unwrap();
+      },
+      Err(e) => {
+        let error = format!("error querying workspace symbols: {}", e);
+        log::error!("{}", error);
+        self
+          .tx
+          .send(LsiAction::Error(error))
+          .expect("failed to send error message");
+      },
+    };
   }
 
   pub async fn query_all_workspace_symbols(
     &self,
-    name: Option<String>,
-    kind: Option<lsp::SymbolKind>,
-    range: Option<lsp::Range>,
-    file: Option<String>,
+    query: SymbolQuery,
+    //   name: Option<String>,
+    //   kind: Option<lsp::SymbolKind>,
+    //   range: Option<lsp::Range>,
+    //   file: Option<String>,
   ) -> Vec<Rc<SourceSymbol>> {
-    let query =
-      SymbolQuery { name: name.clone(), kind, range, file: file.clone() };
+    //   let query =
+    //     SymbolQuery { name: name.clone(), kind, range, file: file.clone() };
     futures::future::join_all(
       self
         .workspaces
@@ -226,7 +338,7 @@ impl LanguageServerInterface {
     Ok(serde_json::from_value(request.await?)?)
   }
 
-  pub async fn create_workspace(
+  pub fn create_workspace(
     &mut self,
     workspace_path: PathBuf,
     language_name: &str,
@@ -237,6 +349,7 @@ impl LanguageServerInterface {
 
     let root_dirs = &[workspace_path.clone()];
     let enable_snippets = false;
+
     let language_server = self
       .initialize_client(
         language_name,
@@ -245,9 +358,9 @@ impl LanguageServerInterface {
         root_dirs,
         enable_snippets,
       )
-      .await
       .unwrap()
       .expect("unable to initialize language server");
+
     let language_server_id = language_server.id();
     let language_config = self
       .language_configuration_by_name(language_name)
@@ -271,6 +384,8 @@ impl LanguageServerInterface {
       .cloned()
       .collect::<Vec<Arc<Client>>>();
     let ids = clients.iter().map(|client| client.id()).collect::<Vec<usize>>();
+
+    self.wait_for_language_server_initialization(&ids).await?;
     match self.wait_for_progress_token_completion(ids.as_slice()).await {
       Ok(_) => {
         log::info!("update_workspace_symbols: {:#?}", ids);
@@ -509,7 +624,7 @@ impl LanguageServerInterface {
     Ok(())
   }
 
-  pub async fn initialize_client(
+  pub fn initialize_client(
     &mut self,
     language_name: &str,
     languge_server_name: &str,

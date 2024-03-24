@@ -1,10 +1,10 @@
 pub mod argument_validation;
 pub mod cargo_check_function;
 pub mod create_file_function;
-// pub mod edit_file_function;
 pub mod errors;
 pub mod file_search_function;
 pub mod grep_function;
+pub mod lsp_tool;
 pub mod pcre2grep_function;
 pub mod read_file_lines_function;
 pub mod tool_call;

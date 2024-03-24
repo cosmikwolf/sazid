@@ -8,10 +8,9 @@ use futures_util::Future;
 use serde::{Deserialize, Serialize};
 
 use crate::app::model_tools::types::{FunctionProperties, ToolCall};
-use crate::app::session_config::SessionConfig;
 use crate::trace_dbg;
 
-use super::tool_call::ToolCallTrait;
+use super::tool_call::{ToolCallParams, ToolCallTrait};
 use super::types::FunctionParameters;
 use super::{
   argument_validation::count_tokens,
@@ -22,8 +21,7 @@ use super::{
 pub struct FileSearchFunction {
   pub name: String,
   pub description: String,
-  pub required_properties: Vec<FunctionProperties>,
-  pub optional_properties: Vec<FunctionProperties>,
+  pub properties: Vec<FunctionProperties>,
 }
 
 impl Default for FileSearchFunction {
@@ -31,8 +29,7 @@ impl Default for FileSearchFunction {
     FileSearchFunction {
         name: "file_search".to_string(),
         description: "search accessible file paths. file_search without arguments returns all accessible file paths. results include file line count".to_string(),
-        required_properties: vec![],
-        optional_properties: vec![
+        properties: vec![
             FunctionProperties {
                 name:  "search_term".to_string(),
                 required: true,
@@ -54,8 +51,7 @@ impl ToolCallTrait for FileSearchFunction {
   }
   fn call(
     &self,
-    function_args: HashMap<String, serde_json::Value>,
-    session_config: SessionConfig,
+    params: ToolCallParams,
   ) -> Pin<
     Box<
       dyn Future<Output = Result<Option<String>, ToolCallError>>
@@ -64,10 +60,10 @@ impl ToolCallTrait for FileSearchFunction {
     >,
   > {
     Box::pin(async move {
-      if let Some(v) = function_args.get("path") {
+      if let Some(v) = params.function_args.get("path") {
         if let Some(pathstr) = v.as_str() {
           let accesible_paths = get_accessible_file_paths(
-            session_config.accessible_paths.clone(),
+            params.session_config.accessible_paths.clone(),
             None,
           );
           if !accesible_paths.contains_key(Path::new(pathstr).to_str().unwrap())
@@ -81,11 +77,11 @@ impl ToolCallTrait for FileSearchFunction {
         }
       }
       let search_term: Option<&str> =
-        function_args.get("search_term").and_then(|s| s.as_str());
+        params.function_args.get("search_term").and_then(|s| s.as_str());
 
       file_search(
-        session_config.function_result_max_tokens,
-        session_config.accessible_paths.clone(),
+        params.session_config.function_result_max_tokens,
+        params.session_config.accessible_paths.clone(),
         search_term,
       )
     })
@@ -94,10 +90,7 @@ impl ToolCallTrait for FileSearchFunction {
   fn function_definition(&self) -> ToolCall {
     let mut properties: HashMap<String, FunctionProperties> = HashMap::new();
 
-    self.required_properties.iter().for_each(|p| {
-      properties.insert(p.name.clone(), p.clone());
-    });
-    self.optional_properties.iter().for_each(|p| {
+    self.properties.iter().for_each(|p| {
       properties.insert(p.name.clone(), p.clone());
     });
 
@@ -107,9 +100,10 @@ impl ToolCallTrait for FileSearchFunction {
       parameters: Some(FunctionParameters {
         param_type: "object".to_string(),
         required: self
-          .required_properties
+          .properties
           .clone()
           .into_iter()
+          .filter(|p| p.required)
           .map(|p| p.name)
           .collect(),
         properties,

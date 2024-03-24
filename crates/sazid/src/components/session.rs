@@ -1,40 +1,33 @@
 use async_openai::types::{
   ChatCompletionRequestAssistantMessage, ChatCompletionRequestMessage,
-  ChatCompletionRequestUserMessage, ChatCompletionRequestUserMessageContent,
-  ChatCompletionTool, CreateChatCompletionRequest, CreateEmbeddingRequestArgs,
+  ChatCompletionRequestToolMessage, ChatCompletionRequestUserMessage,
+  ChatCompletionRequestUserMessageContent, ChatCompletionTool,
+  CreateChatCompletionRequest, CreateEmbeddingRequestArgs,
   CreateEmbeddingResponse, Role,
 };
 use color_eyre::owo_colors::OwoColorize;
-use crossterm::event::KeyEvent;
 use futures::StreamExt;
 use futures_util::future::{ready, Ready};
-use futures_util::stream::select_all::SelectAll;
 use serde::{Deserialize, Serialize};
 use std::default::Default;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::pin::Pin;
 use std::result::Result;
-use std::time::Duration;
-use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
-use tokio::time::Sleep;
-use tokio_stream::wrappers::UnboundedReceiverStream;
+use tokio::sync::mpsc::UnboundedSender;
 
 use async_openai::{config::OpenAIConfig, Client};
 use dotenv::dotenv;
 
-use crate::action::Action;
+use crate::action::SessionAction;
 use crate::app::database::data_manager::{
   get_all_embeddings_by_session, search_message_embeddings_by_session,
-  DataManager,
 };
 use crate::app::database::types::QueryableSession;
 use crate::app::messages::{
   ChatMessage, MessageContainer, MessageState, ReceiveBuffer,
 };
-use crate::app::model_tools::tool_call::{
-  get_enabled_tools, handle_tool_call, handle_tool_complete,
-};
+use crate::app::model_tools::lsp_tool::LsiAction;
+use crate::app::model_tools::tool_call::ChatToolAction;
 use crate::app::request_validation::debug_request_validation;
 use crate::app::session_config::SessionConfig;
 use crate::app::{consts::*, errors::*, tools::chunkifier::*, types::*};
@@ -47,37 +40,12 @@ use crate::app::tools::utils::ensure_directory_exists;
 pub struct Session {
   pub id: i64,
   pub messages: Vec<MessageContainer>,
-  pub viewport_width: usize,
   pub config: SessionConfig,
+  pub enabled_tools: Vec<ChatCompletionTool>,
   #[serde(skip)]
   pub openai_config: OpenAIConfig,
   #[serde(skip)]
-  pub embeddings_manager: DataManager,
-  #[serde(skip)]
-  pub action_tx: Option<UnboundedSender<Action>>,
-  #[serde(skip)]
-  pub action_rx: Option<UnboundedReceiver<Action>>,
-  #[serde(skip)]
-  pub last_events: Vec<KeyEvent>,
-  #[serde(skip)]
-  pub render: bool,
-  #[serde(skip)]
-  pub fn_name: Option<String>,
-  #[serde(skip)]
-  pub fn_args: Option<String>,
-  #[serde(skip)]
-  pub request_buffer: Vec<ChatCompletionRequestMessage>,
-  #[serde(skip)]
-  pub request_buffer_token_count: usize,
-  #[serde(skip)]
-  pub new_messages: SelectAll<UnboundedReceiverStream<i64>>,
-  #[serde(skip)]
-  #[serde(default = "default_idle_timer")]
-  pub idle_timer: Pin<Box<Sleep>>,
-}
-
-fn default_idle_timer() -> Pin<Box<Sleep>> {
-  Box::pin(tokio::time::sleep(Duration::from_secs(5)))
+  pub action_tx: Option<UnboundedSender<SessionAction>>,
 }
 
 impl Default for Session {
@@ -87,18 +55,8 @@ impl Default for Session {
       messages: vec![],
       config: SessionConfig::default(),
       openai_config: OpenAIConfig::default(),
-      embeddings_manager: DataManager::default(),
+      enabled_tools: vec![],
       action_tx: None,
-      action_rx: None,
-      last_events: vec![],
-      viewport_width: 80,
-      render: false,
-      fn_name: None,
-      fn_args: None,
-      request_buffer: Vec::new(),
-      request_buffer_token_count: 0,
-      idle_timer: Box::pin(tokio::time::sleep(Duration::from_secs(5))),
-      new_messages: SelectAll::new(),
     }
   }
 }
@@ -111,12 +69,10 @@ impl From<QueryableSession> for Session {
       .with_api_key(api_key)
       .with_org_id("org-WagBLu0vLgiuEL12dylmcPFj");
     // let openai_config = OpenAIConfig::new().with_api_base("http://localhost:1234/v1".to_string());
-    let idle_timer = Box::pin(tokio::time::sleep(Duration::from_secs(5)));
     Session {
       id: value.id,
       openai_config,
       config: value.config.0,
-      idle_timer,
       ..Default::default()
     }
   }
@@ -144,14 +100,34 @@ impl Session {
 }
 
 impl Session {
-  pub fn new(tx: UnboundedSender<Action>) -> Self {
-    Session { action_tx: Some(tx), ..Default::default() }
+  pub fn new(
+    tx: UnboundedSender<SessionAction>,
+    config: Option<SessionConfig>,
+  ) -> Self {
+    let config = config.unwrap_or_default();
+    let session =
+      Session { action_tx: Some(tx.clone()), config, ..Default::default() };
+    log::info!("Session created: {:?}", session.id);
+
+    if let Some(workspace_params) = session.config.workspace.clone() {
+      tx.send(SessionAction::LsiAction(LsiAction::AddWorkspace(
+        workspace_params,
+      )))
+      .unwrap();
+    }
+
+    tx.send(SessionAction::ChatToolAction(ChatToolAction::ToolListRequest(
+      session.id,
+    )))
+    .unwrap();
+
+    session
   }
 
   pub fn set_system_prompt(&mut self, prompt: &str) {
     let tx = self.action_tx.clone().unwrap();
     self.config.prompt = prompt.to_string();
-    tx.send(Action::AddMessage(
+    tx.send(SessionAction::AddMessage(
       self.id,
       ChatMessage::System(self.config.prompt_message()),
     ))
@@ -160,37 +136,50 @@ impl Session {
 
   pub fn update(
     &mut self,
-    action: Action,
-  ) -> Result<Option<Action>, SazidError> {
+    action: SessionAction,
+  ) -> Result<Option<SessionAction>, SazidError> {
     let tx = self.action_tx.clone().unwrap();
     match action {
-      Action::Error(e) => {
+      SessionAction::Error(e) => {
         log::error!("Action::Error - {:?}", e);
       },
-      Action::AddMessage(id, chat_message) => {
+      SessionAction::AddMessage(id, chat_message) => {
         if id == self.id {
           self.add_message(chat_message);
           self.execute_tool_calls();
           self.generate_new_message_embeddings();
         }
       },
-      Action::ExecuteCommand(_command) => {
-        // tx.send(Action::CommandResult(self.execute_command(command).unwrap())).unwrap();
+      SessionAction::UpdateToolList(session_id, tool_list) => {
+        if session_id == self.id {
+          self.enabled_tools = tool_list
+        }
       },
-      Action::SaveSession => {
+      SessionAction::ToolCallComplete(session_id, tool_call_id, content) => {
+        tx.send(SessionAction::AddMessage(
+          session_id,
+          ChatMessage::Tool(ChatCompletionRequestToolMessage {
+            role: Role::Tool,
+            content,
+            tool_call_id,
+          }),
+        ))
+        .unwrap();
+      },
+      SessionAction::ToolCallError(session_id, tool_call_id, content) => {
+        log::error!("SessionAction::ToolCallError - not implemented session_id: {}, tool_call_id: {}, content: {}", session_id, tool_call_id, content);
+      },
+      SessionAction::SaveSession => {
         // self.save_session().unwrap();
       },
-      Action::SubmitInput(s) => {
+      SessionAction::SubmitInput(s) => {
         self.submit_chat_completion_request(s);
       },
-      Action::RequestChatCompletion() => {
+      SessionAction::RequestChatCompletion() => {
         trace_dbg!(level: tracing::Level::INFO, "requesting chat completion");
         self.request_chat_completion(None, tx.clone())
       },
-      Action::ToolCallComplete(id, tool_call_id, output) => {
-        handle_tool_complete(id, tool_call_id, output, tx);
-      },
-      Action::MessageEmbeddingSuccess(id) => {
+      SessionAction::MessageEmbeddingSuccess(id) => {
         self
           .messages
           .iter_mut()
@@ -198,7 +187,6 @@ impl Session {
           .unwrap()
           .embedding_saved = true;
       },
-      Action::SelectModel(model) => self.config.model = model,
       _ => (),
     }
     //self.action_tx.clone().unwrap().send(Action::Render).unwrap();
@@ -209,28 +197,8 @@ impl Session {
     let tx = self.action_tx.clone().unwrap();
     let message =
       self.messages.iter().find(|m| m.message_id == message_id).unwrap();
-    tx.send(Action::MessageUpdate(message.message.clone(), message_id))
+    tx.send(SessionAction::MessageUpdate(message.message.clone(), message_id))
       .unwrap();
-  }
-
-  pub fn process_pending_actions(&mut self) -> Option<Action> {
-    let tx = self.action_tx.clone().unwrap();
-    let pending_action = if let Some(action_rx) = &mut self.action_rx {
-      if let Ok(action) = &action_rx.try_recv() {
-        Some(action.clone())
-      } else {
-        None
-      }
-    } else {
-      None
-    };
-    if let Some(pending_action) = pending_action {
-      if let Ok(Some(new_action)) = self.update(pending_action.clone()) {
-        tx.send(new_action.clone()).unwrap();
-        return Some(new_action);
-      };
-    }
-    None
   }
 
   pub fn add_message(&mut self, message: ChatMessage) {
@@ -293,7 +261,7 @@ impl Session {
           && !m.message_state.contains(MessageState::EMBEDDING_SAVED)
       })
       .for_each(|m| {
-        tx.send(Action::AddMessageEmbedding(
+        tx.send(SessionAction::AddMessageEmbedding(
           self.id,
           m.message_id,
           m.message.clone(),
@@ -323,10 +291,11 @@ impl Session {
         ) = &m.message
         {
           tool_calls.iter().for_each(|tc| {
-            // let debug_text = format!("calling tool: {:?}", tc);
-            // trace_dbg!(level: tracing::Level::INFO, debug_text);
-            log::info!("calling tool: {:?}", tc);
-            handle_tool_call(tx.clone(), tc, self.config.clone(), self.id);
+            tx.send(SessionAction::ChatToolAction(ChatToolAction::CallTool(
+              tc.clone(),
+              self.id,
+            )))
+            .unwrap();
           });
           m.tools_called = true;
         }
@@ -355,7 +324,9 @@ impl Session {
               chunk.clone(),
             ),
           });
-          self.update(Action::AddMessage(self.id, message.clone())).unwrap();
+          self
+            .update(SessionAction::AddMessage(self.id, message.clone()))
+            .unwrap();
           new_messages.push(message);
         });
         Ok(new_messages)
@@ -376,7 +347,7 @@ impl Session {
       .iter_mut()
       .filter(|m| m.current_transaction_flag)
       .for_each(|m| m.current_transaction_flag = false);
-    tx.send(Action::UpdateStatus(Some("submitting input".to_string())))
+    tx.send(SessionAction::UpdateStatus(Some("submitting input".to_string())))
       .unwrap();
     match self.add_chunked_chat_completion_request_messages(
       Self::filter_non_ascii(&input).as_str(),
@@ -385,10 +356,10 @@ impl Session {
       &config.model,
     ) {
       Ok(_) => {
-        tx.send(Action::RequestChatCompletion()).unwrap();
+        tx.send(SessionAction::RequestChatCompletion()).unwrap();
       },
       Err(e) => {
-        tx.send(Action::Error(format!("Error: {:?}", e))).unwrap();
+        tx.send(SessionAction::Error(format!("Error: {:?}", e))).unwrap();
       },
     }
   }
@@ -396,32 +367,23 @@ impl Session {
   pub fn request_chat_completion(
     &mut self,
     input: Option<String>,
-    tx: UnboundedSender<Action>,
+    tx: UnboundedSender<SessionAction>,
   ) {
-    tx.send(Action::UpdateStatus(Some("Configuring Client".to_string())))
-      .unwrap();
+    tx.send(SessionAction::UpdateStatus(Some(
+      "Configuring Client".to_string(),
+    )))
+    .unwrap();
     let stream_response = self.config.stream_response;
     let openai_config = self.openai_config.clone();
     let db_url = self.config.database_url.clone();
     let model = self.config.model.clone();
-    let embedding_model = self.embeddings_manager.model.clone();
     let user = self.config.user.clone();
     let session_id = self.id;
     let max_tokens = self.config.response_max_tokens;
     let rag = self.config.retrieval_augmentation_message_count;
+    let embedding_model = None;
     let stream = Some(self.config.stream_response);
-    let tools = match get_enabled_tools(None)
-    // let tools = match get_enabled_tools(Some(self.config.enabled_tools.clone()))
-    {
-      Ok(tools) => tools,
-      Err(e) => {
-        log::error!("error getting enabled tools: {:?}", e);
-        tx.send(Action::Error(format!("Error: {:?}", e))).unwrap();
-        None
-      },
-    };
-
-    log::info!("tools: {:#?}", tools);
+    let tools = self.enabled_tools.clone();
 
     let new_messages = self
       .messages
@@ -432,27 +394,31 @@ impl Session {
         m.message.clone()
       })
       .collect::<Vec<ChatCompletionRequestMessage>>();
-    tx.send(Action::UpdateStatus(Some("Assembling request...".to_string())))
-      .unwrap();
+    tx.send(SessionAction::UpdateStatus(Some(
+      "Assembling request...".to_string(),
+    )))
+    .unwrap();
     tokio::spawn(async move {
       let mut embeddings_and_messages: Vec<ChatCompletionRequestMessage> =
         Vec::new();
 
-      embeddings_and_messages.extend(match (input, rag) {
-        (Some(input), Some(count)) => search_message_embeddings_by_session(
-          &db_url,
-          session_id,
-          &embedding_model,
-          &input,
-          count,
-        )
-        .await
-        .unwrap(),
-        (Some(_), None) => {
-          get_all_embeddings_by_session(&db_url, session_id).await.unwrap()
-        },
-        (None, _) => Vec::new(),
-      });
+      if let Some(embedding_model) = embedding_model {
+        embeddings_and_messages.extend(match (input, rag) {
+          (Some(input), Some(count)) => search_message_embeddings_by_session(
+            &db_url,
+            session_id,
+            &embedding_model,
+            &input,
+            count,
+          )
+          .await
+          .unwrap(),
+          (Some(_), None) => {
+            get_all_embeddings_by_session(&db_url, session_id).await.unwrap()
+          },
+          (None, _) => Vec::new(),
+        });
+      }
 
       embeddings_and_messages.extend(new_messages);
       log::info!("embeddings_and_messages: {:#?}", embeddings_and_messages);
@@ -462,27 +428,26 @@ impl Session {
         stream,
         Some(max_tokens as u16),
         Some(user),
-        tools,
+        Some(tools),
       );
       let request_clone = request.clone();
-      tx.send(Action::UpdateStatus(Some(
+      tx.send(SessionAction::UpdateStatus(Some(
         "Establishing Client Connection".to_string(),
       )))
       .unwrap();
-      tx.send(Action::EnterProcessing).unwrap();
       let client = create_openai_client(&openai_config);
       trace_dbg!("client connection established");
       // tx.send(Action::AddMessage(ChatMessage::SazidSystemMessage(format!("Request Token Count: {}", token_count))))
       //   .unwrap();
       match stream_response {
         true => {
-          tx.send(Action::UpdateStatus(Some(
+          tx.send(SessionAction::UpdateStatus(Some(
             "Sending Request to OpenAI API...".to_string(),
           )))
           .unwrap();
           trace_dbg!("Sending Request to API");
           let mut stream = client.chat().create_stream(request).await.unwrap();
-          tx.send(Action::UpdateStatus(Some(
+          tx.send(SessionAction::UpdateStatus(Some(
             "Request submitted. Awaiting Response...".to_string(),
           )))
           .unwrap();
@@ -491,12 +456,11 @@ impl Session {
               Ok(response) => {
                 // log::debug!("Response: {:#?}", response);
                 //tx.send(Action::UpdateStatus(Some(format!("Received responses: {}", count).to_string()))).unwrap();
-                tx.send(Action::AddMessage(
+                tx.send(SessionAction::AddMessage(
                   session_id,
                   ChatMessage::StreamResponse(vec![response]),
                 ))
                 .unwrap();
-                tx.send(Action::Update).unwrap();
               },
               Err(e) => {
                 trace_dbg!(
@@ -508,7 +472,7 @@ impl Session {
                 // trace_dbg!(reqtext);
                 trace_dbg!(&request_clone);
                 // tx.send(Action::AddMessage(ChatMessage::SazidSystemMessage(reqtext))).unwrap();
-                tx.send(Action::Error(format!(
+                tx.send(SessionAction::Error(format!(
                   "Error: {:?} -- check https://status.openai.com/",
                   e
                 )))
@@ -519,16 +483,15 @@ impl Session {
         },
         false => match client.chat().create(request).await {
           Ok(response) => {
-            tx.send(Action::AddMessage(
+            tx.send(SessionAction::AddMessage(
               session_id,
               ChatMessage::Response(response),
             ))
             .unwrap();
-            tx.send(Action::Update).unwrap();
           },
           Err(e) => {
             trace_dbg!("Error: {}", e);
-            tx.send(Action::Error(format!(
+            tx.send(SessionAction::Error(format!(
               "Error: {:#?} -- check https://status.openai.com/",
               e
             )))
@@ -536,10 +499,11 @@ impl Session {
           },
         },
       };
-      tx.send(Action::UpdateStatus(Some("Chat Request Complete".to_string())))
-        .unwrap();
-      tx.send(Action::SaveSession).unwrap();
-      tx.send(Action::ExitProcessing).unwrap();
+      tx.send(SessionAction::UpdateStatus(Some(
+        "Chat Request Complete".to_string(),
+      )))
+      .unwrap();
+      tx.send(SessionAction::SaveSession).unwrap();
     });
   }
 

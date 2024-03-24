@@ -1,5 +1,5 @@
 use diesel::sql_types::*;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::fmt;
 
 use super::schema::*;
@@ -12,6 +12,7 @@ use pgvector::Vector;
 
 #[derive(
   Serialize,
+  Deserialize,
   Queryable,
   Selectable,
   Debug,

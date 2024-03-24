@@ -1,6 +1,6 @@
 use arc_swap::ArcSwap;
 use lsp_types::GotoDefinitionResponse;
-use sazid::action::Action;
+use sazid::action::SessionAction;
 use sazid::app::lsp::helix_lsp_interface::LanguageServerInterface;
 use sazid::utils::{initialize_logging, initialize_panic_handler};
 use std::path::Path;
@@ -50,7 +50,7 @@ fn test_logging() -> anyhow::Result<()> {
 }
 
 struct TestActionLoop {
-  action_rx: tokio::sync::mpsc::UnboundedReceiver<Action>,
+  action_rx: tokio::sync::mpsc::UnboundedReceiver<SessionAction>,
 }
 impl TestActionLoop {
   async fn test_action_loop(
@@ -60,7 +60,7 @@ impl TestActionLoop {
     tokio::time::timeout(tokio::time::Duration::from_secs(1), async {
       while let Some(action) = self.action_rx.recv().await {
         match action {
-          Action::LspServerMessageReceived((id, msg)) => {
+          SessionAction::LspServerMessageReceived((id, msg)) => {
             println!("LSP Server message received: {:#?}", msg);
             LanguageServerInterface::handle_language_server_message(
               &mut lsi.lsp_progress,
@@ -109,7 +109,8 @@ async fn test_rust_analyzer_connection() -> anyhow::Result<()> {
   assert!(test_workspace_path.exists());
 
   std::env::set_current_dir(&test_workspace_path).unwrap();
-  let (action_tx, action_rx) = tokio::sync::mpsc::unbounded_channel::<Action>();
+  let (action_tx, action_rx) =
+    tokio::sync::mpsc::unbounded_channel::<SessionAction>();
   let mut action_loop = TestActionLoop { action_rx };
 
   let syn_loader =

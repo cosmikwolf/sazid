@@ -14,8 +14,11 @@ use helix_view::{
   theme::{Color, Style},
   Editor, Theme,
 };
-use sazid::app::messages::chat_completion_request_message_as_str;
-use tui::text::{Span, Spans};
+use sazid::app::messages::{
+  chat_completion_request_message_content_as_str,
+  chat_completion_request_message_tool_calls_as_str,
+};
+use tui::text::{Span, Spans, Text};
 
 use helix_core::syntax;
 
@@ -47,7 +50,8 @@ impl ChatMessageItem {
     message: ChatCompletionRequestMessage,
     config_loader: Arc<ArcSwap<syntax::Loader>>,
   ) -> Self {
-    let content = chat_completion_request_message_as_str(&message).to_string();
+    let content =
+      chat_completion_request_message_content_as_str(&message).to_string();
     let len_lines = content.lines().count();
     let len_chars = content.chars().count();
     let id = Some(id);
@@ -70,9 +74,17 @@ impl ChatMessageItem {
   pub fn content(&self) -> &str {
     match &self.message {
       ChatMessageType::Chat(message) => {
-        chat_completion_request_message_as_str(message)
+        chat_completion_request_message_content_as_str(message)
       },
       ChatMessageType::Error(error) => error,
+    }
+  }
+  pub fn tool_calls(&self) -> Option<Vec<(&str, &str)>> {
+    match &self.message {
+      ChatMessageType::Chat(message) => {
+        chat_completion_request_message_tool_calls_as_str(message)
+      },
+      ChatMessageType::Error(_) => None,
     }
   }
 }
@@ -148,6 +160,20 @@ impl ui::markdownmenu::MarkdownItem for ChatMessageItem {
     );
 
     lines.extend(text);
+
+    if let Some(tool_calls) = self.tool_calls() {
+      tool_calls.iter().for_each(|(tool_name, tool_args)| {
+        lines.extend(Text::from(Spans::from(vec![
+          Span::styled("   Tool Call: ", Style::default().fg(Color::White)),
+          Span::styled(*tool_name, Style::default().fg(Color::Cyan)),
+        ])));
+        lines.extend(Text::from(Spans::from(vec![
+          Span::styled("   Arguments: ", Style::default().fg(Color::White)),
+          Span::styled(*tool_args, Style::default().fg(Color::Cyan)),
+        ])));
+      })
+    }
+
     lines.into()
 
     // Spans::from(vec![header, markdownText.lines]).into()

@@ -3,7 +3,7 @@ use core::result::Result;
 use helix_view::graphics::Rect;
 use tokio::sync::mpsc::UnboundedSender;
 
-use crate::{action::Action, app::errors::SazidError, config::Config};
+use crate::{action::SessionAction, app::errors::SazidError, config::Config};
 
 use tui::buffer::Buffer;
 
@@ -14,7 +14,7 @@ pub trait Component {
   #[allow(unused_variables)]
   fn register_action_handler(
     &mut self,
-    tx: UnboundedSender<Action>,
+    tx: UnboundedSender<SessionAction>,
   ) -> Result<(), SazidError> {
     Ok(())
   }
@@ -29,7 +29,10 @@ pub trait Component {
     Ok(())
   }
   #[allow(unused_variables)]
-  fn update(&mut self, action: Action) -> Result<Option<Action>, SazidError> {
+  fn update(
+    &mut self,
+    action: SessionAction,
+  ) -> Result<Option<SessionAction>, SazidError> {
     Ok(None)
   }
   fn draw(&mut self, b: &mut Buffer) -> Result<(), SazidError>;

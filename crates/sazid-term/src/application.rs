@@ -17,7 +17,11 @@ use helix_view::{
 use sazid::{
   app::{
     lsp::helix_lsp_interface::LanguageServerInterface,
-    messages::get_chat_message_text,
+    model_tools::{
+      lsp_tool::LsiAction,
+      tool_call::{ChatToolAction, ChatTools},
+    },
+    session_config::WorkspaceParams,
   },
   components::session::Session,
 };
@@ -28,7 +32,7 @@ use tui::backend::Backend;
 
 use crate::{
   args::Args,
-  commands::{ChatMessageItem, ChatMessageType},
+  commands::ChatMessageItem,
   compositor::{self, Compositor, Event},
   config::Config,
   handlers,
@@ -39,7 +43,7 @@ use crate::{
 use log::{debug, error, info, warn};
 #[cfg(not(feature = "integration"))]
 use std::io::stdout;
-use std::{collections::btree_map::Entry, sync::Arc};
+use std::{collections::btree_map::Entry, path::PathBuf, sync::Arc};
 
 use anyhow::{Context, Error};
 
@@ -68,9 +72,16 @@ pub struct Application {
   terminal: Terminal,
 
   pub editor: Editor,
-  pub session: Session,
+
+  session: Session,
+  session_events: UnboundedReceiverStream<sazid::action::SessionAction>,
+
   language_server_interface: LanguageServerInterface,
-  session_events: UnboundedReceiverStream<sazid::action::Action>,
+  language_server_interface_events: UnboundedReceiverStream<LsiAction>,
+
+  chat_tools: ChatTools,
+  chat_tools_events: UnboundedReceiverStream<ChatToolAction>,
+
   config: Arc<ArcSwap<Config>>,
 
   #[allow(dead_code)]
@@ -165,17 +176,34 @@ impl Application {
     editor.new_file(Action::VerticalSplit);
     editor.set_theme(theme);
 
+    // Language Server Interface Configuration
+    let (lsi_tx, lsi_rx) = mpsc::unbounded_channel();
+    let language_server_interface_events = UnboundedReceiverStream::new(lsi_rx);
+    let language_server_interface =
+      LanguageServerInterface::new(syn_loader.clone(), lsi_tx);
+
     // Session Configuration
     let (session_tx, session_rx) = mpsc::unbounded_channel();
-
-    let language_server_interface =
-      LanguageServerInterface::new(syn_loader.clone());
-
     let session_events = UnboundedReceiverStream::new(session_rx);
-    let mut session = Session::new(session_tx);
+    let mut session_config = config.load().session.clone();
 
+    session_config.workspace = Some(WorkspaceParams {
+      workspace_path: PathBuf::from(
+        "/Users/tenkai/Development/gpt/rust_test_project",
+      ),
+      language: "rust".to_string(),
+      language_server: "rust-analyzer".to_string(),
+      doc_path: None,
+    });
+
+    let mut session = Session::new(session_tx, Some(session_config));
     session.set_system_prompt("you are an expert programming assistant");
-    // session.config_all_functions();
+
+    // Tool Configuration
+    let (tool_tx, tool_rx) = mpsc::unbounded_channel();
+    let chat_tools =
+      ChatTools::new(tool_tx, session.id, session.config.clone());
+    let chat_tools_events = UnboundedReceiverStream::new(tool_rx);
 
     // Load existing messages
     let messages = session
@@ -247,13 +275,20 @@ impl Application {
     .context("build signal handler")?;
 
     let app = Self {
-      session,
-      session_events,
       compositor,
       terminal,
       editor,
       config,
+
+      session,
+      session_events,
+
       language_server_interface,
+      language_server_interface_events,
+
+      chat_tools,
+      chat_tools_events,
+
       theme_loader,
       syn_loader,
 
@@ -320,6 +355,9 @@ impl Application {
       }
 
       use futures_util::StreamExt;
+      let session_tx = self.session.action_tx.clone().unwrap();
+      let lsi_tx = self.language_server_interface.tx.clone();
+      let chat_tool_tx = self.chat_tools.tx.clone();
 
       tokio::select! {
           biased;
@@ -353,18 +391,74 @@ impl Application {
               self.render().await;
           }
 
-        Some((id, call)) = self.language_server_interface.language_servers.incoming.next() => {
-            let tx = self.session.action_tx.clone().unwrap();
-              tx.send(sazid::action::Action::LspServerMessageReceived((id, call))).unwrap();
+          Some((id, call)) = self.language_server_interface.language_servers.incoming.next() => {
+              session_tx.send(sazid::action::SessionAction::LspServerMessageReceived((id, call))).unwrap();
           }
+
+          Some(action) = self.language_server_interface_events.next() => {
+              match action {
+                sazid::app::model_tools::lsp_tool::LsiAction::SessionAction(action) => {
+                    session_tx.send(*action).unwrap();
+                },
+                sazid::app::model_tools::lsp_tool::LsiAction::ChatToolResponse(action) => {
+                    chat_tool_tx.send(*action).unwrap();
+                }
+                _ => {
+                  match self.language_server_interface.handle_action(action).await {
+                      Ok(Some(action)) => {
+                      lsi_tx.send(action).unwrap();
+                      },
+                      Ok(None) => {},
+                          Err(e) => {
+                              log::error!("lsi update error: {:#?}", e);
+                              lsi_tx.send(sazid::app::model_tools::lsp_tool::LsiAction::Error(e.to_string())).unwrap();
+                          }
+                      }
+                  }
+                }
+          }
+
+          Some(action) = self.chat_tools_events.next() => {
+              match action  {
+                sazid::app::model_tools::tool_call::ChatToolAction::SessionAction(action) => {
+                    session_tx.send(*action).unwrap();
+                },
+                sazid::app::model_tools::tool_call::ChatToolAction::LsiRequest(action) => {
+                    lsi_tx.send(*action).unwrap();
+                },
+                _ => {
+                  match self.chat_tools.handle_action(action) {
+                      Ok(Some(action)) => {
+                      chat_tool_tx.send(action).unwrap();
+                      },
+                      Ok(None) => {},
+                          Err(e) => {
+                            log::error!("chat tool update error: {:#?}", e);
+                              chat_tool_tx.send(sazid::app::model_tools::tool_call::ChatToolAction::Error(e.to_string())).unwrap();
+                          }
+                      }
+                  }
+                }
+              }
 
           Some(action) = self.session_events.next() => {
                   match action.clone() {
-                      sazid::action::Action::UpdateStatus(Some(status)) => {
+
+                      sazid::action::SessionAction::ChatToolAction(event) => {
+                          chat_tool_tx.send(event).unwrap();
+                      },
+                      sazid::action::SessionAction::LsiAction(event) => {
+                          lsi_tx.send(event).unwrap();
+                      },
+
+                      sazid::action::SessionAction::LspSymbolQuery(query) => {
+                        self.language_server_interface.query_all_workspace_symbols(query).await;
+                      }
+                      sazid::action::SessionAction::UpdateStatus(Some(status)) => {
                     self.editor.set_status(status);
                         self.render().await;
                       }
-                   sazid::action::Action::MessageUpdate(message, id) => {
+                      sazid::action::SessionAction::MessageUpdate(message, id) => {
                        self.compositor
                            .find::<ui::Session<ChatMessageItem>>()
                            .unwrap()
@@ -375,7 +469,7 @@ impl Application {
                                    self.syn_loader.clone() ));
                         self.render().await;
                     },
-                                   sazid::action::Action::Error(error) => {
+                                   sazid::action::SessionAction::Error(error) => {
                     self.editor.set_error(error.to_string());
                        self.compositor.find::<ui::Session<ChatMessageItem>>().unwrap()
                            .upsert_message(ChatMessageItem::new_error(error,self.syn_loader.clone() ));

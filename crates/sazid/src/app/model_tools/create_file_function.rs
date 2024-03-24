@@ -6,13 +6,12 @@ use std::{
   pin::Pin,
 };
 
-use crate::app::session_config::SessionConfig;
 use futures_util::Future;
 use serde::{Deserialize, Serialize};
 
 use super::{
   errors::ToolCallError,
-  tool_call::ToolCallTrait,
+  tool_call::{ToolCallParams, ToolCallTrait},
   types::{FunctionParameters, FunctionProperties, ToolCall},
 };
 
@@ -65,8 +64,7 @@ impl ToolCallTrait for CreateFileFunction {
 
   fn call(
     &self,
-    function_args: HashMap<String, serde_json::Value>,
-    _session_config: SessionConfig,
+    params: ToolCallParams,
   ) -> Pin<
     Box<
       dyn Future<Output = Result<Option<String>, ToolCallError>>
@@ -76,10 +74,11 @@ impl ToolCallTrait for CreateFileFunction {
   > {
     Box::pin(async move {
       let path: Option<&str> =
-        function_args.get("path").and_then(|s| s.as_str());
+        params.function_args.get("path").and_then(|s| s.as_str());
       let text: Option<&str> =
-        function_args.get("text").and_then(|s| s.as_str());
-      let overwrite = function_args
+        params.function_args.get("text").and_then(|s| s.as_str());
+      let overwrite = params
+        .function_args
         .get("overwrite")
         .and_then(|b| b.as_bool())
         .unwrap_or(false);

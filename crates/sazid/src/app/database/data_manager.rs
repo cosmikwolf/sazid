@@ -1,9 +1,9 @@
 use super::data_models::EmbeddingModel;
 use super::types::*;
-use crate::action::Action;
 use crate::app::errors::SazidError;
 use crate::app::session_config::SessionConfig;
 use crate::cli::Cli;
+use crate::components::data_manager::DataManagerAction;
 use async_openai::types::ChatCompletionRequestMessage;
 use dialoguer;
 use diesel::{prelude::*, sql_query};
@@ -13,7 +13,7 @@ use tokio::sync::mpsc::UnboundedSender;
 
 #[derive(Default, Debug)]
 pub struct DataManager {
-  pub action_tx: Option<UnboundedSender<Action>>,
+  pub action_tx: Option<UnboundedSender<DataManagerAction>>,
   pub model: EmbeddingModel,
   pub db_url: String,
 }
