@@ -18,7 +18,7 @@ use tokio::sync::mpsc::UnboundedSender;
 use async_openai::{config::OpenAIConfig, Client};
 use dotenv::dotenv;
 
-use crate::action::SessionAction;
+use crate::action::{ChatToolAction, LsiAction, SessionAction};
 use crate::app::database::data_manager::{
   get_all_embeddings_by_session, search_message_embeddings_by_session,
 };
@@ -26,8 +26,6 @@ use crate::app::database::types::QueryableSession;
 use crate::app::messages::{
   ChatMessage, MessageContainer, MessageState, ReceiveBuffer,
 };
-use crate::app::model_tools::lsp_tool::LsiAction;
-use crate::app::model_tools::tool_call::ChatToolAction;
 use crate::app::request_validation::debug_request_validation;
 use crate::app::session_config::SessionConfig;
 use crate::app::{consts::*, errors::*, tools::chunkifier::*, types::*};

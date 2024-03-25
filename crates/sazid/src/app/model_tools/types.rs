@@ -1,13 +1,13 @@
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
-pub struct FunctionProperties {
+pub struct FunctionProperty {
   #[serde(skip)]
   pub name: String,
   #[serde(skip)]
   pub required: bool,
   #[serde(rename = "type")]
-  pub property_type: String,
+  pub property_type: PropertyType,
   pub description: Option<String>,
   // #[serde(skip_serializing_if = "Option::is_none")]
   // pub properties: Option<Box<FunctionProperties>>,
@@ -16,30 +16,32 @@ pub struct FunctionProperties {
   pub enum_values: Option<Vec<String>>,
 }
 
-// #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
-// pub enum PropertyType {
-//   #[serde(rename = "boolean")]
-//   Boolean,
-//   #[serde(rename = "number")]
-//   Number,
-//   #[serde(rename = "string")]
-//   String,
-//   #[serde(rename = "pattern")]
-//   Pattern,
-//   #[serde(rename = "array")]
-//   Array,
-//   #[serde(rename = "object")]
-//   Object(FunctionProperties),
-//   #[serde(rename = "null")]
-//   Null,
-// }
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+pub enum PropertyType {
+  #[serde(rename = "boolean")]
+  Boolean,
+  #[serde(rename = "number")]
+  Number,
+  #[serde(rename = "string")]
+  String,
+  #[serde(rename = "pattern")]
+  Pattern,
+  #[serde(rename = "array")]
+  Array,
+  #[serde(rename = "array")]
+  ParametersArray(Vec<FunctionParameters>),
+  #[serde(rename = "object")]
+  Object(Box<FunctionParameters>),
+  #[serde(rename = "null")]
+  Null,
+}
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct FunctionParameters {
   #[serde(rename = "type")]
   pub param_type: String,
   pub required: Vec<String>,
-  pub properties: std::collections::HashMap<String, FunctionProperties>,
+  pub properties: std::collections::HashMap<String, FunctionProperty>,
 }
 
 #[derive(Serialize, Deserialize, Debug)]

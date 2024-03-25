@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
@@ -10,15 +9,14 @@ use serde::{Deserialize, Serialize};
 
 use super::argument_validation::{count_tokens, get_accessible_file_paths};
 use super::errors::ToolCallError;
-use super::tool_call::{ToolCallParams, ToolCallTrait};
-use super::types::{FunctionParameters, FunctionProperties, ToolCall};
+use super::tool_call::{ToolCallParams, ToolCallTrait, ToolCallVariants};
+use super::types::{FunctionProperty, PropertyType};
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
 pub struct ReadFileLinesFunction {
   pub name: String,
   pub description: String,
-  pub required_properties: Vec<FunctionProperties>,
-  pub optional_properties: Vec<FunctionProperties>,
+  pub properties: Vec<FunctionProperty>,
 }
 
 impl ToolCallTrait for ReadFileLinesFunction {
@@ -30,25 +28,25 @@ impl ToolCallTrait for ReadFileLinesFunction {
     ReadFileLinesFunction {
       name: "read_file".to_string(),
       description: "read lines from an accesible file path, from optional 1 indexed start_line to end_line".to_string(),
-      required_properties: vec![FunctionProperties {
+      properties: vec![
+          FunctionProperty {
         name: "path".to_string(),
         required: true,
-        property_type: "string".to_string(),
+          property_type: PropertyType::String,
         description: Some("path to file".to_string()),
         enum_values: None,
-      }],
-      optional_properties: vec![
-        FunctionProperties {
+          },
+        FunctionProperty {
           name: "start_line".to_string(),
           required: false,
-          property_type: "string".to_string(),
+          property_type: PropertyType::String,
           description: Some("first line to read, default: 1".to_string()),
           enum_values: None,
         },
-        FunctionProperties {
+        FunctionProperty {
           name: "end_line".to_string(),
           required: false,
-          property_type: "string".to_string(),
+          property_type: PropertyType::String,
           description: Some("last line to read, default: EOF".to_string()),
           enum_values: None,
         },
@@ -104,30 +102,12 @@ impl ToolCallTrait for ReadFileLinesFunction {
     })
   }
 
-  fn function_definition(&self) -> ToolCall {
-    let mut properties: HashMap<String, FunctionProperties> = HashMap::new();
+  fn properties(&self) -> Vec<FunctionProperty> {
+    self.properties.clone()
+  }
 
-    self.required_properties.iter().for_each(|p| {
-      properties.insert(p.name.clone(), p.clone());
-    });
-    self.optional_properties.iter().for_each(|p| {
-      properties.insert(p.name.clone(), p.clone());
-    });
-
-    ToolCall {
-      name: self.name.clone(),
-      description: Some(self.description.clone()),
-      parameters: Some(FunctionParameters {
-        param_type: "object".to_string(),
-        required: self
-          .required_properties
-          .clone()
-          .into_iter()
-          .map(|p| p.name)
-          .collect(),
-        properties,
-      }),
-    }
+  fn description(&self) -> String {
+    self.description.clone()
   }
 }
 

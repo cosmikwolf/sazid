@@ -5,16 +5,16 @@ use std::pin::Pin;
 
 use super::argument_validation::*;
 use super::errors::ToolCallError;
-use super::tool_call::{ToolCallParams, ToolCallTrait};
+use super::tool_call::{ToolCallParams, ToolCallTrait, ToolCallVariants};
 use super::types::*;
 
 /// The command definition structure with metadata for serialization.
 // the struct name TemplatedFunction should be renamed appropriately
 #[derive(Serialize, Deserialize)]
 struct TemplatedFunction {
-  pub name: String,
-  pub description: String,
-  pub properties: Vec<FunctionProperties>,
+  name: String,
+  description: String,
+  properties: Vec<FunctionProperty>,
 }
 
 impl Default for TemplatedFunction {
@@ -23,17 +23,17 @@ impl Default for TemplatedFunction {
       name: "function_name".to_string(),
       description: "function description".to_string(),
       properties: vec![
-        FunctionProperties {
+        FunctionProperty {
           name: "required_property".to_string(),
           required: true,
-          property_type: "string".to_string(),
+          property_type: PropertyType::String,
           description: Some("required property description".to_string()),
           enum_values: None,
         },
-        FunctionProperties {
+        FunctionProperty {
           name: "optional_property".to_string(),
           required: false,
-          property_type: "string".to_string(),
+          property_type: PropertyType::String,
           description: Some("required property description".to_string()),
           enum_values: None,
         },
@@ -41,6 +41,7 @@ impl Default for TemplatedFunction {
     }
   }
 }
+
 // Implementation of the `ModelFunction` trait for the `SedCommand` struct.
 impl ToolCallTrait for TemplatedFunction {
   // This is the code that is executed when the function is called.
@@ -49,6 +50,15 @@ impl ToolCallTrait for TemplatedFunction {
   fn init() -> Self {
     TemplatedFunction::default()
   }
+
+  fn properties(&self) -> Vec<FunctionProperty> {
+    self.properties.clone()
+  }
+
+  fn description(&self) -> String {
+    self.description.clone()
+  }
+
   fn name(&self) -> &str {
     &self.name
   }
@@ -105,7 +115,7 @@ impl ToolCallTrait for TemplatedFunction {
   // this function creates the FunctionCall struct which is used to pass the function to GPT.
   // This code should not change and should be identical for each function call
   fn function_definition(&self) -> ToolCall {
-    let mut properties: HashMap<String, FunctionProperties> = HashMap::new();
+    let mut properties: HashMap<String, FunctionProperty> = HashMap::new();
 
     self.properties.iter().filter(|p| p.required).for_each(|p| {
       properties.insert(p.name.clone(), p.clone());

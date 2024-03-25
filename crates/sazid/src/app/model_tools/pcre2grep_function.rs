@@ -1,5 +1,5 @@
 use crate::app::model_tools::tool_call::ToolCallTrait;
-use std::{collections::HashMap, path::PathBuf, pin::Pin};
+use std::{path::PathBuf, pin::Pin};
 
 use super::{
   argument_validation::{
@@ -7,8 +7,8 @@ use super::{
     validate_and_extract_string_argument,
   },
   errors::ToolCallError,
-  tool_call::ToolCallParams,
-  types::{FunctionParameters, FunctionProperties, ToolCall},
+  tool_call::{ToolCallParams, ToolCallVariants},
+  types::{FunctionProperty, PropertyType},
 };
 
 use futures_util::Future;
@@ -18,8 +18,7 @@ use serde::{Deserialize, Serialize};
 pub struct Pcre2GrepFunction {
   pub name: String,
   pub description: String,
-  pub required_properties: Vec<FunctionProperties>,
-  pub optional_properties: Vec<FunctionProperties>,
+  pub properties: Vec<FunctionProperty>,
 }
 
 impl Default for Pcre2GrepFunction {
@@ -27,35 +26,34 @@ impl Default for Pcre2GrepFunction {
     Pcre2GrepFunction {
       name: "pcre2grep".to_string(),
       description: "an implementation of grep".to_string(),
-      required_properties: vec![
+      properties: vec![
         // CommandProperty {
         //   name: "options".to_string(),
         //   required: true,
-        //   property_type: "string".to_string(),
+        //   property_type: Box::new(PropertyType::String)(),
         //   description: Some(format!(
         //     "pcre2grep arguments, space separated. valid options: {}",
         //     clap_args_to_json::<Args>()
         //   )),
         //   enum_values: None,
         // },
-        FunctionProperties {
+        FunctionProperty {
           name: "pattern".to_string(),
           required: true,
-          property_type: "string".to_string(),
+          property_type: PropertyType::String,
           description: Some("a regular expression pattern to match against file contents".to_string()),
           enum_values: None,
         },
-        FunctionProperties {
+        FunctionProperty {
           name: "paths".to_string(),
           required: true,
-          property_type: "string".to_string(),
+          property_type: PropertyType::String,
           description: Some(
             "a list of comma separated paths to walk for files which the pattern will be matched against".to_string(),
           ),
           enum_values: None,
         },
       ],
-      optional_properties: vec![],
     }
   }
 }
@@ -126,29 +124,11 @@ impl ToolCallTrait for Pcre2GrepFunction {
     Box::pin(async move { execute_pcre2grep(pattern, paths) })
   }
 
-  fn function_definition(&self) -> ToolCall {
-    let mut properties: HashMap<String, FunctionProperties> = HashMap::new();
+  fn properties(&self) -> Vec<FunctionProperty> {
+    self.properties.clone()
+  }
 
-    self.required_properties.iter().for_each(|p| {
-      properties.insert(p.name.clone(), p.clone());
-    });
-    self.optional_properties.iter().for_each(|p| {
-      properties.insert(p.name.clone(), p.clone());
-    });
-
-    ToolCall {
-      name: self.name.clone(),
-      description: Some(self.description.clone()),
-      parameters: Some(FunctionParameters {
-        param_type: "object".to_string(),
-        required: self
-          .required_properties
-          .clone()
-          .into_iter()
-          .map(|p| p.name)
-          .collect(),
-        properties,
-      }),
-    }
+  fn description(&self) -> String {
+    self.description.clone()
   }
 }

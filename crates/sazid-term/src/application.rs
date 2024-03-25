@@ -15,13 +15,10 @@ use helix_view::{
   theme, Align, Editor,
 };
 use sazid::{
+  action::{ChatToolAction, LsiAction, SessionAction},
   app::{
     lsp::helix_lsp_interface::LanguageServerInterface,
-    model_tools::{
-      lsp_tool::LsiAction,
-      tool_call::{ChatToolAction, ChatTools},
-    },
-    session_config::WorkspaceParams,
+    model_tools::tool_call::ChatTools, session_config::WorkspaceParams,
   },
   components::session::Session,
 };
@@ -74,7 +71,7 @@ pub struct Application {
   pub editor: Editor,
 
   session: Session,
-  session_events: UnboundedReceiverStream<sazid::action::SessionAction>,
+  session_events: UnboundedReceiverStream<SessionAction>,
 
   language_server_interface: LanguageServerInterface,
   language_server_interface_events: UnboundedReceiverStream<LsiAction>,
@@ -201,7 +198,7 @@ impl Application {
 
     // Tool Configuration
     let (tool_tx, tool_rx) = mpsc::unbounded_channel();
-    let chat_tools =
+    let chat_tools: ChatTools =
       ChatTools::new(tool_tx, session.id, session.config.clone());
     let chat_tools_events = UnboundedReceiverStream::new(tool_rx);
 
@@ -392,15 +389,15 @@ impl Application {
           }
 
           Some((id, call)) = self.language_server_interface.language_servers.incoming.next() => {
-              session_tx.send(sazid::action::SessionAction::LspServerMessageReceived((id, call))).unwrap();
+              session_tx.send(SessionAction::LspServerMessageReceived((id, call))).unwrap();
           }
 
           Some(action) = self.language_server_interface_events.next() => {
               match action {
-                sazid::app::model_tools::lsp_tool::LsiAction::SessionAction(action) => {
+                LsiAction::SessionAction(action) => {
                     session_tx.send(*action).unwrap();
                 },
-                sazid::app::model_tools::lsp_tool::LsiAction::ChatToolResponse(action) => {
+                LsiAction::ChatToolResponse(action) => {
                     chat_tool_tx.send(*action).unwrap();
                 }
                 _ => {
@@ -411,7 +408,7 @@ impl Application {
                       Ok(None) => {},
                           Err(e) => {
                               log::error!("lsi update error: {:#?}", e);
-                              lsi_tx.send(sazid::app::model_tools::lsp_tool::LsiAction::Error(e.to_string())).unwrap();
+                              lsi_tx.send(LsiAction::Error(e.to_string())).unwrap();
                           }
                       }
                   }
@@ -420,10 +417,10 @@ impl Application {
 
           Some(action) = self.chat_tools_events.next() => {
               match action  {
-                sazid::app::model_tools::tool_call::ChatToolAction::SessionAction(action) => {
+                ChatToolAction::SessionAction(action) => {
                     session_tx.send(*action).unwrap();
                 },
-                sazid::app::model_tools::tool_call::ChatToolAction::LsiRequest(action) => {
+                ChatToolAction::LsiRequest(action) => {
                     lsi_tx.send(*action).unwrap();
                 },
                 _ => {
@@ -434,7 +431,7 @@ impl Application {
                       Ok(None) => {},
                           Err(e) => {
                             log::error!("chat tool update error: {:#?}", e);
-                              chat_tool_tx.send(sazid::app::model_tools::tool_call::ChatToolAction::Error(e.to_string())).unwrap();
+                              chat_tool_tx.send(ChatToolAction::Error(e.to_string())).unwrap();
                           }
                       }
                   }
@@ -444,21 +441,21 @@ impl Application {
           Some(action) = self.session_events.next() => {
                   match action.clone() {
 
-                      sazid::action::SessionAction::ChatToolAction(event) => {
+                      SessionAction::ChatToolAction(event) => {
                           chat_tool_tx.send(event).unwrap();
                       },
-                      sazid::action::SessionAction::LsiAction(event) => {
+                      SessionAction::LsiAction(event) => {
                           lsi_tx.send(event).unwrap();
                       },
 
-                      sazid::action::SessionAction::LspSymbolQuery(query) => {
+                      SessionAction::LspSymbolQuery(query) => {
                         self.language_server_interface.query_all_workspace_symbols(query).await;
                       }
-                      sazid::action::SessionAction::UpdateStatus(Some(status)) => {
+                      SessionAction::UpdateStatus(Some(status)) => {
                     self.editor.set_status(status);
                         self.render().await;
                       }
-                      sazid::action::SessionAction::MessageUpdate(message, id) => {
+                      SessionAction::MessageUpdate(message, id) => {
                        self.compositor
                            .find::<ui::Session<ChatMessageItem>>()
                            .unwrap()
@@ -469,7 +466,7 @@ impl Application {
                                    self.syn_loader.clone() ));
                         self.render().await;
                     },
-                                   sazid::action::SessionAction::Error(error) => {
+                                   SessionAction::Error(error) => {
                     self.editor.set_error(error.to_string());
                        self.compositor.find::<ui::Session<ChatMessageItem>>().unwrap()
                            .upsert_message(ChatMessageItem::new_error(error,self.syn_loader.clone() ));

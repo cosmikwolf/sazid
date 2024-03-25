@@ -11,16 +11,15 @@ use serde::{Deserialize, Serialize};
 
 use super::{
   errors::ToolCallError,
-  tool_call::{ToolCallParams, ToolCallTrait},
-  types::{FunctionParameters, FunctionProperties, ToolCall},
+  tool_call::{ToolCallParams, ToolCallTrait, ToolCallVariants},
+  types::{FunctionParameters, FunctionProperty, PropertyType, ToolCall},
 };
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
 pub struct CreateFileFunction {
   name: String,
   description: String,
-  required_properties: Vec<FunctionProperties>,
-  optional_properties: Vec<FunctionProperties>,
+  properties: Vec<FunctionProperty>,
 }
 
 impl ToolCallTrait for CreateFileFunction {
@@ -33,33 +32,40 @@ impl ToolCallTrait for CreateFileFunction {
       description:
         "create a file at path with text. this command cannot overwrite files"
           .to_string(),
-      required_properties: vec![
-        FunctionProperties {
+      properties: vec![
+        FunctionProperty {
           name: "path".to_string(),
           required: true,
-          property_type: "string".to_string(),
+          property_type: PropertyType::String,
           description: Some("path to file".to_string()),
           enum_values: None,
         },
-        FunctionProperties {
+        FunctionProperty {
           name: "text".to_string(),
           required: true,
-          property_type: "string".to_string(),
+          property_type: PropertyType::String,
           description: Some("text to write to file.".to_string()),
           enum_values: None,
         },
-        FunctionProperties {
+        FunctionProperty {
           name: "overwrite".to_string(),
           required: true,
-          property_type: "boolean".to_string(),
+          property_type: PropertyType::Boolean,
           description: Some(
             "overwrite an existing file. default false".to_string(),
           ),
           enum_values: None,
         },
       ],
-      optional_properties: vec![],
     }
+  }
+
+  fn properties(&self) -> Vec<FunctionProperty> {
+    self.properties.clone()
+  }
+
+  fn description(&self) -> String {
+    self.description.clone()
   }
 
   fn call(
@@ -93,32 +99,6 @@ impl ToolCallTrait for CreateFileFunction {
         Err(ToolCallError::new("path argument is required"))
       }
     })
-  }
-
-  fn function_definition(&self) -> ToolCall {
-    let mut properties: HashMap<String, FunctionProperties> = HashMap::new();
-
-    self.required_properties.iter().for_each(|p| {
-      properties.insert(p.name.clone(), p.clone());
-    });
-    self.optional_properties.iter().for_each(|p| {
-      properties.insert(p.name.clone(), p.clone());
-    });
-
-    ToolCall {
-      name: self.name.clone(),
-      description: Some(self.description.clone()),
-      parameters: Some(FunctionParameters {
-        param_type: "object".to_string(),
-        required: self
-          .required_properties
-          .clone()
-          .into_iter()
-          .map(|p| p.name)
-          .collect(),
-        properties,
-      }),
-    }
   }
 }
 

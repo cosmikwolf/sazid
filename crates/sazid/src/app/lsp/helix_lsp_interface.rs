@@ -22,11 +22,11 @@ use serde_json::json;
 
 use url::Url;
 
+use crate::action::LsiAction;
 use crate::action::SessionAction;
 use crate::app::lsp::symbol_types::DocumentChange;
 use crate::app::lsp::symbol_types::SerializableSourceSymbol;
 use crate::app::lsp::workspace::Workspace;
-use crate::app::model_tools::lsp_tool::LsiAction;
 use crate::trace_dbg;
 
 use super::symbol_types::SourceSymbol;
@@ -168,7 +168,6 @@ impl LanguageServerInterface {
   ) {
     match workspace.query_symbols(&query).await {
       Ok(symbols) => {
-        log::info!("symbols -: {:#?}", symbols.len());
         let content = match symbols.len() {
           0 => "no symbols found".to_string(),
           _ => match serde_json::to_string(
@@ -184,7 +183,6 @@ impl LanguageServerInterface {
             },
           },
         };
-        log::info!("symbols size: {:#?}", content.len());
         self
           .tx
           .send(LsiAction::SessionAction(Box::new(

@@ -184,7 +184,7 @@ mod tests {
       concatenate_option_strings,
       // concatenate_stream_delta, concatenate_stream_response_messages,
     },
-    model_tools::types::FunctionProperties,
+    model_tools::types::{FunctionProperty, PropertyType},
   };
 
   use super::*;
@@ -198,19 +198,19 @@ mod tests {
   #[test]
   fn test_serialization_command_properties() {
     // Manually construct the expected `CommandProperty` vector
-    let location_property = FunctionProperties {
+    let location_property = FunctionProperty {
       name: "location".to_owned(),
       required: true,
-      property_type: "string".to_owned(),
+      property_type: PropertyType::String,
       description: Some(
         "The city and state, e.g. San Francisco, CA".to_owned(),
       ),
       enum_values: None,
     };
-    let unit_property = FunctionProperties {
+    let unit_property = FunctionProperty {
       name: "unit".to_owned(),
       required: false,
-      property_type: "string".to_owned(),
+      property_type: PropertyType::String,
       description: None,
       enum_values: Some(vec!["celsius".to_owned(), "fahrenheit".to_owned()]),
     };

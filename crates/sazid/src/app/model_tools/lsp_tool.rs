@@ -2,15 +2,14 @@ use futures_util::Future;
 use lsp_types::{Range, SymbolKind};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::path::PathBuf;
 use std::pin::Pin;
 
+use crate::action::{ChatToolAction, LsiAction};
 use crate::app::lsp::symbol_types::SymbolQuery;
-use crate::app::session_config::WorkspaceParams;
 
 use super::argument_validation::*;
 use super::errors::ToolCallError;
-use super::tool_call::{ChatToolAction, ToolCallParams, ToolCallTrait};
+use super::tool_call::{ToolCallParams, ToolCallTrait};
 use super::types::*;
 
 /// The command definition structure with metadata for serialization.
@@ -19,71 +18,67 @@ use super::types::*;
 pub struct LspTool {
   pub name: String,
   pub description: String,
-  pub properties: Vec<FunctionProperties>,
+  pub properties: Vec<FunctionProperty>,
 }
 
-use crate::action::{serialize_boxed_session_action, SessionAction};
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub enum LsiAction {
-  #[serde(serialize_with = "serialize_boxed_session_action")]
-  SessionAction(Box<SessionAction>),
-  ChatToolResponse(Box<ChatToolAction>),
-  AddWorkspace(WorkspaceParams),
-  QueryWorkspaceSymbols(SymbolQuery, PathBuf, i64, String),
-  Error(String),
-}
-
-impl Default for LspTool {
-  fn default() -> Self {
-    LspTool {
-      name: "lsp_symbol_query".to_string(),
-      description:
-        "query symbols in project source code using a language server"
-          .to_string(),
-      properties: vec![
-        FunctionProperties {
-          name: "name".to_string(),
-          required: false,
-          property_type: "string".to_string(),
-          description: Some("filter results by name".to_string()),
-          enum_values: None,
-        },
-        FunctionProperties {
-          name: "kind".to_string(),
-          required: false,
-          property_type: "string".to_string(),
-          description: Some("filter results by kind: FILE MODULE NAMESPACE PACKAGE CLASS METHOD PROPERTY FIELD CONSTRUCTOR ENUM INTERFACE FUNCTION VARIABLE CONSTANT STRING NUMBER BOOLEAN ARRAY OBJECT KEY NULL ENUM_MEMBER STRUCT EVENT OPERATOR TYPE_PARAMETER".to_string()),
-            enum_values: None,
-        },
-        FunctionProperties {
-          name: "range".to_string(),
-          required: false,
-          property_type: "string".to_string(),
-          description: Some("filter results by byte range in source file, in the format of start_line,start_char,end_line,end_char".to_string()),
-          enum_values: None,
-        },
-        FunctionProperties {
-          name: "file_name".to_string(),
-          required: false,
-          property_type: "string".to_string(),
-          description: Some("filter results source file, based on file name".to_string()),
-          enum_values: None,
-        },
-      ],
-    }
-  }
+pub enum LspToolVariant {
+  SymbolQuery,
 }
 // Implementation of the `ModelFunction` trait for the `SedCommand` struct.
 impl ToolCallTrait for LspTool {
   // This is the code that is executed when the function is called.
   // Its job is to take the function_args, validate them using the functions defined in src/functions/argument_validation.rs
   // It should also handle
-  fn init() -> Self {
-    LspTool::default()
+
+  fn init() -> Self
+  where
+    Self: Sized,
+  {
+    LspTool {
+            name: "language_server".to_string(),
+            description: "query symbols in project source code using a language server".to_string(),
+            properties: vec![
+                FunctionProperty {
+                    name: "name".to_string(),
+                    required: false,
+                    property_type: PropertyType::String,
+                    description: Some("filter results by name".to_string()),
+                    enum_values: None,
+                },
+                FunctionProperty {
+                name: "kind".to_string(),
+                required: false,
+                property_type: PropertyType::String,
+                description: Some("filter results by kind: FILE MODULE NAMESPACE PACKAGE CLASS METHOD PROPERTY FIELD CONSTRUCTOR ENUM INTERFACE FUNCTION VARIABLE CONSTANT STRING NUMBER BOOLEAN ARRAY OBJECT KEY NULL ENUM_MEMBER STRUCT EVENT OPERATOR TYPE_PARAMETER".to_string()),
+                    enum_values: None,
+                },
+                FunctionProperty {
+                name: "range".to_string(),
+                required: false,
+                property_type: PropertyType::String,
+                description: Some("filter results by byte range in source file, in the format of start_line,start_char,end_line,end_char".to_string()),
+                enum_values: None,
+                },
+                FunctionProperty {
+                name: "file_name".to_string(),
+                required: false,
+                property_type: PropertyType::String,
+                description: Some("filter results source file, based on file name".to_string()),
+                enum_values: None,
+                },
+            ],
+      }
   }
+
   fn name(&self) -> &str {
     &self.name
+  }
+  fn properties(&self) -> Vec<FunctionProperty> {
+    self.properties.clone()
+  }
+
+  fn description(&self) -> String {
+    self.description.clone()
   }
 
   fn call(
@@ -179,7 +174,7 @@ impl ToolCallTrait for LspTool {
   // this function creates the FunctionCall struct which is used to pass the function to GPT.
   // This code should not change and should be identical for each function call
   fn function_definition(&self) -> ToolCall {
-    let mut properties: HashMap<String, FunctionProperties> = HashMap::new();
+    let mut properties: HashMap<String, FunctionProperty> = HashMap::new();
 
     self.properties.iter().filter(|p| p.required).for_each(|p| {
       properties.insert(p.name.clone(), p.clone());

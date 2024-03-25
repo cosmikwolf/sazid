@@ -2,20 +2,18 @@ use std::{collections::HashMap, pin::Pin};
 
 use futures_util::Future;
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
 
 use super::{
   errors::ToolCallError,
   tool_call::{ToolCallParams, ToolCallTrait},
-  types::{FunctionParameters, FunctionProperties, ToolCall},
+  types::FunctionProperty,
 };
 
 #[derive(Default, Debug, Serialize, Deserialize, Clone)]
 pub struct CargoCheckFunction {
   name: String,
   description: String,
-  required_properties: Vec<FunctionProperties>,
-  optional_properties: Vec<FunctionProperties>,
+  properties: Vec<FunctionProperty>,
 }
 
 impl ToolCallTrait for CargoCheckFunction {
@@ -27,9 +25,16 @@ impl ToolCallTrait for CargoCheckFunction {
     CargoCheckFunction {
       name: "cargo_check".to_string(),
       description: "run cargo check".to_string(),
-      required_properties: vec![],
-      optional_properties: vec![],
+      properties: vec![],
     }
+  }
+
+  fn properties(&self) -> Vec<FunctionProperty> {
+    self.properties.clone()
+  }
+
+  fn description(&self) -> String {
+    self.description.clone()
   }
 
   fn call(
@@ -43,32 +48,6 @@ impl ToolCallTrait for CargoCheckFunction {
     >,
   > {
     Box::pin(async move { cargo_check() })
-  }
-
-  fn function_definition(&self) -> ToolCall {
-    let mut properties: HashMap<String, FunctionProperties> = HashMap::new();
-
-    self.required_properties.iter().for_each(|p| {
-      properties.insert(p.name.clone(), p.clone());
-    });
-    self.optional_properties.iter().for_each(|p| {
-      properties.insert(p.name.clone(), p.clone());
-    });
-
-    ToolCall {
-      name: self.name.clone(),
-      description: Some(self.description.clone()),
-      parameters: Some(FunctionParameters {
-        param_type: "object".to_string(),
-        required: self
-          .required_properties
-          .clone()
-          .into_iter()
-          .map(|p| p.name)
-          .collect(),
-        properties,
-      }),
-    }
   }
 }
 

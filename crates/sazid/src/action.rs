@@ -1,14 +1,18 @@
+use std::path::PathBuf;
+
 use crate::{
   app::{
     database::types::QueryableSession,
     lsp::symbol_types::SymbolQuery,
     messages::ChatMessage,
-    model_tools::{lsp_tool::LsiAction, tool_call::ChatToolAction},
-    session_config::SessionConfig,
+    session_config::{SessionConfig, WorkspaceParams},
   },
   components::data_manager::DataManagerAction,
 };
-use async_openai::types::{ChatCompletionRequestMessage, ChatCompletionTool};
+use async_openai::types::{
+  ChatCompletionMessageToolCall, ChatCompletionRequestMessage,
+  ChatCompletionTool,
+};
 use helix_lsp::Call;
 use serde::{Deserialize, Serialize, Serializer};
 
@@ -40,6 +44,30 @@ pub enum SessionAction {
   DataManagerAction(DataManagerAction),
   ChatToolAction(ChatToolAction),
 
+  Error(String),
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum LsiAction {
+  #[serde(serialize_with = "serialize_boxed_session_action")]
+  SessionAction(Box<SessionAction>),
+  ChatToolResponse(Box<ChatToolAction>),
+  AddWorkspace(WorkspaceParams),
+  QueryWorkspaceSymbols(SymbolQuery, PathBuf, i64, String),
+  Error(String),
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum ChatToolAction {
+  UpdateConfig(SessionConfig),
+  CallTool(ChatCompletionMessageToolCall, i64),
+  CompleteToolCall(String, ChatCompletionMessageToolCall, i64),
+  #[serde(serialize_with = "serialize_boxed_session_action")]
+  SessionAction(Box<SessionAction>),
+  LsiRequest(Box<LsiAction>),
+  LsiQueryResponse(String, String),
+  ToolListRequest(i64),
+  ToolListResponse(i64, Vec<ChatCompletionTool>),
   Error(String),
 }
 

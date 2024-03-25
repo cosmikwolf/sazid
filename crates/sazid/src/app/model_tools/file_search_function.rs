@@ -7,11 +7,11 @@ use std::pin::Pin;
 use futures_util::Future;
 use serde::{Deserialize, Serialize};
 
-use crate::app::model_tools::types::{FunctionProperties, ToolCall};
+use crate::app::model_tools::types::{FunctionProperty, ToolCall};
 use crate::trace_dbg;
 
-use super::tool_call::{ToolCallParams, ToolCallTrait};
-use super::types::FunctionParameters;
+use super::tool_call::{ToolCallParams, ToolCallTrait, ToolCallVariants};
+use super::types::{FunctionParameters, PropertyType};
 use super::{
   argument_validation::count_tokens,
   argument_validation::get_accessible_file_paths, errors::ToolCallError,
@@ -21,7 +21,7 @@ use super::{
 pub struct FileSearchFunction {
   pub name: String,
   pub description: String,
-  pub properties: Vec<FunctionProperties>,
+  pub properties: Vec<FunctionProperty>,
 }
 
 impl Default for FileSearchFunction {
@@ -30,10 +30,10 @@ impl Default for FileSearchFunction {
         name: "file_search".to_string(),
         description: "search accessible file paths. file_search without arguments returns all accessible file paths. results include file line count".to_string(),
         properties: vec![
-            FunctionProperties {
+            FunctionProperty {
                 name:  "search_term".to_string(),
                 required: true,
-                property_type: "string".to_string(),
+                property_type: PropertyType::String,
                 description: Some( "fuzzy search for files by name or path. search results contain a match score and line count.".to_string()),
                 enum_values: None,
             }
@@ -42,12 +42,19 @@ impl Default for FileSearchFunction {
   }
 }
 impl ToolCallTrait for FileSearchFunction {
+  fn init() -> Self {
+    FileSearchFunction::default()
+  }
   fn name(&self) -> &str {
     &self.name
   }
 
-  fn init() -> Self {
-    FileSearchFunction::default()
+  fn properties(&self) -> Vec<FunctionProperty> {
+    self.properties.clone()
+  }
+
+  fn description(&self) -> String {
+    self.description.clone()
   }
   fn call(
     &self,
@@ -85,30 +92,6 @@ impl ToolCallTrait for FileSearchFunction {
         search_term,
       )
     })
-  }
-
-  fn function_definition(&self) -> ToolCall {
-    let mut properties: HashMap<String, FunctionProperties> = HashMap::new();
-
-    self.properties.iter().for_each(|p| {
-      properties.insert(p.name.clone(), p.clone());
-    });
-
-    ToolCall {
-      name: self.name.clone(),
-      description: Some(self.description.clone()),
-      parameters: Some(FunctionParameters {
-        param_type: "object".to_string(),
-        required: self
-          .properties
-          .clone()
-          .into_iter()
-          .filter(|p| p.required)
-          .map(|p| p.name)
-          .collect(),
-        properties,
-      }),
-    }
   }
 }
 

@@ -124,14 +124,14 @@ impl SourceSymbol {
 
   pub fn get_source(&self) -> anyhow::Result<String> {
     let file_path = &self.file_path;
-    let range = self.range.lock().unwrap().clone();
-    get_file_range_contents(file_path, range)
+    let range = self.range.lock().unwrap();
+    get_file_range_contents(file_path, *range)
   }
 
   pub fn get_selection(&self) -> anyhow::Result<String> {
     let file_path = &self.file_path;
-    let range = self.selection_range.lock().unwrap().clone();
-    get_file_range_contents(file_path, range)
+    let range = self.selection_range.lock().unwrap();
+    get_file_range_contents(file_path, *range)
   }
 
   pub fn add_child(parent: &mut Arc<Self>, child: &Arc<SourceSymbol>) {

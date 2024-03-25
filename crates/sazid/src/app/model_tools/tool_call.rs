@@ -1,9 +1,11 @@
-use crate::{action::SessionAction, app::messages::ChatMessage};
+use crate::{
+  action::{ChatToolAction, SessionAction},
+  app::messages::ChatMessage,
+};
 use async_openai::types::{
   ChatCompletionMessageToolCall, ChatCompletionRequestToolMessage,
   ChatCompletionTool, ChatCompletionToolType, FunctionObject, Role,
 };
-use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::{any::Any, collections::HashMap, pin::Pin, sync::Arc};
 use tokio::sync::mpsc::UnboundedSender;
@@ -16,9 +18,14 @@ use super::{
   cargo_check_function::CargoCheckFunction,
   errors::ToolCallError,
   file_search_function::FileSearchFunction,
-  lsp_tool::{LsiAction, LspTool},
-  types::ToolCall,
+  lsp_tool::{LspTool, LspToolVariant},
+  types::{FunctionParameters, FunctionProperty, ToolCall},
 };
+
+pub enum ToolCallVariants {
+  LspToolVariant(LspToolVariant),
+  SingleVariant,
+}
 
 pub trait ToolCallTrait: Any + Send + Sync {
   fn init() -> Self
@@ -45,7 +52,36 @@ pub trait ToolCallTrait: Any + Send + Sync {
     >,
   >;
 
-  fn function_definition(&self) -> ToolCall;
+  fn properties(&self) -> Vec<FunctionProperty>;
+
+  fn description(&self) -> String;
+
+  fn function_definition(&self) -> ToolCall {
+    let mut properties: HashMap<String, FunctionProperty> = HashMap::new();
+
+    self.properties().iter().filter(|p| p.required).for_each(|p| {
+      properties.insert(p.name.clone(), p.clone());
+    });
+    self.properties().iter().filter(|p| !p.required).for_each(|p| {
+      properties.insert(p.name.clone(), p.clone());
+    });
+
+    ToolCall {
+      name: self.name().to_string(),
+      description: Some(self.description()),
+      parameters: Some(FunctionParameters {
+        param_type: "object".to_string(),
+        required: self
+          .properties()
+          .clone()
+          .into_iter()
+          .filter(|p| p.required)
+          .map(|p| p.name)
+          .collect(),
+        properties,
+      }),
+    }
+  }
 
   fn to_chat_completion_tool(
     &self,
@@ -77,22 +113,6 @@ pub struct ChatTools {
   pub tx: UnboundedSender<ChatToolAction>,
   config: HashMap<i64, SessionConfig>,
   tools: Vec<Arc<dyn ToolCallTrait + 'static>>,
-}
-
-use crate::action::serialize_boxed_session_action;
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub enum ChatToolAction {
-  UpdateConfig(SessionConfig),
-  CallTool(ChatCompletionMessageToolCall, i64),
-  CompleteToolCall(String, ChatCompletionMessageToolCall, i64),
-  #[serde(serialize_with = "serialize_boxed_session_action")]
-  SessionAction(Box<SessionAction>),
-  LsiRequest(Box<LsiAction>),
-  LsiQueryResponse(String, String),
-  ToolListRequest(i64),
-  ToolListResponse(i64, Vec<ChatCompletionTool>),
-  Error(String),
 }
 
 impl ChatTools {
