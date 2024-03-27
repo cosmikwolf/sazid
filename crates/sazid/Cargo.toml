@@ -67,7 +67,7 @@ tracing-subscriber = { version = "0.3.18", features = [
   "std",
   "ansi",
 ] }
-
+bincode = "1.3.3"
 bwrap = { version = "1.3.0", features = ["use_std"] }
 async-openai = "0.19.1"
 async-recursion = "1.0.5"

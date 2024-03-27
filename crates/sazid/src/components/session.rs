@@ -18,7 +18,7 @@ use tokio::sync::mpsc::UnboundedSender;
 use async_openai::{config::OpenAIConfig, Client};
 use dotenv::dotenv;
 
-use crate::action::{ChatToolAction, LsiAction, SessionAction};
+use crate::action::{ChatToolAction, LsiAction, SessionAction, ToolType};
 use crate::app::database::data_manager::{
   get_all_embeddings_by_session, search_message_embeddings_by_session,
 };
@@ -140,6 +140,7 @@ impl Session {
     match action {
       SessionAction::Error(e) => {
         log::error!("Action::Error - {:?}", e);
+        Ok(None)
       },
       SessionAction::AddMessage(id, chat_message) => {
         if id == self.id {
@@ -148,38 +149,54 @@ impl Session {
           self.generate_new_message_embeddings();
         }
         if let ChatMessage::Tool(_) = chat_message {
-          let tx = self.action_tx.clone().unwrap();
-          tx.send(SessionAction::RequestChatCompletion()).unwrap()
+          Ok(Some(SessionAction::RequestChatCompletion()))
+        } else {
+          Ok(None)
         }
       },
       SessionAction::UpdateToolList(session_id, tool_list) => {
         if session_id == self.id {
           self.enabled_tools = tool_list
         }
+        Ok(None)
       },
-      SessionAction::ToolCallComplete(session_id, tool_call_id, content) => {
-        tx.send(SessionAction::AddMessage(
-          session_id,
+      SessionAction::ToolCallComplete(
+        ToolType::LsiQuery(lsi_query),
+        content,
+      ) => {
+        log::info!("Tool Call Complete\nsession_id: {}, tool_call_id: {}\ncontent: {}", lsi_query.session_id, lsi_query.tool_call_id, content);
+
+        Ok(Some(SessionAction::AddMessage(
+          lsi_query.session_id,
           ChatMessage::Tool(ChatCompletionRequestToolMessage {
             role: Role::Tool,
             content,
-            tool_call_id,
+            tool_call_id: lsi_query.tool_call_id,
           }),
-        ))
-        .unwrap();
+        )))
       },
-      SessionAction::ToolCallError(session_id, tool_call_id, content) => {
-        log::error!("SessionAction::ToolCallError - not implemented session_id: {}, tool_call_id: {}, content: {}", session_id, tool_call_id, content);
+      SessionAction::ToolCallError(tool_type, content) => {
+          match tool_type {
+ToolType::LsiQuery(lsi_query) => {
+        Ok(Some(SessionAction::Error(format!("Language Server Interface Error\nsession_id: {}, tool_call_id: {}\nerror: {}", lsi_query.session_id, lsi_query.tool_call_id, content))))
+},
+ToolType::Generic(tool_call_id, content )  => {
+        Ok(Some(SessionAction::Error(format!("Tool Call Error\ntool_call_id: {}\nerror: {}", tool_call_id, content))))
+}
+        }
       },
       SessionAction::SaveSession => {
         // self.save_session().unwrap();
+        Ok(None)
       },
       SessionAction::SubmitInput(s) => {
         self.submit_chat_completion_request(s);
+        Ok(None)
       },
       SessionAction::RequestChatCompletion() => {
         trace_dbg!(level: tracing::Level::INFO, "requesting chat completion");
-        self.request_chat_completion(None, tx.clone())
+        self.request_chat_completion(None, tx.clone());
+        Ok(None)
       },
       SessionAction::MessageEmbeddingSuccess(id) => {
         self
@@ -188,11 +205,11 @@ impl Session {
           .find(|m| m.message_id == id)
           .unwrap()
           .embedding_saved = true;
+        Ok(None)
       },
-      _ => (),
+      _ => Ok(None) ,
     }
     //self.action_tx.clone().unwrap().send(Action::Render).unwrap();
-    Ok(None)
   }
 
   pub fn update_ui_message(&self, message_id: i64) {
@@ -387,7 +404,7 @@ impl Session {
     let stream = Some(self.config.stream_response);
     let tools = self.enabled_tools.clone();
 
-    let new_messages = self
+    let messages = self
       .messages
       .iter_mut()
       // .filter(|m| m.current_transaction_flag)
@@ -422,7 +439,7 @@ impl Session {
         });
       }
 
-      embeddings_and_messages.extend(new_messages);
+      embeddings_and_messages.extend(messages);
       log::info!("embeddings_and_messages: {:#?}", embeddings_and_messages);
       let request = construct_request(
         model.name.clone(),

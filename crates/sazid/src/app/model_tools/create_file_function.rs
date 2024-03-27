@@ -1,5 +1,4 @@
 use std::{
-  collections::HashMap,
   fs::{self, File},
   io::Write,
   path::Path,
@@ -11,8 +10,8 @@ use serde::{Deserialize, Serialize};
 
 use super::{
   errors::ToolCallError,
-  tool_call::{ToolCallParams, ToolCallTrait, ToolCallVariants},
-  types::{FunctionParameters, FunctionProperty, PropertyType, ToolCall},
+  tool_call::{ToolCallParams, ToolCallTrait},
+  types::{FunctionProperty, PropertyType},
 };
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]

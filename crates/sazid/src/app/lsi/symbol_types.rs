@@ -1,18 +1,11 @@
 use super::{get_file_range_contents, position_gt};
+use blake3::Hasher;
 use lsp_types as lsp;
 use ropey::Rope;
 use serde::{Deserialize, Serialize};
 use std::fmt::{self, Display};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, Weak};
-
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-pub struct SymbolQuery {
-  pub name: Option<String>,
-  pub kind: Option<lsp::SymbolKind>,
-  pub range: Option<lsp::Range>,
-  pub file_name: Option<String>,
-}
 
 #[derive(Debug)]
 pub struct DocumentChange {
@@ -33,6 +26,7 @@ pub struct SourceSymbol {
   pub children: Arc<Mutex<Vec<Arc<SourceSymbol>>>>,
   pub workspace_path: PathBuf,
   pub file_path: PathBuf,
+  pub symbol_id: [u8; 32],
 }
 
 #[derive(Serialize)]
@@ -45,6 +39,7 @@ pub struct SerializableSourceSymbol {
   pub selection_range: lsp::Range,
   pub workspace_path: PathBuf,
   pub file_path: PathBuf,
+  pub hash: [u8; 32],
 }
 
 impl From<Arc<SourceSymbol>> for SerializableSourceSymbol {
@@ -59,6 +54,7 @@ impl From<Arc<SourceSymbol>> for SerializableSourceSymbol {
       selection_range: *symbol.selection_range.lock().unwrap(),
       workspace_path: symbol.workspace_path.clone(),
       file_path: symbol.file_path.clone(),
+      hash: symbol.symbol_id,
     }
   }
 }
@@ -82,7 +78,9 @@ impl Default for SourceSymbol {
       children: Arc::new(Mutex::new(Vec::new())),
       workspace_path: PathBuf::new(),
       file_path: PathBuf::new(),
+      symbol_id: [0; 32],
     }
+    .compute_hash()
   }
 }
 
@@ -94,18 +92,23 @@ impl SourceSymbol {
     all_symbols: &mut Vec<Weak<SourceSymbol>>,
     workspace_path: &Path,
   ) -> Arc<Self> {
-    let converted = Arc::new(SourceSymbol {
-      name: doc_sym.name.clone(),
-      detail: doc_sym.detail.clone(),
-      kind: doc_sym.kind,
-      tags: doc_sym.tags.clone(),
-      range: Arc::new(Mutex::new(doc_sym.range)),
-      selection_range: Arc::new(Mutex::new(doc_sym.selection_range)),
-      file_path: file_path.to_path_buf(),
-      parent: Arc::new(Mutex::new(Weak::new())),
-      children: Arc::new(Mutex::new(vec![])),
-      workspace_path: workspace_path.to_path_buf(),
-    });
+    let converted = Arc::new(
+      SourceSymbol {
+        name: doc_sym.name.clone(),
+        detail: doc_sym.detail.clone(),
+        kind: doc_sym.kind,
+        tags: doc_sym.tags.clone(),
+        range: Arc::new(Mutex::new(doc_sym.range)),
+        selection_range: Arc::new(Mutex::new(doc_sym.selection_range)),
+        file_path: file_path.to_path_buf(),
+        parent: Arc::new(Mutex::new(Weak::new())),
+        children: Arc::new(Mutex::new(vec![])),
+        workspace_path: workspace_path.to_path_buf(),
+        symbol_id: [0; 32],
+      }
+      .compute_hash(),
+    );
+
     all_symbols.push(Arc::downgrade(&converted));
     SourceSymbol::add_child(parent, &converted);
     if let Some(children) = &doc_sym.children {
@@ -120,6 +123,24 @@ impl SourceSymbol {
       }
     }
     converted
+  }
+
+  pub fn compute_hash(&mut self) -> Self {
+    let mut hasher = Hasher::new();
+    hasher.update(self.name.as_bytes());
+    if let Some(detail) = &self.detail {
+      hasher.update(detail.as_bytes());
+    }
+    hasher.update(&bincode::serialize(&self.kind).unwrap());
+    hasher.update(&bincode::serialize(&self.tags).unwrap());
+    hasher.update(&bincode::serialize(&*self.range.lock().unwrap()).unwrap());
+    hasher.update(
+      &bincode::serialize(&*self.selection_range.lock().unwrap()).unwrap(),
+    );
+    hasher.update(self.workspace_path.to_string_lossy().as_bytes());
+    hasher.update(self.file_path.to_string_lossy().as_bytes());
+    self.symbol_id = *hasher.finalize().as_bytes();
+    self.clone()
   }
 
   pub fn get_source(&self) -> anyhow::Result<String> {

@@ -1,23 +1,19 @@
-use crate::app::session_config::SessionConfig;
 use futures_util::Future;
-use std::collections::HashMap;
 use std::path::PathBuf;
+use std::pin::Pin;
 use tree_sitter::{Parser, Query};
 
 use super::argument_validation::*;
-use super::tool_call::ToolCallTrait;
-use super::{
-  errors::ToolCallError,
-  types::{FunctionParameters, FunctionProperties, ToolCall},
-};
+use super::errors::ToolCallError;
+use super::tool_call::{ToolCallParams, ToolCallTrait};
+use super::types::*;
 
 use serde::{Deserialize, Serialize};
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
 pub struct TreesitterFunction {
   name: String,
   description: String,
-  required_properties: Vec<FunctionProperties>,
-  optional_properties: Vec<FunctionProperties>,
+  properties: Vec<FunctionProperty>,
 }
 
 impl ToolCallTrait for TreesitterFunction {
@@ -25,69 +21,63 @@ impl ToolCallTrait for TreesitterFunction {
     TreesitterFunction {
       name: "treesitter".to_string(),
       description: "parse source code using tree-sitter".to_string(),
-      required_properties: vec![FunctionProperties {
+      properties: vec![FunctionProperty {
         name: "path_globs".to_string(),
         required: true,
-        property_type: "string".to_string(),
+        property_type: PropertyType::String,
         description: Some(
           "a comma separated list of glob patterns that represent source files to be parsed".to_string(),
         ),
         enum_values: None,
-      }],
-      optional_properties: vec![FunctionProperties {
+      },
+          FunctionProperty {
         name: "query".to_string(),
         required: false,
-        property_type: "string".to_string(),
+        property_type: PropertyType::String,
         description: Some("tree sitter query to execute upon source file".into()),
         enum_values: None,
       }],
     }
   }
 
+  fn name(&self) -> &str {
+    &self.name
+  }
+
+  fn properties(&self) -> Vec<FunctionProperty> {
+    self.properties.clone()
+  }
+
+  fn description(&self) -> String {
+    self.description.clone()
+  }
+
   fn call(
     &self,
-    function_args: HashMap<String, serde_json::Value>,
-    session_config: SessionConfig,
-  ) -> Pin< Box< dyn Future<Output = Result<Option<String>, ToolCallError>> + Send + 'static, >, > {
-    async move {
+    params: ToolCallParams,
+  ) -> Pin<
+    Box<
+      dyn Future<Output = Result<Option<String>, ToolCallError>>
+        + Send
+        + 'static,
+    >,
+  > {
+    Box::pin(async move {
       let paths = validate_and_extract_paths_from_argument(
-        &function_args,
-        session_config,
+        &params.function_args,
+        params.session_config,
         true,
         Some(PathBuf::from("./")),
       )?
       .unwrap();
-      let query =
-        validate_and_extract_string_argument(&function_args, "query", true)?
-          .unwrap();
+      let query = validate_and_extract_string_argument(
+        &params.function_args,
+        "query",
+        true,
+      )?
+      .unwrap();
       treesitter_query(paths, &query)
-    }
-  }
-
-  fn function_definition(&self) -> ToolCall {
-    let mut properties: HashMap<String, FunctionProperties> = HashMap::new();
-
-    self.required_properties.iter().for_each(|p| {
-      properties.insert(p.name.clone(), p.clone());
-    });
-    self.optional_properties.iter().for_each(|p| {
-      properties.insert(p.name.clone(), p.clone());
-    });
-
-    ToolCall {
-      name: self.name.clone(),
-      description: Some(self.description.clone()),
-      parameters: Some(FunctionParameters {
-        param_type: "object".to_string(),
-        required: self
-          .required_properties
-          .clone()
-          .into_iter()
-          .map(|p| p.name)
-          .collect(),
-        properties,
-      }),
-    }
+    })
   }
 }
 

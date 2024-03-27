@@ -1,7 +1,10 @@
 use std::path::Path;
 
-pub mod helix_lsp_interface;
+pub mod interface;
+pub mod query;
+pub mod status_message;
 pub mod symbol_types;
+pub mod tool_impl;
 pub mod workspace;
 pub mod workspace_file;
 

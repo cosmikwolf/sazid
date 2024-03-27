@@ -2,12 +2,10 @@ use arc_swap::ArcSwap;
 use futures_util::FutureExt;
 use helix_core::diff::compare_ropes;
 use helix_core::syntax;
-use std::borrow::Cow;
 use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::mpsc::UnboundedSender;
 
-use helix_core::diagnostic::Severity;
 use helix_core::syntax::LanguageConfiguration;
 use helix_core::syntax::Loader;
 use helix_lsp::lsp::{self, notification::Notification};
@@ -17,55 +15,19 @@ use helix_lsp::LspProgressMap;
 use helix_lsp::Registry;
 use log::{error, info};
 use lsp::DocumentSymbol;
-use lsp::NumberOrString;
 use serde_json::json;
 
 use url::Url;
 
 use crate::action::LsiAction;
 use crate::action::SessionAction;
-use crate::app::lsp::symbol_types::DocumentChange;
-use crate::app::lsp::symbol_types::SerializableSourceSymbol;
-use crate::app::lsp::workspace::Workspace;
+use crate::action::ToolType;
+use crate::app::lsi::symbol_types::DocumentChange;
+use crate::app::lsi::workspace::Workspace;
 use crate::trace_dbg;
 
-use super::symbol_types::SourceSymbol;
-use super::symbol_types::SymbolQuery;
-
-#[derive(Debug, Default)]
-pub struct StatusMessage {
-  pub msg: Option<(Cow<'static, str>, Severity)>,
-}
-
-impl StatusMessage {
-  #[inline]
-  pub fn clear_status(&mut self) {
-    self.msg = None;
-  }
-
-  #[inline]
-  pub fn set_status<T: Into<Cow<'static, str>>>(&mut self, status: T) {
-    let status = status.into();
-    log::debug!("editor status: {}", status);
-    self.msg = Some((status, Severity::Info));
-  }
-
-  #[inline]
-  pub fn set_error<T: Into<Cow<'static, str>>>(&mut self, error: T) {
-    let error = error.into();
-    log::debug!("editor error: {}", error);
-    self.msg = Some((error, Severity::Error));
-  }
-
-  #[inline]
-  pub fn get_status(&self) -> Option<(&Cow<'static, str>, &Severity)> {
-    if let Some((status, severity)) = &self.msg {
-      Some((status, severity))
-    } else {
-      None
-    }
-  }
-}
+use super::query::LsiQuery;
+use super::status_message::StatusMessage;
 
 #[derive(Debug)]
 pub struct LanguageServerInterface {
@@ -98,132 +60,65 @@ impl LanguageServerInterface {
   pub async fn handle_action(
     &mut self,
     action: LsiAction,
-  ) -> Result<Option<LsiAction>, anyhow::Error> {
+  ) -> anyhow::Result<Option<LsiAction>> {
     match action {
       LsiAction::Error(error) => {
         log::error!("{}", error);
         Ok(None)
       },
+      LsiAction::GetWorkspaceFiles(lsi_query) => {
+        let lsi_query_result = self.get_workspace_files(&lsi_query);
+        self.handle_lsi_query_result(lsi_query, lsi_query_result)
+      },
       LsiAction::AddWorkspace(ws) => {
-        if let Err(e) = self.create_workspace(
+        match self.create_workspace(
           ws.workspace_path,
           &ws.language,
           &ws.language_server,
           ws.doc_path.as_ref(),
         ) {
-          self
-            .tx
-            .send(LsiAction::Error(format!("error creating workspace: {}", e)))
-            .unwrap();
-        };
-        self.update_workspace_symbols().await?;
-        Ok(None)
-      },
-      LsiAction::QueryWorkspaceSymbols(
-        query,
-        workspace_root,
-        session_id,
-        tool_call_id,
-      ) => {
-        log::info!("query_workspace_symbols: {:#?}", query);
-        self.update_workspace_symbols().await?;
-        match self
-          .workspaces
-          .iter()
-          .find(|w| w.workspace_path == workspace_root)
-        {
-          Some(workspace) => {
-            self
-              .query_workspace_symbols(
-                query,
-                workspace,
-                session_id,
-                tool_call_id,
-              )
-              .await;
-            Ok(None)
+          Ok(()) => match self.update_workspace_symbols().await {
+            Ok(()) => Ok(None),
+            Err(e) => Ok(Some(LsiAction::Error(format!(
+              "error updating workspace symbols: {}",
+              e
+            )))),
           },
-          None => {
-            self
-              .tx
-              .send(LsiAction::Error(format!(
-                "no workspace found at {}",
-                workspace_root.display()
-              )))
-              .unwrap();
-            Ok(None)
-          },
+          Err(e) => Ok(Some(LsiAction::Error(format!(
+            "error creating workspace: {}",
+            e
+          )))),
         }
+      },
+      LsiAction::QueryWorkspaceSymbols(lsi_query) => {
+        log::info!("query_workspace_symbols: {:#?}", lsi_query);
+        let lsi_query_result =
+          self.lsi_query_workspace_symbols(&lsi_query).await;
+        self.handle_lsi_query_result(lsi_query, lsi_query_result)
       },
       _ => Ok(None),
     }
   }
 
-  pub async fn query_workspace_symbols(
+  fn handle_lsi_query_result(
     &self,
-    query: SymbolQuery,
-    workspace: &Workspace,
-    session_id: i64,
-    tool_call_id: String,
-  ) {
-    match workspace.query_symbols(&query).await {
-      Ok(symbols) => {
-        let content = match symbols.len() {
-          0 => "no symbols found".to_string(),
-          _ => match serde_json::to_string(
-            &symbols
-              .into_iter()
-              .map(SerializableSourceSymbol::from)
-              .collect::<Vec<_>>(),
-          ) {
-            Ok(content) => content,
-            Err(e) => {
-              log::error!("error serializing symbols: {}", e);
-              "".to_string()
-            },
-          },
-        };
-        self
-          .tx
-          .send(LsiAction::SessionAction(Box::new(
-            SessionAction::ToolCallComplete(session_id, tool_call_id, content),
-          )))
-          .unwrap();
-      },
-      Err(e) => {
-        let error = format!("error querying workspace symbols: {}", e);
-        log::error!("{}", error);
-        self
-          .tx
-          .send(LsiAction::Error(error))
-          .expect("failed to send error message");
-      },
-    };
-  }
-
-  pub async fn query_all_workspace_symbols(
-    &self,
-    query: SymbolQuery,
-    //   name: Option<String>,
-    //   kind: Option<lsp::SymbolKind>,
-    //   range: Option<lsp::Range>,
-    //   file: Option<String>,
-  ) -> Vec<Arc<SourceSymbol>> {
-    //   let query =
-    //     SymbolQuery { name: name.clone(), kind, range, file: file.clone() };
-    futures::future::join_all(
-      self
-        .workspaces
-        .iter()
-        .map(|w| async { w.query_symbols(&query).await })
-        .collect::<Vec<_>>(),
-    )
-    .await
-    .iter()
-    .flatten()
-    .flatten()
-    .cloned()
-    .collect()
+    lsi_query: LsiQuery,
+    result: anyhow::Result<String>,
+  ) -> anyhow::Result<Option<LsiAction>> {
+    match result {
+      Ok(response) => Ok(Some(LsiAction::SessionAction(Box::new(
+        SessionAction::ToolCallComplete(
+          ToolType::LsiQuery(lsi_query),
+          response,
+        ),
+      )))),
+      Err(e) => Ok(Some(LsiAction::SessionAction(Box::new(
+        SessionAction::ToolCallError(
+          ToolType::LsiQuery(lsi_query),
+          e.to_string(),
+        ),
+      )))),
+    }
   }
 
   // pub async fn spawn_server_notification_thread(&mut self) {
@@ -268,75 +163,6 @@ impl LanguageServerInterface {
         .map(|client| client.capabilities().clone())
         .collect::<Vec<_>>(),
     )
-  }
-
-  pub async fn goto_symbol_definition(
-    &self,
-    symbol: Arc<SourceSymbol>,
-    language_server_id: usize,
-  ) -> anyhow::Result<lsp::GotoDefinitionResponse> {
-    let text_document = lsp::TextDocumentIdentifier {
-      uri: Url::from_file_path(symbol.file_path.clone()).unwrap(),
-    };
-    let position = symbol.selection_range.lock().unwrap().start;
-    let client = self
-      .language_servers
-      .iter_clients()
-      .find(|c| c.id() == language_server_id)
-      .expect("could not obtain language server for goto request")
-      .clone();
-    let work_done_token =
-      Some(NumberOrString::String("goto definition".to_string()));
-    let request = client
-      .goto_definition(text_document, position, work_done_token)
-      .expect("could not obtain goto definition response");
-    Ok(serde_json::from_value(request.await?)?)
-  }
-
-  pub async fn goto_symbol_declaration(
-    &self,
-    symbol: Arc<SourceSymbol>,
-    language_server_id: usize,
-  ) -> anyhow::Result<lsp::GotoDefinitionResponse> {
-    let text_document = lsp::TextDocumentIdentifier {
-      uri: Url::from_file_path(symbol.file_path.clone()).unwrap(),
-    };
-    let position = symbol.selection_range.lock().unwrap().start;
-    let client = self
-      .language_servers
-      .iter_clients()
-      .find(|c| c.id() == language_server_id)
-      .expect("could not obtain language server for goto request")
-      .clone();
-    let work_done_token =
-      Some(NumberOrString::String("goto declaration".to_string()));
-    let request = client
-      .goto_declaration(text_document, position, work_done_token)
-      .expect("could not obtain goto declaration response");
-    Ok(serde_json::from_value(request.await?)?)
-  }
-
-  pub async fn goto_type_definition(
-    &self,
-    symbol: Arc<SourceSymbol>,
-    language_server_id: usize,
-  ) -> anyhow::Result<lsp::Location> {
-    let text_document = lsp::TextDocumentIdentifier {
-      uri: Url::from_file_path(symbol.file_path.clone()).unwrap(),
-    };
-    let position = symbol.selection_range.lock().unwrap().start;
-    let client = self
-      .language_servers
-      .iter_clients()
-      .find(|c| c.id() == language_server_id)
-      .expect("could not obtain language server for goto request")
-      .clone();
-    let work_done_token =
-      Some(NumberOrString::String("goto type definition".to_string()));
-    let request = client
-      .goto_type_definition(text_document, position, work_done_token)
-      .expect("could not obtain goto type definition response");
-    Ok(serde_json::from_value(request.await?)?)
   }
 
   pub fn create_workspace(
@@ -471,7 +297,7 @@ impl LanguageServerInterface {
 
               let doc_symbols = match response_parsed {
                 Some(lsp::DocumentSymbolResponse::Nested(symbols)) => {
-                  log::info!("nested symbols: {:#?}", symbols);
+                  // log::info!("nested symbols: {:#?}", symbols);
                   symbols
                   // let mut flat_symbols = Vec::new();
                   // for symbol in symbols {
@@ -480,7 +306,7 @@ impl LanguageServerInterface {
                   // flat_symbols
                 },
                 Some(lsp::DocumentSymbolResponse::Flat(_symbols)) => {
-                  log::info!("flat symbols: {:#?}", _symbols);
+                  // log::info!("flat symbols: {:#?}", _symbols);
                   // symbols.into_iter().map(|symbol| SymbolInformationItem { symbol, offset_encoding }).collect()
                   return Err(anyhow::anyhow!(
                     "document symbol support is required"
@@ -494,10 +320,10 @@ impl LanguageServerInterface {
                 },
               };
               workspace_file.update_symbols(doc_symbols).unwrap();
-              log::debug!(
-                "workspace_file symbols: {:#?}",
-                workspace_file.file_tree
-              );
+              // log::debug!(
+              //   "workspace_file symbols: {:#?}",
+              //   workspace_file.file_tree
+              // );
             }
           }
         }

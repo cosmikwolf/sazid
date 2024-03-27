@@ -17,8 +17,8 @@ use helix_view::{
 use sazid::{
   action::{ChatToolAction, LsiAction, SessionAction},
   app::{
-    lsp::helix_lsp_interface::LanguageServerInterface,
-    model_tools::tool_call::ChatTools, session_config::WorkspaceParams,
+    lsi::interface::LanguageServerInterface, model_tools::tool_call::ChatTools,
+    session_config::WorkspaceParams,
   },
   components::session::Session,
 };
@@ -448,9 +448,6 @@ impl Application {
                           lsi_tx.send(event).unwrap();
                       },
 
-                      SessionAction::LspSymbolQuery(query) => {
-                        self.language_server_interface.query_all_workspace_symbols(query).await;
-                      }
                       SessionAction::UpdateStatus(Some(status)) => {
                     self.editor.set_status(status);
                         self.render().await;
@@ -466,7 +463,7 @@ impl Application {
                                    self.syn_loader.clone() ));
                         self.render().await;
                     },
-                                   SessionAction::Error(error) => {
+                    SessionAction::Error(error) => {
                     self.editor.set_error(error.to_string());
                        self.compositor.find::<ui::Session<ChatMessageItem>>().unwrap()
                            .upsert_message(ChatMessageItem::new_error(error,self.syn_loader.clone() ));
@@ -476,7 +473,8 @@ impl Application {
                   };
 
             match self.session.update(action) {
-                Ok(_) => {},
+                Ok(Some(action)) => {session_tx.send(action).unwrap()},
+                Ok(None) => {},
                 Err(err) => log::debug!("session update error: {:#?}", err),
             }
           }

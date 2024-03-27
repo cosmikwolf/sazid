@@ -6,7 +6,7 @@ pub mod database;
 pub mod errors;
 pub mod gpt_interface;
 pub mod helpers;
-pub mod lsp;
+pub mod lsi;
 pub mod markdown;
 pub mod messages;
 pub mod model_tools;

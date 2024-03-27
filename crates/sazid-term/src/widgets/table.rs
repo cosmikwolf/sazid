@@ -446,9 +446,8 @@ impl<'a> Table<'a> {
         //       );
         //     };
 
-        if row_end_index < table_start_index {
-            None
-        } else if row_start_index > table_end_index {
+        if row_end_index < table_start_index ||
+        row_start_index > table_end_index {
             None
         } else {
             Some((i, row_y, row_skip_lines , row_visible_lines ))

@@ -1,9 +1,7 @@
-use std::path::PathBuf;
-
 use crate::{
   app::{
     database::types::QueryableSession,
-    lsp::symbol_types::SymbolQuery,
+    lsi::query::LsiQuery,
     messages::ChatMessage,
     session_config::{SessionConfig, WorkspaceParams},
   },
@@ -17,14 +15,21 @@ use helix_lsp::Call;
 use serde::{Deserialize, Serialize, Serializer};
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum ToolType {
+  LsiQuery(LsiQuery),
+  Generic(i64, String),
+}
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum SessionAction {
   LspCheckServerNotifications,
   LspServerMessageReceived((usize, Call)),
-  LspSymbolQuery(SymbolQuery),
+  LspSymbolQuery(LsiQuery),
   CreateSession(SessionConfig),
   LoadSession(i64),
-  ToolCallComplete(i64, String, String),
-  ToolCallError(i64, String, String),
+
+  ToolCallComplete(ToolType, String),
+  ToolCallError(ToolType, String),
+
   CreateLoadSessionResponse(QueryableSession),
   AddMessageEmbedding(i64, i64, ChatCompletionRequestMessage),
   MessageEmbeddingSuccess(i64),
@@ -53,13 +58,18 @@ pub enum LsiAction {
   SessionAction(Box<SessionAction>),
   ChatToolResponse(Box<ChatToolAction>),
   AddWorkspace(WorkspaceParams),
-  QueryWorkspaceSymbols(SymbolQuery, PathBuf, i64, String),
+  QueryWorkspaceSymbols(LsiQuery),
+  GetWorkspaceFiles(LsiQuery),
+  GoToSymbolDefinition(LsiQuery),
+  GoToSymbolDeclaration(LsiQuery),
+  GoToTypeDefinition(LsiQuery),
+  GetDiagnostics(LsiQuery),
   Error(String),
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum ChatToolAction {
-  UpdateConfig(SessionConfig),
+  UpdateConfig(i64, Box<SessionConfig>),
   CallTool(ChatCompletionMessageToolCall, i64),
   CompleteToolCall(String, ChatCompletionMessageToolCall, i64),
   #[serde(serialize_with = "serialize_boxed_session_action")]

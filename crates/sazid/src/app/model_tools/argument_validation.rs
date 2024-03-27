@@ -3,6 +3,7 @@ use std::{collections::HashMap, path::PathBuf};
 use crate::app::session_config::SessionConfig;
 use clap::Parser;
 use globset::{Glob, GlobMatcher};
+use lsp_types::Range;
 use serde_json::json;
 use walkdir::WalkDir;
 
@@ -22,6 +23,36 @@ pub fn clap_args_to_json<P: Parser>() -> String {
   }
 
   serde_json::to_string_pretty(&options).unwrap()
+}
+
+// extract a pattern argument from the function arguments
+// based on json scheme - pattern is based on javascript regex syntax
+// https://json-schema.org/understanding-json-schema/reference/regular_expressions
+pub fn validate_and_extract_pattern_argument(
+  function_args: &HashMap<String, serde_json::Value>,
+  argument: &str,
+  required: bool,
+) -> Result<Option<regex::Regex>, ToolCallError> {
+  match function_args.get(argument) {
+    Some(argument) => match argument {
+      serde_json::Value::String(s) => match regex::Regex::new(s) {
+        Ok(r) => Ok(Some(r)),
+        Err(e) => Err(ToolCallError::new(
+          format!("{} argument must be a valid regex: {}", argument, e)
+            .as_str(),
+        )),
+      },
+      _ => Err(ToolCallError::new(
+        format!("{} argument must be a boolean", argument).as_str(),
+      )),
+    },
+    None => match required {
+      true => Err(ToolCallError::new(
+        format!("{} argument is required", argument).as_str(),
+      )),
+      false => Ok(None),
+    },
+  }
 }
 
 pub fn validate_and_extract_boolean_argument(
@@ -66,6 +97,27 @@ pub fn validate_and_extract_numeric_argument(
   }
 }
 
+pub fn validate_and_extract_byte_array(
+  function_args: &HashMap<String, serde_json::Value>,
+  argument: &str,
+  required: bool,
+) -> Result<Option<String>, ToolCallError> {
+  match function_args.get(argument) {
+    Some(argument) => match argument {
+      serde_json::Value::String(s) => Ok(Some(s.clone())),
+      _ => Err(ToolCallError::new(
+        format!("{} argument must be a string", argument).as_str(),
+      )),
+    },
+    None => match required {
+      true => Err(ToolCallError::new(
+        format!("{} argument is required", argument).as_str(),
+      )),
+      false => Ok(None),
+    },
+  }
+}
+
 pub fn validate_and_extract_string_argument(
   function_args: &HashMap<String, serde_json::Value>,
   argument: &str,
@@ -74,6 +126,44 @@ pub fn validate_and_extract_string_argument(
   match function_args.get(argument) {
     Some(argument) => match argument {
       serde_json::Value::String(s) => Ok(Some(s.clone())),
+      _ => Err(ToolCallError::new(
+        format!("{} argument must be a string", argument).as_str(),
+      )),
+    },
+    None => match required {
+      true => Err(ToolCallError::new(
+        format!("{} argument is required", argument).as_str(),
+      )),
+      false => Ok(None),
+    },
+  }
+}
+
+pub fn validate_and_extract_range_argument(
+  function_args: &HashMap<String, serde_json::Value>,
+  argument: &str,
+  required: bool,
+) -> Result<Option<Range>, ToolCallError> {
+  match function_args.get(argument) {
+    Some(argument) => match argument {
+      serde_json::Value::String(range) => {
+        let range: Vec<&str> = range.split(',').collect();
+        if range.len() != 4 {
+          return Err(ToolCallError::new("Invalid range"));
+        }
+        let start_line = range[0].parse::<u32>();
+        let start_char = range[1].parse::<u32>();
+        let end_line = range[2].parse::<u32>();
+        let end_char = range[3].parse::<u32>();
+
+        match (start_line, start_char, end_line, end_char) {
+          (Ok(sl), Ok(sc), Ok(el), Ok(ec)) => Ok(Some(Range {
+            start: lsp_types::Position { line: sl, character: sc },
+            end: lsp_types::Position { line: el, character: ec },
+          })),
+          _ => Err(ToolCallError::new("Failed to parse range")),
+        }
+      },
       _ => Err(ToolCallError::new(
         format!("{} argument must be a string", argument).as_str(),
       )),

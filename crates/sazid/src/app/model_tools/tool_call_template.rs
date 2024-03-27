@@ -5,7 +5,7 @@ use std::pin::Pin;
 
 use super::argument_validation::*;
 use super::errors::ToolCallError;
-use super::tool_call::{ToolCallParams, ToolCallTrait, ToolCallVariants};
+use super::tool_call::{ToolCallParams, ToolCallTrait};
 use super::types::*;
 
 /// The command definition structure with metadata for serialization.

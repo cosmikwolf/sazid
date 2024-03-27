@@ -14,7 +14,7 @@ use crate::action::serialize_boxed_session_action;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum DataManagerAction {
-  CreateSession(SessionConfig),
+  CreateSession(Box<SessionConfig>),
   LoadSession(i64),
   AddMessageEmbedding(i64, i64, ChatCompletionRequestMessage),
   #[serde(serialize_with = "serialize_boxed_session_action")]
@@ -33,7 +33,7 @@ impl DataManager {
     match action {
       DataManagerAction::CreateSession(config) => {
         tokio::spawn(async move {
-          let session = add_session(&db_url, config).await.unwrap();
+          let session = add_session(&db_url, *config).await.unwrap();
           tx.send(DataManagerAction::SessionAction(Box::new(
             SessionAction::CreateLoadSessionResponse(session),
           )))

@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 
 use super::argument_validation::{count_tokens, get_accessible_file_paths};
 use super::errors::ToolCallError;
-use super::tool_call::{ToolCallParams, ToolCallTrait, ToolCallVariants};
+use super::tool_call::{ToolCallParams, ToolCallTrait};
 use super::types::{FunctionProperty, PropertyType};
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]

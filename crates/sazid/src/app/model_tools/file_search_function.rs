@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 use std::fs::File;
 use std::io::{BufReader, Read};
 use std::path::{Path, PathBuf};
@@ -7,11 +6,11 @@ use std::pin::Pin;
 use futures_util::Future;
 use serde::{Deserialize, Serialize};
 
-use crate::app::model_tools::types::{FunctionProperty, ToolCall};
+use crate::app::model_tools::types::FunctionProperty;
 use crate::trace_dbg;
 
-use super::tool_call::{ToolCallParams, ToolCallTrait, ToolCallVariants};
-use super::types::{FunctionParameters, PropertyType};
+use super::tool_call::{ToolCallParams, ToolCallTrait};
+use super::types::PropertyType;
 use super::{
   argument_validation::count_tokens,
   argument_validation::get_accessible_file_paths, errors::ToolCallError,

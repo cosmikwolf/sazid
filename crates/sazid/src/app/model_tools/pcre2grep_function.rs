@@ -7,7 +7,7 @@ use super::{
     validate_and_extract_string_argument,
   },
   errors::ToolCallError,
-  tool_call::{ToolCallParams, ToolCallVariants},
+  tool_call::ToolCallParams,
   types::{FunctionProperty, PropertyType},
 };
 

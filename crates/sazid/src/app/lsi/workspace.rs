@@ -1,4 +1,5 @@
-use super::symbol_types::{SourceSymbol, SymbolQuery};
+use super::query::LsiQuery;
+use super::symbol_types::SourceSymbol;
 use super::workspace_file::WorkspaceFile;
 use helix_core::syntax::{FileType, LanguageConfiguration};
 use std::path::{Path, PathBuf};
@@ -73,9 +74,27 @@ impl Workspace {
     self.files.iter_mut().find(|f| f.file_path == file_path)
   }
 
-  pub async fn query_symbols(
+  pub fn query_symbol_by_id(
     &self,
-    query: &SymbolQuery,
+    symbol_id: &[u8; 32],
+  ) -> Option<Arc<SourceSymbol>> {
+    let matches = self
+      .all_symbols_weak()
+      .iter()
+      .map(|s| s.upgrade().unwrap())
+      .filter(|s| &s.symbol_id == symbol_id)
+      .collect::<Vec<_>>();
+
+    match matches.len() {
+      0 => None,
+      1 => Some(matches[0].clone()),
+      _ => panic!("multiple symbols with the same id found in workspace"),
+    }
+  }
+
+  pub fn query_symbols(
+    &self,
+    query: &LsiQuery,
   ) -> anyhow::Result<Vec<Arc<SourceSymbol>>> {
     log::info!("query: {:#?}", query);
     Ok(
@@ -84,7 +103,7 @@ impl Workspace {
         .iter()
         .map(|s| s.upgrade().unwrap())
         .filter(|s| {
-          if let Some(file_name) = &query.file_name {
+          if let Some(file_name) = &query.file_path_regex {
             s.file_path.file_name().unwrap().to_str().unwrap() == file_name
               || &s
                 .file_path
@@ -98,7 +117,7 @@ impl Workspace {
           }
         })
         .filter(|s| {
-          if let Some(name) = query.name.clone() {
+          if let Some(name) = query.name_regex.clone() {
             s.name.contains(&name)
           } else {
             true
@@ -128,11 +147,11 @@ impl Workspace {
     let mut all_symbols = vec![];
     for file in &self.files {
       all_symbols.extend(file.symbol_list.iter().cloned());
-      log::info!("file: {:#?}", file.file_path);
+      // log::info!("file: {:#?}", file.file_path);
     }
-    for symbol in all_symbols.iter() {
-      log::info!("symbol: {:#?}", symbol.upgrade());
-    }
+    // for symbol in all_symbols.iter() {
+    //   log::info!("symbol: {:#?}", symbol.upgrade());
+    // }
     all_symbols
   }
 

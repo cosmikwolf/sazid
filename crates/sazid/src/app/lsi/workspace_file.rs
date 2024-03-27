@@ -99,29 +99,33 @@ impl WorkspaceFile {
     &mut self,
     doc_symbols: Vec<lsp::DocumentSymbol>,
   ) -> anyhow::Result<()> {
-    self.file_tree = Arc::new(SourceSymbol {
-      name: self
-        .file_path
-        .strip_prefix(self.workspace_path.canonicalize().unwrap())
-        .unwrap()
-        .display()
-        .to_string(),
-      detail: None,
-      kind: lsp::SymbolKind::FILE,
-      tags: None,
-      range: Arc::new(Mutex::new(lsp::Range {
-        start: lsp_types::Position { line: 0, character: 0 },
-        end: lsp_types::Position { line: 0, character: 0 },
-      })),
-      selection_range: Arc::new(Mutex::new(lsp::Range {
-        start: lsp_types::Position { line: 0, character: 0 },
-        end: lsp_types::Position { line: 0, character: 0 },
-      })),
-      file_path: self.file_path.to_path_buf(),
-      parent: Arc::new(Mutex::new(Weak::new())),
-      children: Arc::new(Mutex::new(vec![])),
-      workspace_path: self.workspace_path.to_path_buf(),
-    });
+    self.file_tree = Arc::new(
+      SourceSymbol {
+        name: self
+          .file_path
+          .strip_prefix(self.workspace_path.canonicalize().unwrap())
+          .unwrap()
+          .display()
+          .to_string(),
+        detail: None,
+        kind: lsp::SymbolKind::FILE,
+        tags: None,
+        range: Arc::new(Mutex::new(lsp::Range {
+          start: lsp_types::Position { line: 0, character: 0 },
+          end: lsp_types::Position { line: 0, character: 0 },
+        })),
+        selection_range: Arc::new(Mutex::new(lsp::Range {
+          start: lsp_types::Position { line: 0, character: 0 },
+          end: lsp_types::Position { line: 0, character: 0 },
+        })),
+        file_path: self.file_path.to_path_buf(),
+        parent: Arc::new(Mutex::new(Weak::new())),
+        children: Arc::new(Mutex::new(vec![])),
+        workspace_path: self.workspace_path.to_path_buf(),
+        symbol_id: [0; 32],
+      }
+      .compute_hash(),
+    );
     for symbol in doc_symbols {
       SourceSymbol::from_document_symbol(
         &symbol,

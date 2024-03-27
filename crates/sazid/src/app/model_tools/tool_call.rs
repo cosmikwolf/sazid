@@ -1,5 +1,5 @@
 use crate::{
-  action::{ChatToolAction, SessionAction},
+  action::{ChatToolAction, SessionAction, ToolType},
   app::messages::ChatMessage,
 };
 use async_openai::types::{
@@ -18,14 +18,14 @@ use super::{
   cargo_check_function::CargoCheckFunction,
   errors::ToolCallError,
   file_search_function::FileSearchFunction,
-  lsp_tool::{LspTool, LspToolVariant},
+  lsp_get_diagnostics::LspGetDiagnostics,
+  lsp_get_workspace_files::LspGetWorkspaceFiles,
+  lsp_goto_symbol_declaration::LspGotoSymbolDeclaration,
+  lsp_goto_symbol_definition::LspGotoSymbolDefinition,
+  lsp_goto_type_definition::LspGotoTypeDefinition,
+  lsp_query_symbols::LspQuerySymbol,
   types::{FunctionParameters, FunctionProperty, ToolCall},
 };
-
-pub enum ToolCallVariants {
-  LspToolVariant(LspToolVariant),
-  SingleVariant,
-}
 
 pub trait ToolCallTrait: Any + Send + Sync {
   fn init() -> Self
@@ -133,8 +133,13 @@ impl ChatTools {
     Ok(vec![
       Arc::new(CargoCheckFunction::init()),
       // Arc::new(Pcre2GrepFunction::init()),
-      Arc::new(LspTool::init()),
+      Arc::new(LspQuerySymbol::init()),
       Arc::new(FileSearchFunction::init()),
+      Arc::new(LspGetWorkspaceFiles::init()),
+      Arc::new(LspGotoSymbolDefinition::init()),
+      Arc::new(LspGotoSymbolDeclaration::init()),
+      Arc::new(LspGotoTypeDefinition::init()),
+      Arc::new(LspGetDiagnostics::init()),
       // Arc::new(ReadFileLinesFunction::init()),
     ])
   }
@@ -148,7 +153,17 @@ impl ChatTools {
     action: ChatToolAction,
   ) -> Result<Option<ChatToolAction>, ToolCallError> {
     match action {
+      ChatToolAction::UpdateConfig(session_id, session_config) => {
+        self.upsert_configs(session_id, *session_config);
+        Ok(None)
+      },
       ChatToolAction::CallTool(tool_call, session_id) => {
+        log::debug!(
+          "calling tool - session_id: {} tool_call_id: {}\n{:#?}",
+          session_id,
+          tool_call.id.clone(),
+          tool_call
+        );
         self.handle_tool_call(&tool_call, session_id);
         Ok(None)
       },
@@ -179,8 +194,7 @@ impl ChatTools {
     if let Some((session_id, tool_call_id)) = session_and_tool_call_id {
       tx.send(ChatToolAction::SessionAction(Box::new(
         SessionAction::ToolCallError(
-          session_id,
-          tool_call_id,
+          ToolType::Generic(session_id, tool_call_id),
           format!("Tool Call Error: {}", error),
         ),
       )))
@@ -318,8 +332,7 @@ impl ChatTools {
               log::debug!("tool call complete: {:?}", output);
               tx.send(ChatToolAction::SessionAction(Box::new(
                 SessionAction::ToolCallComplete(
-                  session_id,
-                  tool_call_id,
+                  ToolType::Generic(session_id, tool_call_id),
                   output,
                 ),
               )))
@@ -369,8 +382,7 @@ impl ChatTools {
           .tx
           .send(ChatToolAction::SessionAction(Box::new(
             SessionAction::ToolCallComplete(
-              session_id,
-              tool_call_id,
+              ToolType::Generic(session_id, tool_call_id),
               tool_output,
             ),
           )))
@@ -425,6 +437,12 @@ impl ChatTools {
 
     match function_args_result {
       Ok(function_args) => {
+        log::debug!(
+          "handle tool call: call id: {} session id: {}",
+          tool_call.id.clone(),
+          session_id
+        );
+
         self.call_tool(
           tool_call.function.name.clone(),
           function_args,
