@@ -62,6 +62,8 @@ impl ToolCallTrait for LspGetWorkspaceFiles {
         + 'static,
     >,
   > {
+    log::info!("LspGetWorkspaceFiles::call");
+
     let pattern = validate_and_extract_pattern_argument(
       &params.function_args,
       "file_name_regex",

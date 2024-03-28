@@ -131,15 +131,15 @@ impl ChatTools {
   pub fn all_tools(
   ) -> Result<Vec<Arc<dyn ToolCallTrait + 'static>>, ToolCallError> {
     Ok(vec![
-      Arc::new(CargoCheckFunction::init()),
+      // Arc::new(CargoCheckFunction::init()),
       // Arc::new(Pcre2GrepFunction::init()),
-      Arc::new(LspQuerySymbol::init()),
-      Arc::new(FileSearchFunction::init()),
-      Arc::new(LspGetWorkspaceFiles::init()),
+      // Arc::new(LspQuerySymbol::init()),
+      // Arc::new(FileSearchFunction::init()),
+      // Arc::new(LspGetWorkspaceFiles::init()),
       Arc::new(LspGotoSymbolDefinition::init()),
-      Arc::new(LspGotoSymbolDeclaration::init()),
-      Arc::new(LspGotoTypeDefinition::init()),
-      Arc::new(LspGetDiagnostics::init()),
+      // Arc::new(LspGotoSymbolDeclaration::init()),
+      // Arc::new(LspGotoTypeDefinition::init()),
+      // Arc::new(LspGetDiagnostics::init()),
       // Arc::new(ReadFileLinesFunction::init()),
     ])
   }
@@ -173,7 +173,7 @@ impl ChatTools {
           .iter()
           .map(|tool| tool.to_chat_completion_tool())
           .collect::<Result<Vec<ChatCompletionTool>, ToolCallError>>()?;
-        log::debug!("tools request: {:#?}", tools);
+        // log::debug!("tools request: {:#?}", tools);
 
         Ok(Some(ChatToolAction::SessionAction(Box::new(
           SessionAction::UpdateToolList(session_id, tools),

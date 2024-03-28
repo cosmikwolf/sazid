@@ -30,12 +30,18 @@ impl ToolCallTrait for LspGotoSymbolDefinition {
         name: "symbol_id".to_string(),
         required: true,
         property_type: PropertyType::Array {
-          items: Box::new(PropertyType::Integer {
-            minimum: Some(0),
-            maximum: Some(255),
-          }),
-          min_items: Some(32),
-          max_items: Some(32),
+          type_: "integer".to_string(),
+          properties: ArrayProperties {
+            items: Box::new(PropertyType::Integer {
+              type_: "integer".to_string(),
+              properties: IntegerProperties {
+                minimum: Some(0),
+                maximum: Some(255),
+              },
+            }),
+            min_items: Some(32),
+            max_items: Some(32),
+          },
         },
         description: Some(
           "the 32 byte symbol_id for which to find the declaration".to_string(),

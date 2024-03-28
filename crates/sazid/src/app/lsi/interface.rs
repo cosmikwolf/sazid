@@ -105,6 +105,7 @@ impl LanguageServerInterface {
     lsi_query: LsiQuery,
     result: anyhow::Result<String>,
   ) -> anyhow::Result<Option<LsiAction>> {
+    log::info!("lsi_query_result: {:#?}", result);
     match result {
       Ok(response) => Ok(Some(LsiAction::SessionAction(Box::new(
         SessionAction::ToolCallComplete(

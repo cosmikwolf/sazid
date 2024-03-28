@@ -20,6 +20,23 @@ use serde_json::Value;
 use std::any::Any;
 use std::collections::HashMap;
 use std::path::PathBuf;
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+pub struct ArrayProperties {
+  #[serde(rename = "items")]
+  pub items: Box<PropertyType>,
+  #[serde(rename = "minItems")]
+  pub min_items: Option<usize>,
+  #[serde(rename = "maxItems")]
+  pub max_items: Option<usize>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+pub struct IntegerProperties {
+  #[serde(rename = "minimum")]
+  pub minimum: Option<i64>,
+  #[serde(rename = "maximum")]
+  pub maximum: Option<i64>,
+}
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub enum PropertyType {
@@ -31,35 +48,31 @@ pub enum PropertyType {
   String,
   #[serde(rename = "string")]
   Pattern,
-  #[serde(rename = "array")]
-  Array {
-    #[serde(rename = "items")]
-    items: Box<PropertyType>,
-    #[serde(rename = "minItems")]
-    min_items: Option<usize>,
-    #[serde(rename = "maxItems")]
-    max_items: Option<usize>,
-  },
   #[serde(rename = "null")]
   Null,
+  #[serde(rename = "string")]
+  PathBuf,
   #[serde(rename = "integer")]
   Integer {
-    #[serde(rename = "minimum")]
-    minimum: Option<i64>,
-    #[serde(rename = "maximum")]
-    maximum: Option<i64>,
+    #[serde(rename = "type")]
+    type_: String,
+    #[serde(flatten)]
+    properties: IntegerProperties,
+  },
+  #[serde(rename = "array")]
+  Array {
+    #[serde(rename = "type")]
+    type_: String,
+    #[serde(flatten)]
+    properties: ArrayProperties,
   },
   #[serde(rename = "array")]
   Range {
-    #[serde(rename = "items")]
-    items: Box<PropertyType>,
-    #[serde(rename = "minItems")]
-    min_items: Option<usize>,
-    #[serde(rename = "maxItems")]
-    max_items: Option<usize>,
+    #[serde(rename = "type")]
+    type_: String,
+    #[serde(flatten)]
+    properties: ArrayProperties,
   },
-  #[serde(rename = "string")]
-  PathBuf,
 }
 
 pub fn validate_arguments(
@@ -105,7 +118,10 @@ pub fn validate_arguments(
             ));
           }
         },
-        PropertyType::Array { items, min_items, max_items } => {
+        PropertyType::Array {
+          type_: _,
+          properties: ArrayProperties { items, min_items, max_items },
+        } => {
           if let Some(arr) = value.as_array() {
             if let Some(min) = min_items {
               if arr.len() < *min {
@@ -144,7 +160,10 @@ pub fn validate_arguments(
             ));
           }
         },
-        PropertyType::Integer { minimum, maximum } => {
+        PropertyType::Integer {
+          type_,
+          properties: IntegerProperties { minimum, maximum },
+        } => {
           if let Some(v) = value.as_i64() {
             if let Some(min) = minimum {
               if v < *min {
@@ -164,22 +183,10 @@ pub fn validate_arguments(
             ));
           }
         },
-        PropertyType::Pattern => {
-          if let Some(pattern_str) = value.as_str() {
-            match regex::Regex::new(pattern_str) {
-              Ok(regex) => {
-                validated_args
-                  .insert(property.name.clone(), Some(Box::new(regex)));
-              },
-              Err(err) => {
-                return Err(format!("Invalid regular expression pattern for argument '{}'. Error: {}", property.name, err));
-              },
-            }
-          } else {
-            return Err(format!("Invalid type for argument '{}'. Expected: string (regex pattern), Found: {:?}", property.name, value));
-          }
-        },
-        PropertyType::Range { items, min_items, max_items } => {
+        PropertyType::Range {
+          type_,
+          properties: ArrayProperties { items, min_items, max_items },
+        } => {
           if let Some(arr) = value.as_array() {
             if let Some(min) = min_items {
               if arr.len() < *min {
@@ -194,7 +201,10 @@ pub fn validate_arguments(
             let mut validated_arr = Vec::new();
             for item in arr {
               match items.as_ref() {
-                PropertyType::Integer { minimum, maximum } => {
+                PropertyType::Integer {
+                  type_,
+                  properties: IntegerProperties { minimum, maximum },
+                } => {
                   if let Some(v) = item.as_i64() {
                     if let Some(min) = minimum {
                       if v < *min {
@@ -223,6 +233,21 @@ pub fn validate_arguments(
               "Invalid type for argument '{}'. Expected: range, Found: {:?}",
               property.name, value
             ));
+          }
+        },
+        PropertyType::Pattern => {
+          if let Some(pattern_str) = value.as_str() {
+            match regex::Regex::new(pattern_str) {
+              Ok(regex) => {
+                validated_args
+                  .insert(property.name.clone(), Some(Box::new(regex)));
+              },
+              Err(err) => {
+                return Err(format!("Invalid regular expression pattern for argument '{}'. Error: {}", property.name, err));
+              },
+            }
+          } else {
+            return Err(format!("Invalid type for argument '{}'. Expected: string (regex pattern), Found: {:?}", property.name, value));
           }
         },
         PropertyType::PathBuf => {

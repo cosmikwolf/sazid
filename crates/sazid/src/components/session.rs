@@ -489,7 +489,12 @@ ToolType::Generic(tool_call_id, content )  => {
                 debug_request_validation(&request_clone);
                 // let reqtext = format!("Request: \n{:#?}", request_clone.clone());
                 // trace_dbg!(reqtext);
-                trace_dbg!(&request_clone);
+                log::debug!("{:#?}", &request_clone);
+                let pretty_json = format!(
+                  "{}",
+                  serde_json::to_string_pretty(&request_clone).unwrap()
+                );
+                log::debug!("{}", pretty_json);
                 // tx.send(Action::AddMessage(ChatMessage::SazidSystemMessage(reqtext))).unwrap();
                 tx.send(SessionAction::Error(format!(
                   "Error: {:?} -- check https://status.openai.com/",
