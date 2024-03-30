@@ -49,7 +49,7 @@ impl LanguageServerInterface {
   pub async fn goto_symbol_definition(
     &self,
     lsi_query: &LsiQuery,
-  ) -> anyhow::Result<lsp::GotoDefinitionResponse> {
+  ) -> anyhow::Result<String> {
     let workspace = self.get_workspace(lsi_query).unwrap();
     let symbol_id = TryInto::<[u8; 32]>::try_into(
       lsi_query.symbol_id.clone().expect("symbol_id not set"),
@@ -75,14 +75,15 @@ impl LanguageServerInterface {
       Some(NumberOrString::String("goto definition".to_string()));
     let request = client
       .goto_definition(text_document, position, work_done_token)
-      .expect("could not obtain goto definition response");
-    Ok(serde_json::from_value(request.await?)?)
+      .expect("could not obtain goto definition response")
+      .await?;
+    Ok(serde_json::to_string_pretty(&request)?)
   }
 
   pub async fn goto_symbol_declaration(
     &self,
     lsi_query: &LsiQuery,
-  ) -> anyhow::Result<lsp::GotoDefinitionResponse> {
+  ) -> anyhow::Result<String> {
     let workspace = self.get_workspace(lsi_query).unwrap();
     let symbol_id = TryInto::<[u8; 32]>::try_into(
       lsi_query.symbol_id.clone().expect("symbol_id not set"),
@@ -108,8 +109,9 @@ impl LanguageServerInterface {
       Some(NumberOrString::String("goto declaration".to_string()));
     let request = client
       .goto_declaration(text_document, position, work_done_token)
-      .expect("could not obtain goto declaration response");
-    Ok(serde_json::from_value(request.await?)?)
+      .expect("could not obtain goto declaration response")
+      .await?;
+    Ok(serde_json::to_string_pretty(&request)?)
   }
 
   pub fn get_diagnostics(

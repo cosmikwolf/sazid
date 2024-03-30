@@ -102,7 +102,7 @@ impl ToolCallTrait for ReadFileLinesFunction {
     })
   }
 
-  fn properties(&self) -> Vec<FunctionProperty> {
+  fn parameters(&self) -> Vec<FunctionProperty> {
     self.properties.clone()
   }
 

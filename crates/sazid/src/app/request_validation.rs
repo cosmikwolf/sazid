@@ -1,5 +1,4 @@
 use super::tools::utils::ensure_directory_exists;
-use crate::trace_dbg;
 use async_openai::types::CreateChatCompletionRequest;
 use jsonschema::{Draft, JSONSchema};
 use serde_json::{to_string_pretty, Value};
@@ -70,10 +69,10 @@ fn validate_schema(schema: &str, json: &str) -> Result<(), Box<dyn Error>> {
 
 pub fn debug_request_validation(request: &CreateChatCompletionRequest) {
   let request_as_json = serde_json::to_string_pretty(request).unwrap();
-  let schema = include_str!("../../assets/openapi.yaml");
+  let schema = include_str!("../../assets/openai.yaml");
   match validate_schema(schema, request_as_json.as_str()) {
     Ok(_) => {
-      trace_dbg!("no errors found");
+      // log::info!("schema validated - no errors found");
     },
     Err(e) => match e.downcast::<ValidationError>() {
       Ok(validation_error) => {
@@ -84,21 +83,45 @@ pub fn debug_request_validation(request: &CreateChatCompletionRequest) {
             let request_file_path =
               Path::new(failed_requests_dir).join(timestamp + "_failed.json");
             fs::write(request_file_path.clone(), request_as_json).unwrap();
-            trace_dbg!(
+            log::error!(
               "request failed. failed request saved to\n{:#?}\nErrors:\n{}",
               request_file_path,
               validation_error
             );
           },
           Err(e) => {
-            trace_dbg!("unable to create failed requests directory {:?}", e);
+            log::error!("unable to create failed requests directory {:?}", e);
           },
         }
       },
       Err(e) => {
-        format!("request failed. Errors:\n{:#?}", e);
+        log::error!("request failed. Errors:\n{:#?}", e);
       },
     },
+  };
+
+  let schema = include_str!("../../assets/openapi_v30.yaml");
+  if let Some(tools) = request.tools.as_ref() {
+    tools.iter().flat_map(|tool| tool.function.parameters.clone()).for_each(
+      |parameter| {
+        let parameter_json = serde_json::to_string_pretty(&parameter).unwrap();
+        match validate_schema(schema, parameter_json.as_str()) {
+          Ok(_) => {
+            log::info!("schema validated - no errors found");
+            log::info!("parameter: {:#?}", parameter);
+            log::info!("parameter_json:\n{}", parameter_json);
+          },
+          Err(e) => match e.downcast::<ValidationError>() {
+            Ok(validation_error) => {
+              log::error!("request failed. \nErrors:\n{}", validation_error);
+            },
+            Err(e) => {
+              log::error!("request failed. Errors:\n{:#?}", e);
+            },
+          },
+        }
+      },
+    )
   }
 }
 

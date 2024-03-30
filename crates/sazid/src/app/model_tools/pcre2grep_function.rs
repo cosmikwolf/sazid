@@ -124,7 +124,7 @@ impl ToolCallTrait for Pcre2GrepFunction {
     Box::pin(async move { execute_pcre2grep(pattern, paths) })
   }
 
-  fn properties(&self) -> Vec<FunctionProperty> {
+  fn parameters(&self) -> Vec<FunctionProperty> {
     self.properties.clone()
   }
 

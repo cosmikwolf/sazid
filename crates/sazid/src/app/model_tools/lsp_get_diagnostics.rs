@@ -14,7 +14,7 @@ use super::types::*;
 pub struct LspGetDiagnostics {
   pub name: String,
   pub description: String,
-  pub properties: Vec<FunctionProperty>,
+  pub parameters: FunctionProperty,
 }
 
 impl ToolCallTrait for LspGetDiagnostics {
@@ -25,65 +25,50 @@ impl ToolCallTrait for LspGetDiagnostics {
     LspGetDiagnostics {
         name: "lsp_diagnostics".to_string(),
         description: "get language server diagnostic information".to_string(),
-        properties: vec![
-            FunctionProperty {
-                name: "errors".to_string(),
-                required: true,
-                property_type: PropertyType::Boolean,
-                description: Some("include errors in the diagnostic report".to_string()),
-                enum_values: None,
-            },
-            FunctionProperty {
-                name: "warnings".to_string(),
-                required: true,
-                property_type: PropertyType::Boolean,
-                description: Some("include warnings in the diagnostic report".to_string()),
-                enum_values: None,
-            },
-            FunctionProperty {
-                name: "information".to_string(),
-                required: true,
-                property_type: PropertyType::Boolean,
-                description: Some("include diagnostics classified as information in the diagnostic report".to_string()),
-                enum_values: None,
-            },
-            FunctionProperty {
-                name: "hints".to_string(),
-                required: true,
-                property_type: PropertyType::Boolean,
-                description: Some("include diagnostics classified as hints in the diagnostic report".to_string()),
-                enum_values: None,
-            },
-            FunctionProperty {
-                name: "no_severity".to_string(),
-                required: true,
-                property_type: PropertyType::Boolean,
-                description: Some("include diagnostics with no severity classification in the diagnostic report".to_string()),
-                enum_values: None,
-            },
-            FunctionProperty {
-                name: "file_path_regex".to_string(),
-                required: false,
-                property_type: PropertyType::Pattern,
-                description: Some("include results where the file path matches".to_string()),
-                enum_values: None,
-            },
-            FunctionProperty {
-                name: "range".to_string(),
-                required: false,
-                property_type: PropertyType::String,
-                description: Some("filter results by byte range in source file, in the format of start_line,start_char,end_line,end_char. this has no effect if file_path_regex is not specified".to_string()),
-                enum_values: None,
-            },
-        ],
+      parameters: FunctionProperty::Parameters {
+        properties: HashMap::from([
+             ("errors".to_string(),
+               FunctionProperty::Bool{ required: true,
+               description: Some("include errors in the diagnostic report".to_string()),
+            }),
+             ("warnings".to_string(),
+               FunctionProperty::Bool{ required: true,
+               description: Some("include warnings in the diagnostic report".to_string()),
+            }),
+             ("information".to_string(),
+               FunctionProperty::Bool{ required: true,
+               description: Some("include diagnostics classified as information in the diagnostic report".to_string()),
+            }),
+             ("hints".to_string(),
+               FunctionProperty::Bool{ required: true,
+               description: Some("include diagnostics classified as hints in the diagnostic report".to_string()),
+
+            }),
+             ("no_severity".to_string(),
+               FunctionProperty::Bool{ required: true,
+               description: Some("include diagnostics with no severity classification in the diagnostic report".to_string()),
+
+            }),
+             ("file_path_regex".to_string(),
+               FunctionProperty::Pattern{ required: false,
+               description: Some("include results where the file path matches".to_string()),
+
+            }),
+             ("range".to_string(),
+               FunctionProperty::String{ required: false,
+               description: Some("filter results by byte range in source file, in the format of start_line,start_char,end_line,end_char. this has no effect if file_path_regex is not specified".to_string()),
+
+            }),
+        ]),
+      }
       }
   }
 
   fn name(&self) -> &str {
     &self.name
   }
-  fn properties(&self) -> Vec<FunctionProperty> {
-    self.properties.clone()
+  fn parameters(&self) -> FunctionProperty {
+    self.parameters.clone()
   }
 
   fn description(&self) -> String {
@@ -101,7 +86,7 @@ impl ToolCallTrait for LspGetDiagnostics {
     >,
   > {
     let validated_arguments =
-      validate_arguments(params.function_args, &self.properties, None)
+      validate_arguments(params.function_args, &self.parameters, None)
         .expect("error validating arguments");
 
     let file_path_regex =
@@ -124,12 +109,16 @@ impl ToolCallTrait for LspGetDiagnostics {
 
     let range = get_validated_argument(&validated_arguments, "range");
 
-    Box::pin(async move {
-      // Begin Example Call Code
-      // This command is an abstraction for a CLI command, so it calls std::process::command, any new function should have whatever implementation is necessary to execute the function, and should return a Result<Option<String>, ToolCallError>
-      // If the code is too complex, it should be broken out into another function.
+    let workspace_root = params
+      .session_config
+      .workspace
+      .expect("workspace not set")
+      .workspace_path
+      .clone();
 
+    Box::pin(async move {
       let query = LsiQuery {
+        workspace_root,
         range,
         file_path_regex,
         tool_call_id: params.tool_call_id,
@@ -150,37 +139,7 @@ impl ToolCallTrait for LspGetDiagnostics {
           query,
         ))))
         .unwrap();
-      // return none, so the tool completes when it receieves a response from the language server
       Ok(None)
-    }) // End example call function code
-  }
-
-  // this function creates the FunctionCall struct which is used to pass the function to GPT.
-  // This code should not change and should be identical for each function call
-  fn function_definition(&self) -> ToolCall {
-    let mut properties: HashMap<String, FunctionProperty> = HashMap::new();
-
-    self.properties.iter().filter(|p| p.required).for_each(|p| {
-      properties.insert(p.name.clone(), p.clone());
-    });
-    self.properties.iter().filter(|p| !p.required).for_each(|p| {
-      properties.insert(p.name.clone(), p.clone());
-    });
-
-    ToolCall {
-      name: self.name.clone(),
-      description: Some(self.description.clone()),
-      parameters: Some(FunctionParameters {
-        param_type: "object".to_string(),
-        required: self
-          .properties
-          .clone()
-          .into_iter()
-          .filter(|p| p.required)
-          .map(|p| p.name)
-          .collect(),
-        properties,
-      }),
-    }
+    })
   }
 }

@@ -67,6 +67,7 @@ impl LanguageServerInterface {
         Ok(None)
       },
       LsiAction::GetWorkspaceFiles(lsi_query) => {
+        log::info!("get_workspace_files: {:#?}", lsi_query);
         let lsi_query_result = self.get_workspace_files(&lsi_query);
         self.handle_lsi_query_result(lsi_query, lsi_query_result)
       },
@@ -96,7 +97,28 @@ impl LanguageServerInterface {
           self.lsi_query_workspace_symbols(&lsi_query).await;
         self.handle_lsi_query_result(lsi_query, lsi_query_result)
       },
-      _ => Ok(None),
+      LsiAction::SessionAction(_) => Ok(None),
+      LsiAction::ChatToolResponse(_) => Ok(None),
+      LsiAction::GoToSymbolDefinition(lsi_query) => {
+        log::info!("goto_symbol_definition: {:#?}", lsi_query);
+        let lsi_query_result = self.goto_symbol_definition(&lsi_query).await;
+        self.handle_lsi_query_result(lsi_query, lsi_query_result)
+      },
+      LsiAction::GoToSymbolDeclaration(lsi_query) => {
+        log::info!("goto_symbol_declaration: {:#?}", lsi_query);
+        let lsi_query_result = self.goto_symbol_declaration(&lsi_query).await;
+        self.handle_lsi_query_result(lsi_query, lsi_query_result)
+      },
+      LsiAction::GoToTypeDefinition(lsi_query) => {
+        log::info!("goto_type_definition: {:#?}", lsi_query);
+        let lsi_query_result = self.goto_type_definition(&lsi_query).await;
+        self.handle_lsi_query_result(lsi_query, lsi_query_result)
+      },
+      LsiAction::GetDiagnostics(lsi_query) => {
+        log::info!("get_diagnostics: {:#?}", lsi_query);
+        let lsi_query_result = self.get_diagnostics(&lsi_query);
+        self.handle_lsi_query_result(lsi_query, lsi_query_result)
+      },
     }
   }
 

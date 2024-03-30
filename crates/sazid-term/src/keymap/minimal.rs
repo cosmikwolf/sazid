@@ -68,7 +68,7 @@ pub fn minimal() -> HashMap<Mode, KeyTrie> {
           "j" => move_line_down,
           "." => goto_last_modification,
       },
-      // ":" => command_mode,
+       ":" => command_mode,
 
       "i" => insert_mode,
       "I" => insert_at_line_start,
@@ -222,8 +222,8 @@ pub fn minimal() -> HashMap<Mode, KeyTrie> {
       "C-o" => jump_backward,
       "C-s" => save_selection,
 
-      // "space" => { "Space"
-      //     "f" => file_picker,
+      "space" => { "Space"
+          "f" => file_picker,
       //     "F" => file_picker_in_current_directory,
       //     "b" => buffer_picker,
       //     "j" => jumplist_picker,
@@ -289,8 +289,8 @@ pub fn minimal() -> HashMap<Mode, KeyTrie> {
       //     "c" => toggle_comments,
       //     "C" => toggle_block_comments,
       //     "A-c" => toggle_line_comments,
-      //     "?" => command_palette,
-      // },
+          "?" => command_palette,
+      },
       "z" => { "View"
           "z" | "c" => align_view_center,
           "t" => align_view_top,

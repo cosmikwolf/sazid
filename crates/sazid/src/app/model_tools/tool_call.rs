@@ -15,16 +15,16 @@ use futures_util::Future;
 use crate::app::session_config::SessionConfig;
 
 use super::{
-  cargo_check_function::CargoCheckFunction,
   errors::ToolCallError,
-  file_search_function::FileSearchFunction,
+  // cargo_check_function::CargoCheckFunction,
+  // file_search_function::FileSearchFunction,
   lsp_get_diagnostics::LspGetDiagnostics,
   lsp_get_workspace_files::LspGetWorkspaceFiles,
   lsp_goto_symbol_declaration::LspGotoSymbolDeclaration,
   lsp_goto_symbol_definition::LspGotoSymbolDefinition,
   lsp_goto_type_definition::LspGotoTypeDefinition,
   lsp_query_symbols::LspQuerySymbol,
-  types::{FunctionParameters, FunctionProperty, ToolCall},
+  types::{FunctionProperty, ToolCall},
 };
 
 pub trait ToolCallTrait: Any + Send + Sync {
@@ -52,34 +52,15 @@ pub trait ToolCallTrait: Any + Send + Sync {
     >,
   >;
 
-  fn properties(&self) -> Vec<FunctionProperty>;
+  fn parameters(&self) -> FunctionProperty;
 
   fn description(&self) -> String;
 
   fn function_definition(&self) -> ToolCall {
-    let mut properties: HashMap<String, FunctionProperty> = HashMap::new();
-
-    self.properties().iter().filter(|p| p.required).for_each(|p| {
-      properties.insert(p.name.clone(), p.clone());
-    });
-    self.properties().iter().filter(|p| !p.required).for_each(|p| {
-      properties.insert(p.name.clone(), p.clone());
-    });
-
     ToolCall {
       name: self.name().to_string(),
       description: Some(self.description()),
-      parameters: Some(FunctionParameters {
-        param_type: "object".to_string(),
-        required: self
-          .properties()
-          .clone()
-          .into_iter()
-          .filter(|p| p.required)
-          .map(|p| p.name)
-          .collect(),
-        properties,
-      }),
+      parameters: Some(self.parameters()),
     }
   }
 
@@ -133,13 +114,13 @@ impl ChatTools {
     Ok(vec![
       // Arc::new(CargoCheckFunction::init()),
       // Arc::new(Pcre2GrepFunction::init()),
-      // Arc::new(LspQuerySymbol::init()),
       // Arc::new(FileSearchFunction::init()),
-      // Arc::new(LspGetWorkspaceFiles::init()),
+      Arc::new(LspGetWorkspaceFiles::init()),
+      Arc::new(LspQuerySymbol::init()),
       Arc::new(LspGotoSymbolDefinition::init()),
-      // Arc::new(LspGotoSymbolDeclaration::init()),
-      // Arc::new(LspGotoTypeDefinition::init()),
-      // Arc::new(LspGetDiagnostics::init()),
+      Arc::new(LspGotoSymbolDeclaration::init()),
+      Arc::new(LspGotoTypeDefinition::init()),
+      Arc::new(LspGetDiagnostics::init()),
       // Arc::new(ReadFileLinesFunction::init()),
     ])
   }

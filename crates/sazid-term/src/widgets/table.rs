@@ -475,7 +475,7 @@ impl TableState {
       .row_heights
       .iter()
       .sum::<u16>()
-      .saturating_sub(self.viewport_height * 3 / 4);
+      .saturating_sub(self.viewport_height.saturating_sub(5));
     if self.sticky_scroll {
       self.vertical_scroll = self.scroll_max;
     }

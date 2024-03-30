@@ -78,18 +78,11 @@ impl Workspace {
     &self,
     symbol_id: &[u8; 32],
   ) -> Option<Arc<SourceSymbol>> {
-    let matches = self
+    self
       .all_symbols_weak()
       .iter()
       .map(|s| s.upgrade().unwrap())
-      .filter(|s| &s.symbol_id == symbol_id)
-      .collect::<Vec<_>>();
-
-    match matches.len() {
-      0 => None,
-      1 => Some(matches[0].clone()),
-      _ => panic!("multiple symbols with the same id found in workspace"),
-    }
+      .find(|s| &s.symbol_id == symbol_id)
   }
 
   pub fn query_symbols(

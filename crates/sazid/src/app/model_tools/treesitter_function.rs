@@ -1,4 +1,5 @@
 use futures_util::Future;
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::pin::Pin;
 use tree_sitter::{Parser, Query};
@@ -21,22 +22,22 @@ impl ToolCallTrait for TreesitterFunction {
     TreesitterFunction {
       name: "treesitter".to_string(),
       description: "parse source code using tree-sitter".to_string(),
-      properties: vec![FunctionProperty {
-        name: "path_globs".to_string(),
+    properties: FunctionProperty::Parameters {
+        properties: HashMap::from([
+                        ( "path_globs".to_string(),
+          FunctionProperty::String {
         required: true,
-        property_type: PropertyType::String,
         description: Some(
           "a comma separated list of glob patterns that represent source files to be parsed".to_string(),
         ),
-        enum_values: None,
-      },
-          FunctionProperty {
-        name: "query".to_string(),
+      }),
+      ( "query".to_string(),
+      FunctionProperty::String {
         required: false,
-        property_type: PropertyType::String,
         description: Some("tree sitter query to execute upon source file".into()),
-        enum_values: None,
-      }],
+      }),
+       ])
+    },
     }
   }
 
@@ -44,7 +45,7 @@ impl ToolCallTrait for TreesitterFunction {
     &self.name
   }
 
-  fn properties(&self) -> Vec<FunctionProperty> {
+  fn parameters(&self) -> Vec<FunctionProperty> {
     self.properties.clone()
   }
 

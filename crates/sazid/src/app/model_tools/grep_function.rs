@@ -99,7 +99,7 @@ impl ToolCallTrait for GrepFunction {
     Box::pin(async move { grep(pattern.as_str(), paths) })
   }
 
-  fn properties(&self) -> Vec<FunctionProperty> {
+  fn parameters(&self) -> Vec<FunctionProperty> {
     self.properties.clone()
   }
 

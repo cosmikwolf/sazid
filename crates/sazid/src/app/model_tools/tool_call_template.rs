@@ -14,7 +14,7 @@ use super::types::*;
 struct TemplatedFunction {
   name: String,
   description: String,
-  properties: Vec<FunctionProperty>,
+  parameters: FunctionProperty,
 }
 
 impl Default for TemplatedFunction {
@@ -22,22 +22,24 @@ impl Default for TemplatedFunction {
     TemplatedFunction {
       name: "function_name".to_string(),
       description: "function description".to_string(),
-      properties: vec![
-        FunctionProperty {
-          name: "required_property".to_string(),
-          required: true,
-          property_type: PropertyType::String,
-          description: Some("required property description".to_string()),
-          enum_values: None,
-        },
-        FunctionProperty {
-          name: "optional_property".to_string(),
-          required: false,
-          property_type: PropertyType::String,
-          description: Some("required property description".to_string()),
-          enum_values: None,
-        },
-      ],
+      parameters: FunctionProperty::Parameters {
+        properties: HashMap::from([
+          (
+            "required_property".to_string(),
+            FunctionProperty::String {
+              required: true,
+              description: Some("required property description".to_string()),
+            },
+          ),
+          (
+            "optional_property".to_string(),
+            FunctionProperty::String {
+              required: false,
+              description: Some("required property description".to_string()),
+            },
+          ),
+        ]),
+      },
     }
   }
 }
@@ -51,8 +53,8 @@ impl ToolCallTrait for TemplatedFunction {
     TemplatedFunction::default()
   }
 
-  fn properties(&self) -> Vec<FunctionProperty> {
-    self.properties.clone()
+  fn parameters(&self) -> FunctionProperty {
+    self.parameters.clone()
   }
 
   fn description(&self) -> String {
@@ -115,29 +117,10 @@ impl ToolCallTrait for TemplatedFunction {
   // this function creates the FunctionCall struct which is used to pass the function to GPT.
   // This code should not change and should be identical for each function call
   fn function_definition(&self) -> ToolCall {
-    let mut properties: HashMap<String, FunctionProperty> = HashMap::new();
-
-    self.properties.iter().filter(|p| p.required).for_each(|p| {
-      properties.insert(p.name.clone(), p.clone());
-    });
-    self.properties.iter().filter(|p| !p.required).for_each(|p| {
-      properties.insert(p.name.clone(), p.clone());
-    });
-
     ToolCall {
       name: self.name.clone(),
       description: Some(self.description.clone()),
-      parameters: Some(FunctionParameters {
-        param_type: "object".to_string(),
-        required: self
-          .properties
-          .clone()
-          .into_iter()
-          .filter(|p| p.required)
-          .map(|p| p.name)
-          .collect(),
-        properties,
-      }),
+      parameters: Some(self.parameters()),
     }
   }
 }

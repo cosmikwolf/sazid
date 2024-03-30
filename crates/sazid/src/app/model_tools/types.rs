@@ -1,336 +1,356 @@
-use serde::{Deserialize, Serialize};
-
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
-pub struct FunctionProperty {
-  #[serde(skip)]
-  pub name: String,
-  #[serde(skip)]
-  pub required: bool,
-  #[serde(rename = "type")]
-  pub property_type: PropertyType,
-  pub description: Option<String>,
-  // #[serde(skip_serializing_if = "Option::is_none")]
-  // pub properties: Option<Box<FunctionProperties>>,
-  #[serde(rename = "enum", default)]
-  #[serde(skip_serializing_if = "Option::is_none")]
-  pub enum_values: Option<Vec<String>>,
-}
-
+use serde::{Deserialize, Serialize, Serializer};
 use serde_json::Value;
-use std::any::Any;
 use std::collections::HashMap;
 use std::path::PathBuf;
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
-pub struct ArrayProperties {
-  #[serde(rename = "items")]
-  pub items: Box<PropertyType>,
-  #[serde(rename = "minItems")]
-  pub min_items: Option<usize>,
-  #[serde(rename = "maxItems")]
-  pub max_items: Option<usize>,
+
+fn serialize_parameters<S>(
+  properties: &std::collections::HashMap<String, FunctionProperty>,
+  serializer: S,
+) -> Result<S::Ok, S::Error>
+where
+  S: Serializer,
+{
+  use serde::ser::SerializeStruct;
+  let mut state = serializer.serialize_struct("Properties", 3)?;
+  state.serialize_field("type", "object")?;
+  state.serialize_field("properties", properties)?;
+  let required: Vec<String> = properties
+    .iter()
+    .filter_map(|(key, value)| match value {
+      FunctionProperty::Bool { required, .. }
+      | FunctionProperty::Number { required, .. }
+      | FunctionProperty::String { required, .. }
+      | FunctionProperty::Pattern { required, .. }
+      | FunctionProperty::Null { required, .. }
+      | FunctionProperty::PathBuf { required, .. }
+      | FunctionProperty::Array { required, .. }
+      | FunctionProperty::Integer { required, .. } => {
+        if *required {
+          Some(key.clone())
+        } else {
+          None
+        }
+      },
+      FunctionProperty::Parameters { .. } => None,
+    })
+    .collect();
+  state.serialize_field("required", &required)?;
+  state.end()
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
-pub struct IntegerProperties {
-  #[serde(rename = "minimum")]
-  pub minimum: Option<i64>,
-  #[serde(rename = "maximum")]
-  pub maximum: Option<i64>,
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
-pub enum PropertyType {
+#[serde(tag = "type")]
+pub enum FunctionProperty {
+  #[serde(rename = "object")]
+  Parameters {
+    #[serde(flatten, serialize_with = "serialize_parameters")]
+    properties: std::collections::HashMap<String, FunctionProperty>,
+  },
   #[serde(rename = "boolean")]
-  Boolean,
+  Bool {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    description: Option<String>,
+    #[serde(skip)]
+    required: bool,
+  },
   #[serde(rename = "number")]
-  Number,
+  Number {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    description: Option<String>,
+    #[serde(skip)]
+    required: bool,
+  },
   #[serde(rename = "string")]
-  String,
+  String {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    description: Option<String>,
+    #[serde(skip)]
+    required: bool,
+  },
   #[serde(rename = "string")]
-  Pattern,
+  Pattern {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    description: Option<String>,
+    #[serde(skip)]
+    required: bool,
+  },
   #[serde(rename = "null")]
-  Null,
+  Null {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    description: Option<String>,
+    #[serde(skip)]
+    required: bool,
+  },
   #[serde(rename = "string")]
-  PathBuf,
-  #[serde(rename = "integer")]
-  Integer {
-    #[serde(rename = "type")]
-    type_: String,
-    #[serde(flatten)]
-    properties: IntegerProperties,
+  PathBuf {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    description: Option<String>,
+    #[serde(skip)]
+    required: bool,
   },
   #[serde(rename = "array")]
   Array {
-    #[serde(rename = "type")]
-    type_: String,
-    #[serde(flatten)]
-    properties: ArrayProperties,
+    #[serde(rename = "items")]
+    items: Box<FunctionProperty>,
+    #[serde(rename = "minItems")]
+    min_items: Option<usize>,
+    #[serde(rename = "maxItems")]
+    max_items: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    description: Option<String>,
+    #[serde(skip)]
+    required: bool,
   },
-  #[serde(rename = "array")]
-  Range {
-    #[serde(rename = "type")]
-    type_: String,
-    #[serde(flatten)]
-    properties: ArrayProperties,
+  #[serde(rename = "number")]
+  Integer {
+    #[serde(rename = "minimum")]
+    minimum: Option<i64>,
+    #[serde(rename = "maximum")]
+    maximum: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    description: Option<String>,
+    #[serde(skip)]
+    required: bool,
   },
 }
 
 pub fn validate_arguments(
   arguments: HashMap<String, Value>,
-  properties: &[FunctionProperty],
+  parameters: &FunctionProperty,
   workspace_root: Option<&PathBuf>,
-) -> Result<HashMap<String, Option<Box<dyn Any>>>, String> {
-  let mut validated_args: HashMap<String, Option<Box<dyn Any>>> =
-    HashMap::new();
-  for property in properties {
-    let arg_value = arguments.get(&property.name);
-    match (arg_value, property.required) {
-      (Some(value), _) => match &property.property_type {
-        PropertyType::Boolean => {
-          if let Some(v) = value.as_bool() {
-            validated_args.insert(property.name.clone(), Some(Box::new(v)));
-          } else {
-            return Err(format!(
-              "Invalid type for argument '{}'. Expected: bool, Found: {:?}",
-              property.name, value
-            ));
-          }
+) -> Result<HashMap<String, Value>, String> {
+  let properties = if let FunctionProperty::Parameters { properties } =
+    parameters
+  {
+    properties
+  } else {
+    return Err("parameters must be FunctionProperty::Parameters".to_string());
+  };
+
+  let mut validated_args: HashMap<String, Value> = HashMap::new();
+
+  for (name, property) in properties {
+    let arg_value = arguments.get(name);
+
+    match (arg_value, property) {
+      (Some(value), FunctionProperty::Bool { required: _, .. }) => {
+        if let Some(v) = value.as_bool() {
+          validated_args.insert(name.clone(), Value::Bool(v));
+        } else {
+          return Err(format!(
+            "Invalid type for argument '{}'. Expected: bool, Found: {:?}",
+            name, value
+          ));
+        }
+      },
+      (Some(value), FunctionProperty::Number { required: _, .. }) => {
+        if let Some(v) = value.as_f64() {
+          validated_args
+            .insert(name.clone(), serde_json::Number::from_f64(v).into());
+        } else {
+          return Err(format!(
+            "Invalid type for argument '{}'. Expected: number, Found: {:?}",
+            name, value
+          ));
+        }
+      },
+      (Some(value), FunctionProperty::String { required: _, .. }) => {
+        if let Some(v) = value.as_str() {
+          validated_args.insert(name.clone(), Value::String(v.to_string()));
+        } else {
+          return Err(format!(
+            "Invalid type for argument '{}'. Expected: string, Found: {:?}",
+            name, value
+          ));
+        }
+      },
+      (
+        Some(value),
+        FunctionProperty::Array {
+          items,
+          min_items,
+          max_items,
+          required: _,
+          ..
         },
-        PropertyType::Number => {
-          if let Some(v) = value.as_number() {
-            validated_args
-              .insert(property.name.clone(), Some(Box::new(v.clone())));
-          } else {
-            return Err(format!(
-              "Invalid type for argument '{}'. Expected: number, Found: {:?}",
-              property.name, value
-            ));
+      ) => {
+        if let Some(arr) = value.as_array() {
+          if let Some(min) = min_items {
+            if arr.len() < *min {
+              return Err(format!("Array length for argument '{}' is below the minimum. Expected: {}, Found: {}", name, min, arr.len()));
+            }
           }
-        },
-        PropertyType::String => {
-          if let Some(v) = value.as_str() {
-            validated_args
-              .insert(property.name.clone(), Some(Box::new(v.to_string())));
-          } else {
-            return Err(format!(
-              "Invalid type for argument '{}'. Expected: string, Found: {:?}",
-              property.name, value
-            ));
+          if let Some(max) = max_items {
+            if arr.len() > *max {
+              return Err(format!("Array length for argument '{}' exceeds the maximum. Expected: {}, Found: {}", name, max, arr.len()));
+            }
           }
-        },
-        PropertyType::Array {
-          type_: _,
-          properties: ArrayProperties { items, min_items, max_items },
-        } => {
-          if let Some(arr) = value.as_array() {
-            if let Some(min) = min_items {
-              if arr.len() < *min {
-                return Err(format!("Array length for argument '{}' is below the minimum. Expected: {}, Found: {}", property.name, min, arr.len()));
-              }
+          let mut validated_arr = Vec::new();
+          for item in arr {
+            if is_valid_type(item, items) {
+              validated_arr.push(item.clone());
+            } else {
+              return Err(format!("Invalid type for array item in argument '{}'. Expected: {:?}, Found: {:?}", name, items, item));
             }
-            if let Some(max) = max_items {
-              if arr.len() > *max {
-                return Err(format!("Array length for argument '{}' exceeds the maximum. Expected: {}, Found: {}", property.name, max, arr.len()));
-              }
-            }
-            let mut validated_arr = Vec::new();
-            for item in arr {
-              if is_valid_type(item, items) {
-                validated_arr.push(item.clone());
-              } else {
-                return Err(format!("Invalid type for array item in argument '{}'. Expected: {:?}, Found: {:?}", property.name, items, item));
-              }
-            }
-            validated_args
-              .insert(property.name.clone(), Some(Box::new(validated_arr)));
-          } else {
-            return Err(format!(
-              "Invalid type for argument '{}'. Expected: array, Found: {:?}",
-              property.name, value
-            ));
           }
-        },
-        PropertyType::Null => {
-          if value.is_null() {
-            validated_args.insert(property.name.clone(), Some(Box::new(())));
-          } else {
-            return Err(format!(
-              "Invalid type for argument '{}'. Expected: null, Found: {:?}",
-              property.name, value
-            ));
+          validated_args.insert(name.clone(), Value::Array(validated_arr));
+        } else {
+          return Err(format!(
+            "Invalid type for argument '{}'. Expected: array, Found: {:?}",
+            name, value
+          ));
+        }
+      },
+      (Some(value), FunctionProperty::Null { required: _, .. }) => {
+        if value.is_null() {
+          validated_args.insert(name.clone(), Value::Null);
+        } else {
+          return Err(format!(
+            "Invalid type for argument '{}'. Expected: null, Found: {:?}",
+            name, value
+          ));
+        }
+      },
+      (
+        Some(value),
+        FunctionProperty::Integer { minimum, maximum, required: _, .. },
+      ) => {
+        if let Some(v) = value.as_i64() {
+          if let Some(min) = minimum {
+            if v < *min {
+              return Err(format!("Value for argument '{}' is below the minimum. Expected: {}, Found: {}", name, min, v));
+            }
           }
-        },
-        PropertyType::Integer {
-          type_,
-          properties: IntegerProperties { minimum, maximum },
-        } => {
-          if let Some(v) = value.as_i64() {
-            if let Some(min) = minimum {
-              if v < *min {
-                return Err(format!("Value for argument '{}' is below the minimum. Expected: {}, Found: {}", property.name, min, v));
-              }
+          if let Some(max) = maximum {
+            if v > *max {
+              return Err(format!("Value for argument '{}' exceeds the maximum. Expected: {}, Found: {}", name, max, v));
             }
-            if let Some(max) = maximum {
-              if v > *max {
-                return Err(format!("Value for argument '{}' exceeds the maximum. Expected: {}, Found: {}", property.name, max, v));
-              }
-            }
-            validated_args.insert(property.name.clone(), Some(Box::new(v)));
-          } else {
-            return Err(format!(
-              "Invalid type for argument '{}'. Expected: integer, Found: {:?}",
-              property.name, value
-            ));
           }
-        },
-        PropertyType::Range {
-          type_,
-          properties: ArrayProperties { items, min_items, max_items },
-        } => {
-          if let Some(arr) = value.as_array() {
-            if let Some(min) = min_items {
-              if arr.len() < *min {
-                return Err(format!("Array length for argument '{}' is below the minimum. Expected: {}, Found: {}", property.name, min, arr.len()));
-              }
-            }
-            if let Some(max) = max_items {
-              if arr.len() > *max {
-                return Err(format!("Array length for argument '{}' exceeds the maximum. Expected: {}, Found: {}", property.name, max, arr.len()));
-              }
-            }
-            let mut validated_arr = Vec::new();
-            for item in arr {
-              match items.as_ref() {
-                PropertyType::Integer {
-                  type_,
-                  properties: IntegerProperties { minimum, maximum },
-                } => {
-                  if let Some(v) = item.as_i64() {
-                    if let Some(min) = minimum {
-                      if v < *min {
-                        return Err(format!("Value for range item in argument '{}' is below the minimum. Expected: {}, Found: {}", property.name, min, v));
-                      }
-                    }
-                    if let Some(max) = maximum {
-                      if v > *max {
-                        return Err(format!("Value for range item in argument '{}' exceeds the maximum. Expected: {}, Found: {}", property.name, max, v));
-                      }
-                    }
-                    validated_arr.push(v);
-                  } else {
-                    return Err(format!("Invalid type for range item in argument '{}'. Expected: integer, Found: {:?}", property.name, item));
-                  }
-                },
-                _ => {
-                  return Err(format!("Invalid type for range item in argument '{}'. Expected: integer, Found: {:?}", property.name, item));
-                },
-              }
-            }
-            validated_args
-              .insert(property.name.clone(), Some(Box::new(validated_arr)));
-          } else {
-            return Err(format!(
-              "Invalid type for argument '{}'. Expected: range, Found: {:?}",
-              property.name, value
-            ));
-          }
-        },
-        PropertyType::Pattern => {
-          if let Some(pattern_str) = value.as_str() {
-            match regex::Regex::new(pattern_str) {
-              Ok(regex) => {
-                validated_args
-                  .insert(property.name.clone(), Some(Box::new(regex)));
-              },
-              Err(err) => {
-                return Err(format!("Invalid regular expression pattern for argument '{}'. Error: {}", property.name, err));
-              },
-            }
-          } else {
-            return Err(format!("Invalid type for argument '{}'. Expected: string (regex pattern), Found: {:?}", property.name, value));
-          }
-        },
-        PropertyType::PathBuf => {
-          if workspace_root.is_none() {
-            return Err(format!(
-              "Workspace root is required to validate path argument '{}'",
-              property.name
-            ));
-          }
-          if let Some(path_str) = value.as_str() {
-            let path = PathBuf::from(path_str);
-            if !path.is_absolute() {
-              let absolute_path = workspace_root.unwrap().join(path);
-              if absolute_path.exists() {
-                validated_args
-                  .insert(property.name.clone(), Some(Box::new(absolute_path)));
-              } else {
-                return Err(format!(
-                  "Invalid path for argument '{}'. Path does not exist: {:?}",
-                  property.name, absolute_path
-                ));
-              }
-            } else if path.exists() {
+          validated_args.insert(name.clone(), Value::Number(v.into()));
+        } else {
+          return Err(format!(
+            "Invalid type for argument '{}'. Expected: integer, Found: {:?}",
+            name, value
+          ));
+        }
+      },
+      (Some(value), FunctionProperty::Pattern { required: _, .. }) => {
+        if let Some(pattern_str) = value.as_str() {
+          match regex::Regex::new(pattern_str) {
+            Ok(regex) => {
               validated_args
-                .insert(property.name.clone(), Some(Box::new(path)));
+                .insert(name.clone(), Value::String(pattern_str.to_string()));
+            },
+            Err(err) => {
+              return Err(format!(
+                                "Invalid regular expression pattern for argument '{}'. Error: {}",
+                                name, err
+                            ));
+            },
+          }
+        } else {
+          return Err(format!(
+                        "Invalid type for argument '{}'. Expected: string (regex pattern), Found: {:?}",
+                        name, value
+                    ));
+        }
+      },
+      (Some(value), FunctionProperty::PathBuf { required: _, .. }) => {
+        if workspace_root.is_none() {
+          return Err(format!(
+            "Workspace root is required to validate path argument '{}'",
+            name
+          ));
+        }
+        if let Some(path_str) = value.as_str() {
+          let path = PathBuf::from(path_str);
+          if !path.is_absolute() {
+            let absolute_path = workspace_root.unwrap().join(path);
+            if absolute_path.exists() {
+              validated_args.insert(
+                name.clone(),
+                Value::String(absolute_path.to_string_lossy().into_owned()),
+              );
             } else {
               return Err(format!(
                 "Invalid path for argument '{}'. Path does not exist: {:?}",
-                property.name, path
+                name, absolute_path
               ));
             }
+          } else if path.exists() {
+            validated_args.insert(
+              name.clone(),
+              Value::String(path.to_string_lossy().into_owned()),
+            );
           } else {
-            return Err(format!("Invalid type for argument '{}'. Expected: string (path), Found: {:?}", property.name, value));
+            return Err(format!(
+              "Invalid path for argument '{}'. Path does not exist: {:?}",
+              name, path
+            ));
           }
-        },
+        } else {
+          return Err(format!(
+                        "Invalid type for argument '{}'. Expected: string (path), Found: {:?}",
+                        name, value
+                    ));
+        }
       },
-      (None, true) => {
-        return Err(format!("Missing required argument: '{}'", property.name));
+      (None, FunctionProperty::Bool { required: true, .. })
+      | (None, FunctionProperty::Number { required: true, .. })
+      | (None, FunctionProperty::String { required: true, .. })
+      | (None, FunctionProperty::Array { required: true, .. })
+      | (None, FunctionProperty::Null { required: true, .. })
+      | (None, FunctionProperty::Integer { required: true, .. })
+      | (None, FunctionProperty::Pattern { required: true, .. })
+      | (None, FunctionProperty::PathBuf { required: true, .. }) => {
+        return Err(format!("Missing required argument: '{}'", name));
       },
-      (None, false) => {
-        validated_args.insert(property.name.clone(), None);
+      (None, FunctionProperty::Bool { required: false, .. })
+      | (None, FunctionProperty::Number { required: false, .. })
+      | (None, FunctionProperty::String { required: false, .. })
+      | (None, FunctionProperty::Array { required: false, .. })
+      | (None, FunctionProperty::Null { required: false, .. })
+      | (None, FunctionProperty::Integer { required: false, .. })
+      | (None, FunctionProperty::Pattern { required: false, .. })
+      | (None, FunctionProperty::PathBuf { required: false, .. }) => {
+        // Skip optional arguments that are not provided
+      },
+      (_, FunctionProperty::Parameters { .. }) => {
+        // Skip validation for nested properties
       },
     }
   }
+
   Ok(validated_args)
 }
 
-pub fn get_validated_argument<T: Clone + 'static>(
-  validated_arguments: &HashMap<String, Option<Box<dyn Any>>>,
+pub fn get_validated_argument<T: serde::de::DeserializeOwned>(
+  validated_arguments: &HashMap<String, Value>,
   key: &str,
 ) -> Option<T> {
-  validated_arguments.get(key).and_then(|any| {
-    any.as_ref().map(|a| a.downcast_ref::<T>().unwrap().clone())
-  })
+  validated_arguments
+    .get(key)
+    .and_then(|value| serde_json::from_value(value.clone()).ok())
 }
-fn is_valid_type(value: &Value, expected_type: &PropertyType) -> bool {
+fn is_valid_type(value: &Value, expected_type: &FunctionProperty) -> bool {
   matches!(
     (value, expected_type),
-    (Value::Bool(_), PropertyType::Boolean)
-      | (Value::Number(_), PropertyType::Number)
-      | (Value::String(_), PropertyType::String)
-      | (Value::Array(_), PropertyType::Array { .. })
-      | (Value::Null, PropertyType::Null)
-      | (Value::Number(_), PropertyType::Integer { .. })
-      | (Value::String(_), PropertyType::Pattern)
-      | (Value::Array(_), PropertyType::Range { .. })
-      | (Value::String(_), PropertyType::PathBuf)
+    (Value::Bool(_), FunctionProperty::Bool { .. })
+      | (Value::Number(_), FunctionProperty::Number { .. })
+      | (Value::String(_), FunctionProperty::String { .. })
+      | (Value::Array(_), FunctionProperty::Array { .. })
+      | (Value::Null, FunctionProperty::Null { .. })
+      | (Value::Number(_), FunctionProperty::Integer { .. })
+      | (Value::String(_), FunctionProperty::Pattern { .. })
+      | (Value::String(_), FunctionProperty::PathBuf { .. })
   )
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
-pub struct FunctionParameters {
-  #[serde(rename = "type")]
-  pub param_type: String,
-  pub required: Vec<String>,
-  pub properties: std::collections::HashMap<String, FunctionProperty>,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct ToolCall {
   pub name: String,
   pub description: Option<String>,
-  pub parameters: Option<FunctionParameters>,
+  pub parameters: Option<FunctionProperty>,
 }
 
 #[derive(Serialize, Deserialize, Debug)]

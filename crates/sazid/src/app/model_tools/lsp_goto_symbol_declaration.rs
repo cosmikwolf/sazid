@@ -14,7 +14,7 @@ use super::types::*;
 pub struct LspGotoSymbolDeclaration {
   pub name: String,
   pub description: String,
-  pub properties: Vec<FunctionProperty>,
+  pub parameters: FunctionProperty,
 }
 
 impl ToolCallTrait for LspGotoSymbolDeclaration {
@@ -24,37 +24,35 @@ impl ToolCallTrait for LspGotoSymbolDeclaration {
   {
     LspGotoSymbolDeclaration {
       name: "lsp_goto_symbol_declaration".to_string(),
-      description: "get the symbol id for ".to_string(),
-      properties: vec![FunctionProperty {
-        name: "symbol_id".to_string(),
-        required: true,
-        property_type: PropertyType::Array {
-          type_: "integer".to_string(),
-          properties: ArrayProperties {
-            items: Box::new(PropertyType::Integer {
-              type_: "integer".to_string(),
-              properties: IntegerProperties {
-                minimum: Some(0),
-                maximum: Some(255),
-              },
+      description: "get symbol id for ".to_string(),
+      parameters: FunctionProperty::Parameters {
+        properties: HashMap::from([(
+          "symbol_id".to_string(),
+          FunctionProperty::Array {
+            required: true,
+            description: Some(
+              "the 32 byte symbol_id for which to find the declaration"
+                .to_string(),
+            ),
+            items: Box::new(FunctionProperty::Integer {
+              description: None,
+              required: true,
+              minimum: Some(0),
+              maximum: Some(255),
             }),
             min_items: Some(32),
             max_items: Some(32),
           },
-        },
-        description: Some(
-          "the 32 byte symbol_id for which to find the declaration".to_string(),
-        ),
-        enum_values: None,
-      }],
+        )]),
+      },
     }
   }
 
   fn name(&self) -> &str {
     &self.name
   }
-  fn properties(&self) -> Vec<FunctionProperty> {
-    self.properties.clone()
+  fn parameters(&self) -> FunctionProperty {
+    self.parameters.clone()
   }
 
   fn description(&self) -> String {
@@ -72,20 +70,28 @@ impl ToolCallTrait for LspGotoSymbolDeclaration {
     >,
   > {
     let validated_arguments =
-      validate_arguments(params.function_args, &self.properties, None)
+      validate_arguments(params.function_args, &self.parameters, None)
         .expect("error validating arguments");
 
-    let symbol_id = get_validated_argument(&validated_arguments, "symbol_id");
+    let symbol_id =
+      get_validated_argument::<Vec<u8>>(&validated_arguments, "symbol_id");
 
-    params.session_config.workspace.expect("workspace not set");
+    log::info!(
+      "LspGotoSymbolDeclaration::call symbol_id: {:#?}\nvalidated args: {:#?}",
+      symbol_id,
+      validated_arguments
+    );
+    let workspace_root = params
+      .session_config
+      .workspace
+      .expect("workspace not set")
+      .workspace_path
+      .clone();
 
     Box::pin(async move {
-      // Begin Example Call Code
-      // This command is an abstraction for a CLI command, so it calls std::process::command, any new function should have whatever implementation is necessary to execute the function, and should return a Result<Option<String>, ToolCallError>
-      // If the code is too complex, it should be broken out into another function.
-
       let query = LsiQuery {
         symbol_id,
+        workspace_root,
 
         tool_call_id: params.tool_call_id,
         session_id: params.session_id,
@@ -99,37 +105,7 @@ impl ToolCallTrait for LspGotoSymbolDeclaration {
           LsiAction::GoToSymbolDeclaration(query),
         )))
         .unwrap();
-      // return none, so the tool completes when it receieves a response from the language server
       Ok(None)
-    }) // End example call function code
-  }
-
-  // this function creates the FunctionCall struct which is used to pass the function to GPT.
-  // This code should not change and should be identical for each function call
-  fn function_definition(&self) -> ToolCall {
-    let mut properties: HashMap<String, FunctionProperty> = HashMap::new();
-
-    self.properties.iter().filter(|p| p.required).for_each(|p| {
-      properties.insert(p.name.clone(), p.clone());
-    });
-    self.properties.iter().filter(|p| !p.required).for_each(|p| {
-      properties.insert(p.name.clone(), p.clone());
-    });
-
-    ToolCall {
-      name: self.name.clone(),
-      description: Some(self.description.clone()),
-      parameters: Some(FunctionParameters {
-        param_type: "object".to_string(),
-        required: self
-          .properties
-          .clone()
-          .into_iter()
-          .filter(|p| p.required)
-          .map(|p| p.name)
-          .collect(),
-        properties,
-      }),
-    }
+    })
   }
 }

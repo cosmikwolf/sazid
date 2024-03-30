@@ -15,7 +15,7 @@ use super::types::*;
 pub struct LspGetWorkspaceFiles {
   pub name: String,
   pub description: String,
-  pub properties: Vec<FunctionProperty>,
+  pub parameters: FunctionProperty,
 }
 
 impl ToolCallTrait for LspGetWorkspaceFiles {
@@ -28,15 +28,17 @@ impl ToolCallTrait for LspGetWorkspaceFiles {
       description:
         "list the workspace source files that the language server is aware of"
           .to_string(),
-      properties: vec![FunctionProperty {
-        name: "file_name_regex".to_string(),
-        required: false,
-        property_type: PropertyType::Pattern,
-        description: Some(
-          "filter the results with a matching pattern".to_string(),
-        ),
-        enum_values: None,
-      }],
+      parameters: FunctionProperty::Parameters {
+        properties: HashMap::from([(
+          "file_name_regex".to_string(),
+          FunctionProperty::String {
+            required: false,
+            description: Some(
+              "filter the results with a matching pattern".to_string(),
+            ),
+          },
+        )]),
+      },
     }
   }
 
@@ -44,8 +46,8 @@ impl ToolCallTrait for LspGetWorkspaceFiles {
     &self.name
   }
 
-  fn properties(&self) -> Vec<FunctionProperty> {
-    self.properties.clone()
+  fn parameters(&self) -> FunctionProperty {
+    self.parameters.clone()
   }
 
   fn description(&self) -> String {
@@ -71,11 +73,15 @@ impl ToolCallTrait for LspGetWorkspaceFiles {
     )
     .expect("error validating regex");
 
-    let workspace_params =
-      params.session_config.workspace.expect("workspace not set");
+    let workspace_root = params
+      .session_config
+      .workspace
+      .expect("workspace not set")
+      .workspace_path
+      .clone();
 
     let lsi_query = LsiQuery {
-      workspace_root: workspace_params.workspace_path.clone(),
+      workspace_root,
       session_id: params.session_id,
       tool_call_id: params.tool_call_id,
       file_path_regex: pattern.map(|p| p.to_string()),
@@ -89,37 +95,7 @@ impl ToolCallTrait for LspGetWorkspaceFiles {
           LsiAction::GetWorkspaceFiles(lsi_query),
         )))
         .unwrap();
-      // return none, so the tool completes when it receieves a response from the language server
       Ok(None)
-    }) // End example call function code
-  }
-
-  // this function creates the FunctionCall struct which is used to pass the function to GPT.
-  // This code should not change and should be identical for each function call
-  fn function_definition(&self) -> ToolCall {
-    let mut properties: HashMap<String, FunctionProperty> = HashMap::new();
-
-    self.properties.iter().filter(|p| p.required).for_each(|p| {
-      properties.insert(p.name.clone(), p.clone());
-    });
-    self.properties.iter().filter(|p| !p.required).for_each(|p| {
-      properties.insert(p.name.clone(), p.clone());
-    });
-
-    ToolCall {
-      name: self.name.clone(),
-      description: Some(self.description.clone()),
-      parameters: Some(FunctionParameters {
-        param_type: "object".to_string(),
-        required: self
-          .properties
-          .clone()
-          .into_iter()
-          .filter(|p| p.required)
-          .map(|p| p.name)
-          .collect(),
-        properties,
-      }),
-    }
+    })
   }
 }

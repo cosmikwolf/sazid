@@ -48,7 +48,7 @@ impl ToolCallTrait for FileSearchFunction {
     &self.name
   }
 
-  fn properties(&self) -> Vec<FunctionProperty> {
+  fn parameters(&self) -> Vec<FunctionProperty> {
     self.properties.clone()
   }
 

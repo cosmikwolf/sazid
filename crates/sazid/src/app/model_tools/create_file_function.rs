@@ -59,7 +59,7 @@ impl ToolCallTrait for CreateFileFunction {
     }
   }
 
-  fn properties(&self) -> Vec<FunctionProperty> {
+  fn parameters(&self) -> Vec<FunctionProperty> {
     self.properties.clone()
   }
 

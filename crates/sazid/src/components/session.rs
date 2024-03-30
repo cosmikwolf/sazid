@@ -482,19 +482,16 @@ ToolType::Generic(tool_call_id, content )  => {
                 .unwrap();
               },
               Err(e) => {
-                trace_dbg!(
+                log::error!(
                   "Error: {:#?} -- check https://status.openai.com",
-                  e.bright_red()
+                  e
                 );
                 debug_request_validation(&request_clone);
                 // let reqtext = format!("Request: \n{:#?}", request_clone.clone());
                 // trace_dbg!(reqtext);
-                log::debug!("{:#?}", &request_clone);
-                let pretty_json = format!(
-                  "{}",
-                  serde_json::to_string_pretty(&request_clone).unwrap()
-                );
-                log::debug!("{}", pretty_json);
+                // log::debug!("{:#?}", &request_clone);
+                // let pretty_json = serde_json::to_string_pretty(&request_clone).unwrap().to_string();
+                // log::debug!("{}", pretty_json);
                 // tx.send(Action::AddMessage(ChatMessage::SazidSystemMessage(reqtext))).unwrap();
                 tx.send(SessionAction::Error(format!(
                   "Error: {:?} -- check https://status.openai.com/",

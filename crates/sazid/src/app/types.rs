@@ -184,7 +184,7 @@ mod tests {
       concatenate_option_strings,
       // concatenate_stream_delta, concatenate_stream_response_messages,
     },
-    model_tools::types::{FunctionProperty, PropertyType},
+    model_tools::types::FunctionProperty,
   };
 
   use super::*;
@@ -193,52 +193,6 @@ mod tests {
     // ChatCompletionStreamResponseDelta, FinishReason,
     FunctionCallStream,
   };
-  use serde_json::to_string;
-
-  #[test]
-  fn test_serialization_command_properties() {
-    // Manually construct the expected `CommandProperty` vector
-    let location_property = FunctionProperty {
-      name: "location".to_owned(),
-      required: true,
-      property_type: PropertyType::String,
-      description: Some(
-        "The city and state, e.g. San Francisco, CA".to_owned(),
-      ),
-      enum_values: None,
-    };
-    let unit_property = FunctionProperty {
-      name: "unit".to_owned(),
-      required: false,
-      property_type: PropertyType::String,
-      description: None,
-      enum_values: Some(vec!["celsius".to_owned(), "fahrenheit".to_owned()]),
-    };
-    let properties_vec = vec![location_property, unit_property];
-
-    // Serialize the vector into JSON
-    let serialized_properties =
-      to_string(&properties_vec).expect("Failed to serialize properties");
-
-    // Since the serialization will not include the `name` and `required` fields (due to `#[serde(skip)]`),
-    // we need to adjust the expected JSON to match this format.
-    let expected_json = r#"[
-            {
-                "type": "string",
-                "description": "The city and state, e.g. San Francisco, CA",
-                "enum": null
-            },
-            {
-                "type": "string",
-                "description": null,
-                "enum": ["celsius", "fahrenheit"]
-            }
-        ]"#;
-
-    assert_eq!(serialized_properties, expected_json);
-  }
-
-  // Concatenate Function implementations (concatenate_option_strings, concatenate_function_call_streams, etc.)
 
   #[test]
   fn test_concatenate_option_strings() {

@@ -592,12 +592,12 @@ impl PartialEq for MappableCommand {
 fn quit(cx: &mut Context) {
   log::debug!("quitting...");
 
-  if cx.editor.tree.views().count() == 1 {
-    if let Err(err) = typed::buffers_remaining_impl(cx.editor) {
-      cx.editor.set_error(err.to_string());
-      return;
-    }
-  }
+  // if cx.editor.tree.views().count() == 1 {
+  //   if let Err(err) = typed::buffers_remaining_impl(cx.editor) {
+  //     cx.editor.set_error(err.to_string());
+  //     return;
+  //   }
+  // }
   let view_id = view!(cx.editor).id;
   // close current split
   cx.editor.close(view_id);
