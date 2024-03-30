@@ -37,10 +37,17 @@ use tui::{buffer::Buffer as Surface, text::Span};
 use super::document::LineDecoration;
 use super::{completion::CompletionItem, statusline};
 
+pub enum VerticalAlign {
+  Bottom,
+  Top,
+}
+
 pub struct EditorView {
   pub keymaps: Keymaps,
   on_next_key: Option<OnKeyCallback>,
   pseudo_pending: Vec<KeyEvent>,
+  override_height: Option<u16>,
+  vertical_align: VerticalAlign,
   pub(crate) last_insert: (commands::MappableCommand, Vec<InsertEvent>),
   pub(crate) completion: Option<Completion>,
   spinners: ProgressSpinners,
@@ -65,6 +72,8 @@ impl Default for EditorView {
 impl EditorView {
   pub fn new(keymaps: Keymaps) -> Self {
     Self {
+      override_height: None,
+      vertical_align: VerticalAlign::Bottom,
       keymaps,
       on_next_key: None,
       pseudo_pending: Vec::new(),
@@ -77,6 +86,11 @@ impl EditorView {
 
   pub fn spinners_mut(&mut self) -> &mut ProgressSpinners {
     &mut self.spinners
+  }
+
+  pub fn override_height(&mut self, height: u16, alignment: VerticalAlign) {
+    self.override_height = Some(height);
+    self.vertical_align = alignment;
   }
 
   pub fn render_view(
@@ -1420,6 +1434,7 @@ impl Component for EditorView {
                 callback(compositor, cx)
               }
             });
+          log::debug!("callback: ");
           Some(callback)
         };
 
@@ -1463,6 +1478,18 @@ impl Component for EditorView {
     if use_bufferline {
       editor_area = editor_area.clip_top(1);
     }
+
+    if let Some(override_height) = self.override_height {
+      editor_area = match self.vertical_align {
+        VerticalAlign::Top => Rect { height: override_height, ..editor_area },
+        VerticalAlign::Bottom => Rect {
+          y: editor_area.y + editor_area.height - override_height,
+
+          height: override_height,
+          ..editor_area
+        },
+      };
+    };
 
     // if the terminal size suddenly changed, we need to trigger a resize
     cx.editor.resize(editor_area);

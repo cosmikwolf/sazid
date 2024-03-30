@@ -30,11 +30,11 @@ use tui::backend::Backend;
 use crate::{
   args::Args,
   commands::ChatMessageItem,
-  compositor::{self, Compositor, Event},
+  compositor::{self, Component, Compositor, Event},
   config::Config,
   handlers,
   job::Jobs,
-  ui,
+  ui::{self, overlay::overlaid, EditorView},
 };
 
 use log::{debug, error, info, warn};
@@ -219,7 +219,9 @@ impl Application {
     let session_callback =
       |_context: &mut compositor::Context,
        _message: &ChatMessageItem,
-       _action: helix_view::editor::Action| {};
+       _action: helix_view::editor::Action| {
+        log::info!("session callback");
+      };
 
     let editor_data = String::new();
     // let editor_data = match &messages[0].message {
@@ -248,16 +250,22 @@ impl Application {
     // );
     // compositor.push(Box::new(markdown_stream));
 
-    let markdown_session = ui::Session::new(
+    let markdown_session = ui::SessionView::new(
       messages,
       Some(editor.theme.clone()),
       editor_data,
       session_callback,
     );
+
     let doc_id = view!(editor).doc;
+
     // let id = *id;
     editor.switch(doc_id, Action::Replace);
     compositor.push(Box::new(markdown_session));
+
+    let mut input = EditorView::new(crate::keymap::minimal_keymap());
+    input.override_height(20, ui::editor::VerticalAlign::Bottom);
+    compositor.push(Box::new(input));
 
     #[cfg(windows)]
     let signals = futures_util::stream::empty();
@@ -384,6 +392,7 @@ impl Application {
           }
 
           Some(callback) = self.jobs.wait_futures.next() => {
+              log::debug!("received callback " );
               self.jobs.handle_callback(&mut self.editor, &mut self.compositor, callback);
               self.render().await;
           }
@@ -454,7 +463,7 @@ impl Application {
                       }
                       SessionAction::MessageUpdate(message, id) => {
                        self.compositor
-                           .find::<ui::Session<ChatMessageItem>>()
+                           .find::<ui::SessionView<ChatMessageItem>>()
                            .unwrap()
                            .upsert_message(
                                ChatMessageItem::new_chat(
@@ -465,7 +474,7 @@ impl Application {
                     },
                     SessionAction::Error(error) => {
                     self.editor.set_error(error.to_string());
-                       self.compositor.find::<ui::Session<ChatMessageItem>>().unwrap()
+                       self.compositor.find::<ui::SessionView<ChatMessageItem>>().unwrap()
                            .upsert_message(ChatMessageItem::new_error(error,self.syn_loader.clone() ));
                                        self.render().await;
                                    },

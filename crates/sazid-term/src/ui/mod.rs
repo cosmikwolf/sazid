@@ -29,7 +29,7 @@ pub use menu::Menu;
 pub use picker::{DynamicPicker, FileLocation, Picker};
 pub use popup::Popup;
 pub use prompt::{Prompt, PromptEvent};
-pub use session::Session;
+pub use session::SessionView;
 pub use spinner::{ProgressSpinners, Spinner};
 pub use text::Text;
 

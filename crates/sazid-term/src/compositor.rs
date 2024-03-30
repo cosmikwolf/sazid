@@ -17,6 +17,7 @@ pub enum EventResult {
 }
 
 use crate::job::Jobs;
+use crate::keymap::Keymaps;
 use crate::ui::picker;
 use helix_view::Editor;
 

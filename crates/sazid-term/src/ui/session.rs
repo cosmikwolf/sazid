@@ -5,7 +5,6 @@ use crate::{
   job::Callback,
   key, shift,
   ui::{
-    self,
     document::{render_document, LineDecoration, LinePos, TextRenderer},
     EditorView,
   },
@@ -13,7 +12,6 @@ use crate::{
 };
 
 use futures_util::{future::BoxFuture, FutureExt};
-use nucleo::pattern::CaseMatching;
 use nucleo::{Config, Nucleo, Utf32String};
 
 use tui::{
@@ -47,11 +45,7 @@ use helix_view::{
 };
 
 pub const ID: &str = "session";
-use super::{
-  markdownmenu::MarkdownItem,
-  overlay::Overlay,
-  textbox::{Textbox, TextboxEvent},
-};
+use super::{markdownmenu::MarkdownItem, overlay::Overlay};
 
 pub const MIN_AREA_WIDTH_FOR_PREVIEW: u16 = 72;
 /// Biggest file size to preview in bytes
@@ -167,7 +161,7 @@ impl<T: MarkdownItem> Injector<T> {
   }
 }
 
-pub struct Session<T: MarkdownItem> {
+pub struct SessionView<T: MarkdownItem> {
   editor_data: Arc<T::Data>,
   shutdown: Arc<AtomicBool>,
   matcher: Nucleo<T>,
@@ -178,8 +172,8 @@ pub struct Session<T: MarkdownItem> {
 
   theme: Option<Theme>,
   selected_option: u32,
-  textbox: ui::textbox::Textbox,
-  input: EditorView,
+  // textbox: ui::textbox::Textbox,
+  pub input: EditorView,
   previous_pattern: String,
   state: TableState,
   /// Whether to show the preview panel (default true)
@@ -197,7 +191,7 @@ pub struct Session<T: MarkdownItem> {
   file_fn: Option<FileCallback<T>>,
 }
 
-impl<T: MarkdownItem + 'static> Session<T> {
+impl<T: MarkdownItem + 'static> SessionView<T> {
   pub fn stream(editor_data: T::Data) -> (Nucleo<T>, Injector<T>) {
     let matcher = Nucleo::new(
       Config::DEFAULT,
@@ -262,12 +256,12 @@ impl<T: MarkdownItem + 'static> Session<T> {
     shutdown: Arc<AtomicBool>,
     callback_fn: impl Fn(&mut Context, &T, Action) + 'static,
   ) -> Self {
-    let textbox = Textbox::new(
-      "".into(),
-      None,
-      ui::completers::none,
-      |_editor: &mut Context, _pattern: &str, _event: TextboxEvent| {},
-    );
+    // let textbox = Textbox::new(
+    //   "".into(),
+    //   None,
+    //   ui::completers::none,
+    //   |_editor: &mut Context, _pattern: &str, _event: TextboxEvent| {},
+    // );
     let input = EditorView::new(crate::keymap::minimal_keymap());
     let tablestate = TableState {
       offset: 0,
@@ -286,7 +280,7 @@ impl<T: MarkdownItem + 'static> Session<T> {
       theme,
       shutdown,
       selected_option: 0,
-      textbox,
+      // textbox,
       state: tablestate,
       input,
       previous_pattern: String::new(),
@@ -408,45 +402,24 @@ impl<T: MarkdownItem + 'static> Session<T> {
     self.show_preview = !self.show_preview;
   }
 
-  fn editor_handle_event(
-    &mut self,
-    event: &Event,
-    cx: &mut Context,
-  ) -> EventResult {
-    if let EventResult::Consumed(_) = self.input.handle_event(event, cx) {
-      // let pattern = self.textbox.line();
-      // // TODO: better track how the pattern has changed
-      // if pattern != &self.previous_pattern {
-      //   self.matcher.pattern.reparse(
-      //     0,
-      //     pattern,
-      //     CaseMatching::Smart,
-      //     pattern.starts_with(&self.previous_pattern),
-      //   );
-      //   self.previous_pattern = pattern.clone();
-      // }
-    }
-    EventResult::Consumed(None)
-  }
-
   fn prompt_handle_event(
     &mut self,
     event: &Event,
     cx: &mut Context,
   ) -> EventResult {
-    if let EventResult::Consumed(_) = self.textbox.handle_event(event, cx) {
-      let pattern = self.textbox.line();
-      // TODO: better track how the pattern has changed
-      if pattern != &self.previous_pattern {
-        self.matcher.pattern.reparse(
-          0,
-          pattern,
-          CaseMatching::Smart,
-          pattern.starts_with(&self.previous_pattern),
-        );
-        self.previous_pattern = pattern.clone();
-      }
-    }
+    // if let EventResult::Consumed(_) = self.textbox.handle_event(event, cx) {
+    //   let pattern = self.textbox.line();
+    //   // TODO: better track how the pattern has changed
+    //   if pattern != &self.previous_pattern {
+    //     self.matcher.pattern.reparse(
+    //       0,
+    //       pattern,
+    //       CaseMatching::Smart,
+    //       pattern.starts_with(&self.previous_pattern),
+    //     );
+    //     self.previous_pattern = pattern.clone();
+    //   }
+    // }
     EventResult::Consumed(None)
   }
 
@@ -623,7 +596,7 @@ impl<T: MarkdownItem + 'static> Session<T> {
     block.render(area, surface);
 
     // -- Render the input bar:
-    let input_height = 5;
+    let input_height = 20;
     let input_on_top = false;
 
     let textbox_area = if input_on_top {
@@ -633,7 +606,7 @@ impl<T: MarkdownItem + 'static> Session<T> {
     };
 
     // render the prompt first since it will clear its background
-    self.input.render(textbox_area, surface, cx);
+    // self.input.render(textbox_area, surface, cx);
 
     // -- upper right hand corner readout
     let count = format!(
@@ -874,7 +847,7 @@ impl<T: MarkdownItem + 'static> Session<T> {
   }
 }
 
-impl<T: MarkdownItem + 'static + Send + Sync> Component for Session<T> {
+impl<T: MarkdownItem + 'static + Send + Sync> Component for SessionView<T> {
   fn render(&mut self, area: Rect, surface: &mut Surface, cx: &mut Context) {
     // +---------+ +---------+
     // |prompt   | |preview  |
@@ -903,6 +876,7 @@ impl<T: MarkdownItem + 'static + Send + Sync> Component for Session<T> {
     if let Event::IdleTimeout = event {
       return self.handle_idle_timeout(ctx);
     }
+    log::info!("session event: {:?}", event);
     // TODO: keybinds for scrolling preview
     let key_event = match event {
       Event::Key(event) => *event,
@@ -992,8 +966,9 @@ impl<T: MarkdownItem + 'static + Send + Sync> Component for Session<T> {
         self.toggle_preview();
       },
       _ => {
-        self.editor_handle_event(event, ctx);
-        // self.input.handle_event(event, ctx);
+        // self.editor_handle_event(event, ctx);
+        log::info!("passing event to input: {:?}", event);
+        return self.input.handle_event(event, ctx);
       },
     }
 
@@ -1011,8 +986,8 @@ impl<T: MarkdownItem + 'static + Send + Sync> Component for Session<T> {
 
     // prompt area
     let area = inner.clip_left(1).with_height(1);
-
-    self.textbox.cursor(area, editor)
+    self.input.cursor(area, editor)
+    // self.textbox.cursor(area, editor)
   }
 
   fn required_size(
@@ -1027,7 +1002,7 @@ impl<T: MarkdownItem + 'static + Send + Sync> Component for Session<T> {
     Some(ID)
   }
 }
-impl<T: MarkdownItem> Drop for Session<T> {
+impl<T: MarkdownItem> Drop for SessionView<T> {
   fn drop(&mut self) {
     // ensure we cancel any ongoing background threads streaming into the session
     self.shutdown.store(true, atomic::Ordering::Relaxed)
@@ -1045,14 +1020,14 @@ pub type DynQueryCallback<T> = Box<
 /// A session that updates its contents via a callback whenever the
 /// query string changes. Useful for live grep, workspace symbols, etc.
 pub struct DynamicSession<T: MarkdownItem + Send + Sync> {
-  file_session: Session<T>,
+  file_session: SessionView<T>,
   query_callback: DynQueryCallback<T>,
   query: String,
 }
 
 impl<T: MarkdownItem + Send + Sync> DynamicSession<T> {
   pub fn new(
-    file_session: Session<T>,
+    file_session: SessionView<T>,
     query_callback: DynQueryCallback<T>,
   ) -> Self {
     Self { file_session, query_callback, query: String::new() }
@@ -1064,37 +1039,37 @@ impl<T: MarkdownItem + Send + Sync + 'static> Component for DynamicSession<T> {
     self.file_session.render(area, surface, cx);
   }
 
-  fn handle_event(&mut self, event: &Event, cx: &mut Context) -> EventResult {
-    let event_result = self.file_session.handle_event(event, cx);
-    let current_query = self.file_session.textbox.line();
-
-    if !matches!(event, Event::IdleTimeout) || self.query == *current_query {
-      return event_result;
-    }
-
-    self.query.clone_from(current_query);
-
-    let new_options =
-      (self.query_callback)(current_query.to_owned(), cx.editor);
-
-    cx.jobs.callback(async move {
-      let new_options = new_options.await?;
-      let callback =
-        Callback::EditorCompositor(Box::new(move |editor, compositor| {
-          // Wrapping of sessions in overlay is done outside the session code,
-          // so this is fragile and will break if wrapped in some other widget.
-          let session =
-            match compositor.find_id::<Overlay<DynamicSession<T>>>(ID) {
-              Some(overlay) => &mut overlay.content.file_session,
-              None => return,
-            };
-          session.set_options(new_options);
-          editor.reset_idle_timer();
-        }));
-      anyhow::Ok(callback)
-    });
-    EventResult::Consumed(None)
-  }
+  // fn handle_event(&mut self, event: &Event, cx: &mut Context) -> EventResult {
+  //   let event_result = self.file_session.handle_event(event, cx);
+  //   let current_query = self.file_session.textbox.line();
+  //
+  //   if !matches!(event, Event::IdleTimeout) || self.query == *current_query {
+  //     return event_result;
+  //   }
+  //
+  //   self.query.clone_from(current_query);
+  //
+  //   let new_options =
+  //     (self.query_callback)(current_query.to_owned(), cx.editor);
+  //
+  //   cx.jobs.callback(async move {
+  //     let new_options = new_options.await?;
+  //     let callback =
+  //       Callback::EditorCompositor(Box::new(move |editor, compositor| {
+  //         // Wrapping of sessions in overlay is done outside the session code,
+  //         // so this is fragile and will break if wrapped in some other widget.
+  //         let session =
+  //           match compositor.find_id::<Overlay<DynamicSession<T>>>(ID) {
+  //             Some(overlay) => &mut overlay.content.file_session,
+  //             None => return,
+  //           };
+  //         session.set_options(new_options);
+  //         editor.reset_idle_timer();
+  //       }));
+  //     anyhow::Ok(callback)
+  //   });
+  //   EventResult::Consumed(None)
+  // }
 
   fn cursor(&self, area: Rect, ctx: &Editor) -> (Option<Position>, CursorKind) {
     self.file_session.cursor(area, ctx)

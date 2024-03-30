@@ -58,7 +58,10 @@ use crate::{
   filter_picker_entry,
   job::Callback,
   keymap::ReverseKeymap,
-  ui::{self, overlay::overlaid, Picker, Popup, Prompt, PromptEvent},
+  ui::{
+    self, markdownmenu::MarkdownItem, overlay::overlaid, Picker, Popup, Prompt,
+    PromptEvent,
+  },
 };
 
 use crate::job::{self, Jobs};
@@ -3027,15 +3030,22 @@ impl ui::menu::Item for MappableCommand {
 }
 
 pub fn command_palette(cx: &mut Context) {
+  log::info!("command_palette: {:#?}", cx.count);
   let register = cx.register;
   let count = cx.count;
 
   cx.callback.push(Box::new(
     move |compositor: &mut Compositor, cx: &mut compositor::Context| {
-      let keymap = compositor.find::<ui::EditorView>().unwrap().keymaps.map()
-        [&cx.editor.mode]
-        .reverse_map();
+      log::info!("command_palette callback");
 
+      let keymap = compositor
+        .find::<ui::SessionView<ChatMessageItem>>()
+        .unwrap()
+        .input
+        .keymaps
+        .map()[&cx.editor.mode]
+        .reverse_map();
+      log::info!("keymap: {:?}", keymap);
       let mut commands: Vec<MappableCommand> =
         MappableCommand::STATIC_COMMAND_LIST.into();
       commands.extend(typed::TYPABLE_COMMAND_LIST.iter().map(|cmd| {

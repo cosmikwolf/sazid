@@ -223,7 +223,7 @@ pub fn session_messages(cx: &mut Context) {
       log::debug!("messages count: {}", messages.len());
 
       let editor_data = String::new();
-      let markdown_session = ui::Session::new(
+      let markdown_session = ui::SessionView::new(
         messages,
         Some(editor.theme.clone()),
         editor_data,

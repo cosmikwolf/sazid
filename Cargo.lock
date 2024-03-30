@@ -2754,7 +2754,6 @@ dependencies = [
  "etcetera",
  "globset",
  "hashbrown 0.14.3",
- "helix-loader",
  "helix-stdx",
  "imara-diff",
  "indoc",
@@ -2765,6 +2764,7 @@ dependencies = [
  "quickcheck",
  "regex",
  "ropey",
+ "sazid-loader",
  "serde",
  "serde_json",
  "slotmap",
@@ -2808,25 +2808,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "helix-loader"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "cc",
- "dunce",
- "etcetera",
- "helix-stdx",
- "libloading",
- "log",
- "once_cell",
- "serde",
- "tempfile",
- "threadpool",
- "toml 0.8.10",
- "tree-sitter 0.20.10 (git+https://github.com/helix-editor/tree-sitter?rev=660481dbf71413eba5a928b0b0ab8da50c1109e0)",
-]
-
-[[package]]
 name = "helix-lsp"
 version = "0.1.0"
 dependencies = [
@@ -2836,12 +2817,12 @@ dependencies = [
  "futures-util",
  "globset",
  "helix-core",
- "helix-loader",
  "helix-parsec",
  "helix-stdx",
  "log",
  "lsp-types",
  "parking_lot",
+ "sazid-loader",
  "serde",
  "serde_json",
  "thiserror",
@@ -2911,7 +2892,6 @@ dependencies = [
  "helix-core",
  "helix-dap",
  "helix-event",
- "helix-loader",
  "helix-lsp",
  "helix-stdx",
  "helix-tui",
@@ -2921,6 +2901,7 @@ dependencies = [
  "once_cell",
  "parking_lot",
  "rustix",
+ "sazid-loader",
  "serde",
  "serde_json",
  "slotmap",
@@ -5270,7 +5251,6 @@ dependencies = [
  "grep",
  "helix-core",
  "helix-event",
- "helix-loader",
  "helix-lsp",
  "helix-stdx",
  "helix-tui",
@@ -5311,6 +5291,7 @@ dependencies = [
  "ropey",
  "rust-fuzzy-search",
  "rust-sitter",
+ "sazid-loader",
  "serde",
  "serde_json",
  "serde_json_path",
@@ -5346,6 +5327,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "sazid-loader"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "cc",
+ "dunce",
+ "etcetera",
+ "helix-stdx",
+ "libloading",
+ "log",
+ "once_cell",
+ "serde",
+ "tempfile",
+ "threadpool",
+ "toml 0.8.10",
+ "tree-sitter 0.20.10 (git+https://github.com/helix-editor/tree-sitter?rev=660481dbf71413eba5a928b0b0ab8da50c1109e0)",
+]
+
+[[package]]
 name = "sazid-term"
 version = "0.1.0"
 dependencies = [
@@ -5366,7 +5366,6 @@ dependencies = [
  "helix-core",
  "helix-dap",
  "helix-event",
- "helix-loader",
  "helix-lsp",
  "helix-stdx",
  "helix-tui",
@@ -5382,6 +5381,7 @@ dependencies = [
  "open",
  "pulldown-cmark 0.10.0",
  "sazid",
+ "sazid-loader",
  "serde",
  "serde_json",
  "signal-hook",
