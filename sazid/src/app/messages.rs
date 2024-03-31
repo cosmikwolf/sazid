@@ -3,11 +3,12 @@ use std::{
   collections::HashSet,
   fmt::{self, Formatter},
   sync::Arc,
+  time,
 };
 
 use helix_core::syntax::Loader;
 use ropey::Rope;
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use async_openai::{
   self,
@@ -108,10 +109,15 @@ impl MessageContainer {
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct MessageContainer {
+  #[serde(
+    serialize_with = "serialize_message",
+    deserialize_with = "deserialize_message"
+  )]
   pub message: ChatCompletionRequestMessage,
   pub receive_buffer: Option<ReceiveBuffer>,
   pub tool_calls: Vec<ChatCompletionMessageToolCall>,
   pub message_id: i64,
+  pub timestamp: i64,
   pub stream_id: Option<String>,
   pub selected_choice: usize,
   pub tools_called: bool,
@@ -126,6 +132,59 @@ pub struct MessageContainer {
   #[serde(skip)]
   pub rendered_line_count: usize,
   pub message_state: MessageState,
+}
+
+fn serialize_message<S>(
+  message: &ChatCompletionRequestMessage,
+  serializer: S,
+) -> Result<S::Ok, S::Error>
+where
+  S: Serializer,
+{
+  #[derive(Serialize)]
+  #[serde(tag = "type")]
+  enum Tagged {
+    System(ChatCompletionRequestSystemMessage),
+    User(ChatCompletionRequestUserMessage),
+    Assistant(ChatCompletionRequestAssistantMessage),
+    Tool(ChatCompletionRequestToolMessage),
+    Function(ChatCompletionRequestFunctionMessage),
+  }
+
+  use ChatCompletionRequestMessage::*;
+  match message {
+    System(msg) => Tagged::System(msg.clone()),
+    User(msg) => Tagged::User(msg.clone()),
+    Assistant(msg) => Tagged::Assistant(msg.clone()),
+    Tool(msg) => Tagged::Tool(msg.clone()),
+    Function(msg) => Tagged::Function(msg.clone()),
+  }
+  .serialize(serializer)
+}
+
+fn deserialize_message<'de, D>(
+  deserializer: D,
+) -> Result<ChatCompletionRequestMessage, D::Error>
+where
+  D: Deserializer<'de>,
+{
+  #[derive(Deserialize)]
+  #[serde(tag = "type")]
+  enum Tagged {
+    System(ChatCompletionRequestSystemMessage),
+    User(ChatCompletionRequestUserMessage),
+    Assistant(ChatCompletionRequestAssistantMessage),
+    Tool(ChatCompletionRequestToolMessage),
+    Function(ChatCompletionRequestFunctionMessage),
+  }
+
+  match Tagged::deserialize(deserializer)? {
+    Tagged::System(msg) => Ok(ChatCompletionRequestMessage::System(msg)),
+    Tagged::User(msg) => Ok(ChatCompletionRequestMessage::User(msg)),
+    Tagged::Assistant(msg) => Ok(ChatCompletionRequestMessage::Assistant(msg)),
+    Tagged::Tool(msg) => Ok(ChatCompletionRequestMessage::Tool(msg)),
+    Tagged::Function(msg) => Ok(ChatCompletionRequestMessage::Function(msg)),
+  }
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
@@ -188,6 +247,10 @@ impl From<ReceiveBuffer> for MessageContainer {
       receive_buffer: Some(receive_buffer),
       message_id: rand::random::<i64>(),
       message,
+      timestamp: time::SystemTime::now()
+        .duration_since(time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs() as i64,
       stream_id,
       tool_calls: Vec::new(),
       wrapped_content: String::new(),
@@ -390,6 +453,10 @@ impl MessageContainer {
       tool_calls: Vec::new(),
       message_id: rand::random::<i64>(),
       stream_id: None,
+      timestamp: time::SystemTime::now()
+        .duration_since(time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs() as i64,
       selected_choice: 0,
       embedding_saved: false,
       stylize_complete: false,

@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use crate::{
   app::{
     database::types::QueryableSession,
@@ -41,6 +43,7 @@ pub enum SessionAction {
   AddMessage(i64, ChatMessage),
   UpdateStatus(Option<String>),
   MessageUpdate(ChatCompletionRequestMessage, i64),
+  ReloadMessages(Vec<(i64, ChatCompletionRequestMessage)>),
   UpdateToolList(i64, Vec<ChatCompletionTool>),
 
   SaveSession,

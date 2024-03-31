@@ -55,7 +55,7 @@ impl ChatMessageItem {
     let len_lines = content.lines().count();
     let len_chars = content.chars().count();
     let id = Some(id);
-    let message = ChatMessageType::Chat(message.clone());
+    let message = ChatMessageType::Chat(message);
     Self { id, len_lines, len_chars, config_loader, message }
     // let markdown = ui::Markdown::new(content, config_loader);
   }
@@ -151,6 +151,7 @@ impl ui::markdownmenu::MarkdownItem for ChatMessageItem {
         "ERROR".to_string(),
       ),
     };
+    log::warn!("content: {}\nheader: {}", self.content(), header);
     let header = Spans::from(vec![Span::styled(header, style)]);
     let mut lines = vec![header];
     let text = MarkdownRenderer::parse(

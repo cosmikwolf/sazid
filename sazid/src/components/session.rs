@@ -5,10 +5,10 @@ use async_openai::types::{
   CreateChatCompletionRequest, CreateEmbeddingRequestArgs,
   CreateEmbeddingResponse, Role,
 };
-use color_eyre::owo_colors::OwoColorize;
 use futures::StreamExt;
 use futures_util::future::{ready, Ready};
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::default::Default;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -77,6 +77,25 @@ impl From<QueryableSession> for Session {
 }
 
 impl Session {
+  pub fn save_session(&self, path: PathBuf) -> Result<(), SazidError> {
+    let session_json = serde_json::to_string(&self)?;
+    fs::write(path, session_json)?;
+    Ok(())
+  }
+
+  pub fn load_session(&mut self, path: &PathBuf) -> Result<(), SazidError> {
+    let tx = self.action_tx.clone().unwrap();
+    let session_json = fs::read_to_string(path)?;
+    let session: Session = serde_json::from_str(&session_json)?;
+    *self = session;
+    self.action_tx = Some(tx.clone());
+    tx.send(SessionAction::ReloadMessages(
+      self.messages.iter().map(|m| (m.timestamp, m.message.clone())).collect(),
+    ))
+    .unwrap();
+    Ok(())
+  }
+
   pub fn message_with_unrendered_content(
     &mut self,
   ) -> Ready<Option<(ChatCompletionRequestMessage, i64)>> {

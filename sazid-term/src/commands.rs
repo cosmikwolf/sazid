@@ -512,6 +512,8 @@ impl MappableCommand {
         command_palette, "Open command palette",
         quit, "Exit application",
         submit_input_to_session, "Submit Chat Completion Request",
+        save_session, "save session to file",
+        load_session_picker, "show saved session",
     );
 }
 
@@ -604,6 +606,46 @@ fn quit(cx: &mut Context) {
   let view_id = view!(cx.editor).id;
   // close current split
   cx.editor.close(view_id);
+}
+
+fn save_session(cx: &mut Context) {
+  let data_folder = helix_loader::data_dir().join("sessions");
+  if !data_folder.exists() {
+    if let Err(e) = std::fs::create_dir_all(&data_folder) {
+      cx.editor.set_error(format!("error creating data directory: {}", e));
+      return;
+    }
+  }
+
+  let date_and_time_string = chrono::Utc::now().to_rfc3339();
+  ui::prompt_with_input(
+    cx,
+    "save-session:".into(),
+    date_and_time_string,
+    Some('|'),
+    ui::completers::none,
+    move |cx, input: &str, _event: PromptEvent| {
+      let save_path = data_folder.join(input);
+      log::info!("saving session to: {:#?}", save_path);
+      match cx.session.save_session(save_path) {
+        Ok(_) => cx.editor.set_status("session saved"),
+        Err(e) => {
+          log::error!("error saving session: {}", e);
+          cx.editor.set_error(format!("error saving session: {}", e));
+        },
+      };
+    },
+  );
+}
+
+fn load_session_picker(cx: &mut Context) {
+  let root = helix_loader::data_dir().join("sessions");
+  if !root.exists() {
+    cx.editor.set_error("data directory does not exist");
+    return;
+  }
+  let picker = ui::session::session_picker(root, &cx.editor.config());
+  cx.push_layer(Box::new(overlaid(picker)));
 }
 
 fn submit_input_to_session(cx: &mut Context) {

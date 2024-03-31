@@ -1,7 +1,7 @@
 use crate::{
-  commands::ChatMessageItem,
+  commands::{ChatMessageItem, ChatMessageType},
   compositor::{self, Component, Compositor, Context, Event, EventResult},
-  ctrl,
+  ctrl, filter_picker_entry,
   job::Callback,
   key, shift,
   ui::{
@@ -45,7 +45,7 @@ use helix_view::{
 };
 
 pub const ID: &str = "session";
-use super::{markdownmenu::MarkdownItem, overlay::Overlay};
+use super::{markdownmenu::MarkdownItem, overlay::Overlay, Picker};
 
 pub const MIN_AREA_WIDTH_FOR_PREVIEW: u16 = 72;
 /// Biggest file size to preview in bytes
@@ -174,7 +174,6 @@ pub struct SessionView<T: MarkdownItem> {
   selected_option: u32,
   // textbox: ui::textbox::Textbox,
   pub input: EditorView,
-  previous_pattern: String,
   state: TableState,
   /// Whether to show the preview panel (default true)
   show_preview: bool,
@@ -283,7 +282,6 @@ impl<T: MarkdownItem + 'static> SessionView<T> {
       // textbox,
       state: tablestate,
       input,
-      previous_pattern: String::new(),
       truncate_start: true,
       show_preview: true,
       callback_fn: Box::new(callback_fn),
@@ -303,6 +301,10 @@ impl<T: MarkdownItem + 'static> SessionView<T> {
     } else {
       self.messages.push(message);
     }
+  }
+
+  pub fn reload_messages(&mut self, messages: Vec<ChatMessageItem>) {
+    self.messages = messages;
   }
 
   pub fn injector(&self) -> Injector<T> {
@@ -404,8 +406,8 @@ impl<T: MarkdownItem + 'static> SessionView<T> {
 
   fn prompt_handle_event(
     &mut self,
-    event: &Event,
-    cx: &mut Context,
+    _event: &Event,
+    _cx: &mut Context,
   ) -> EventResult {
     // if let EventResult::Consumed(_) = self.textbox.handle_event(event, cx) {
     //   let pattern = self.textbox.line();
@@ -662,9 +664,9 @@ impl<T: MarkdownItem + 'static> SessionView<T> {
       .messages
       .iter()
       .enumerate()
-      .map(|(msg_idx, message)| {
-        let text =
-          message.format(&message.content().to_string(), self.theme.as_ref());
+      .map(|(msg_idx, message_item)| {
+        let text = message_item
+          .format(&message_item.content().to_string(), self.theme.as_ref());
         let height = text.height() as u16;
         let message_cell = Cell::from(text).paragraph_cell(
           // Some(Block::default().borders(Borders::LEFT)),
@@ -1082,4 +1084,94 @@ impl<T: MarkdownItem + Send + Sync + 'static> Component for DynamicSession<T> {
   fn id(&self) -> Option<&'static str> {
     Some(ID)
   }
+}
+
+pub fn session_picker(
+  root: PathBuf,
+  config: &helix_view::editor::Config,
+) -> Picker<PathBuf> {
+  use ignore::{types::TypesBuilder, WalkBuilder};
+  use std::time::Instant;
+
+  let now = Instant::now();
+
+  let dedup_symlinks = config.file_picker.deduplicate_links;
+  let absolute_root = root.canonicalize().unwrap_or_else(|_| root.clone());
+
+  let mut walk_builder = WalkBuilder::new(&root);
+  walk_builder
+    .hidden(config.file_picker.hidden)
+    .parents(config.file_picker.parents)
+    .ignore(config.file_picker.ignore)
+    .follow_links(config.file_picker.follow_symlinks)
+    .git_ignore(config.file_picker.git_ignore)
+    .git_global(config.file_picker.git_global)
+    .git_exclude(config.file_picker.git_exclude)
+    .sort_by_file_name(|name1, name2| name1.cmp(name2))
+    .max_depth(config.file_picker.max_depth)
+    .filter_entry(move |entry| {
+      filter_picker_entry(entry, &absolute_root, dedup_symlinks)
+    });
+
+  walk_builder
+    .add_custom_ignore_filename(helix_loader::config_dir().join("ignore"));
+  walk_builder.add_custom_ignore_filename(".helix/ignore");
+
+  // We want to exclude files that the editor can't handle yet
+  let mut type_builder = TypesBuilder::new();
+  type_builder
+    .add(
+      "compressed",
+      "*.{zip,gz,bz2,zst,lzo,sz,tgz,tbz2,lz,lz4,lzma,lzo,z,Z,xz,7z,rar,cab}",
+    )
+    .expect("Invalid type definition");
+  type_builder.negate("all");
+  let excluded_types =
+    type_builder.build().expect("failed to build excluded_types");
+  walk_builder.types(excluded_types);
+  let mut files = walk_builder.build().filter_map(|entry| {
+    let entry = entry.ok()?;
+    if !entry.file_type()?.is_file() {
+      return None;
+    }
+    Some(entry.into_path())
+  });
+  log::debug!("file_picker init {:?}", Instant::now().duration_since(now));
+
+  let picker =
+    Picker::new(Vec::new(), root, move |cx, path: &PathBuf, _action| {
+      if let Err(e) = cx.session.load_session(path) {
+        // let err = if let Some(err) = e.source() {
+        //   format!("{}", err)
+        // } else {
+        let err = format!("unable to open \"{}\" {}", path.display(), e);
+        // };
+        cx.editor.set_error(err);
+      }
+    })
+    .with_preview(|_editor, path| Some((path.clone().into(), None)));
+  let injector = picker.injector();
+  let timeout =
+    std::time::Instant::now() + std::time::Duration::from_millis(30);
+
+  let mut hit_timeout = false;
+  for file in &mut files {
+    if injector.push(file).is_err() {
+      break;
+    }
+    if std::time::Instant::now() >= timeout {
+      hit_timeout = true;
+      break;
+    }
+  }
+  if hit_timeout {
+    std::thread::spawn(move || {
+      for file in files {
+        if injector.push(file).is_err() {
+          break;
+        }
+      }
+    });
+  }
+  picker
 }

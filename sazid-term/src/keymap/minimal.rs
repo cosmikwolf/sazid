@@ -224,6 +224,8 @@ pub fn minimal() -> HashMap<Mode, KeyTrie> {
 
       "space" => { "Space"
           "f" => file_picker,
+          "s" => save_session,
+        "l" => load_session_picker,
       //     "F" => file_picker_in_current_directory,
       //     "b" => buffer_picker,
       //     "j" => jumplist_picker,

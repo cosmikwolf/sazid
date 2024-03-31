@@ -461,6 +461,19 @@ impl Application {
                     self.editor.set_status(status);
                         self.render().await;
                       }
+                      SessionAction::ReloadMessages(mut messages) => {
+                          messages.sort_unstable_by_key(|k| k.0);
+                          let messages = messages.iter().map(|(id, m)|{
+                               ChatMessageItem::new_chat(
+                                   *id,
+                                   m.clone(),
+                                   self.syn_loader.clone() )
+                         }).collect();
+
+                        self.compositor.find::<ui::SessionView<ChatMessageItem>>()
+                        .unwrap().reload_messages(messages );
+                        self.render().await;
+                      }
                       SessionAction::MessageUpdate(message, id) => {
                        self.compositor
                            .find::<ui::SessionView<ChatMessageItem>>()

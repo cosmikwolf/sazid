@@ -44,6 +44,11 @@ impl fmt::Display for SazidError {
   }
 }
 
+impl From<serde_json::error::Error> for SazidError {
+  fn from(err: serde_json::error::Error) -> SazidError {
+    SazidError::Other(err.to_string())
+  }
+}
 impl From<diesel::result::Error> for SazidError {
   fn from(err: diesel::result::Error) -> SazidError {
     SazidError::DieselError(err)

@@ -115,6 +115,15 @@ pub fn runtime_file(rel_path: &Path) -> PathBuf {
   })
 }
 
+pub fn data_dir() -> PathBuf {
+  // TODO: allow env var override
+  let strategy =
+    choose_base_strategy().expect("Unable to find the data directory!");
+  let mut path = strategy.data_dir();
+  path.push("sazid");
+  path
+}
+
 pub fn config_dir() -> PathBuf {
   // TODO: allow env var override
   let strategy =
