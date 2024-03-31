@@ -129,7 +129,9 @@ pub fn initialize_logging() -> Result<()> {
   let directory = get_data_dir();
   std::fs::create_dir_all(directory.clone())?;
   let log_path = directory.join(LOG_FILE.clone());
-  let log_file = std::fs::File::create(log_path)?;
+  let log_file = std::fs::File::create(log_path.clone())?;
+
+  println!("Log file: {:?}", &log_path.display());
 
   std::env::set_var(
     "RUST_LOG",
@@ -146,9 +148,10 @@ pub fn initialize_logging() -> Result<()> {
         .with_source_location(true),
     )
     .without_time()
+    .with_test_writer()
     // .with_file(false)
     // .with_line_number(false)
-    .with_target(false)
+    // .with_target(false)
     .with_ansi(true)
     .with_filter(tracing_subscriber::filter::EnvFilter::from_default_env());
   // a filter that removes the trace level
@@ -160,6 +163,8 @@ pub fn initialize_logging() -> Result<()> {
     )
     .with(ErrorLayer::default())
     .init();
+
+  tracing::debug!("Log file: {:?}", &log_path.display());
   Ok(())
 }
 

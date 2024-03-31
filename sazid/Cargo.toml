@@ -9,9 +9,9 @@ rust-version.workspace = true
 categories.workspace = true
 repository.workspace = true
 
-[[bin]]
-name = "szd"
-path = "src/main.rs"
+# [[bin]]
+# name = "szd"
+# path = "src/main.rs"
 
 [dev-dependencies]
 insta = { version = "1.34.0", features = [
@@ -95,15 +95,20 @@ jsonrpsee = { version = "0.21.0", features = [
 ] }
 
 inventory = "0.3.15"
+
+# database dependencies
+bollard = "*"
 diesel = { version = "2.1.4", features = ["postgres", "numeric", "uuid"] }
-lsp-types = "0.95.1"
-jsonrpc-core = "18.0.0"
-tokio = { version = "1.32.0", features = ["full"] }
-pgvector = { version = "0.3.2", features = ["diesel"] }
 diesel-async = { version = "0.4.1", features = [
   "postgres",
   "async-connection-wrapper",
 ] }
+diesel_migrations = "2.1.0"
+
+lsp-types = "0.95.1"
+jsonrpc-core = "18.0.0"
+tokio = { version = "1.32.0", features = ["full"] }
+pgvector = { version = "0.3.2", features = ["diesel"] }
 crossterm = { version = "0.27.0", features = ["serde", "event-stream"] }
 derive_deref = "1.1.1"
 directories = "5.0.1"

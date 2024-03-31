@@ -1,8 +1,8 @@
 [workspace]
-members = ["crates/sazid", "crates/sazid-term", "crates/sazid-loader"]
+members = ["sazid", "sazid-term", "sazid-loader"]
 exclude = ["archive/*"]
 resolver = "2"
-default-members = ["crates/sazid-term"]
+default-members = ["sazid-term"]
 
 [workspace.package]
 # name = "sazid"
@@ -29,12 +29,12 @@ tui = { path = "lib/helix/helix-tui", package = "helix-tui", default-features = 
 helix-stdx = { path = "lib/helix/helix-stdx" }
 helix-lsp = { path = "lib/helix/helix-lsp" }
 helix-vcs = { path = "lib/helix/helix-vcs" }
-helix-loader = { path = "crates/sazid-loader", package = "sazid-loader" }
+helix-loader = { path = "sazid-loader", package = "sazid-loader" }
 helix-core = { path = "lib/helix/helix-core" }
 helix-view = { path = "lib/helix/helix-view" }
 helix-dap = { path = "lib/helix/helix-dap" }
 helix-event = { path = "lib/helix/helix-event" }
 helix-tui = { path = "lib/helix/helix-tui" }
-sazid = { path = "crates/sazid" }
-sazid-view = { path = "crates/sazid-view" }
-sazid-term = { path = "crates/sazid-term" }
+sazid = { path = "sazid" }
+sazid-view = { path = "sazid-view" }
+sazid-term = { path = "sazid-term" }

@@ -273,7 +273,7 @@ mod merge_toml_tests {
         indent = { tab-width = 4, unit = "    ", test = "aaa" }
         "#;
 
-    let base = include_bytes!("../../../languages.toml");
+    let base = include_bytes!("../../languages.toml");
     let base =
       str::from_utf8(base).expect("Couldn't parse built-in languages config");
     let base: Value =
@@ -306,7 +306,7 @@ mod merge_toml_tests {
         language-server = { command = "deno", args = ["lsp"] }
         "#;
 
-    let base = include_bytes!("../../../languages.toml");
+    let base = include_bytes!("../../languages.toml");
     let base =
       str::from_utf8(base).expect("Couldn't parse built-in languages config");
     let base: Value =
