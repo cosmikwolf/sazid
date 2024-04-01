@@ -226,6 +226,7 @@ pub fn minimal() -> HashMap<Mode, KeyTrie> {
           "f" => file_picker,
           "s" => save_session,
         "l" => load_session_picker,
+        "t" => toggle_layer_order,
       //     "F" => file_picker_in_current_directory,
       //     "b" => buffer_picker,
       //     "j" => jumplist_picker,

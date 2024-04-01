@@ -2,7 +2,10 @@ use helix_core::{
   movement::Direction, unicode::width::UnicodeWidthStr, Position,
 };
 use helix_lsp::lsp::Range;
-use helix_view::graphics::{Rect, Style};
+use helix_view::{
+  graphics::{Rect, Style},
+  theme::Color,
+};
 use tui::{
   buffer::Buffer,
   layout::{Alignment, Constraint},
@@ -488,7 +491,6 @@ pub struct TableState {
 impl TableState {
   // if the scroll is at the end, scroll with incoming text
   pub fn update_sticky_scroll(&mut self) {
-    log::info!("viewport_height: {}", self.viewport_height);
     self.scroll_max =
       self.row_heights.iter().sum::<u16>().saturating_sub(
         self.viewport_height.saturating_sub(self.scroll_offset),
@@ -704,7 +706,7 @@ fn render_cell(
         options.highlight_range,
       );
       if let Some(block) = options.block {
-        paragraph = paragraph.block(block);
+        // paragraph = paragraph.block(block);
       }
       if let Some(wrap) = options.wrap_trim {
         paragraph = paragraph.wrap(Wrap { trim: wrap });

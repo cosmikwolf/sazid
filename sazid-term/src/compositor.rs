@@ -17,15 +17,24 @@ pub enum EventResult {
 }
 
 use crate::job::Jobs;
-use crate::keymap::Keymaps;
 use crate::ui::picker;
 use helix_view::Editor;
 
 pub use helix_view::input::Event;
 
+#[derive(Clone, Copy)]
 pub enum ContextFocus {
   EditorView,
   SessionView,
+}
+
+impl ContextFocus {
+  pub fn toggle(&mut self) {
+    *self = match *self {
+      ContextFocus::SessionView => ContextFocus::EditorView,
+      ContextFocus::EditorView => ContextFocus::SessionView,
+    };
+  }
 }
 pub struct Context<'a> {
   pub session: &'a mut Session,

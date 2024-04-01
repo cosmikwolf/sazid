@@ -53,6 +53,7 @@ pub struct EditorView {
   spinners: ProgressSpinners,
   /// Tracks if the terminal window is focused by reaction to terminal focus events
   terminal_focused: bool,
+  editor_is_focused: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -81,6 +82,7 @@ impl EditorView {
       completion: None,
       spinners: ProgressSpinners::default(),
       terminal_focused: true,
+      editor_is_focused: true,
     }
   }
 
@@ -1360,7 +1362,7 @@ impl Component for EditorView {
                 let res = {
                   // use a fake context here
                   let mut cx = Context {
-                    focus: &mut cx.focus,
+                    focus: cx.focus,
                     session: cx.session,
                     editor: cx.editor,
                     jobs: cx.jobs,
@@ -1463,8 +1465,6 @@ impl Component for EditorView {
   }
 
   fn render(&mut self, area: Rect, surface: &mut Surface, cx: &mut Context) {
-    // clear with background color
-    surface.set_style(area, cx.editor.theme.get("ui.background"));
     let config = cx.editor.config();
 
     // check if bufferline should be rendered
@@ -1493,6 +1493,8 @@ impl Component for EditorView {
       };
     };
 
+    // clear with background color
+    surface.set_style(editor_area, cx.editor.theme.get("ui.background"));
     // if the terminal size suddenly changed, we need to trigger a resize
     cx.editor.resize(editor_area);
 
@@ -1500,9 +1502,17 @@ impl Component for EditorView {
       Self::render_bufferline(cx.editor, area.with_height(1), surface);
     }
 
-    for (view, is_focused) in cx.editor.tree.views() {
+    self.editor_is_focused = matches!(cx.focus, ContextFocus::EditorView);
+    for (view, _focused) in cx.editor.tree.views() {
       let doc = cx.editor.document(view.doc).unwrap();
-      self.render_view(cx.editor, doc, view, area, surface, is_focused);
+      self.render_view(
+        cx.editor,
+        doc,
+        view,
+        area,
+        surface,
+        self.editor_is_focused,
+      );
     }
 
     if config.auto_info {
@@ -1578,17 +1588,21 @@ impl Component for EditorView {
     _area: Rect,
     editor: &Editor,
   ) -> (Option<Position>, CursorKind) {
-    match editor.cursor() {
-      // all block cursors are drawn manually
-      (pos, CursorKind::Block) => {
-        if self.terminal_focused {
-          (pos, CursorKind::Hidden)
-        } else {
-          // use crossterm cursor when terminal loses focus
-          (pos, CursorKind::Underline)
-        }
-      },
-      cursor => cursor,
+    if self.editor_is_focused {
+      match editor.cursor() {
+        // all block cursors are drawn manually
+        (pos, CursorKind::Block) => {
+          if self.terminal_focused {
+            (pos, CursorKind::Hidden)
+          } else {
+            // use crossterm cursor when terminal loses focus
+            (pos, CursorKind::Underline)
+          }
+        },
+        cursor => cursor,
+      }
+    } else {
+      (None, CursorKind::Hidden)
     }
   }
 }

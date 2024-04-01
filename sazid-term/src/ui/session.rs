@@ -173,7 +173,7 @@ pub struct SessionView<T: MarkdownItem> {
   /// Current height of the completions box
   completion_height: u16,
 
-  is_focused: bool,
+  session_is_focus: bool,
   theme: Option<Theme>,
   selected_option: u32,
   // textbox: ui::textbox::Textbox,
@@ -289,7 +289,7 @@ impl<T: MarkdownItem + 'static> SessionView<T> {
       editor_data,
       theme,
       shutdown,
-      is_focused: false,
+      session_is_focus: false,
       selected_option: 0,
       // textbox,
       state: tablestate,
@@ -595,6 +595,17 @@ impl<T: MarkdownItem + 'static> SessionView<T> {
     surface: &mut Surface,
     cx: &mut Context,
   ) {
+    // -- make space for the input bar:
+    let input_on_top = false;
+    // define input area
+    let area = if self.input_hidden {
+      area.clip_top(self.input_height)
+    } else if input_on_top {
+      area.clip_top(self.input_height)
+    } else {
+      area.clip_bottom(self.input_height + 1)
+    };
+
     let status = self.matcher.tick(10);
     let snapshot = self.matcher.snapshot();
     if status.changed {
@@ -605,7 +616,7 @@ impl<T: MarkdownItem + 'static> SessionView<T> {
 
     let text_style = cx.editor.theme.get("ui.text");
     let selected = cx.editor.theme.get("ui.selection");
-    let _highlight_style =
+    let highlight_style =
       cx.editor.theme.get("special").add_modifier(Modifier::BOLD);
 
     // -- Render the frame:
@@ -636,35 +647,20 @@ impl<T: MarkdownItem + 'static> SessionView<T> {
       text_style,
     );
 
-    // -- Render the input bar:
-    let input_on_top = false;
-    // define input area
-    let readout_area = if self.input_hidden {
-      inner.clip_top(inner.height)
-    } else if input_on_top {
-      inner.clip_top(self.input_height)
-    } else {
-      inner.clip_bottom(self.input_height)
-    };
-
-    log::info!("readout_area: {:?}", readout_area);
-    // -- Separator
-    if !self.input_hidden {
-      // don't need the separator if the input is hidden
-      let sep_height = if input_on_top {
-        self.input_height
-      } else {
-        inner.height - self.input_height
-      };
-
-      let sep_style = cx.editor.theme.get("ui.background.separator");
-      let borders = BorderType::line_symbols(BorderType::Plain);
-      for x in readout_area.left()..readout_area.right() {
-        if let Some(cell) = surface.get_mut(x, sep_height) {
-          cell.set_symbol(borders.horizontal).set_style(sep_style);
-        }
-      }
-    }
+    // // -- Separator
+    // if !self.input_hidden {
+    //   // don't need the separator if the input is hidden
+    //   let sep_height =
+    //     if input_on_top { self.input_height } else { inner.height };
+    //
+    //   let sep_style = cx.editor.theme.get("ui.background.separator");
+    //   let borders = BorderType::line_symbols(BorderType::Plain);
+    //   for x in inner.left()..inner.right() {
+    //     if let Some(cell) = surface.get_mut(x, sep_height) {
+    //       cell.set_symbol(borders.horizontal).set_style(sep_style);
+    //     }
+    //   }
+    // }
 
     // -- Render the contents:
     let mut matcher = MATCHER.lock();
@@ -677,8 +673,7 @@ impl<T: MarkdownItem + 'static> SessionView<T> {
       start: helix_lsp::Position::new(1, 0),
       end: helix_lsp::Position::new(20, 5),
     });
-    let highlight_style =
-      Some(Style::default().bg(Color::Yellow).fg(Color::Red));
+    let highlight_style = Some(selected.bg(Color::Yellow).fg(Color::Red));
     // let highlight_style = self.style.patch(highlight_style);
 
     let rows: Vec<Row> = self
@@ -741,12 +736,7 @@ impl<T: MarkdownItem + 'static> SessionView<T> {
       .row_spacing(1)
       .widths(&self.widths);
 
-    table.render_table(
-      readout_area,
-      surface,
-      &mut self.state,
-      self.truncate_start,
-    );
+    table.render_table(inner, surface, &mut self.state, self.truncate_start);
   }
 
   fn render_preview(
@@ -961,7 +951,7 @@ impl<T: MarkdownItem + 'static + Send + Sync> Component for SessionView<T> {
     }
 
     let key_event = match event {
-      Event::Key(event) => *event,
+      // Event::Key(event) => *event,
       Event::Paste(..) => return self.prompt_handle_event(event, ctx),
       Event::Resize(..) => return EventResult::Consumed(None),
       _ => {
@@ -971,16 +961,16 @@ impl<T: MarkdownItem + 'static + Send + Sync> Component for SessionView<T> {
 
     log::info!("key event: {:?}", key_event);
     match key_event {
-      // shift!('j') | key!(Up) => {
-      //   log::info!("kb scroll up");
-      //   self.state.scroll_by(1, Direction::Backward);
-      //   helix_event::request_redraw();
-      // },
-      // shift!('k') | key!(Down) => {
-      //   log::info!("kb scroll down");
-      //   self.state.scroll_by(1, Direction::Forward);
-      //   helix_event::request_redraw();
-      // },
+      shift!('j') | key!(Up) => {
+        log::info!("kb scroll up");
+        self.state.scroll_by(1, Direction::Backward);
+        helix_event::request_redraw();
+      },
+      shift!('k') | key!(Down) => {
+        log::info!("kb scroll down");
+        self.state.scroll_by(1, Direction::Forward);
+        helix_event::request_redraw();
+      },
       // shift!(Tab) | ctrl!('p') => {
       //   self.move_by(1, Direction::Backward);
       //   log::info!("shift tab")
@@ -1032,12 +1022,27 @@ impl<T: MarkdownItem + 'static + Send + Sync> Component for SessionView<T> {
         // self.editor_handle_event(event, ctx);
         // log::info!("passing event to input: {:?}", event);
         // return self.input.handle_event(event, ctx);
+        return EventResult::Ignored(None);
       },
     }
 
     EventResult::Consumed(None)
   }
 
+  // fn cursor(
+  //   &self,
+  //   _area: Rect,
+  //   editor: &Editor,
+  // ) -> (Option<Position>, CursorKind) {
+  //   match editor.cursor() {
+  //     // all block cursors are drawn manually
+  //     (pos, CursorKind::Block) => {
+  //       // use crossterm cursor when terminal loses focus
+  //       (pos, CursorKind::Underline)
+  //     },
+  //     cursor => cursor,
+  //   }
+  // }
   fn cursor(
     &self,
     area: Rect,

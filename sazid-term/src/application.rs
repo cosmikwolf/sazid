@@ -269,6 +269,7 @@ impl Application {
       ui::editor::VerticalAlign::Bottom,
     );
 
+    // session must be pushed after input in order for input not to overwrite style changes made in session
     compositor.push(Box::new(markdown_session));
     compositor.push(Box::new(input));
 

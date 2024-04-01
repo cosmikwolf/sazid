@@ -210,6 +210,14 @@ impl MappableCommand {
             jobs: cx.jobs,
             scroll: None,
           };
+          match cx.focus {
+            ContextFocus::SessionView => {
+              log::info!("execute: session view");
+            },
+            ContextFocus::EditorView => {
+              log::info!("execute: editor view");
+            },
+          }
           if let Err(e) =
             (command.fun)(&mut cx, &args[..], PromptEvent::Validate)
           {
@@ -217,7 +225,17 @@ impl MappableCommand {
           }
         }
       },
-      Self::Static { fun, .. } => (fun)(cx),
+      Self::Static { fun, .. } => {
+        match cx.focus {
+          ContextFocus::SessionView => {
+            log::info!("execute - static: session view");
+          },
+          ContextFocus::EditorView => {
+            log::info!("execute - static: editor view");
+          },
+        }
+        (fun)(cx)
+      },
     }
   }
 
@@ -519,6 +537,7 @@ impl MappableCommand {
         session_view_scroll_up, "scroll session text up",
         session_view_scroll_down, "scroll session text down",
         load_session_picker, "show saved session",
+        toggle_layer_order, "toggle focus between session and editor",
     );
 }
 
@@ -611,6 +630,36 @@ fn quit(cx: &mut Context) {
   let view_id = view!(cx.editor).id;
   // close current split
   cx.editor.close(view_id);
+}
+
+fn toggle_layer_order(cx: &mut Context) {
+  cx.callback.push(Box::new(
+    move |compositor: &mut Compositor, cx: &mut compositor::Context| {
+      match compositor.pop() {
+        Some(component_a) => match compositor.pop() {
+          Some(component_b) => {
+            log::info!(
+              "last_on_stack: {}\nnext_on_stack: {}",
+              component_a.type_name(),
+              component_b.type_name()
+            );
+            cx.focus.toggle();
+            compositor.push(component_a);
+            compositor.push(component_b);
+            compositor.need_full_redraw();
+          },
+          None => {
+            log::info!(
+              "toggle_layer_order: last_component_id could nto be obtained"
+            );
+          },
+        },
+        None => {
+          log::info!("toggle_layer_order: no last component found");
+        },
+      }
+    },
+  ))
 }
 
 fn session_view_scroll_up(cx: &mut Context) {
@@ -725,16 +774,25 @@ fn move_impl(
   dir: Direction,
   behaviour: Movement,
 ) {
-  let count = cx.count();
-  let (view, doc) = current!(cx.editor);
-  let text = doc.text().slice(..);
-  let text_fmt = doc.text_format(view.inner_area(doc).width, None);
-  let mut annotations = view.text_annotations(doc, None);
+  match cx.focus {
+    ContextFocus::SessionView => {
+      log::info!("move_impl: session view");
+    },
+    ContextFocus::EditorView => {
+      log::info!("move_impl: editor view");
 
-  let selection = doc.selection(view.id).clone().transform(|range| {
-    move_fn(text, range, dir, count, behaviour, &text_fmt, &mut annotations)
-  });
-  doc.set_selection(view.id, selection);
+      let count = cx.count();
+      let (view, doc) = current!(cx.editor);
+      let text = doc.text().slice(..);
+      let text_fmt = doc.text_format(view.inner_area(doc).width, None);
+      let mut annotations = view.text_annotations(doc, None);
+
+      let selection = doc.selection(view.id).clone().transform(|range| {
+        move_fn(text, range, dir, count, behaviour, &text_fmt, &mut annotations)
+      });
+      doc.set_selection(view.id, selection);
+    },
+  }
 }
 
 use helix_core::movement::{move_horizontally, move_vertically};
