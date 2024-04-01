@@ -12,6 +12,7 @@ use crate::{
 };
 
 use futures_util::{future::BoxFuture, FutureExt};
+use helix_lsp::lsp::Range;
 use nucleo::{Config, Nucleo, Utf32String};
 
 use tui::{
@@ -40,6 +41,8 @@ use helix_core::{
 use helix_view::{
   editor::Action,
   graphics::{CursorKind, Margin, Modifier, Rect},
+  input::{MouseButton, MouseEventKind},
+  theme::{Color, Style},
   view::ViewPosition,
   Document, DocumentId, Editor, Theme,
 };
@@ -170,10 +173,13 @@ pub struct SessionView<T: MarkdownItem> {
   /// Current height of the completions box
   completion_height: u16,
 
+  is_focused: bool,
   theme: Option<Theme>,
   selected_option: u32,
   // textbox: ui::textbox::Textbox,
   pub input: EditorView,
+  pub input_height: u16,
+  input_hidden: bool,
   state: TableState,
   /// Whether to show the preview panel (default true)
   show_preview: bool,
@@ -261,15 +267,20 @@ impl<T: MarkdownItem + 'static> SessionView<T> {
     //   ui::completers::none,
     //   |_editor: &mut Context, _pattern: &str, _event: TextboxEvent| {},
     // );
+
+    let input_height = 10;
+
     let input = EditorView::new(crate::keymap::minimal_keymap());
     let tablestate = TableState {
-      offset: 0,
+      scroll_offset: input_height + 5,
       vertical_scroll: 0,
       sticky_scroll: true,
       scroll_max: 0,
       selected: None,
       row_heights: Vec::new(),
       viewport_height: 0,
+      cursor_position: None,
+      select_range: None,
     };
 
     Self {
@@ -278,10 +289,13 @@ impl<T: MarkdownItem + 'static> SessionView<T> {
       editor_data,
       theme,
       shutdown,
+      is_focused: false,
       selected_option: 0,
       // textbox,
       state: tablestate,
       input,
+      input_height,
+      input_hidden: false,
       truncate_start: true,
       show_preview: true,
       callback_fn: Box::new(callback_fn),
@@ -371,6 +385,15 @@ impl<T: MarkdownItem + 'static> SessionView<T> {
     }
   }
 
+  pub fn scroll_up(&mut self) {
+    // self.move_by(1, Direction::Backward);
+    self.state.scroll_by(1, Direction::Forward);
+  }
+
+  pub fn scroll_down(&mut self) {
+    // self.move_by(1, Direction::Backward);
+    self.state.scroll_by(1, Direction::Backward);
+  }
   /// Move the cursor down by exactly one page. After the last page comes the first page.
   pub fn page_up(&mut self) {
     self.move_by(self.completion_height, Direction::Backward);
@@ -597,19 +620,6 @@ impl<T: MarkdownItem + 'static> SessionView<T> {
 
     block.render(area, surface);
 
-    // -- Render the input bar:
-    let input_height = 20;
-    let input_on_top = false;
-
-    let textbox_area = if input_on_top {
-      inner.with_height(input_height)
-    } else {
-      inner.clip_top(inner.height - input_height)
-    };
-
-    // render the prompt first since it will clear its background
-    // self.input.render(textbox_area, surface, cx);
-
     // -- upper right hand corner readout
     let count = format!(
       "{}{}/{}",
@@ -626,39 +636,50 @@ impl<T: MarkdownItem + 'static> SessionView<T> {
       text_style,
     );
 
+    // -- Render the input bar:
+    let input_on_top = false;
     // define input area
-    let readout_area = if input_on_top {
-      inner.clip_top(input_height)
+    let readout_area = if self.input_hidden {
+      inner.clip_top(inner.height)
+    } else if input_on_top {
+      inner.clip_top(self.input_height)
     } else {
-      inner.clip_bottom(input_height)
+      inner.clip_bottom(self.input_height)
     };
 
+    log::info!("readout_area: {:?}", readout_area);
     // -- Separator
-    let sep_height =
-      if input_on_top { input_height } else { inner.height - input_height };
-    let sep_style = cx.editor.theme.get("ui.background.separator");
-    let borders = BorderType::line_symbols(BorderType::Plain);
-    for x in readout_area.left()..readout_area.right() {
-      if let Some(cell) = surface.get_mut(x, sep_height) {
-        cell.set_symbol(borders.horizontal).set_style(sep_style);
+    if !self.input_hidden {
+      // don't need the separator if the input is hidden
+      let sep_height = if input_on_top {
+        self.input_height
+      } else {
+        inner.height - self.input_height
+      };
+
+      let sep_style = cx.editor.theme.get("ui.background.separator");
+      let borders = BorderType::line_symbols(BorderType::Plain);
+      for x in readout_area.left()..readout_area.right() {
+        if let Some(cell) = surface.get_mut(x, sep_height) {
+          cell.set_symbol(borders.horizontal).set_style(sep_style);
+        }
       }
     }
 
     // -- Render the contents:
-    // subtract readout_area of prompt from top
-    // let offset = self.selected_option
-    //   - (self.selected_option % std::cmp::max(1, readout_area.height as u32));
-    // self.tablestate.selected =
-    //   Some(self.selected_option.saturating_sub(offset) as usize);
-    // let end = offset
-    // .saturating_add(readout_area.height as u32)
-    // .min(snapshot.matched_item_count());
-    // let mut indices = Vec::new();
     let mut matcher = MATCHER.lock();
     matcher.config = Config::DEFAULT;
     if self.file_fn.is_some() {
       matcher.config.set_match_paths()
     }
+
+    let highlight_range = Some(Range {
+      start: helix_lsp::Position::new(1, 0),
+      end: helix_lsp::Position::new(20, 5),
+    });
+    let highlight_style =
+      Some(Style::default().bg(Color::Yellow).fg(Color::Red));
+    // let highlight_style = self.style.patch(highlight_style);
 
     let rows: Vec<Row> = self
       .messages
@@ -674,12 +695,17 @@ impl<T: MarkdownItem + 'static> SessionView<T> {
           Some(false),
           (0, 0),
           tui::layout::Alignment::Left,
+          highlight_style,
+          highlight_range,
         );
+
         let index_cell = Cell::from(msg_idx.to_string()).paragraph_cell(
           Some(Block::default().borders(Borders::RIGHT)),
           Some(false),
           (0, 0),
           tui::layout::Alignment::Center,
+          None,
+          None,
         );
         Row::new(vec![index_cell, message_cell]).height(height)
       })
@@ -878,14 +904,7 @@ impl<T: MarkdownItem + 'static + Send + Sync> Component for SessionView<T> {
     if let Event::IdleTimeout = event {
       return self.handle_idle_timeout(ctx);
     }
-    log::info!("session event: {:?}", event);
-    // TODO: keybinds for scrolling preview
-    let key_event = match event {
-      Event::Key(event) => *event,
-      Event::Paste(..) => return self.prompt_handle_event(event, ctx),
-      Event::Resize(..) => return EventResult::Consumed(None),
-      _ => return EventResult::Ignored(None),
-    };
+    // log::info!("session events--: {:?}", event);
 
     let close_fn = |session: &mut Self| {
       // if the session is very large don't store it as last_session to avoid
@@ -913,33 +932,75 @@ impl<T: MarkdownItem + 'static + Send + Sync> Component for SessionView<T> {
     // So that idle timeout retriggers
     ctx.editor.reset_idle_timer();
 
+    if let Event::Mouse(event) = event {
+      match event.kind {
+        MouseEventKind::Down(MouseButton::Left) => {
+          // start select
+          log::info!("mouse down event: {:?}", event);
+        },
+        MouseEventKind::Up(MouseButton::Left) => {
+          // stop select
+          log::info!("mouse up event: {:?}", event);
+        },
+        MouseEventKind::Drag(MouseButton::Left) => {
+          // update select
+          log::info!("mouse drag event: {:?}", event);
+        },
+        MouseEventKind::ScrollUp => {
+          log::info!("scroll up");
+          self.state.scroll_by(1, Direction::Backward);
+          helix_event::request_redraw();
+        },
+        MouseEventKind::ScrollDown => {
+          log::info!("scroll down");
+          self.state.scroll_by(1, Direction::Forward);
+          helix_event::request_redraw();
+        },
+        _ => {},
+      }
+    }
+
+    let key_event = match event {
+      Event::Key(event) => *event,
+      Event::Paste(..) => return self.prompt_handle_event(event, ctx),
+      Event::Resize(..) => return EventResult::Consumed(None),
+      _ => {
+        return EventResult::Ignored(None);
+      },
+    };
+
+    log::info!("key event: {:?}", key_event);
     match key_event {
-      shift!('j') | key!(Up) => {
-        self.state.scroll_by(1, Direction::Backward);
-      },
-      shift!('k') | key!(Down) => {
-        self.state.scroll_by(1, Direction::Forward);
-      },
-      shift!(Tab) | ctrl!('p') => {
-        self.move_by(1, Direction::Backward);
-        log::info!("shift tab")
-      },
-      key!(Tab) | ctrl!('n') => {
-        self.move_by(1, Direction::Forward);
-        log::info!("tab")
-      },
-      key!(PageDown) | ctrl!('d') => {
-        self.page_down();
-      },
-      key!(PageUp) | ctrl!('u') => {
-        self.page_up();
-      },
-      key!(Home) => {
-        self.to_start();
-      },
-      key!(End) => {
-        self.to_end();
-      },
+      // shift!('j') | key!(Up) => {
+      //   log::info!("kb scroll up");
+      //   self.state.scroll_by(1, Direction::Backward);
+      //   helix_event::request_redraw();
+      // },
+      // shift!('k') | key!(Down) => {
+      //   log::info!("kb scroll down");
+      //   self.state.scroll_by(1, Direction::Forward);
+      //   helix_event::request_redraw();
+      // },
+      // shift!(Tab) | ctrl!('p') => {
+      //   self.move_by(1, Direction::Backward);
+      //   log::info!("shift tab")
+      // },
+      // key!(Tab) | ctrl!('n') => {
+      //   self.move_by(1, Direction::Forward);
+      //   log::info!("tab")
+      // },
+      // key!(PageDown) | ctrl!('d') => {
+      //   self.page_down();
+      // },
+      // key!(PageUp) | ctrl!('u') => {
+      //   self.page_up();
+      // },
+      // key!(Home) => {
+      //   self.to_start();
+      // },
+      // key!(End) => {
+      //   self.to_end();
+      // },
       // key!(Esc) | ctrl!('c') => return close_fn(self),
       // alt!(Enter) => {
       //   if let Some(option) = self.selection() {
@@ -969,8 +1030,8 @@ impl<T: MarkdownItem + 'static + Send + Sync> Component for SessionView<T> {
       },
       _ => {
         // self.editor_handle_event(event, ctx);
-        log::info!("passing event to input: {:?}", event);
-        return self.input.handle_event(event, ctx);
+        // log::info!("passing event to input: {:?}", event);
+        // return self.input.handle_event(event, ctx);
       },
     }
 
@@ -988,8 +1049,9 @@ impl<T: MarkdownItem + 'static + Send + Sync> Component for SessionView<T> {
 
     // prompt area
     let area = inner.clip_left(1).with_height(1);
-    self.input.cursor(area, editor)
+    // self..cursor(area, editor)
     // self.textbox.cursor(area, editor)
+    (Some(Position::new(area.y as usize, area.x as usize)), CursorKind::Block)
   }
 
   fn required_size(

@@ -1,6 +1,10 @@
 use super::reflow::{LineComposer, LineTruncator, WordWrapper};
 use helix_core::unicode::width::UnicodeWidthStr;
-use helix_view::graphics::{Rect, Style};
+use helix_lsp::{lsp::Range, Position};
+use helix_view::{
+  graphics::{Rect, Style},
+  theme::Color,
+};
 use std::iter;
 use tui::{
   buffer::Buffer,
@@ -50,6 +54,10 @@ pub struct Paragraph<'a> {
   block: Option<Block<'a>>,
   /// Widget style
   style: Style,
+  /// Highlight style
+  highlight_style: Option<Style>,
+  /// Highlight Range
+  highlight_range: Option<Range>,
   /// How to wrap the text
   wrap: Option<Wrap>,
   /// The text to display
@@ -99,10 +107,22 @@ impl<'a> Paragraph<'a> {
       block: None,
       style: Default::default(),
       wrap: None,
+      highlight_style: None,
+      highlight_range: None,
       text,
       scroll: (0, 0),
       alignment: Alignment::Left,
     }
+  }
+
+  pub fn set_highlight_options(
+    mut self,
+    highlight_style: Option<Style>,
+    highlight_range: Option<Range>,
+  ) -> Paragraph<'a> {
+    self.highlight_style = highlight_style;
+    self.highlight_range = highlight_range;
+    self
   }
 
   pub fn block(mut self, block: Block<'a>) -> Paragraph<'a> {
@@ -155,6 +175,59 @@ impl<'a> Paragraph<'a> {
   }
 }
 
+fn highlight_selected_text<'a>(
+  text: &'a Text<'a>,
+  selection: Option<Range>,
+  highlight_style: Style,
+  paragraph_style: Style,
+) -> Box<dyn Iterator<Item = StyledGrapheme<'a>> + 'a> {
+  match selection {
+    Some(range) => Box::new(text.lines.iter().enumerate().flat_map(
+      move |(line_idx, spans)| {
+        spans
+          .0
+          .iter()
+          .flat_map(move |span| {
+            span.styled_graphemes(paragraph_style).enumerate().map(
+              move |(char_idx, grapheme)| {
+                let pos = Position {
+                  line: line_idx as u32,
+                  character: char_idx as u32,
+                };
+                if pos >= range.start && pos < range.end {
+                  StyledGrapheme {
+                    symbol: grapheme.symbol,
+                    style: highlight_style.patch(grapheme.style),
+                  }
+                } else {
+                  grapheme
+                }
+              },
+            )
+          })
+          .chain(iter::once(StyledGrapheme {
+            symbol: "\n",
+            style: paragraph_style,
+          }))
+      },
+    )),
+    None => Box::new(text.lines.iter().flat_map(move |spans| {
+      spans
+        .0
+        .iter()
+        .flat_map(move |span| {
+          span.styled_graphemes(paragraph_style).chain(iter::once(
+            StyledGrapheme { symbol: "\n", style: paragraph_style },
+          ))
+        })
+        .chain(iter::once(StyledGrapheme {
+          symbol: "\n",
+          style: paragraph_style,
+        }))
+    })),
+  }
+}
+
 impl<'a> Widget for Paragraph<'a> {
   fn render(mut self, area: Rect, buf: &mut Buffer) {
     buf.set_style(area, self.style);
@@ -200,8 +273,26 @@ impl<'a> Widget for Paragraph<'a> {
       if y >= self.scroll.0 {
         let mut x =
           get_line_offset(current_line_width, text_area.width, self.alignment);
+        let mut highlight_start = None;
+        let mut highlight_end = None;
         for StyledGrapheme { symbol, style } in current_line {
-          buf[(text_area.left() + x, text_area.top() + y - self.scroll.0)]
+          let current_pos = Position {
+            line: (text_area.top() + y - self.scroll.0) as u32,
+            character: x as u32,
+          };
+          if let Some(highlight_range) = self.highlight_range {
+            if highlight_range.start <= current_pos
+              && current_pos < highlight_range.end
+            {
+              if highlight_start.is_none() {
+                highlight_start = Some(x);
+              }
+              highlight_end = Some(x + symbol.width() as u16);
+            }
+          }
+          let cell = &mut buf
+            [(text_area.left() + x, text_area.top() + y - self.scroll.0)];
+          cell
             .set_symbol(if symbol.is_empty() {
               // If the symbol is empty, the last char which rendered last time will
               // leave on the line. It's a quick fix.
@@ -211,6 +302,17 @@ impl<'a> Widget for Paragraph<'a> {
             })
             .set_style(*style);
           x += symbol.width() as u16;
+        }
+        if let (Some(start), Some(end), Some(style)) =
+          (highlight_start, highlight_end, self.highlight_style)
+        {
+          let highlight_area = Rect {
+            x: text_area.left() + start,
+            y: text_area.top() + y - self.scroll.0,
+            width: end - start,
+            height: 1,
+          };
+          buf.set_style(highlight_area, style);
         }
       }
       y += 1;

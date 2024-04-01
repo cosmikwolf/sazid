@@ -1,4 +1,7 @@
-use helix_core::{movement::Direction, unicode::width::UnicodeWidthStr};
+use helix_core::{
+  movement::Direction, unicode::width::UnicodeWidthStr, Position,
+};
+use helix_lsp::lsp::Range;
 use helix_view::graphics::{Rect, Style};
 use tui::{
   buffer::Buffer,
@@ -35,6 +38,10 @@ use super::paragraph::{Paragraph, Wrap};
 pub struct ParagraphCell<'a> {
   /// A block to wrap the widget in
   block: Option<Block<'a>>,
+  /// Highlight style
+  highlight_style: Option<Style>,
+  /// Highlight Range
+  highlight_range: Option<Range>,
   /// How to wrap the text
   wrap_trim: Option<bool>,
   /// Scroll
@@ -84,9 +91,17 @@ impl<'a> Cell<'a> {
     wrap_trim: Option<bool>,
     scroll: (u16, u16),
     alignment: Alignment,
+    highlight_style: Option<Style>,
+    highlight_range: Option<Range>,
   ) -> Self {
-    self.paragraph_options =
-      Some(ParagraphCell { block, wrap_trim, scroll, alignment });
+    self.paragraph_options = Some(ParagraphCell {
+      block,
+      wrap_trim,
+      scroll,
+      alignment,
+      highlight_style,
+      highlight_range,
+    });
     self
   }
 }
@@ -459,23 +474,27 @@ impl<'a> Table<'a> {
 
 #[derive(Debug, Default, Clone)]
 pub struct TableState {
-  pub offset: usize,
+  pub scroll_offset: u16,
   pub vertical_scroll: u16,
   pub scroll_max: u16,
   pub row_heights: Vec<u16>,
   pub sticky_scroll: bool,
   pub viewport_height: u16,
   pub selected: Option<usize>,
+  pub cursor_position: Option<Position>,
+  pub select_range: Option<Range>,
 }
 
 impl TableState {
   // if the scroll is at the end, scroll with incoming text
   pub fn update_sticky_scroll(&mut self) {
-    self.scroll_max = self
-      .row_heights
-      .iter()
-      .sum::<u16>()
-      .saturating_sub(self.viewport_height.saturating_sub(5));
+    log::info!("viewport_height: {}", self.viewport_height);
+    self.scroll_max =
+      self.row_heights.iter().sum::<u16>().saturating_sub(
+        self.viewport_height.saturating_sub(self.scroll_offset),
+      );
+
+    // .saturating_sub(self.viewport_height.saturating_sub(0));
     if self.sticky_scroll {
       self.vertical_scroll = self.scroll_max;
     }
@@ -523,7 +542,7 @@ impl TableState {
   pub fn select(&mut self, index: Option<usize>) {
     self.selected = index;
     if index.is_none() {
-      self.offset = 0;
+      self.scroll_offset = 0;
     }
   }
 }
@@ -680,7 +699,10 @@ fn render_cell(
 ) {
   match cell.paragraph_options.clone() {
     Some(options) => {
-      let mut paragraph = Paragraph::new(&cell.content);
+      let mut paragraph = Paragraph::new(&cell.content).set_highlight_options(
+        options.highlight_style,
+        options.highlight_range,
+      );
       if let Some(block) = options.block {
         paragraph = paragraph.block(block);
       }

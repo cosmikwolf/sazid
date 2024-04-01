@@ -23,9 +23,14 @@ use helix_view::Editor;
 
 pub use helix_view::input::Event;
 
+pub enum ContextFocus {
+  EditorView,
+  SessionView,
+}
 pub struct Context<'a> {
   pub session: &'a mut Session,
   pub editor: &'a mut Editor,
+  pub focus: &'a mut ContextFocus,
   pub scroll: Option<usize>,
   pub jobs: &'a mut Jobs,
 }

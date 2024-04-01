@@ -54,7 +54,7 @@ use movement::Movement;
 
 use crate::{
   args,
-  compositor::{self, Component, Compositor},
+  compositor::{self, Component, Compositor, ContextFocus},
   filter_picker_entry,
   job::Callback,
   keymap::ReverseKeymap,
@@ -93,6 +93,7 @@ pub struct Context<'a> {
   pub register: Option<char>,
   pub count: Option<NonZeroUsize>,
   pub editor: &'a mut Editor,
+  pub focus: &'a mut ContextFocus,
 
   pub callback: Vec<crate::compositor::Callback>,
   pub on_next_key_callback: Option<OnKeyCallback>,
@@ -203,6 +204,7 @@ impl MappableCommand {
         let args: Vec<Cow<str>> = args.iter().map(Cow::from).collect();
         if let Some(command) = typed::TYPABLE_COMMAND_MAP.get(name.as_str()) {
           let mut cx = compositor::Context {
+            focus: cx.focus,
             session: cx.session,
             editor: cx.editor,
             jobs: cx.jobs,
@@ -510,9 +512,12 @@ impl MappableCommand {
         record_macro, "Record macro",
         replay_macro, "Replay macro",
         command_palette, "Open command palette",
+        // sazid specific commands
         quit, "Exit application",
         submit_input_to_session, "Submit Chat Completion Request",
         save_session, "save session to file",
+        session_view_scroll_up, "scroll session text up",
+        session_view_scroll_down, "scroll session text down",
         load_session_picker, "show saved session",
     );
 }
@@ -606,6 +611,32 @@ fn quit(cx: &mut Context) {
   let view_id = view!(cx.editor).id;
   // close current split
   cx.editor.close(view_id);
+}
+
+fn session_view_scroll_up(cx: &mut Context) {
+  cx.callback.push(Box::new(
+    move |compositor: &mut Compositor, cx: &mut compositor::Context| {
+      log::info!("session_view_scroll_up");
+      compositor
+        .find::<ui::SessionView<ChatMessageItem>>()
+        .unwrap()
+        .scroll_up();
+      helix_event::request_redraw();
+    },
+  ))
+}
+
+fn session_view_scroll_down(cx: &mut Context) {
+  cx.callback.push(Box::new(
+    move |compositor: &mut Compositor, cx: &mut compositor::Context| {
+      log::info!("session_view_scroll_down");
+      compositor
+        .find::<ui::SessionView<ChatMessageItem>>()
+        .unwrap()
+        .scroll_down();
+      helix_event::request_redraw();
+    },
+  ))
 }
 
 fn save_session(cx: &mut Context) {
@@ -3108,6 +3139,7 @@ pub fn command_palette(cx: &mut Context) {
             callback: Vec::new(),
             on_next_key_callback: None,
             jobs: cx.jobs,
+            focus: cx.focus,
           };
           let focus = view!(ctx.editor).id;
 

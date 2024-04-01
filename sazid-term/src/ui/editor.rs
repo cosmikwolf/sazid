@@ -1,6 +1,6 @@
 use crate::{
   commands::{self, OnKeyCallback},
-  compositor::{Component, Context, Event, EventResult},
+  compositor::{Component, Context, ContextFocus, Event, EventResult},
   events::{OnModeSwitch, PostCommand},
   key,
   keymap::{KeymapResult, Keymaps},
@@ -1308,6 +1308,7 @@ impl Component for EditorView {
       callback: Vec::new(),
       on_next_key_callback: None,
       jobs: context.jobs,
+      focus: context.focus,
     };
 
     match event {
@@ -1359,6 +1360,7 @@ impl Component for EditorView {
                 let res = {
                   // use a fake context here
                   let mut cx = Context {
+                    focus: &mut cx.focus,
                     session: cx.session,
                     editor: cx.editor,
                     jobs: cx.jobs,

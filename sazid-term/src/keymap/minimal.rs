@@ -163,13 +163,13 @@ pub fn minimal() -> HashMap<Mode, KeyTrie> {
       ">" => indent,
       "<" => unindent,
       "=" => format_selections,
-      "J" => join_selections,
-      "A-J" => join_selections_space,
-      "K" => keep_selections,
-      "A-K" => remove_selections,
-
-      "," => keep_primary_selection,
-      "A-," => remove_primary_selection,
+      // "J" => join_selections,
+      // "A-J" => join_selections_space,
+      // "K" => keep_selections,
+      // "A-K" => remove_selections,
+      //
+      // "," => keep_primary_selection,
+      // "A-," => remove_primary_selection,
 
       // "q" => record_macro,
       // "Q" => replay_macro,
@@ -338,6 +338,10 @@ pub fn minimal() -> HashMap<Mode, KeyTrie> {
 
       "C-a" => increment,
       "C-x" => decrement,
+
+      // sazid specific
+       "J" => session_view_scroll_up,
+       "K" => session_view_scroll_down,
   });
   let mut select = normal.clone();
   select.merge_nodes(keymap!({ "Select mode"

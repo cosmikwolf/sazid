@@ -30,7 +30,7 @@ use tui::backend::Backend;
 use crate::{
   args::Args,
   commands::ChatMessageItem,
-  compositor::{self, Component, Compositor, Event},
+  compositor::{self, Component, Compositor, ContextFocus, Event},
   config::Config,
   handlers,
   job::Jobs,
@@ -68,6 +68,7 @@ pub struct Application {
   compositor: Compositor,
   terminal: Terminal,
 
+  focus: ContextFocus,
   pub editor: Editor,
 
   session: Session,
@@ -261,10 +262,14 @@ impl Application {
 
     // let id = *id;
     editor.switch(doc_id, Action::Replace);
-    compositor.push(Box::new(markdown_session));
 
     let mut input = EditorView::new(crate::keymap::minimal_keymap());
-    input.override_height(20, ui::editor::VerticalAlign::Bottom);
+    input.override_height(
+      markdown_session.input_height,
+      ui::editor::VerticalAlign::Bottom,
+    );
+
+    compositor.push(Box::new(markdown_session));
     compositor.push(Box::new(input));
 
     #[cfg(windows)]
@@ -285,6 +290,7 @@ impl Application {
       editor,
       config,
 
+      focus: ContextFocus::EditorView,
       session,
       session_events,
 
@@ -312,6 +318,7 @@ impl Application {
     }
 
     let mut cx = crate::compositor::Context {
+      focus: &mut self.focus,
       session: &mut self.session,
       editor: &mut self.editor,
       jobs: &mut self.jobs,
@@ -692,6 +699,7 @@ impl Application {
 
   pub async fn handle_idle_timeout(&mut self) {
     let mut cx = crate::compositor::Context {
+      focus: &mut self.focus,
       session: &mut self.session,
       editor: &mut self.editor,
       jobs: &mut self.jobs,
@@ -795,6 +803,7 @@ impl Application {
     event: std::io::Result<CrosstermEvent>,
   ) {
     let mut cx = crate::compositor::Context {
+      focus: &mut self.focus,
       session: &mut self.session,
       editor: &mut self.editor,
       jobs: &mut self.jobs,

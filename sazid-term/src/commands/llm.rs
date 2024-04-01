@@ -10,6 +10,7 @@ use crate::{
 use crate::ui::MarkdownRenderer;
 use arc_swap::ArcSwap;
 use async_openai::types::ChatCompletionRequestMessage;
+use helix_lsp::lsp::Range;
 use helix_view::{
   theme::{Color, Style},
   Editor, Theme,
@@ -18,9 +19,9 @@ use sazid::app::messages::{
   chat_completion_request_message_content_as_str,
   chat_completion_request_message_tool_calls_as_str,
 };
-use tui::text::{Span, Spans, Text};
+use tui::text::{Span, Spans, StyledGrapheme, Text};
 
-use helix_core::syntax;
+use helix_core::{syntax, Position};
 
 /// Gets the first language server that is attached to a document which supports a specific feature.
 /// If there is no configured language server that supports the feature, this displays a status message.
@@ -39,6 +40,7 @@ pub struct ChatMessageItem {
   pub id: Option<i64>,
   pub len_lines: usize,
   pub len_chars: usize,
+  pub select_range: Option<Range>,
   pub config_loader: Arc<ArcSwap<syntax::Loader>>,
   // pub markdown: ui::Markdown,
   pub message: ChatMessageType,
@@ -56,7 +58,8 @@ impl ChatMessageItem {
     let len_chars = content.chars().count();
     let id = Some(id);
     let message = ChatMessageType::Chat(message);
-    Self { id, len_lines, len_chars, config_loader, message }
+    let select_range = None;
+    Self { id, len_lines, len_chars, config_loader, message, select_range }
     // let markdown = ui::Markdown::new(content, config_loader);
   }
 
@@ -68,7 +71,8 @@ impl ChatMessageItem {
     let len_chars = message.chars().count();
     let id = None;
     let message = ChatMessageType::Error(message);
-    Self { id, len_lines, len_chars, config_loader, message }
+    let select_range = None;
+    Self { id, len_lines, len_chars, config_loader, message, select_range }
   }
 
   pub fn content(&self) -> &str {
@@ -151,7 +155,7 @@ impl ui::markdownmenu::MarkdownItem for ChatMessageItem {
         "ERROR".to_string(),
       ),
     };
-    log::warn!("content: {}\nheader: {}", self.content(), header);
+    // log::warn!("content: {}\nheader: {}", self.content(), header);
     let header = Spans::from(vec![Span::styled(header, style)]);
     let mut lines = vec![header];
     let text = MarkdownRenderer::parse(
