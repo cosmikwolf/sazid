@@ -109,7 +109,7 @@ impl ChatMessageItem {
 
     let text = text.lines.iter().flat_map(|spans| {
       spans.0.iter().flat_map(|span| {
-        log::info!("span: {}", span.content.as_ref());
+        // log::info!("span: {:#?}", span);
         span.content.as_ref().split_word_bounds().chain(iter::once("\n"))
       })
     });
@@ -118,7 +118,7 @@ impl ChatMessageItem {
     let mut line_composer: Box<dyn LineComposerStr> =
       Box::new(WordWrapperStr::new(Box::new(text), width, trim));
 
-    log::error!("width: {}", width);
+    // log::error!("width: {}", width);
     let mut plain_text = Rope::new();
     use helix_core::unicode::width::UnicodeWidthStr;
     while let Some((symbol, length)) = line_composer.next_line() {
@@ -132,6 +132,8 @@ impl ChatMessageItem {
       plain_text.insert(plain_text.len_chars(), "\n");
     }
     drop(line_composer);
+
+    // log::warn!("text: {}", format!("{}", plain_text));
     self.plain_yank_text = plain_text;
     self.line_widths = line_widths;
   }

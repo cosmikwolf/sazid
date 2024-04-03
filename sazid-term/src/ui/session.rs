@@ -786,16 +786,7 @@ impl<T: MarkdownItem + 'static> SessionView<T> {
 
     self.widths = vec![Constraint::Length(5), Constraint::Percentage(25)];
 
-    self.chat_viewport = *Layout::default()
-      .direction(tui::layout::Direction::Horizontal)
-      .constraints(self.widths.clone())
-      .split(inner)
-      .last()
-      .unwrap();
-    log::info!("viewport: {:#?}", self.chat_viewport);
-    self.chat_viewport.x += self.table_column_spacing;
-
-    Table::new(
+    let column_areas = Table::new(
       self
         .messages
         .iter_mut()
@@ -837,6 +828,9 @@ impl<T: MarkdownItem + 'static> SessionView<T> {
     .row_spacing(self.table_row_spacing)
     .widths(&self.widths)
     .render_table(inner, surface, &mut self.state, self.truncate_start);
+
+    self.chat_viewport = column_areas[1];
+    log::info!("viewport: {:#?}", self.chat_viewport);
   }
 
   /// Get highlight spans for selections in a document view.
@@ -1250,7 +1244,6 @@ impl<T: MarkdownItem + 'static + Send + Sync> Component for SessionView<T> {
 
     let session_cursor = self.selection.primary().cursor(text.slice(..));
 
-    log::warn!("text: {:#?}", text);
     let mut row = text
       .try_char_to_line(session_cursor)
       .map_err(|e| format!("cursor out of bounds {}", e))
@@ -1265,27 +1258,27 @@ impl<T: MarkdownItem + 'static + Send + Sync> Component for SessionView<T> {
 
     row += self.chat_viewport.y as usize;
 
-    log::info!(
-      "cursor
-        row: {:#?}
-        col: {:#?}
-        session_cursor: {:#?}
-        char_at_line_start: {:#?}
-        inner_viewport: {:#?}
-        text: {:#?}
-        lines_len: {},
-        chars_len: {}
-        line_widths: {:#?}",
-      row,
-      col,
-      session_cursor,
-      char_at_line_start,
-      self.chat_viewport,
-      text.to_string(),
-      text.lines().len(),
-      text.chars().len(),
-      line_widths
-    );
+    // log::info!(
+    //   "cursor
+    //     row: {:#?}
+    //     col: {:#?}
+    //     session_cursor: {:#?}
+    //     char_at_line_start: {:#?}
+    //     inner_viewport: {:#?}
+    //     text: {:#?}
+    //     lines_len: {},
+    //     chars_len: {}
+    //     line_widths: {:#?}",
+    //   row,
+    //   col,
+    //   session_cursor,
+    //   char_at_line_start,
+    //   self.chat_viewport,
+    //   text.to_string(),
+    //   text.lines().len(),
+    //   text.chars().len(),
+    //   line_widths
+    // );
 
     let session_cursor = (Some(Position { row, col }), CursorKind::Underline);
     let cursor_res = if self.session_is_focused {

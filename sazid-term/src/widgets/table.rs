@@ -366,11 +366,7 @@ impl<'a> Table<'a> {
     self.header.as_ref().into_iter().chain(self.rows.iter()).collect()
   }
 
-  fn get_columns_widths(
-    &self,
-    max_width: u16,
-    has_selection: bool,
-  ) -> Vec<u16> {
+  fn get_columns_areas(&self, area: Rect, has_selection: bool) -> Vec<Rect> {
     let mut constraints = Vec::with_capacity(self.widths.len() * 2 + 1);
     if has_selection {
       let highlight_symbol_width =
@@ -387,11 +383,11 @@ impl<'a> Table<'a> {
     let mut chunks = tui::layout::Layout::default()
       .direction(tui::layout::Direction::Horizontal)
       .constraints(constraints)
-      .split(Rect { x: 0, y: 0, width: max_width, height: 1 });
+      .split(area);
     if has_selection {
       chunks.remove(0);
     }
-    chunks.iter().step_by(2).map(|c| c.width).collect()
+    chunks.into_iter().step_by(2).collect()
   }
 
   pub fn row_heights(&self) -> Vec<u16> {
@@ -576,10 +572,7 @@ impl<'a> Table<'a> {
     buf: &mut Buffer,
     state: &mut TableState,
     truncate: bool,
-  ) -> Vec<Row<'a>> {
-    if area.area() == 0 {
-      return Vec::new();
-    }
+  ) -> Vec<Rect> {
     buf.set_style(area, self.style);
     state.viewport_height = area.height;
 
@@ -594,8 +587,9 @@ impl<'a> Table<'a> {
     };
 
     let has_selection = state.selected.is_some();
+    let column_areas = self.get_columns_areas(table_area, has_selection);
     let column_widths =
-      self.get_columns_widths(table_area.width, has_selection);
+      column_areas.iter().map(|a| a.width).collect::<Vec<_>>();
     self
       .rows
       .iter_mut()
@@ -643,7 +637,7 @@ impl<'a> Table<'a> {
 
     // Draw rows
     if self.rows.is_empty() {
-      return Vec::new();
+      return column_areas;
     }
 
     for (table_row, extents) in self.rows.iter().zip(self.get_row_extents(
@@ -706,7 +700,7 @@ impl<'a> Table<'a> {
         },
       }
     }
-    return self.rows;
+    return column_areas;
   }
 }
 
