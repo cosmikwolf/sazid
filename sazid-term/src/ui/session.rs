@@ -675,6 +675,18 @@ impl<T: MarkdownItem + 'static> SessionView<T> {
     EventResult::Consumed(callback)
   }
 
+  fn render_cursor(
+    &mut self,
+    area: Rect,
+    surface: &mut Surface,
+    cx: &mut Context,
+  ) {
+    if let (Some(pos), kind) = self.cursor(area, cx.editor) {
+      let cursor_area = Rect::new(pos.row as u16, pos.col as u16, 1, 1);
+      surface.set_style(cursor_area, cx.editor.theme.get("ui.cursor"));
+    }
+  }
+
   fn render_session(
     &mut self,
     area: Rect,
@@ -1089,7 +1101,7 @@ impl<T: MarkdownItem + 'static + Send + Sync> Component for SessionView<T> {
 
     let session_area = area.with_width(session_width);
     self.render_session(session_area, surface, cx);
-
+    self.render_cursor(session_area, surface, cx);
     if render_preview {
       let preview_area = area.clip_left(session_width);
       self.render_preview(preview_area, surface, cx);
@@ -1280,24 +1292,13 @@ impl<T: MarkdownItem + 'static + Send + Sync> Component for SessionView<T> {
     //   line_widths
     // );
 
-    let session_cursor = (Some(Position { row, col }), CursorKind::Underline);
-    let cursor_res = if self.session_is_focused {
-      match session_cursor {
-        // all block cursors are drawn manually
-        (pos, CursorKind::Block) => {
-          if self.terminal_focused {
-            (pos, CursorKind::Hidden)
-          } else {
-            // use crossterm cursor when terminal loses focus
-            (pos, CursorKind::Underline)
-          }
-        },
-        cursor => cursor,
-      }
+    let cursor_res = if self.session_is_focused && self.terminal_focused {
+      (Some(Position { row, col }), CursorKind::Block)
     } else {
       (None, CursorKind::Hidden)
     };
     log::info!("cursor: {:?}", cursor_res);
+    editor.cursor_cache.set(Some(cursor_res.0));
     cursor_res
   }
   fn required_size(
