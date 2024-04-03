@@ -1,10 +1,14 @@
-use std::sync::Arc;
+use std::{iter, sync::Arc};
 
 use super::Context;
 use crate::{
   compositor::{self, Compositor},
   job::Callback,
   ui::{self, overlay::overlaid},
+  widgets::{
+    plaintext_reflow::{LineComposerStr, WordWrapperStr},
+    reflow::{LineComposer, WordWrapper},
+  },
 };
 
 use crate::ui::MarkdownRenderer;
@@ -21,7 +25,8 @@ use sazid::app::messages::{
 };
 use tui::text::{Span, Spans, StyledGrapheme, Text};
 
-use helix_core::{syntax, Position};
+use helix_core::{syntax, Rope};
+use unicode_segmentation::{UnicodeSegmentation, UnicodeWords};
 
 /// Gets the first language server that is attached to a document which supports a specific feature.
 /// If there is no configured language server that supports the feature, this displays a status message.
@@ -38,12 +43,13 @@ pub enum ChatMessageType {
 #[derive(Clone)]
 pub struct ChatMessageItem {
   pub id: Option<i64>,
-  pub len_lines: usize,
-  pub len_chars: usize,
+  pub formatted_line_char_len: Vec<usize>,
+  pub plain_yank_text: Rope,
   pub select_range: Option<Range>,
   pub config_loader: Arc<ArcSwap<syntax::Loader>>,
-  // pub markdown: ui::Markdown,
-  pub message: ChatMessageType,
+  pub chat_message: ChatMessageType,
+  pub line_widths: Vec<u16>,
+  pub wrapped_width: u16,
 }
 
 impl ChatMessageItem {
@@ -52,57 +58,86 @@ impl ChatMessageItem {
     message: ChatCompletionRequestMessage,
     config_loader: Arc<ArcSwap<syntax::Loader>>,
   ) -> Self {
-    let content =
-      chat_completion_request_message_content_as_str(&message).to_string();
-    let len_lines = content.lines().count();
-    let len_chars = content.chars().count();
     let id = Some(id);
     let message = ChatMessageType::Chat(message);
     let select_range = None;
-    Self { id, len_lines, len_chars, config_loader, message, select_range }
-    // let markdown = ui::Markdown::new(content, config_loader);
+    let formatted_line_char_len = Vec::new();
+    Self {
+      id,
+      formatted_line_char_len,
+      config_loader,
+      chat_message: message.clone(),
+      select_range,
+      plain_yank_text: Rope::new(),
+      line_widths: Vec::new(),
+      wrapped_width: 0,
+    }
   }
 
   pub fn new_error(
     message: String,
     config_loader: Arc<ArcSwap<syntax::Loader>>,
   ) -> Self {
-    let len_lines = message.lines().count();
-    let len_chars = message.chars().count();
     let id = None;
     let message = ChatMessageType::Error(message);
     let select_range = None;
-    Self { id, len_lines, len_chars, config_loader, message, select_range }
-  }
-
-  pub fn content(&self) -> &str {
-    match &self.message {
-      ChatMessageType::Chat(message) => {
-        chat_completion_request_message_content_as_str(message)
-      },
-      ChatMessageType::Error(error) => error,
+    let formatted_line_char_len = Vec::new();
+    Self {
+      id,
+      formatted_line_char_len,
+      config_loader,
+      chat_message: message.clone(),
+      select_range,
+      plain_yank_text: Rope::new(),
+      line_widths: Vec::new(),
+      wrapped_width: 0,
     }
   }
-  pub fn tool_calls(&self) -> Option<Vec<(&str, &str)>> {
-    match &self.message {
-      ChatMessageType::Chat(message) => {
-        chat_completion_request_message_tool_calls_as_str(message)
-      },
-      ChatMessageType::Error(_) => None,
+
+  pub fn cache_wrapped_yank_text(
+    &mut self,
+    message: Option<ChatMessageType>,
+    width: u16,
+  ) {
+    if let Some(message) = message {
+      self.chat_message = message;
     }
+    let text = self.format_to_text(None);
+
+    let line_widths: Vec<u16> =
+      text.lines.iter().map(|spans| spans.width() as u16).collect();
+
+    let text = text.lines.iter().flat_map(|spans| {
+      spans.0.iter().flat_map(|span| {
+        log::info!("span: {}", span.content.as_ref());
+        span.content.as_ref().split_word_bounds().chain(iter::once("\n"))
+      })
+    });
+
+    let trim = false;
+    let mut line_composer: Box<dyn LineComposerStr> =
+      Box::new(WordWrapperStr::new(Box::new(text), width, trim));
+
+    log::error!("width: {}", width);
+    let mut plain_text = Rope::new();
+    use helix_core::unicode::width::UnicodeWidthStr;
+    while let Some((symbol, length)) = line_composer.next_line() {
+      log::info!(
+        "symbol: {:#?}  width: {}  length:{}",
+        symbol,
+        symbol.width(),
+        length
+      );
+      plain_text.insert(plain_text.len_chars(), symbol);
+      plain_text.insert(plain_text.len_chars(), "\n");
+    }
+    drop(line_composer);
+    self.plain_yank_text = plain_text;
+    self.line_widths = line_widths;
   }
-}
 
-impl ui::markdownmenu::MarkdownItem for ChatMessageItem {
-  /// Current working directory.
-  type Data = String;
-
-  fn format(
-    &self,
-    _data: &Self::Data,
-    theme: Option<&Theme>,
-  ) -> tui::text::Text {
-    let (style, header) = match self.message {
+  fn format_to_text(&self, theme: Option<&Theme>) -> tui::text::Text {
+    let (style, header) = match self.chat_message {
       ChatMessageType::Chat(ChatCompletionRequestMessage::System(_)) => {
         (
           Style::default()
@@ -178,10 +213,36 @@ impl ui::markdownmenu::MarkdownItem for ChatMessageItem {
         ])));
       })
     }
-
     lines.into()
+  }
+  pub fn content(&self) -> &str {
+    match &self.chat_message {
+      ChatMessageType::Chat(message) => {
+        chat_completion_request_message_content_as_str(message)
+      },
+      ChatMessageType::Error(error) => error,
+    }
+  }
+  pub fn tool_calls(&self) -> Option<Vec<(&str, &str)>> {
+    match &self.chat_message {
+      ChatMessageType::Chat(message) => {
+        chat_completion_request_message_tool_calls_as_str(message)
+      },
+      ChatMessageType::Error(_) => None,
+    }
+  }
+}
 
-    // Spans::from(vec![header, markdownText.lines]).into()
+impl ui::markdownmenu::MarkdownItem for ChatMessageItem {
+  /// Current working directory.
+  type Data = String;
+
+  fn format(
+    &self,
+    _data: &Self::Data,
+    theme: Option<&Theme>,
+  ) -> tui::text::Text {
+    self.format_to_text(theme)
   }
 }
 

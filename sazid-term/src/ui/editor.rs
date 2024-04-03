@@ -1,6 +1,8 @@
 use crate::{
-  commands::{self, OnKeyCallback},
-  compositor::{Component, Context, ContextFocus, Event, EventResult},
+  commands::{self, ChatMessageItem, OnKeyCallback},
+  compositor::{
+    Component, Compositor, Context, ContextFocus, Event, EventResult,
+  },
   events::{OnModeSwitch, PostCommand},
   key,
   keymap::{KeymapResult, Keymaps},
@@ -34,8 +36,8 @@ use std::{mem::take, num::NonZeroUsize, path::PathBuf, rc::Rc, sync::Arc};
 
 use tui::{buffer::Buffer as Surface, text::Span};
 
-use super::document::LineDecoration;
 use super::{completion::CompletionItem, statusline};
+use super::{document::LineDecoration, SessionView};
 
 pub enum VerticalAlign {
   Bottom,
@@ -1449,7 +1451,15 @@ impl Component for EditorView {
       Event::IdleTimeout => self.handle_idle_timeout(&mut cx),
       Event::FocusGained => {
         self.terminal_focused = true;
-        EventResult::Consumed(None)
+        EventResult::Consumed(Some(Box::new(
+          move |compositor: &mut Compositor,
+                cx: &mut crate::compositor::Context| {
+            compositor
+              .find::<SessionView<ChatMessageItem>>()
+              .unwrap()
+              .set_terminal_focused(true)
+          },
+        )))
       },
       Event::FocusLost => {
         if context.editor.config().auto_save {
@@ -1459,12 +1469,28 @@ impl Component for EditorView {
           }
         }
         self.terminal_focused = false;
-        EventResult::Consumed(None)
+        EventResult::Consumed(Some(Box::new(
+          move |compositor: &mut Compositor,
+                cx: &mut crate::compositor::Context| {
+            compositor
+              .find::<SessionView<ChatMessageItem>>()
+              .unwrap()
+              .set_terminal_focused(false)
+          },
+        )))
       },
     }
   }
 
   fn render(&mut self, area: Rect, surface: &mut Surface, cx: &mut Context) {
+    match cx.focus {
+      ContextFocus::SessionView => {
+        self.editor_is_focused = false;
+      },
+      ContextFocus::EditorView => {
+        self.editor_is_focused = true;
+      },
+    }
     let config = cx.editor.config();
 
     // check if bufferline should be rendered

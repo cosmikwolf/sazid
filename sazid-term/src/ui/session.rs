@@ -1,6 +1,8 @@
 use crate::{
-  commands::{ChatMessageItem, ChatMessageType},
-  compositor::{self, Component, Compositor, Context, Event, EventResult},
+  commands::ChatMessageItem,
+  compositor::{
+    self, Component, Compositor, Context, ContextFocus, Event, EventResult,
+  },
   ctrl, filter_picker_entry,
   job::Callback,
   key, shift,
@@ -18,7 +20,9 @@ use nucleo::{Config, Nucleo, Utf32String};
 use tui::{
   buffer::Buffer as Surface,
   layout::Constraint,
-  widgets::{Block, BorderType, Borders},
+  layout::Layout,
+  text::Text,
+  widgets::{Block, Borders},
 };
 
 use tui::widgets::Widget;
@@ -34,15 +38,19 @@ use std::{
 };
 
 use helix_core::{
-  char_idx_at_visual_offset, fuzzy::MATCHER, movement::Direction,
-  text_annotations::TextAnnotations, Position, Syntax,
+  char_idx_at_visual_offset,
+  fuzzy::MATCHER,
+  graphemes::{next_grapheme_boundary, prev_grapheme_boundary},
+  movement::Direction,
+  text_annotations::TextAnnotations,
+  Position, Rope, Selection, Syntax,
 };
 
 use helix_view::{
-  editor::Action,
+  document::Mode,
+  editor::{Action, CursorShapeConfig},
   graphics::{CursorKind, Margin, Modifier, Rect},
   input::{MouseButton, MouseEventKind},
-  theme::{Color, Style},
   view::ViewPosition,
   Document, DocumentId, Editor, Theme,
 };
@@ -172,8 +180,9 @@ pub struct SessionView<T: MarkdownItem> {
 
   /// Current height of the completions box
   completion_height: u16,
-
-  session_is_focus: bool,
+  terminal_focused: bool,
+  plain_text_cache: Rope,
+  session_is_focused: bool,
   theme: Option<Theme>,
   selected_option: u32,
   // textbox: ui::textbox::Textbox,
@@ -181,13 +190,16 @@ pub struct SessionView<T: MarkdownItem> {
   pub input_height: u16,
   input_hidden: bool,
   state: TableState,
+  table_column_spacing: u16,
+  table_row_spacing: u16,
   /// Whether to show the preview panel (default true)
   show_preview: bool,
   /// Constraints for tabular formatting
   widths: Vec<Constraint>,
-
+  line_char_counts: Vec<usize>,
+  pub chat_viewport: Rect,
   callback_fn: SessionCallback<T>,
-
+  pub selection: Selection,
   pub truncate_start: bool,
   /// Caches paths to documents
   preview_cache: HashMap<PathBuf, CachedPreview>,
@@ -279,8 +291,9 @@ impl<T: MarkdownItem + 'static> SessionView<T> {
       selected: None,
       row_heights: Vec::new(),
       viewport_height: 0,
-      cursor_position: None,
       select_range: None,
+      cursor_position: None,
+      cursor_style: None,
     };
 
     Self {
@@ -289,13 +302,19 @@ impl<T: MarkdownItem + 'static> SessionView<T> {
       editor_data,
       theme,
       shutdown,
-      session_is_focus: false,
+      plain_text_cache: Rope::new(),
+      session_is_focused: false,
+      terminal_focused: true,
       selected_option: 0,
+      line_char_counts: Vec::new(),
       // textbox,
       state: tablestate,
       input,
+      chat_viewport: Rect::default(),
       input_height,
       input_hidden: false,
+      table_column_spacing: 1,
+      table_row_spacing: 1,
       truncate_start: true,
       show_preview: true,
       callback_fn: Box::new(callback_fn),
@@ -304,14 +323,48 @@ impl<T: MarkdownItem + 'static> SessionView<T> {
       preview_cache: HashMap::new(),
       read_buffer: Vec::with_capacity(1024),
       file_fn: None,
+      selection: Selection::point(0),
     }
+  }
+
+  pub fn get_messages_plaintext(&self) -> Rope {
+    let mut plain_text = Rope::new();
+    self.messages.iter().for_each(|s| {
+      plain_text.append(s.plain_yank_text.clone());
+      plain_text
+        .append(Rope::from("\n".repeat(self.table_row_spacing as usize)));
+    });
+    // try remove the extra trailing newline from plain_text, but its fine if it fails
+    match plain_text.try_remove(
+      plain_text.len_chars().saturating_sub(self.table_row_spacing as usize)..,
+    ) {
+      Ok(_) => plain_text,
+      Err(_) => plain_text,
+    }
+  }
+
+  pub fn get_line_widths(&self) -> Vec<u16> {
+    self
+      .messages
+      .iter()
+      .flat_map(|m| {
+        let mut line_widths = m.line_widths.clone();
+        for _i in 0..self.table_row_spacing {
+          line_widths.push(0);
+        }
+        line_widths
+      })
+      .collect()
   }
 
   pub fn upsert_message(&mut self, message: ChatMessageItem) {
     if let Some(existing_message) =
       self.messages.iter_mut().find(|m| m.id.is_some() && m.id == message.id)
     {
-      *existing_message = message;
+      existing_message.cache_wrapped_yank_text(
+        Some(message.chat_message),
+        self.chat_viewport.width,
+      );
     } else {
       self.messages.push(message);
     }
@@ -319,6 +372,10 @@ impl<T: MarkdownItem + 'static> SessionView<T> {
 
   pub fn reload_messages(&mut self, messages: Vec<ChatMessageItem>) {
     self.messages = messages;
+  }
+
+  pub fn set_terminal_focused(&mut self, terminal_focused: bool) {
+    self.terminal_focused = terminal_focused
   }
 
   pub fn injector(&self) -> Injector<T> {
@@ -421,6 +478,35 @@ impl<T: MarkdownItem + 'static> SessionView<T> {
       .snapshot()
       .get_matched_item(self.selected_option)
       .map(|item| item.data)
+  }
+
+  pub fn update_plain_text_cache_from_rows(
+    &mut self,
+    rows: &[Row],
+    col_index: usize,
+  ) {
+    self.plain_text_cache.append(Rope::from(
+      rows
+        .iter()
+        .flat_map(|row| {
+          row.cells[col_index].content.lines.iter().flat_map(|spans| {
+            spans.0.iter().flat_map(|span| span.content.chars())
+          })
+        })
+        .skip(self.plain_text_cache.len_chars())
+        .collect::<String>(),
+    ))
+  }
+
+  pub fn update_plain_text_cache(&mut self, text: &Text<'_>) {
+    self.plain_text_cache.append(Rope::from(
+      text
+        .lines
+        .iter()
+        .flat_map(|spans| spans.0.iter().flat_map(|span| span.content.chars()))
+        .skip(self.plain_text_cache.len_chars())
+        .collect::<String>(),
+    ))
   }
 
   pub fn toggle_preview(&mut self) {
@@ -598,9 +684,7 @@ impl<T: MarkdownItem + 'static> SessionView<T> {
     // -- make space for the input bar:
     let input_on_top = false;
     // define input area
-    let area = if self.input_hidden {
-      area.clip_top(self.input_height)
-    } else if input_on_top {
+    let area = if self.input_hidden || input_on_top {
       area.clip_top(self.input_height)
     } else {
       area.clip_bottom(self.input_height + 1)
@@ -615,6 +699,7 @@ impl<T: MarkdownItem + 'static> SessionView<T> {
     }
 
     let text_style = cx.editor.theme.get("ui.text");
+    let cursor_style = cx.editor.theme.get("ui.cursor");
     let selected = cx.editor.theme.get("ui.selection");
     let highlight_style =
       cx.editor.theme.get("special").add_modifier(Modifier::BOLD);
@@ -669,76 +754,195 @@ impl<T: MarkdownItem + 'static> SessionView<T> {
       matcher.config.set_match_paths()
     }
 
+    let highlight = if self.session_is_focused {
+      self.session_selection_highlights(
+        cx.editor.mode(),
+        &cx.editor.theme,
+        &cx.editor.config().cursor_shape,
+        self.terminal_focused,
+      )
+    } else {
+      vec![]
+    };
+
+    if let (Some(position), cursor) = self.cursor(area, cx.editor) {
+      self.state.cursor_position = Some(position);
+    };
+
     let highlight_range = Some(Range {
       start: helix_lsp::Position::new(1, 0),
       end: helix_lsp::Position::new(20, 5),
     });
-    let highlight_style = Some(selected.bg(Color::Yellow).fg(Color::Red));
+
+    // if let (Some(position), cursor) = self.cursor(area, cx.editor) {
+    //   selfcursor_area =
+    //     Rect::new(position.row as u16, position.col as u16, 1, 1);
+    //   surface.set_style(cursor_area, cursor_style);
+    // };
+
+    // let highlight_style = Some(selected.bg(Color::Yellow).fg(Color::Red));
+    let highlight_style = None;
     // let highlight_style = self.style.patch(highlight_style);
-
-    let rows: Vec<Row> = self
-      .messages
-      .iter()
-      .enumerate()
-      .map(|(msg_idx, message_item)| {
-        let text = message_item
-          .format(&message_item.content().to_string(), self.theme.as_ref());
-        let height = text.height() as u16;
-        let message_cell = Cell::from(text).paragraph_cell(
-          // Some(Block::default().borders(Borders::LEFT)),
-          None,
-          Some(false),
-          (0, 0),
-          tui::layout::Alignment::Left,
-          highlight_style,
-          highlight_range,
-        );
-
-        let index_cell = Cell::from(msg_idx.to_string()).paragraph_cell(
-          Some(Block::default().borders(Borders::RIGHT)),
-          Some(false),
-          (0, 0),
-          tui::layout::Alignment::Center,
-          None,
-          None,
-        );
-        Row::new(vec![index_cell, message_cell]).height(height)
-      })
-      .collect();
-
-    // let options: Vec<Row> = snapshot
-    //    // .matched_items(0..snapshot.matched_item_count())
-    //    // .matched_items(offset..end)
-    //     .matched_items(0..snapshot.item_count())
-    //     // .matched_items(0..end)
-    //   .map(|item| {
-    //     snapshot.pattern().column_pattern(0).indices(
-    //       item.matcher_columns[0].slice(..),
-    //       &mut matcher,
-    //       &mut indices,
-    //     );
-    //     indices.sort_unstable();
-    //     indices.dedup();
-    //     let text = item.data.format(&self.editor_data, self.theme.as_ref());
-    //
-    //     let height = text.height() as u16;
-    //     Row::from(text).height(height)
-    //   })
-    //   .collect();
 
     self.widths = vec![Constraint::Length(5), Constraint::Percentage(25)];
 
-    let table = Table::new(rows)
-      .style(text_style)
-      .highlight_style(selected)
-      .highlight_symbol(" > ")
-      .column_spacing(1)
-      .row_spacing(1)
-      .widths(&self.widths);
+    self.chat_viewport = *Layout::default()
+      .direction(tui::layout::Direction::Horizontal)
+      .constraints(self.widths.clone())
+      .split(inner)
+      .last()
+      .unwrap();
+    log::info!("viewport: {:#?}", self.chat_viewport);
+    self.chat_viewport.x += self.table_column_spacing;
 
-    table.render_table(inner, surface, &mut self.state, self.truncate_start);
+    Table::new(
+      self
+        .messages
+        .iter_mut()
+        .enumerate()
+        .map(|(msg_idx, message_item)| {
+          if message_item.wrapped_width != self.chat_viewport.x {
+            message_item
+              .cache_wrapped_yank_text(None, self.chat_viewport.width);
+          }
+          let text = message_item
+            .format(&message_item.content().to_string(), self.theme.as_ref());
+
+          let height = text.height() as u16;
+          let message_cell = Cell::from(text).paragraph_cell(
+            // Some(Block::default().borders(Borders::LEFT)),
+            None,
+            Some(false),
+            (0, 0),
+            tui::layout::Alignment::Left,
+            highlight_style,
+            highlight_range,
+          );
+          let index_cell = Cell::from(msg_idx.to_string()).paragraph_cell(
+            Some(Block::default().borders(Borders::RIGHT)),
+            Some(false),
+            (0, 0),
+            tui::layout::Alignment::Center,
+            None,
+            None,
+          );
+          Row::new(vec![index_cell, message_cell]).height(height)
+        })
+        .collect::<Vec<Row>>(),
+    )
+    .style(text_style)
+    .highlight_style(selected)
+    .highlight_symbol(" > ")
+    .column_spacing(self.table_column_spacing)
+    .row_spacing(self.table_row_spacing)
+    .widths(&self.widths)
+    .render_table(inner, surface, &mut self.state, self.truncate_start);
   }
 
+  /// Get highlight spans for selections in a document view.
+  pub fn session_selection_highlights(
+    &self,
+    mode: Mode,
+    theme: &Theme,
+    cursor_shape_config: &CursorShapeConfig,
+    is_terminal_focused: bool,
+  ) -> Vec<(usize, std::ops::Range<usize>)> {
+    let text = &self.get_messages_plaintext().clone();
+    let text = text.slice(..);
+    let selection = &self.selection;
+    let primary_idx = selection.primary_index();
+
+    let cursorkind = cursor_shape_config.from_mode(mode);
+    let cursor_is_block = cursorkind == CursorKind::Block;
+
+    let selection_scope = theme
+      .find_scope_index_exact("ui.selection")
+      .expect("could not find `ui.selection` scope in the theme!");
+    let primary_selection_scope = theme
+      .find_scope_index_exact("ui.selection.primary")
+      .unwrap_or(selection_scope);
+
+    let base_cursor_scope =
+      theme.find_scope_index_exact("ui.cursor").unwrap_or(selection_scope);
+    let base_primary_cursor_scope =
+      theme.find_scope_index("ui.cursor.primary").unwrap_or(base_cursor_scope);
+
+    let cursor_scope = match mode {
+      Mode::Insert => theme.find_scope_index_exact("ui.cursor.insert"),
+      Mode::Select => theme.find_scope_index_exact("ui.cursor.select"),
+      Mode::Normal => theme.find_scope_index_exact("ui.cursor.normal"),
+    }
+    .unwrap_or(base_cursor_scope);
+
+    let primary_cursor_scope = match mode {
+      Mode::Insert => theme.find_scope_index_exact("ui.cursor.primary.insert"),
+      Mode::Select => theme.find_scope_index_exact("ui.cursor.primary.select"),
+      Mode::Normal => theme.find_scope_index_exact("ui.cursor.primary.normal"),
+    }
+    .unwrap_or(base_primary_cursor_scope);
+
+    let mut spans: Vec<(usize, std::ops::Range<usize>)> = Vec::new();
+    for (i, range) in selection.iter().enumerate() {
+      let selection_is_primary = i == primary_idx;
+      let (cursor_scope, selection_scope) = if selection_is_primary {
+        (primary_cursor_scope, primary_selection_scope)
+      } else {
+        (cursor_scope, selection_scope)
+      };
+
+      // Special-case: cursor at end of the rope.
+      if range.head == range.anchor && range.head == text.len_chars() {
+        if !selection_is_primary || (cursor_is_block && is_terminal_focused) {
+          // Bar and underline cursors are drawn by the terminal
+          // BUG: If the editor area loses focus while having a bar or
+          // underline cursor (eg. when a regex prompt has focus) then
+          // the primary cursor will be invisible. This doesn't happen
+          // with block cursors since we manually draw *all* cursors.
+          spans.push((cursor_scope, range.head..range.head + 1));
+        }
+        continue;
+      }
+
+      let range = range.min_width_1(text);
+      if range.head > range.anchor {
+        // Standard case.
+        let cursor_start = prev_grapheme_boundary(text, range.head);
+        // non block cursors look like they exclude the cursor
+        let selection_end =
+          if selection_is_primary && !cursor_is_block && mode != Mode::Insert {
+            range.head
+          } else {
+            cursor_start
+          };
+        spans.push((selection_scope, range.anchor..selection_end));
+        // add block cursors
+        // skip primary cursor if terminal is unfocused - crossterm cursor is used in that case
+        if !selection_is_primary || (cursor_is_block && is_terminal_focused) {
+          spans.push((cursor_scope, cursor_start..range.head));
+        }
+      } else {
+        // Reverse case.
+        let cursor_end = next_grapheme_boundary(text, range.head);
+        // add block cursors
+        // skip primary cursor if terminal is unfocused - crossterm cursor is used in that case
+        if !selection_is_primary || (cursor_is_block && is_terminal_focused) {
+          spans.push((cursor_scope, range.head..cursor_end));
+        }
+        // non block cursors look like they exclude the cursor
+        let selection_start = if selection_is_primary
+          && !cursor_is_block
+          && !(mode == Mode::Insert && cursor_end == range.anchor)
+        {
+          range.head
+        } else {
+          cursor_end
+        };
+        spans.push((selection_scope, selection_start..range.anchor));
+      }
+    }
+
+    spans
+  }
   fn render_preview(
     &mut self,
     area: Rect,
@@ -867,6 +1071,14 @@ impl<T: MarkdownItem + 'static> SessionView<T> {
 
 impl<T: MarkdownItem + 'static + Send + Sync> Component for SessionView<T> {
   fn render(&mut self, area: Rect, surface: &mut Surface, cx: &mut Context) {
+    match cx.focus {
+      ContextFocus::SessionView => {
+        self.session_is_focused = true;
+      },
+      ContextFocus::EditorView => {
+        self.session_is_focused = false;
+      },
+    }
     // +---------+ +---------+
     // |prompt   | |preview  |
     // +---------+ |         |
@@ -1025,40 +1237,76 @@ impl<T: MarkdownItem + 'static + Send + Sync> Component for SessionView<T> {
         return EventResult::Ignored(None);
       },
     }
-
     EventResult::Consumed(None)
   }
 
-  // fn cursor(
-  //   &self,
-  //   _area: Rect,
-  //   editor: &Editor,
-  // ) -> (Option<Position>, CursorKind) {
-  //   match editor.cursor() {
-  //     // all block cursors are drawn manually
-  //     (pos, CursorKind::Block) => {
-  //       // use crossterm cursor when terminal loses focus
-  //       (pos, CursorKind::Underline)
-  //     },
-  //     cursor => cursor,
-  //   }
-  // }
   fn cursor(
     &self,
-    area: Rect,
+    _area: Rect,
     editor: &Editor,
   ) -> (Option<Position>, CursorKind) {
-    let block = Block::default().borders(Borders::ALL);
-    // calculate the inner area inside the box
-    let inner = block.inner(area);
+    let text = self.get_messages_plaintext();
+    let line_widths = self.get_line_widths();
 
-    // prompt area
-    let area = inner.clip_left(1).with_height(1);
-    // self..cursor(area, editor)
-    // self.textbox.cursor(area, editor)
-    (Some(Position::new(area.y as usize, area.x as usize)), CursorKind::Block)
+    let session_cursor = self.selection.primary().cursor(text.slice(..));
+
+    log::warn!("text: {:#?}", text);
+    let mut row = text
+      .try_char_to_line(session_cursor)
+      .map_err(|e| format!("cursor out of bounds {}", e))
+      .unwrap();
+
+    let char_at_line_start = text
+      .try_line_to_char(row)
+      .map_err(|e| format!("cursor out of bounds {}", e))
+      .unwrap();
+    let col = self.chat_viewport.x as usize
+      + session_cursor.saturating_sub(char_at_line_start);
+
+    row += self.chat_viewport.y as usize;
+
+    log::info!(
+      "cursor
+        row: {:#?}
+        col: {:#?}
+        session_cursor: {:#?}
+        char_at_line_start: {:#?}
+        inner_viewport: {:#?}
+        text: {:#?}
+        lines_len: {},
+        chars_len: {}
+        line_widths: {:#?}",
+      row,
+      col,
+      session_cursor,
+      char_at_line_start,
+      self.chat_viewport,
+      text.to_string(),
+      text.lines().len(),
+      text.chars().len(),
+      line_widths
+    );
+
+    let session_cursor = (Some(Position { row, col }), CursorKind::Underline);
+    let cursor_res = if self.session_is_focused {
+      match session_cursor {
+        // all block cursors are drawn manually
+        (pos, CursorKind::Block) => {
+          if self.terminal_focused {
+            (pos, CursorKind::Hidden)
+          } else {
+            // use crossterm cursor when terminal loses focus
+            (pos, CursorKind::Underline)
+          }
+        },
+        cursor => cursor,
+      }
+    } else {
+      (None, CursorKind::Hidden)
+    };
+    log::info!("cursor: {:?}", cursor_res);
+    cursor_res
   }
-
   fn required_size(
     &mut self,
     (width, height): (u16, u16),
@@ -1071,6 +1319,7 @@ impl<T: MarkdownItem + 'static + Send + Sync> Component for SessionView<T> {
     Some(ID)
   }
 }
+
 impl<T: MarkdownItem> Drop for SessionView<T> {
   fn drop(&mut self) {
     // ensure we cancel any ongoing background threads streaming into the session

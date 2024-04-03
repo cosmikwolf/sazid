@@ -21,7 +21,10 @@
   "check": {
     "ignore": ["inactive-code"],
     "allTargets": false,
-    "workspace": false
+    "workspace": true,
+    "invocationLocation": "once",
+    "invocationStrategy": "once",
+    "overrideCommand": "cargo check --message-format=json-diagnostic-rendered-ansi"
   },
   "server": {
     "extraEnv": {

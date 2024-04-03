@@ -58,10 +58,7 @@ use crate::{
   filter_picker_entry,
   job::Callback,
   keymap::ReverseKeymap,
-  ui::{
-    self, markdownmenu::MarkdownItem, overlay::overlaid, Picker, Popup, Prompt,
-    PromptEvent,
-  },
+  ui::{self, overlay::overlaid, Picker, Popup, Prompt, PromptEvent},
 };
 
 use crate::job::{self, Jobs};
@@ -644,6 +641,7 @@ fn toggle_layer_order(cx: &mut Context) {
               component_b.type_name()
             );
             cx.focus.toggle();
+
             compositor.push(component_a);
             compositor.push(component_b);
             compositor.need_full_redraw();
@@ -774,9 +772,41 @@ fn move_impl(
   dir: Direction,
   behaviour: Movement,
 ) {
+  let count = cx.count();
+  let (view, doc) = current!(cx.editor);
+  let text_fmt = TextFormat {
+    soft_wrap: true,
+    tab_width: 2,
+    max_wrap: 3,
+    max_indent_retain: 4,
+    wrap_indicator: Box::from(" "),
+    viewport_width: view.inner_area(doc).width,
+    wrap_indicator_highlight: None,
+  };
+  let mut annotations = TextAnnotations::default();
   match cx.focus {
     ContextFocus::SessionView => {
-      log::info!("move_impl: session view");
+      cx.callback.push(Box::new(
+        move |compositor: &mut Compositor, cx: &mut compositor::Context| {
+          let session =
+            compositor.find::<ui::SessionView<ChatMessageItem>>().unwrap();
+          session.selection = session.selection.clone().transform(|range| {
+            move_fn(
+              session.get_messages_plaintext().slice(..),
+              range,
+              dir,
+              count,
+              behaviour,
+              &text_fmt,
+              &mut annotations,
+            )
+          });
+          log::info!(
+            "move_impl callback: session view {:?}",
+            session.selection
+          );
+        },
+      ));
     },
     ContextFocus::EditorView => {
       log::info!("move_impl: editor view");

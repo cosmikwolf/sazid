@@ -282,6 +282,8 @@ pub struct Table<'a> {
   header: Option<Row<'a>>,
   /// Data to display in each row
   rows: Vec<Row<'a>>,
+  cursor_position: Option<Position>,
+  cursor_style: Option<Style>,
 }
 
 impl<'a> Table<'a> {
@@ -294,6 +296,8 @@ impl<'a> Table<'a> {
       style: Style::default(),
       widths: &[],
       column_spacing: 1,
+      cursor_position: None,
+      cursor_style: None,
       row_spacing: 0,
       highlight_style: Style::default(),
       highlight_symbol: None,
@@ -302,6 +306,14 @@ impl<'a> Table<'a> {
     }
   }
 
+  pub fn cursor_position(mut self, position: Position) -> Self {
+    self.cursor_position = Some(position);
+    self
+  }
+  pub fn cursor_style(mut self, style: Style) -> Self {
+    self.cursor_style = Some(style);
+    self
+  }
   pub fn block(mut self, block: Block<'a>) -> Self {
     self.block = Some(block);
     self
@@ -348,6 +360,10 @@ impl<'a> Table<'a> {
   pub fn row_spacing(mut self, spacing: u16) -> Self {
     self.row_spacing = spacing;
     self
+  }
+
+  pub fn get_rows(&self) -> Vec<&Row<'a>> {
+    self.header.as_ref().into_iter().chain(self.rows.iter()).collect()
   }
 
   fn get_columns_widths(
@@ -485,6 +501,7 @@ pub struct TableState {
   pub viewport_height: u16,
   pub selected: Option<usize>,
   pub cursor_position: Option<Position>,
+  pub cursor_style: Option<Style>,
   pub select_range: Option<Range>,
 }
 
@@ -559,9 +576,9 @@ impl<'a> Table<'a> {
     buf: &mut Buffer,
     state: &mut TableState,
     truncate: bool,
-  ) {
+  ) -> Vec<Row<'a>> {
     if area.area() == 0 {
-      return;
+      return Vec::new();
     }
     buf.set_style(area, self.style);
     state.viewport_height = area.height;
@@ -626,7 +643,7 @@ impl<'a> Table<'a> {
 
     // Draw rows
     if self.rows.is_empty() {
-      return;
+      return Vec::new();
     }
 
     for (table_row, extents) in self.rows.iter().zip(self.get_row_extents(
@@ -689,6 +706,7 @@ impl<'a> Table<'a> {
         },
       }
     }
+    return self.rows;
   }
 }
 
