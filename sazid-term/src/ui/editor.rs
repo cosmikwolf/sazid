@@ -1630,7 +1630,7 @@ impl Component for EditorView {
     } else {
       (None, CursorKind::Hidden)
     };
-    log::info!("cursor: {:#?}", cursor);
+    // log::info!("cursor: {:#?}", cursor);
     cursor
   }
 }

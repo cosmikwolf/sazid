@@ -842,7 +842,12 @@ impl<T: MarkdownItem + 'static> SessionView<T> {
     .render_table(inner, surface, &mut self.state, self.truncate_start);
 
     self.chat_viewport = column_areas[1];
-    log::info!("viewport: {:#?}", self.chat_viewport);
+
+    for highlight in highlight {
+      // range_to_pos()
+      log::warn!("highlight: {:#?}", highlight);
+    }
+    // log::info!("viewport: {:#?}", self.chat_viewport);
   }
 
   /// Get highlight spans for selections in a document view.
@@ -853,7 +858,7 @@ impl<T: MarkdownItem + 'static> SessionView<T> {
     cursor_shape_config: &CursorShapeConfig,
     is_terminal_focused: bool,
   ) -> Vec<(usize, std::ops::Range<usize>)> {
-    let text = &self.get_messages_plaintext().clone();
+    let text = self.get_messages_plaintext().clone();
     let text = text.slice(..);
     let selection = &self.selection;
     let primary_idx = selection.primary_index();
@@ -1297,7 +1302,7 @@ impl<T: MarkdownItem + 'static + Send + Sync> Component for SessionView<T> {
     } else {
       (None, CursorKind::Hidden)
     };
-    log::info!("cursor: {:?}", cursor_res);
+    // log::info!("cursor: {:?}", cursor_res);
     editor.cursor_cache.set(Some(cursor_res.0));
     cursor_res
   }

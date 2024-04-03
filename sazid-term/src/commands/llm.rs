@@ -122,12 +122,12 @@ impl ChatMessageItem {
     let mut plain_text = Rope::new();
     use helix_core::unicode::width::UnicodeWidthStr;
     while let Some((symbol, length)) = line_composer.next_line() {
-      log::info!(
-        "symbol: {:#?}  width: {}  length:{}",
-        symbol,
-        symbol.width(),
-        length
-      );
+      // log::info!(
+      //   "symbol: {:#?}  width: {}  length:{}",
+      //   symbol,
+      //   symbol.width(),
+      //   length
+      // );
       plain_text.insert(plain_text.len_chars(), symbol);
       plain_text.insert(plain_text.len_chars(), "\n");
     }
