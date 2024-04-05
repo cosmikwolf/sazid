@@ -202,7 +202,8 @@ impl Compositor {
     surface: &mut Surface,
     cx: &mut Context,
   ) {
-    for layer in &mut self.layers {
+    // reversed layer rendering so that the editor draws popup menus over the session view
+    for layer in &mut self.layers.iter_mut().rev() {
       layer.render(area, surface, cx);
     }
   }

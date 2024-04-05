@@ -16,6 +16,7 @@ use arc_swap::ArcSwap;
 use async_openai::types::ChatCompletionRequestMessage;
 use helix_lsp::lsp::Range;
 use helix_view::{
+  graphics::Rect,
   theme::{Color, Style},
   Editor, Theme,
 };
@@ -23,10 +24,10 @@ use sazid::app::messages::{
   chat_completion_request_message_content_as_str,
   chat_completion_request_message_tool_calls_as_str,
 };
-use tui::text::{Span, Spans, StyledGrapheme, Text};
+use tui::text::{Span, Spans, Text};
 
 use helix_core::{syntax, Rope};
-use unicode_segmentation::{UnicodeSegmentation, UnicodeWords};
+use unicode_segmentation::UnicodeSegmentation;
 
 /// Gets the first language server that is attached to a document which supports a specific feature.
 /// If there is no configured language server that supports the feature, this displays a status message.
@@ -44,12 +45,15 @@ pub enum ChatMessageType {
 pub struct ChatMessageItem {
   pub id: Option<i64>,
   pub formatted_line_char_len: Vec<usize>,
-  pub plain_yank_text: Rope,
+  pub plain_text: Rope,
   pub select_range: Option<Range>,
   pub config_loader: Arc<ArcSwap<syntax::Loader>>,
   pub chat_message: ChatMessageType,
   pub line_widths: Vec<u16>,
-  pub wrapped_width: u16,
+  pub plaintext_wrapped_width: u16,
+  pub formatted_line_widths: Vec<(usize, String)>,
+  pub plaintext_line_widths: Vec<(usize, String)>,
+  pub rendered_area: Option<Rect>,
 }
 
 impl ChatMessageItem {
@@ -68,9 +72,12 @@ impl ChatMessageItem {
       config_loader,
       chat_message: message.clone(),
       select_range,
-      plain_yank_text: Rope::new(),
+      plain_text: Rope::new(),
       line_widths: Vec::new(),
-      wrapped_width: 0,
+      plaintext_wrapped_width: 0,
+      formatted_line_widths: vec![],
+      plaintext_line_widths: vec![],
+      rendered_area: None,
     }
   }
 
@@ -88,53 +95,70 @@ impl ChatMessageItem {
       config_loader,
       chat_message: message.clone(),
       select_range,
-      plain_yank_text: Rope::new(),
+      plain_text: Rope::new(),
       line_widths: Vec::new(),
-      wrapped_width: 0,
+      plaintext_wrapped_width: 0,
+      formatted_line_widths: vec![],
+      plaintext_line_widths: vec![],
+      rendered_area: None,
     }
   }
 
-  pub fn cache_wrapped_yank_text(
-    &mut self,
-    message: Option<ChatMessageType>,
-    width: u16,
-  ) {
-    if let Some(message) = message {
-      self.chat_message = message;
-    }
+  pub fn update_message(&mut self, message: ChatMessageType) {
+    self.chat_message = message;
+  }
+  pub fn cache_wrapped_yank_text(&mut self, width: u16) {
     let text = self.format_to_text(None);
 
     let line_widths: Vec<u16> =
       text.lines.iter().map(|spans| spans.width() as u16).collect();
-
-    let text = text.lines.iter().flat_map(|spans| {
-      spans.0.iter().flat_map(|span| {
-        // log::info!("span: {:#?}", span);
-        span.content.as_ref().split_word_bounds().chain(iter::once("\n"))
-      })
-    });
-
-    let trim = false;
-    let mut line_composer: Box<dyn LineComposerStr> =
-      Box::new(WordWrapperStr::new(Box::new(text), width, trim));
-
-    // log::error!("width: {}", width);
-    let mut plain_text = Rope::new();
-    use helix_core::unicode::width::UnicodeWidthStr;
-    while let Some((symbol, length)) = line_composer.next_line() {
-      // log::info!(
-      //   "symbol: {:#?}  width: {}  length:{}",
-      //   symbol,
-      //   symbol.width(),
-      //   length
-      // );
-      plain_text.insert(plain_text.len_chars(), symbol);
-      plain_text.insert(plain_text.len_chars(), "\n");
-    }
-    drop(line_composer);
+    //
+    // let text = text.lines.iter().flat_map(|spans| {
+    //   spans
+    //     .0
+    //     .iter()
+    //     .flat_map(|span| {
+    //       // log::info!("span: {:#?}", span);
+    //       span.content.as_ref().split_word_bounds()
+    //     })
+    //     .chain(iter::once("\n"))
+    // });
+    //
+    // let trim = false;
+    // let mut line_composer: Box<dyn LineComposerStr> =
+    //   Box::new(WordWrapperStr::new(Box::new(text), width, trim));
+    //
+    // // log::error!("width: {}", width);
+    // let mut plain_text = Rope::new();
+    // use helix_core::unicode::width::UnicodeWidthStr;
+    // while let Some((mut symbol, length)) = line_composer.next_line() {
+    //   // log::info!(
+    //   //   "symbol: {:#?}  width: {}  length:{}",
+    //   //   symbol,
+    //   //   symbol.width(),
+    //   //   length
+    //   // );
+    //   if symbol.is_empty() {
+    //     symbol = " ";
+    //   }
+    //   plain_text.insert(plain_text.len_chars(), symbol);
+    //   plain_text.insert(plain_text.len_chars(), "\n");
+    // }
+    // plain_text.remove(plain_text.len_chars() - 1..);
+    // plain_text
+    //   .insert(plain_text.len_chars(), &"\n".repeat(row_spacing as usize));
+    // drop(line_composer);
 
     // log::warn!("text: {}", format!("{}", plain_text));
-    self.plain_yank_text = plain_text;
+    self.plain_text = Rope::from(
+      text
+        .lines
+        .iter()
+        .map(String::from)
+        .chain(iter::once("\n".to_string()))
+        .collect::<String>(),
+    );
+    self.plaintext_wrapped_width = width;
     self.line_widths = line_widths;
   }
 
@@ -200,7 +224,6 @@ impl ChatMessageItem {
       theme,
       self.config_loader.clone(),
     );
-
     lines.extend(text);
 
     if let Some(tool_calls) = self.tool_calls() {
@@ -217,6 +240,7 @@ impl ChatMessageItem {
     }
     lines.into()
   }
+
   pub fn content(&self) -> &str {
     match &self.chat_message {
       ChatMessageType::Chat(message) => {

@@ -42,15 +42,17 @@ use helix_core::{
   fuzzy::MATCHER,
   graphemes::{next_grapheme_boundary, prev_grapheme_boundary},
   movement::Direction,
+  syntax::{Highlight, HighlightEvent},
   text_annotations::TextAnnotations,
-  Position, Rope, Selection, Syntax,
+  Position, Rope, RopeSlice, Selection, Syntax,
 };
 
 use helix_view::{
   document::Mode,
   editor::{Action, CursorShapeConfig},
-  graphics::{CursorKind, Margin, Modifier, Rect},
+  graphics::{CursorKind, Margin, Modifier, Rect, UnderlineStyle},
   input::{MouseButton, MouseEventKind},
+  theme::{Color, Style},
   view::ViewPosition,
   Document, DocumentId, Editor, Theme,
 };
@@ -176,20 +178,18 @@ pub struct SessionView<T: MarkdownItem> {
   editor_data: Arc<T::Data>,
   shutdown: Arc<AtomicBool>,
   matcher: Nucleo<T>,
-  messages: Vec<ChatMessageItem>,
+  pub messages: Vec<ChatMessageItem>,
 
   /// Current height of the completions box
   completion_height: u16,
   terminal_focused: bool,
-  plain_text_cache: Rope,
   session_is_focused: bool,
-  theme: Option<Theme>,
   selected_option: u32,
   // textbox: ui::textbox::Textbox,
   pub input: EditorView,
   pub input_height: u16,
   input_hidden: bool,
-  state: TableState,
+  pub state: TableState,
   table_column_spacing: u16,
   table_row_spacing: u16,
   /// Whether to show the preview panel (default true)
@@ -273,13 +273,6 @@ impl<T: MarkdownItem + 'static> SessionView<T> {
     shutdown: Arc<AtomicBool>,
     callback_fn: impl Fn(&mut Context, &T, Action) + 'static,
   ) -> Self {
-    // let textbox = Textbox::new(
-    //   "".into(),
-    //   None,
-    //   ui::completers::none,
-    //   |_editor: &mut Context, _pattern: &str, _event: TextboxEvent| {},
-    // );
-
     let input_height = 10;
 
     let input = EditorView::new(crate::keymap::minimal_keymap());
@@ -300,14 +293,11 @@ impl<T: MarkdownItem + 'static> SessionView<T> {
       messages: Vec::new(),
       matcher,
       editor_data,
-      theme,
       shutdown,
-      plain_text_cache: Rope::new(),
       session_is_focused: false,
       terminal_focused: true,
       selected_option: 0,
       line_char_counts: Vec::new(),
-      // textbox,
       state: tablestate,
       input,
       chat_viewport: Rect::default(),
@@ -327,44 +317,32 @@ impl<T: MarkdownItem + 'static> SessionView<T> {
     }
   }
 
-  pub fn get_messages_plaintext(&self) -> Rope {
+  pub fn get_messages_plaintext(
+    &self,
+    include_row_spacing: bool,
+    range: Option<std::ops::Range<usize>>,
+  ) -> Rope {
     let mut plain_text = Rope::new();
-    self.messages.iter().for_each(|s| {
-      plain_text.append(s.plain_yank_text.clone());
-      plain_text
-        .append(Rope::from("\n".repeat(self.table_row_spacing as usize)));
+    self.messages.iter().for_each(|message| {
+      plain_text.append(message.plain_text.clone());
+      if include_row_spacing {
+        plain_text
+          .append(Rope::from("\n".repeat(self.table_row_spacing as usize)));
+      }
     });
-    // try remove the extra trailing newline from plain_text, but its fine if it fails
-    match plain_text.try_remove(
-      plain_text.len_chars().saturating_sub(self.table_row_spacing as usize)..,
-    ) {
-      Ok(_) => plain_text,
-      Err(_) => plain_text,
+    if let Some(range) = range {
+      plain_text.slice(range).into()
+    } else {
+      plain_text
     }
-  }
-
-  pub fn get_line_widths(&self) -> Vec<u16> {
-    self
-      .messages
-      .iter()
-      .flat_map(|m| {
-        let mut line_widths = m.line_widths.clone();
-        for _i in 0..self.table_row_spacing {
-          line_widths.push(0);
-        }
-        line_widths
-      })
-      .collect()
   }
 
   pub fn upsert_message(&mut self, message: ChatMessageItem) {
     if let Some(existing_message) =
       self.messages.iter_mut().find(|m| m.id.is_some() && m.id == message.id)
     {
-      existing_message.cache_wrapped_yank_text(
-        Some(message.chat_message),
-        self.chat_viewport.width,
-      );
+      existing_message.update_message(message.chat_message);
+      existing_message.cache_wrapped_yank_text(self.chat_viewport.width);
     } else {
       self.messages.push(message);
     }
@@ -372,6 +350,10 @@ impl<T: MarkdownItem + 'static> SessionView<T> {
 
   pub fn reload_messages(&mut self, messages: Vec<ChatMessageItem>) {
     self.messages = messages;
+    self.messages.iter_mut().for_each(|message| {
+      message.cache_wrapped_yank_text(self.chat_viewport.width);
+    });
+    self.state.scroll_top();
   }
 
   pub fn set_terminal_focused(&mut self, terminal_focused: bool) {
@@ -478,35 +460,6 @@ impl<T: MarkdownItem + 'static> SessionView<T> {
       .snapshot()
       .get_matched_item(self.selected_option)
       .map(|item| item.data)
-  }
-
-  pub fn update_plain_text_cache_from_rows(
-    &mut self,
-    rows: &[Row],
-    col_index: usize,
-  ) {
-    self.plain_text_cache.append(Rope::from(
-      rows
-        .iter()
-        .flat_map(|row| {
-          row.cells[col_index].content.lines.iter().flat_map(|spans| {
-            spans.0.iter().flat_map(|span| span.content.chars())
-          })
-        })
-        .skip(self.plain_text_cache.len_chars())
-        .collect::<String>(),
-    ))
-  }
-
-  pub fn update_plain_text_cache(&mut self, text: &Text<'_>) {
-    self.plain_text_cache.append(Rope::from(
-      text
-        .lines
-        .iter()
-        .flat_map(|spans| spans.0.iter().flat_map(|span| span.content.chars()))
-        .skip(self.plain_text_cache.len_chars())
-        .collect::<String>(),
-    ))
   }
 
   pub fn toggle_preview(&mut self) {
@@ -675,23 +628,12 @@ impl<T: MarkdownItem + 'static> SessionView<T> {
     EventResult::Consumed(callback)
   }
 
-  fn render_cursor(
-    &mut self,
-    area: Rect,
-    surface: &mut Surface,
-    cx: &mut Context,
-  ) {
-    if let (Some(pos), kind) = self.cursor(area, cx.editor) {
-      let cursor_area = Rect::new(pos.row as u16, pos.col as u16, 1, 1);
-      surface.set_style(cursor_area, cx.editor.theme.get("ui.cursor"));
-    }
-  }
-
   fn render_session(
     &mut self,
     area: Rect,
     surface: &mut Surface,
     cx: &mut Context,
+    overlay_highlight_iter: impl Iterator<Item = HighlightEvent>,
   ) {
     // -- make space for the input bar:
     let input_on_top = false;
@@ -720,7 +662,6 @@ impl<T: MarkdownItem + 'static> SessionView<T> {
     // clear area
     let background = cx.editor.theme.get("ui.background");
     surface.clear_with(area, background);
-
     let block = Block::default().borders(Borders::ALL);
 
     // calculate the inner area inside the box
@@ -766,26 +707,54 @@ impl<T: MarkdownItem + 'static> SessionView<T> {
       matcher.config.set_match_paths()
     }
 
-    let highlight = if self.session_is_focused {
-      self.session_selection_highlights(
-        cx.editor.mode(),
-        &cx.editor.theme,
-        &cx.editor.config().cursor_shape,
-        self.terminal_focused,
-      )
-    } else {
-      vec![]
-    };
-
-    if let (Some(position), cursor) = self.cursor(area, cx.editor) {
+    if let (Some(position), cursor) = self.cursor(self.chat_viewport, cx.editor)
+    {
       self.state.cursor_position = Some(position);
     };
 
-    let highlight_range = Some(Range {
-      start: helix_lsp::Position::new(1, 0),
-      end: helix_lsp::Position::new(20, 5),
-    });
+    let overlay_styles = StyleIter {
+      text_style,
+      active_highlights: Vec::with_capacity(64),
+      highlight_iter: overlay_highlight_iter,
+      theme: &cx.editor.theme,
+    };
 
+    // let overlay_styles = overlay_styles.map(|(style, index)|{
+    //
+    // })
+
+    let primary_range = self.selection.primary();
+
+    let highlight_range = Some(if primary_range.head < primary_range.anchor {
+      std::ops::Range { start: primary_range.head, end: primary_range.anchor }
+    } else {
+      std::ops::Range { start: primary_range.anchor, end: primary_range.head }
+    });
+    let highlight_style = Some(selected);
+    // match (overlay_styles.next(), overlay_styles.next()) {
+    //   (Some((style, start)), Some((_, end))) => {
+    //     (Some(std::ops::Range { start, end }), Some(style))
+    //   },
+    //   _ => (None, None),
+    // };
+    let text = self.get_messages_plaintext(false, None);
+    let slice = text.slice(..);
+    let hr = highlight_range.clone().unwrap();
+    let spos = crate::movement::translate_char_index_to_pos(slice, hr.start);
+    let epos = crate::movement::translate_char_index_to_pos(slice, hr.end);
+    log::info!(
+      "highlight_range: {:?}  highlight_style: {:?}, {}\nstart: {:?} end: {:?}",
+      highlight_range,
+      highlight_style.map(|s| s.bg),
+      overlay_styles.count(),
+      spos,
+      epos
+    );
+    log::info!(
+      "selected text:\n{}",
+      text.slice(highlight_range.clone().unwrap())
+    );
+    self.messages.iter().for_each(|message| {});
     // if let (Some(position), cursor) = self.cursor(area, cx.editor) {
     //   selfcursor_area =
     //     Rect::new(position.row as u16, position.col as u16, 1, 1);
@@ -793,42 +762,56 @@ impl<T: MarkdownItem + 'static> SessionView<T> {
     // };
 
     // let highlight_style = Some(selected.bg(Color::Yellow).fg(Color::Red));
-    let highlight_style = None;
     // let highlight_style = self.style.patch(highlight_style);
 
     self.widths = vec![Constraint::Length(5), Constraint::Percentage(25)];
-
+    let mut start_idx = 0;
     let column_areas = Table::new(
       self
         .messages
         .iter_mut()
         .enumerate()
         .map(|(msg_idx, message_item)| {
-          if message_item.wrapped_width != self.chat_viewport.x {
-            message_item
-              .cache_wrapped_yank_text(None, self.chat_viewport.width);
+          if message_item.plaintext_wrapped_width != self.chat_viewport.x {
+            message_item.cache_wrapped_yank_text(self.chat_viewport.width);
           }
-          let text = message_item
-            .format(&message_item.content().to_string(), self.theme.as_ref());
+
+          log::info!(
+            "message length: {}   idx: {}",
+            message_item.plain_text.len_chars(),
+            msg_idx
+          );
+          // Self::debug_print_line_widths(message_item, &cx.editor.theme);
+
+          let text = message_item.format(
+            &message_item.content().to_string(),
+            Some(&cx.editor.theme),
+          );
 
           let height = text.height() as u16;
+          let chars = message_item.plain_text.len_chars();
+
           let message_cell = Cell::from(text).paragraph_cell(
             // Some(Block::default().borders(Borders::LEFT)),
             None,
             Some(false),
             (0, 0),
             tui::layout::Alignment::Left,
+            Some(start_idx),
             highlight_style,
-            highlight_range,
+            highlight_range.clone(),
           );
-          let index_cell = Cell::from(msg_idx.to_string()).paragraph_cell(
+          // let msg_idx = start_idx;
+          let index_cell = Cell::from(start_idx.to_string()).paragraph_cell(
             Some(Block::default().borders(Borders::RIGHT)),
             Some(false),
             (0, 0),
             tui::layout::Alignment::Center,
             None,
             None,
+            None,
           );
+          start_idx += chars;
           Row::new(vec![index_cell, message_cell]).height(height)
         })
         .collect::<Vec<Row>>(),
@@ -842,12 +825,188 @@ impl<T: MarkdownItem + 'static> SessionView<T> {
     .render_table(inner, surface, &mut self.state, self.truncate_start);
 
     self.chat_viewport = column_areas[1];
+  }
 
-    for highlight in highlight {
-      // range_to_pos()
-      log::warn!("highlight: {:#?}", highlight);
-    }
-    // log::info!("viewport: {:#?}", self.chat_viewport);
+  fn debug_print_line_widths(message: &mut ChatMessageItem, theme: &Theme) {
+    message.formatted_line_widths = message
+      .format(&message.content().to_string(), Some(theme))
+      .lines
+      .iter()
+      .map(|line| (line.width(), String::from(line)))
+      .collect();
+
+    message.plaintext_line_widths = message
+      .plain_text
+      .lines()
+      .map(|line| (line.len_chars(), line.to_string()))
+      .collect();
+
+    message
+      .formatted_line_widths
+      .iter()
+      .zip(message.plaintext_line_widths.iter())
+      .zip(0..)
+      .for_each(|((f, p), i)| {
+        if f != p {
+          log::error!(
+            "line {} mismatch: formatted: {}  plain: {}\nf:{:?}\np:{:?}",
+            i,
+            f.0,
+            p.0,
+            f.1,
+            p.1
+          );
+        }
+      })
+  }
+  fn viewport_byte_range(
+    text: helix_core::RopeSlice,
+    row: usize,
+    height: u16,
+  ) -> std::ops::Range<usize> {
+    // Calculate viewport byte ranges:
+    // Saturating subs to make it inclusive zero indexing.
+    let last_line = text.len_lines().saturating_sub(1);
+    let last_visible_line =
+      (row + height as usize).saturating_sub(1).min(last_line);
+    let start = text.line_to_byte(row.min(last_line));
+    let end = text.line_to_byte(last_visible_line + 1);
+
+    start..end
+  }
+
+  pub fn empty_highlight_iter(
+    text: helix_core::RopeSlice<'_>,
+    anchor: usize,
+    height: u16,
+  ) -> Box<dyn Iterator<Item = HighlightEvent>> {
+    let row = text.char_to_line(anchor.min(text.len_chars()));
+
+    // Calculate viewport byte ranges:
+    // Saturating subs to make it inclusive zero indexing.
+    let range = Self::viewport_byte_range(text, row, height);
+    Box::new(
+      [HighlightEvent::Source {
+        start: text.byte_to_char(range.start),
+        end: text.byte_to_char(range.end),
+      }]
+      .into_iter(),
+    )
+  }
+
+  fn get_selection_highlights(
+    &mut self,
+    area: Rect,
+    surface: &mut Surface,
+    cx: &mut Context,
+  ) -> Box<dyn Iterator<Item = HighlightEvent>> {
+    let overlay_highlights_spans = if self.session_is_focused {
+      self.session_selection_highlights(
+        cx.editor.mode(),
+        &cx.editor.theme,
+        &cx.editor.config().cursor_shape,
+        self.terminal_focused,
+      )
+    } else {
+      vec![]
+    };
+
+    let text = self.get_messages_plaintext(false, None);
+    let text = text.slice(..);
+    let overlay_highlights = Box::new(helix_core::syntax::merge(
+      Self::empty_highlight_iter(text, 0, area.height),
+      overlay_highlights_spans,
+    ));
+
+    return overlay_highlights;
+
+    // let mut overlay_styles = StyleIter {
+    //   text_style: Style::default(),
+    //   active_highlights: Vec::with_capacity(64),
+    //   highlight_iter: overlay_highlights,
+    //   theme: &cx.editor.theme,
+    // };
+
+    // if let (Some(pos), kind) = self.cursor(area, cx.editor) {
+    //   let x = (pos.row as u16).clamp(area.left(), area.right());
+    //   let y = (pos.col as u16).clamp(area.top(), area.bottom());
+    //   let cursor_area = Rect::new(x, y, 1, 1);
+    //   surface.set_style(cursor_area, cx.editor.theme.get("ui.cursor"));
+    // }
+    // let cursor = overlay_styles.next();
+
+    // while let Some(overlay) = overlay_styles.next() {
+    //   let pos = self.translate_char_index_to_pos(self.chat_viewport, overlay.1);
+    //   log::warn!("pos: {:?}\toverlay:{:?}", pos, overlay.1);
+    //   let area = Rect::new(pos.col as u16, pos.row as u16, 1, 1);
+    //   let cell = surface.get(pos.col as u16, pos.row as u16);
+    //
+    //   let style = match cell {
+    //     Some(cell) => cell.style().patch(overlay.0),
+    //     None => overlay.0,
+    //   };
+    //   surface.set_style(area, style);
+    // }
+    //
+    // while let (Some(overlay_start), Some(overlay_end)) =
+    //   (overlay_styles.next(), overlay_styles.next())
+    // {
+    //   log::warn!(
+    //     "overlay_start: {:?}, overlay_end: {:?}",
+    //     overlay_start.1,
+    //     overlay_end.1
+    //   );
+    //   let start_pos =
+    //     self.translate_char_index_to_pos(self.chat_viewport, overlay_start.1);
+    //   let end_pos =
+    //     self.translate_char_index_to_pos(self.chat_viewport, overlay_end.1);
+    //   let selection_height =
+    //     (end_pos.row.saturating_sub(start_pos.row) + 1) as u16;
+    //
+    //   log::warn!(
+    //     "\nstart_pos: {:?}\nend_pos: {:?}\nheight: {}",
+    //     start_pos,
+    //     end_pos,
+    //     selection_height
+    //   );
+    //   // the first rectangle is from start_pos to end_pos, or the end of the line, whichever is first
+    //   // if the selection is at least 2 lines,
+    //   // then the second rectangle is from the start of the line to end_pos
+    //   // if the selection is more than 2 lines, then the third rectangle is from the start of the line to the end of the line for all lines inbetween
+    //   let selection_top_width = if selection_height == 1 {
+    //     end_pos.col.saturating_sub(start_pos.col) as u16
+    //   } else {
+    //     match text.get_line(end_pos.row) {
+    //       Some(line) => line.len_chars().saturating_sub(end_pos.col) as u16,
+    //       None => 1,
+    //     }
+    //   };
+    //
+    //   let selection_top = Rect::new(
+    //     start_pos.col as u16,
+    //     start_pos.row as u16,
+    //     selection_top_width,
+    //     1,
+    //   );
+    //   surface.set_style(selection_top, overlay_end.0);
+    //   log::warn!("selection_top: {:?}", selection_top);
+    //
+    //   if selection_height > 1 {
+    //     let selection_end =
+    //       Rect::new(0, end_pos.row as u16, end_pos.col as u16, 1);
+    //     surface.set_style(selection_end, overlay_start.0);
+    //     log::warn!("selection_end: {:?}", selection_end);
+    //   }
+    //
+    //   if selection_height > 2 {
+    //     for row in start_pos.row + 1..end_pos.row - 1 {
+    //       let selection_body =
+    //         Rect::new(0, row as u16, text.line(row).len_chars() as u16, 1);
+    //       surface.set_style(selection_body, overlay_start.0);
+    //       log::warn!("selection_body: {:?}", selection_body);
+    //     }
+    //   }
+    // }
   }
 
   /// Get highlight spans for selections in a document view.
@@ -858,7 +1017,7 @@ impl<T: MarkdownItem + 'static> SessionView<T> {
     cursor_shape_config: &CursorShapeConfig,
     is_terminal_focused: bool,
   ) -> Vec<(usize, std::ops::Range<usize>)> {
-    let text = self.get_messages_plaintext().clone();
+    let text = self.get_messages_plaintext(false, None).clone();
     let text = text.slice(..);
     let selection = &self.selection;
     let primary_idx = selection.primary_index();
@@ -891,6 +1050,8 @@ impl<T: MarkdownItem + 'static> SessionView<T> {
       Mode::Normal => theme.find_scope_index_exact("ui.cursor.primary.normal"),
     }
     .unwrap_or(base_primary_cursor_scope);
+
+    log::info!("selection: {:#?}", selection);
 
     let mut spans: Vec<(usize, std::ops::Range<usize>)> = Vec::new();
     for (i, range) in selection.iter().enumerate() {
@@ -931,6 +1092,7 @@ impl<T: MarkdownItem + 'static> SessionView<T> {
         if !selection_is_primary || (cursor_is_block && is_terminal_focused) {
           spans.push((cursor_scope, cursor_start..range.head));
         }
+        // spans.push((cursor_scope, range.anchor..range.head));
       } else {
         // Reverse case.
         let cursor_end = next_grapheme_boundary(text, range.head);
@@ -949,6 +1111,7 @@ impl<T: MarkdownItem + 'static> SessionView<T> {
           cursor_end
         };
         spans.push((selection_scope, selection_start..range.anchor));
+        // spans.push((cursor_scope, range.head..range.anchor));
       }
     }
 
@@ -1080,6 +1243,43 @@ impl<T: MarkdownItem + 'static> SessionView<T> {
   }
 }
 
+/// A wrapper around a HighlightIterator
+/// that merges the layered highlights to create the final text style
+/// and yields the active text style and the char_idx where the active
+/// style will have to be recomputed.
+pub struct StyleIter<'a, H: Iterator<Item = HighlightEvent>> {
+  text_style: Style,
+  active_highlights: Vec<Highlight>,
+  highlight_iter: H,
+  theme: &'a Theme,
+}
+
+impl<H: Iterator<Item = HighlightEvent>> Iterator for StyleIter<'_, H> {
+  type Item = (Style, usize);
+  fn next(&mut self) -> Option<(Style, usize)> {
+    while let Some(event) = self.highlight_iter.next() {
+      match event {
+        HighlightEvent::HighlightStart(highlights) => {
+          self.active_highlights.push(highlights)
+        },
+        HighlightEvent::HighlightEnd => {
+          self.active_highlights.pop();
+        },
+        HighlightEvent::Source { start, end } => {
+          if start == end {
+            continue;
+          }
+          let style =
+            self.active_highlights.iter().fold(self.text_style, |acc, span| {
+              acc.patch(self.theme.highlight(span.0))
+            });
+          return Some((style, end));
+        },
+      }
+    }
+    None
+  }
+}
 impl<T: MarkdownItem + 'static + Send + Sync> Component for SessionView<T> {
   fn render(&mut self, area: Rect, surface: &mut Surface, cx: &mut Context) {
     match cx.focus {
@@ -1105,12 +1305,36 @@ impl<T: MarkdownItem + 'static + Send + Sync> Component for SessionView<T> {
       if render_preview { area.width / 2 } else { area.width };
 
     let session_area = area.with_width(session_width);
-    self.render_session(session_area, surface, cx);
-    self.render_cursor(session_area, surface, cx);
-    if render_preview {
-      let preview_area = area.clip_left(session_width);
-      self.render_preview(preview_area, surface, cx);
-    }
+
+    let selection_highlights =
+      self.get_selection_highlights(session_area, surface, cx);
+
+    self.render_session(session_area, surface, cx, selection_highlights);
+
+    if let (Some(pos), kind) = self.cursor(area, cx.editor) {
+      log::debug!("Cursor Position: {:?}", pos);
+      let cursor_area =
+        Rect { x: pos.col as u16, y: pos.row as u16, width: 1, height: 1 };
+      if cursor_area.intersects(area) {
+        surface.set_style(
+          cursor_area,
+          Style::default()
+            .underline_style(UnderlineStyle::Curl)
+            .underline_color(Color::Magenta)
+            .bg(Color::Blue),
+        )
+      } else {
+        log::error!(
+          "CURSOR OUT OF BOUNDS {:?} not within {:?}",
+          cursor_area,
+          area
+        );
+      }
+    };
+    // if render_preview {
+    //   let preview_area = area.clip_left(session_width);
+    //   self.render_preview(preview_area, surface, cx);
+    // }
   }
 
   fn handle_event(&mut self, event: &Event, ctx: &mut Context) -> EventResult {
@@ -1256,10 +1480,9 @@ impl<T: MarkdownItem + 'static + Send + Sync> Component for SessionView<T> {
     _area: Rect,
     editor: &Editor,
   ) -> (Option<Position>, CursorKind) {
-    let text = self.get_messages_plaintext();
-    let line_widths = self.get_line_widths();
-
-    let session_cursor = self.selection.primary().cursor(text.slice(..));
+    let text = self.get_messages_plaintext(false, None);
+    let session_cursor =
+      self.selection.primary().cursor(text.slice(..)).min(text.len_chars());
 
     let mut row = text
       .try_char_to_line(session_cursor)
@@ -1270,9 +1493,13 @@ impl<T: MarkdownItem + 'static + Send + Sync> Component for SessionView<T> {
       .try_line_to_char(row)
       .map_err(|e| format!("cursor out of bounds {}", e))
       .unwrap();
-    let col = self.chat_viewport.x as usize
-      + session_cursor.saturating_sub(char_at_line_start);
 
+    let mut col = session_cursor.saturating_sub(char_at_line_start);
+    if col > text.line(row).len_chars() {
+      col = text.line(row).len_chars();
+    }
+    let orig_row = row;
+    col += self.chat_viewport.x as usize;
     row += self.chat_viewport.y as usize;
 
     // log::info!(
@@ -1284,17 +1511,15 @@ impl<T: MarkdownItem + 'static + Send + Sync> Component for SessionView<T> {
     //     inner_viewport: {:#?}
     //     text: {:#?}
     //     lines_len: {},
-    //     chars_len: {}
-    //     line_widths: {:#?}",
+    //     chars_len: {}",
     //   row,
     //   col,
     //   session_cursor,
     //   char_at_line_start,
     //   self.chat_viewport,
-    //   text.to_string(),
+    //   text.get_line(orig_row).unwrap_or(Rope::new().slice(..)).to_string(),
     //   text.lines().len(),
     //   text.chars().len(),
-    //   line_widths
     // );
 
     let cursor_res = if self.session_is_focused && self.terminal_focused {

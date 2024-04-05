@@ -118,6 +118,7 @@ impl<'a, 'b> LineComposer<'a> for WordWrapper<'a, 'b> {
     if symbols_exhausted && self.current_line.is_empty() {
       None
     } else {
+      // log::info!("end graph count: {}", self.current_line.len());
       Some((&self.current_line[..], current_line_width))
     }
   }

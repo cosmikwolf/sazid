@@ -1,5 +1,18 @@
 [workspace]
-members = ["sazid", "sazid-term", "sazid-loader"]
+members = [
+  "sazid",
+  "sazid-term",
+  "sazid-loader",
+  "lib/helix/helix-tui",
+  "lib/helix/helix-stdx",
+  "lib/helix/helix-lsp",
+  "lib/helix/helix-vcs",
+  "lib/helix/helix-view",
+  "lib/helix/helix-dap",
+  "lib/helix/helix-event",
+  "lib/helix/helix-tui",
+  "lib/helix/helix-core",
+]
 exclude = ["archive/*"]
 resolver = "2"
 default-members = ["sazid-term"]

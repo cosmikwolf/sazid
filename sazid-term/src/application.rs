@@ -478,8 +478,9 @@ impl Application {
                                    self.syn_loader.clone() )
                          }).collect();
 
-                        self.compositor.find::<ui::SessionView<ChatMessageItem>>()
-                        .unwrap().reload_messages(messages );
+                        let session = self.compositor.find::<ui::SessionView<ChatMessageItem>>()
+                        .unwrap();
+                          session.reload_messages(messages );
                         self.render().await;
                       }
                       SessionAction::MessageUpdate(message, id) => {

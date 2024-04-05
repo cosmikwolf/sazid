@@ -1,13 +1,18 @@
 use super::reflow::{LineComposer, LineTruncator, WordWrapper};
-use helix_core::unicode::width::UnicodeWidthStr;
+use helix_core::{
+  syntax::{Highlight, HighlightEvent},
+  unicode::width::UnicodeWidthStr,
+  RopeSlice,
+};
 use helix_lsp::{lsp::Range, Position};
 use helix_view::{
   graphics::{Rect, Style},
   theme::Color,
+  Theme,
 };
 use std::iter;
 use tui::{
-  buffer::Buffer,
+  buffer::{Buffer, Cell},
   layout::Alignment,
   text::{StyledGrapheme, Text},
   widgets::{Block, Widget},
@@ -57,7 +62,7 @@ pub struct Paragraph<'a> {
   /// Highlight style
   highlight_style: Option<Style>,
   /// Highlight Range
-  highlight_range: Option<Range>,
+  highlight_range: Option<std::ops::Range<usize>>,
   /// How to wrap the text
   wrap: Option<Wrap>,
   /// The text to display
@@ -66,6 +71,8 @@ pub struct Paragraph<'a> {
   scroll: (u16, u16),
   /// Alignment of the text
   alignment: Alignment,
+  /// offset of char in full text of table
+  char_idx: Option<usize>,
 }
 
 /// Describes how to wrap text across lines.
@@ -111,6 +118,7 @@ impl<'a> Paragraph<'a> {
       highlight_range: None,
       text,
       scroll: (0, 0),
+      char_idx: None,
       alignment: Alignment::Left,
     }
   }
@@ -118,7 +126,7 @@ impl<'a> Paragraph<'a> {
   pub fn set_highlight_options(
     mut self,
     highlight_style: Option<Style>,
-    highlight_range: Option<Range>,
+    highlight_range: Option<std::ops::Range<usize>>,
   ) -> Paragraph<'a> {
     self.highlight_style = highlight_style;
     self.highlight_range = highlight_range;
@@ -140,6 +148,10 @@ impl<'a> Paragraph<'a> {
     self
   }
 
+  pub fn char_idx(mut self, char_idx: usize) -> Paragraph<'a> {
+    self.char_idx = Some(char_idx);
+    self
+  }
   pub fn scroll(mut self, offset: (u16, u16)) -> Paragraph<'a> {
     self.scroll = offset;
     self
@@ -175,62 +187,141 @@ impl<'a> Paragraph<'a> {
   }
 }
 
-fn highlight_selected_text<'a>(
-  text: &'a Text<'a>,
-  selection: Option<Range>,
-  highlight_style: Style,
-  paragraph_style: Style,
-) -> Box<dyn Iterator<Item = StyledGrapheme<'a>> + 'a> {
-  match selection {
-    Some(range) => Box::new(text.lines.iter().enumerate().flat_map(
-      move |(line_idx, spans)| {
-        spans
-          .0
-          .iter()
-          .flat_map(move |span| {
-            span.styled_graphemes(paragraph_style).enumerate().map(
-              move |(char_idx, grapheme)| {
-                let pos = Position {
-                  line: line_idx as u32,
-                  character: char_idx as u32,
-                };
-                if pos >= range.start && pos < range.end {
-                  StyledGrapheme {
-                    symbol: grapheme.symbol,
-                    style: highlight_style.patch(grapheme.style),
-                  }
-                } else {
-                  grapheme
-                }
-              },
-            )
-          })
-          .chain(iter::once(StyledGrapheme {
-            symbol: "\n",
-            style: paragraph_style,
-          }))
-      },
-    )),
-    None => Box::new(text.lines.iter().flat_map(move |spans| {
-      spans
-        .0
-        .iter()
-        .flat_map(move |span| {
-          span.styled_graphemes(paragraph_style).chain(iter::once(
-            StyledGrapheme { symbol: "\n", style: paragraph_style },
-          ))
-        })
-        .chain(iter::once(StyledGrapheme {
-          symbol: "\n",
-          style: paragraph_style,
-        }))
-    })),
+#[allow(clippy::too_many_arguments)]
+pub fn format_text(
+  text: &Text<'_>,
+  style: Style,
+  wrap: Option<Wrap>,
+  area: Rect,
+  alignment: Alignment,
+  scroll: (u16, u16),
+  char_idx: Option<usize>,
+  highlight_range: Option<std::ops::Range<usize>>,
+  highlight_style: Option<Style>,
+) -> Buffer {
+  log::warn!("format text y: {} height:{}", area.y, area.height);
+  let mut styled = text.lines.iter().flat_map(|spans| {
+    spans
+            .0
+            .iter()
+            .flat_map(|span| span.styled_graphemes(style))
+            // Required given the way composers work but might be refactored out if we change
+            // composers to operate on lines instead of a stream of graphemes.
+            .chain(iter::once(StyledGrapheme {
+                symbol: "\n",
+                style
+            }))
+  });
+  let mut line_composer: Box<dyn LineComposer> =
+    if let Some(Wrap { trim }) = wrap {
+      Box::new(WordWrapper::new(&mut styled, area.width, trim))
+    } else {
+      let mut line_composer =
+        Box::new(LineTruncator::new(&mut styled, area.width));
+      if alignment == Alignment::Left {
+        line_composer.set_horizontal_offset(scroll.1);
+      }
+      line_composer
+    };
+  let mut y = 0;
+  let mut buf = Buffer::empty(area);
+  let mut char_counter = char_idx.unwrap();
+  let mut last_grapheme_idx = 0;
+  while let Some((current_line, current_line_width)) = line_composer.next_line()
+  {
+    if y >= scroll.0 {
+      let mut x = 0; // get_line_offset(current_line_width, area.width, alignment);
+      let mut linetxt = String::new();
+      let idx_start = char_counter;
+      for (StyledGrapheme { symbol, style }, grapheme_index) in
+        current_line.iter().zip(idx_start..)
+      {
+        linetxt.push_str(symbol);
+        let style = if let (Some(highlight_range), Some(highlight_style)) =
+          (highlight_range.as_ref(), highlight_style)
+        {
+          if highlight_range.contains(&grapheme_index) {
+            // log::info!(
+            //   "hl: {} {} {} {} {}",
+            //   symbol,
+            //   area.left() + x,
+            //   area.top() + y,
+            //   char_counter,
+            //   grapheme_index
+            // );
+            // buf.set_style(
+            //   Rect {
+            //     x: area.left() + x,
+            //     y: area.top() + y - self.scroll.0,
+            //     width: symbol.width() as u16,
+            //     height: 1,
+            //   },
+            //   highlight_style,
+            // );
+            highlight_style
+          } else {
+            *style
+          }
+        } else {
+          *style
+        };
+        // if symbol.is_empty() {
+        //   // If the symbol is empty, the last char which rendered last time will
+        //   // leave on the line. It's a quick fix.
+        //   " "
+        // } else {
+        //   symbol
+        // };
+        let cell = &mut buf[(area.left() + x, area.top() + y - scroll.0)];
+        cell.set_symbol(symbol).set_style(style);
+        x += symbol.width() as u16;
+        char_counter += symbol.width();
+        last_grapheme_idx = grapheme_index;
+      }
+      // if let Some(ref range) = highlight_range {
+      //   log::warn!(
+      //   "format_text: {:?}\nlen: {}, x: {} char_counter: {} char_idx: {} range: {:?}",
+      //   string_text,
+      //   string_text.len(),
+      //   x,
+      //   char_counter,
+      //   char_idx,
+      //   range
+      // );
+      // }
+      // log::info!(
+      //   "idx: {}   x: {}, y: {}\nsymbol: {}  ",
+      //   char_counter,
+      //   area.left(),
+      //   area.top(),
+      //   linetxt,
+      // );
+    }
+    log::error!(
+    "text spans sum: {}  plaintext sum: {} spans text sum:{}\n char_idx: {:?}   char_count:{:?}  last_grapheme_idx: {:?}",
+      text.lines.iter().map(|s|s.width()).sum::<usize>(),
+      String::from(text).len(),
+      text.lines.iter().map(String::from).collect::<String>().len(),
+      char_idx,
+      char_counter,
+      last_grapheme_idx
+    );
+    y += 1;
+    if y >= area.height + scroll.0 {
+      break;
+    }
   }
+  buf
 }
 
-impl<'a> Widget for Paragraph<'a> {
-  fn render(mut self, area: Rect, buf: &mut Buffer) {
-    buf.set_style(area, self.style);
+impl<'a> Paragraph<'a> {
+  pub fn render_paragraph(mut self, area: Rect, buf: &mut Buffer) {
+    log::warn!(
+      "rendering paragraph x: {}  y: {} height:{}",
+      area.x,
+      area.y,
+      area.height
+    );
     let text_area = match self.block.take() {
       Some(b) => {
         let inner_area = b.inner(area);
@@ -242,83 +333,18 @@ impl<'a> Widget for Paragraph<'a> {
     if text_area.height < 1 {
       return;
     }
-    let style = self.style;
-    let mut styled = self.text.lines.iter().flat_map(|spans| {
-      spans
-                .0
-                .iter()
-                .flat_map(|span| span.styled_graphemes(style))
-                // Required given the way composers work but might be refactored out if we change
-                // composers to operate on lines instead of a stream of graphemes.
-                .chain(iter::once(StyledGrapheme {
-                    symbol: "\n",
-                    style: self.style,
-                }))
-    });
-    let mut line_composer: Box<dyn LineComposer> =
-      if let Some(Wrap { trim }) = self.wrap {
-        Box::new(WordWrapper::new(&mut styled, text_area.width, trim))
-      } else {
-        let mut line_composer =
-          Box::new(LineTruncator::new(&mut styled, text_area.width));
-        if self.alignment == Alignment::Left {
-          line_composer.set_horizontal_offset(self.scroll.1);
-        }
-        line_composer
-      };
-    let mut y = 0;
-    while let Some((current_line, current_line_width)) =
-      line_composer.next_line()
-    {
-      if y >= self.scroll.0 {
-        let mut x =
-          get_line_offset(current_line_width, text_area.width, self.alignment);
-        let mut highlight_start = None;
-        let mut highlight_end = None;
-        for StyledGrapheme { symbol, style } in current_line {
-          let current_pos = Position {
-            line: (text_area.top() + y - self.scroll.0) as u32,
-            character: x as u32,
-          };
-          if let Some(highlight_range) = self.highlight_range {
-            if highlight_range.start <= current_pos
-              && current_pos < highlight_range.end
-            {
-              if highlight_start.is_none() {
-                highlight_start = Some(x);
-              }
-              highlight_end = Some(x + symbol.width() as u16);
-            }
-          }
-          let cell = &mut buf
-            [(text_area.left() + x, text_area.top() + y - self.scroll.0)];
-          cell
-            .set_symbol(if symbol.is_empty() {
-              // If the symbol is empty, the last char which rendered last time will
-              // leave on the line. It's a quick fix.
-              " "
-            } else {
-              symbol
-            })
-            .set_style(*style);
-          x += symbol.width() as u16;
-        }
-        if let (Some(start), Some(end), Some(style)) =
-          (highlight_start, highlight_end, self.highlight_style)
-        {
-          let highlight_area = Rect {
-            x: text_area.left() + start,
-            y: text_area.top() + y - self.scroll.0,
-            width: end - start,
-            height: 1,
-          };
-          buf.set_style(highlight_area, style);
-        }
-      }
-      y += 1;
-      if y >= text_area.height + self.scroll.0 {
-        break;
-      }
-    }
+    let text_buf = format_text(
+      self.text,
+      self.style,
+      self.wrap,
+      text_area,
+      self.alignment,
+      self.scroll,
+      self.char_idx,
+      self.highlight_range,
+      self.highlight_style,
+    );
+    buf.merge(&text_buf);
+    buf.set_style(area, self.style);
   }
 }

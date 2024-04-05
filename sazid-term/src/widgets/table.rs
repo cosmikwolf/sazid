@@ -1,10 +1,11 @@
 use helix_core::{
-  movement::Direction, unicode::width::UnicodeWidthStr, Position,
+  movement::Direction, syntax::HighlightEvent, unicode::width::UnicodeWidthStr,
+  Position,
 };
 use helix_lsp::lsp::Range;
 use helix_view::{
   graphics::{Rect, Style},
-  theme::Color,
+  Theme,
 };
 use tui::{
   buffer::Buffer,
@@ -44,7 +45,9 @@ pub struct ParagraphCell<'a> {
   /// Highlight style
   highlight_style: Option<Style>,
   /// Highlight Range
-  highlight_range: Option<Range>,
+  highlight_range: Option<std::ops::Range<usize>>,
+  /// char index range
+  char_idx: Option<usize>,
   /// How to wrap the text
   wrap_trim: Option<bool>,
   /// Scroll
@@ -55,6 +58,7 @@ pub struct ParagraphCell<'a> {
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct Cell<'a> {
+  char_idx: Option<u16>,
   /// The text to display
   pub content: Text<'a>,
   /// Widget style
@@ -88,20 +92,23 @@ impl<'a> Cell<'a> {
     self
   }
 
+  #[allow(clippy::too_many_arguments)]
   pub fn paragraph_cell(
     mut self,
     block: Option<Block<'a>>,
     wrap_trim: Option<bool>,
     scroll: (u16, u16),
     alignment: Alignment,
+    char_idx: Option<usize>,
     highlight_style: Option<Style>,
-    highlight_range: Option<Range>,
+    highlight_range: Option<std::ops::Range<usize>>,
   ) -> Self {
     self.paragraph_options = Some(ParagraphCell {
       block,
       wrap_trim,
       scroll,
       alignment,
+      char_idx,
       highlight_style,
       highlight_range,
     });
@@ -115,6 +122,7 @@ where
 {
   fn from(content: T) -> Cell<'a> {
     Cell {
+      char_idx: None,
       content: content.into(),
       style: Style::default(),
       paragraph_options: None,
@@ -515,6 +523,10 @@ impl TableState {
     }
   }
 
+  pub fn scroll_top(&mut self) {
+    self.sticky_scroll = false;
+    self.vertical_scroll = 0;
+  }
   pub fn scroll_by(&mut self, amount: u16, direction: Direction) {
     match direction {
       Direction::Forward => {
@@ -586,6 +598,14 @@ impl<'a> Table<'a> {
       None => area,
     };
 
+    self.rows.iter().enumerate().for_each(|(i, row)| {
+      log::warn!(
+        "row idx: {}  cell count: {}",
+        i,
+        row.cells.len(),
+        // row.cell_text().collect::<String>()
+      );
+    });
     let has_selection = state.selected.is_some();
     let column_areas = self.get_columns_areas(table_area, has_selection);
     let column_widths =
@@ -648,6 +668,12 @@ impl<'a> Table<'a> {
       match extents {
         None => continue,
         Some((i, row_y, row_skip_lines, row_height)) => {
+          log::info!(
+            "rendering row:   row idx: {}  row_y: {}  row_height: {}",
+            i,
+            row_y,
+            row_height
+          );
           if row_height == 0 {
             continue;
           }
@@ -660,28 +686,35 @@ impl<'a> Table<'a> {
             height: row_height,
           };
 
-          buf.set_style(table_row_area, table_row.style);
+          // buf.set_style(table_row_area, table_row.style);
           let is_selected = state.selected.map(|s| s == i).unwrap_or(false);
           let table_row_start_col = if has_selection {
             let symbol =
               if is_selected { highlight_symbol } else { &blank_symbol };
-            let (col, _) = buf.set_stringn(
-              col,
-              row,
-              symbol,
-              table_area.width as usize,
-              table_row.style,
-            );
+            // let (col, _) = buf.set_stringn(
+            //   col,
+            //   row,
+            //   symbol,
+            //   table_area.width as usize,
+            //   table_row.style,
+            // );
             col
           } else {
             col
           };
           if is_selected {
-            buf.set_style(table_row_area, self.highlight_style);
+            // buf.set_style(table_row_area, self.highlight_style);
           }
           let mut col = table_row_start_col;
           for (width, cell) in column_widths.iter().zip(table_row.cells.iter())
           {
+            log::debug!(
+              "rendering cell - width: {}  col: {}  row: {}  height: {}",
+              width,
+              col,
+              row,
+              table_row_area.height
+            );
             render_cell(
               buf,
               cell,
@@ -713,6 +746,12 @@ fn render_cell(
 ) {
   match cell.paragraph_options.clone() {
     Some(options) => {
+      log::warn!(
+        "rendering paragraph cell x: {}  y: {} height:{}",
+        area.x,
+        area.y,
+        area.height
+      );
       let mut paragraph = Paragraph::new(&cell.content).set_highlight_options(
         options.highlight_style,
         options.highlight_range,
@@ -723,32 +762,26 @@ fn render_cell(
       if let Some(wrap) = options.wrap_trim {
         paragraph = paragraph.wrap(Wrap { trim: wrap });
       }
+      paragraph = paragraph.char_idx(options.char_idx.unwrap_or_default());
       paragraph = paragraph.scroll((skip_lines, 0));
       paragraph = paragraph.alignment(options.alignment);
-      paragraph.render(area, buf);
+      paragraph.render_paragraph(area, buf);
     },
     None => {
-      buf.set_style(area, cell.style);
-      for (i, spans) in
-        cell.content.lines.iter().skip(skip_lines.into()).enumerate()
-      {
-        if i as u16 >= area.height {
-          break;
-        }
-        if truncate {
-          buf.set_spans_truncated(area.x, area.y + i as u16, spans, area.width);
-        } else {
-          buf.set_spans(area.x, area.y + i as u16, spans, area.width);
-        }
-      }
+      // buf.set_style(area, cell.style);
+      // for (i, spans) in
+      //   cell.content.lines.iter().skip(skip_lines.into()).enumerate()
+      // {
+      //   if i as u16 >= area.height {
+      //     break;
+      //   }
+      //   if truncate {
+      //     buf.set_spans_truncated(area.x, area.y + i as u16, spans, area.width);
+      //   } else {
+      //     buf.set_spans(area.x, area.y + i as u16, spans, area.width);
+      //   }
+      // }
     },
-  }
-}
-
-impl<'a> Widget for Table<'a> {
-  fn render(self, area: Rect, buf: &mut Buffer) {
-    let mut state = TableState::default();
-    Table::render_table(self, area, buf, &mut state, false);
   }
 }
 

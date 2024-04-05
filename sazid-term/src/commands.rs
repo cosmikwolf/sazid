@@ -23,7 +23,9 @@ use helix_core::{
     get_line_ending_of_str, line_end_char_index, str_is_line_ending,
   },
   match_brackets,
-  movement::{self, move_vertically_visual, Direction},
+  movement::{
+    self, move_horizontally, move_vertically, move_vertically_visual, Direction,
+  },
   object, pos_at_coords,
   regex::{self, Regex},
   search::{self, CharMatcher},
@@ -58,6 +60,7 @@ use crate::{
   filter_picker_entry,
   job::Callback,
   keymap::ReverseKeymap,
+  movement::{session_move_horizontally, session_move_vertically},
   ui::{self, overlay::overlaid, Picker, Popup, Prompt, PromptEvent},
 };
 
@@ -766,6 +769,58 @@ type MoveFn = fn(
   &mut TextAnnotations,
 ) -> Range;
 
+type SessionMoveFn = fn(
+  Vec<ChatMessageItem>,
+  Range,
+  Direction,
+  usize,
+  Movement,
+  &TextFormat,
+  &mut TextAnnotations,
+) -> Range;
+
+fn session_move_impl(
+  cx: &mut Context,
+  move_fn: SessionMoveFn,
+  dir: Direction,
+  behaviour: Movement,
+) {
+  let count = cx.count();
+  let (view, doc) = current!(cx.editor);
+  let mut annotations = TextAnnotations::default();
+  cx.callback.push(Box::new(
+    move |compositor: &mut Compositor, cx: &mut compositor::Context| {
+      let session =
+        compositor.find::<ui::SessionView<ChatMessageItem>>().unwrap();
+
+      let text_fmt = TextFormat {
+        soft_wrap: false,
+        tab_width: 2,
+        max_wrap: 3,
+        max_indent_retain: 4,
+        wrap_indicator: Box::from(" "),
+        viewport_width: session.chat_viewport.width,
+        wrap_indicator_highlight: None,
+      };
+
+      // let primary_index = session.selection.primary_index();
+      session.selection = session.selection.clone().transform(|range| {
+        move_fn(
+          session.messages,
+          range,
+          dir,
+          count,
+          behaviour,
+          &text_fmt,
+          &mut annotations,
+        )
+      });
+      // .into_single();
+      log::info!("move_impl callback: session view {:?}", session.selection);
+    },
+  ));
+}
+
 fn move_impl(
   cx: &mut Context,
   move_fn: MoveFn,
@@ -774,105 +829,187 @@ fn move_impl(
 ) {
   let count = cx.count();
   let (view, doc) = current!(cx.editor);
-  let text_fmt = TextFormat {
-    soft_wrap: true,
-    tab_width: 2,
-    max_wrap: 3,
-    max_indent_retain: 4,
-    wrap_indicator: Box::from(" "),
-    viewport_width: view.inner_area(doc).width,
-    wrap_indicator_highlight: None,
-  };
   let mut annotations = TextAnnotations::default();
+  log::info!("move_impl: editor view");
+
+  let count = cx.count();
+  let (view, doc) = current!(cx.editor);
+  let text = doc.text().slice(..);
+  let text_fmt = doc.text_format(view.inner_area(doc).width, None);
+  let mut annotations = view.text_annotations(doc, None);
+
+  let selection = doc.selection(view.id).clone().transform(|range| {
+    move_fn(text, range, dir, count, behaviour, &text_fmt, &mut annotations)
+  });
+  doc.set_selection(view.id, selection);
+}
+
+fn move_char_left(cx: &mut Context) {
   match cx.focus {
-    ContextFocus::SessionView => {
-      cx.callback.push(Box::new(
-        move |compositor: &mut Compositor, cx: &mut compositor::Context| {
-          let session =
-            compositor.find::<ui::SessionView<ChatMessageItem>>().unwrap();
-          session.selection = session.selection.clone().transform(|range| {
-            move_fn(
-              session.get_messages_plaintext().slice(..),
-              range,
-              dir,
-              count,
-              behaviour,
-              &text_fmt,
-              &mut annotations,
-            )
-          });
-          log::info!(
-            "move_impl callback: session view {:?}",
-            session.selection
-          );
-        },
-      ));
-    },
+    ContextFocus::SessionView => session_move_impl(
+      cx,
+      session_move_horizontally,
+      Direction::Backward,
+      Movement::Move,
+    ),
     ContextFocus::EditorView => {
-      log::info!("move_impl: editor view");
-
-      let count = cx.count();
-      let (view, doc) = current!(cx.editor);
-      let text = doc.text().slice(..);
-      let text_fmt = doc.text_format(view.inner_area(doc).width, None);
-      let mut annotations = view.text_annotations(doc, None);
-
-      let selection = doc.selection(view.id).clone().transform(|range| {
-        move_fn(text, range, dir, count, behaviour, &text_fmt, &mut annotations)
-      });
-      doc.set_selection(view.id, selection);
+      move_impl(cx, move_horizontally, Direction::Backward, Movement::Move)
     },
   }
 }
 
-use helix_core::movement::{move_horizontally, move_vertically};
-
-fn move_char_left(cx: &mut Context) {
-  move_impl(cx, move_horizontally, Direction::Backward, Movement::Move)
-}
-
 fn move_char_right(cx: &mut Context) {
-  move_impl(cx, move_horizontally, Direction::Forward, Movement::Move)
+  match cx.focus {
+    ContextFocus::SessionView => session_move_impl(
+      cx,
+      session_move_horizontally,
+      Direction::Forward,
+      Movement::Move,
+    ),
+    ContextFocus::EditorView => {
+      move_impl(cx, move_horizontally, Direction::Forward, Movement::Move)
+    },
+  }
 }
 
 fn move_line_up(cx: &mut Context) {
-  move_impl(cx, move_vertically, Direction::Backward, Movement::Move)
+  match cx.focus {
+    ContextFocus::SessionView => session_move_impl(
+      cx,
+      session_move_vertically,
+      Direction::Backward,
+      Movement::Move,
+    ),
+    ContextFocus::EditorView => {
+      move_impl(cx, move_vertically, Direction::Backward, Movement::Move)
+    },
+  }
 }
 
 fn move_line_down(cx: &mut Context) {
-  move_impl(cx, move_vertically, Direction::Forward, Movement::Move)
+  match cx.focus {
+    ContextFocus::SessionView => session_move_impl(
+      cx,
+      session_move_vertically,
+      Direction::Forward,
+      Movement::Move,
+    ),
+    ContextFocus::EditorView => {
+      move_impl(cx, move_vertically, Direction::Forward, Movement::Move)
+    },
+  }
 }
 
 fn move_visual_line_up(cx: &mut Context) {
-  move_impl(cx, move_vertically_visual, Direction::Backward, Movement::Move)
+  match cx.focus {
+    ContextFocus::SessionView => session_move_impl(
+      cx,
+      session_move_vertically,
+      Direction::Backward,
+      Movement::Move,
+    ),
+    ContextFocus::EditorView => {
+      move_impl(cx, move_vertically, Direction::Backward, Movement::Move)
+    },
+  }
 }
 
 fn move_visual_line_down(cx: &mut Context) {
-  move_impl(cx, move_vertically_visual, Direction::Forward, Movement::Move)
+  match cx.focus {
+    ContextFocus::SessionView => session_move_impl(
+      cx,
+      session_move_vertically,
+      Direction::Forward,
+      Movement::Move,
+    ),
+    ContextFocus::EditorView => {
+      move_impl(cx, move_vertically, Direction::Forward, Movement::Move)
+    },
+  }
 }
 
 fn extend_char_left(cx: &mut Context) {
-  move_impl(cx, move_horizontally, Direction::Backward, Movement::Extend)
+  match cx.focus {
+    ContextFocus::SessionView => session_move_impl(
+      cx,
+      session_move_horizontally,
+      Direction::Backward,
+      Movement::Extend,
+    ),
+    ContextFocus::EditorView => {
+      move_impl(cx, move_horizontally, Direction::Backward, Movement::Extend)
+    },
+  }
 }
 
 fn extend_char_right(cx: &mut Context) {
-  move_impl(cx, move_horizontally, Direction::Forward, Movement::Extend)
+  match cx.focus {
+    ContextFocus::SessionView => session_move_impl(
+      cx,
+      session_move_horizontally,
+      Direction::Forward,
+      Movement::Extend,
+    ),
+    ContextFocus::EditorView => {
+      move_impl(cx, move_horizontally, Direction::Forward, Movement::Extend)
+    },
+  }
 }
 
 fn extend_line_up(cx: &mut Context) {
-  move_impl(cx, move_vertically, Direction::Backward, Movement::Extend)
+  match cx.focus {
+    ContextFocus::SessionView => session_move_impl(
+      cx,
+      session_move_vertically,
+      Direction::Backward,
+      Movement::Extend,
+    ),
+    ContextFocus::EditorView => {
+      move_impl(cx, move_vertically, Direction::Backward, Movement::Extend)
+    },
+  }
 }
 
 fn extend_line_down(cx: &mut Context) {
-  move_impl(cx, move_vertically, Direction::Forward, Movement::Extend)
+  match cx.focus {
+    ContextFocus::SessionView => session_move_impl(
+      cx,
+      session_move_vertically,
+      Direction::Forward,
+      Movement::Extend,
+    ),
+    ContextFocus::EditorView => {
+      move_impl(cx, move_vertically, Direction::Forward, Movement::Extend)
+    },
+  }
 }
 
 fn extend_visual_line_up(cx: &mut Context) {
-  move_impl(cx, move_vertically_visual, Direction::Backward, Movement::Extend)
+  match cx.focus {
+    ContextFocus::SessionView => session_move_impl(
+      cx,
+      session_move_vertically,
+      Direction::Backward,
+      Movement::Extend,
+    ),
+    ContextFocus::EditorView => {
+      move_impl(cx, move_vertically, Direction::Backward, Movement::Extend)
+    },
+  }
 }
 
 fn extend_visual_line_down(cx: &mut Context) {
-  move_impl(cx, move_vertically_visual, Direction::Forward, Movement::Extend)
+  match cx.focus {
+    ContextFocus::SessionView => session_move_impl(
+      cx,
+      session_move_vertically,
+      Direction::Forward,
+      Movement::Extend,
+    ),
+    ContextFocus::EditorView => {
+      move_impl(cx, move_vertically, Direction::Forward, Movement::Extend)
+    },
+  }
 }
 
 fn goto_line_end_impl(view: &mut View, doc: &mut Document, movement: Movement) {

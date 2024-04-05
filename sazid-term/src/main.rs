@@ -32,14 +32,14 @@ pub fn setup_tracing_logging(verbosity: u64, log_path: &Path) -> Result<()> {
     .with_writer(log_file)
     .event_format(
       tracing_subscriber::fmt::format::format()
-        .pretty()
+        .with_ansi(true)
+        // .pretty()
         .with_source_location(true),
     )
     .without_time()
     // .with_file(false)
     // .with_line_number(false)
     .with_target(false)
-    .with_ansi(true)
    .with_filter(tracing_subscriber::filter::EnvFilter::from_default_env());
 
   tracing_subscriber::registry()
