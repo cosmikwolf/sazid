@@ -227,6 +227,7 @@ pub fn minimal() -> HashMap<Mode, KeyTrie> {
           "s" => save_session,
         "l" => load_session_picker,
         "t" => toggle_layer_order,
+
       //     "F" => file_picker_in_current_directory,
       //     "b" => buffer_picker,
       //     "j" => jumplist_picker,
@@ -279,7 +280,7 @@ pub fn minimal() -> HashMap<Mode, KeyTrie> {
                   "C-v" | "v" => vsplit_new,
               },
           },
-      //     "y" => yank_to_clipboard,
+          "y" => yank_to_clipboard,
       //     "Y" => yank_main_selection_to_clipboard,
       //     "p" => paste_clipboard_after,
       //     "P" => paste_clipboard_before,

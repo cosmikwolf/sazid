@@ -793,19 +793,11 @@ impl<T: MarkdownItem + 'static> SessionView<T> {
             .with_block(Block::default())
             .with_char_index(message.start_idx);
 
-          let debug_msg_ct = message.start_idx.to_string();
-          let index_cell = MessageCell::new(MessageType::Text(debug_msg_ct))
+          let msg_idx = msg_idx.to_string();
+          let index_cell = MessageCell::new(MessageType::Text(msg_idx))
             .centered()
             .with_block(Block::default().borders(Borders::RIGHT));
 
-          // log::info!(
-          //   "message length: chars: {} lines: {}  idx: {} start_idx: {}",
-          //   message.plain_text.len_chars(),
-          //   message.plain_text.len_lines(),
-          //   msg_idx,
-          //   start_idx
-          // );
-          //
           Row::new(vec![index_cell, message_cell])
             .height(message.plain_text.len_lines() as u16)
         })

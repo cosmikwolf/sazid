@@ -625,6 +625,8 @@ fn quit(cx: &mut Context) {
 fn toggle_layer_order(cx: &mut Context) {
   cx.callback.push(Box::new(
     move |compositor: &mut Compositor, cx: &mut compositor::Context| {
+      cx.focus.toggle();
+      return;
       match compositor.pop() {
         Some(component_a) => match compositor.pop() {
           Some(component_b) => {
@@ -635,8 +637,8 @@ fn toggle_layer_order(cx: &mut Context) {
             );
             cx.focus.toggle();
 
-            compositor.push(component_a);
-            compositor.push(component_b);
+            // compositor.push(component_a);
+            // compositor.push(component_b);
             compositor.need_full_redraw();
           },
           None => {
@@ -648,7 +650,7 @@ fn toggle_layer_order(cx: &mut Context) {
         None => {
           log::info!("toggle_layer_order: no last component found");
         },
-      }
+      };
     },
   ))
 }
@@ -4254,18 +4256,88 @@ fn commit_undo_checkpoint(cx: &mut Context) {
 // Yank / Paste
 
 fn yank(cx: &mut Context) {
-  yank_impl(cx.editor, cx.register.unwrap_or('"'));
-  exit_select_mode(cx);
+  log::info!("yank to clipboard");
+  let ctx_reg = cx.register.unwrap_or('"');
+  match cx.focus {
+    ContextFocus::SessionView => cx.callback.push(Box::new(
+      move |compositor: &mut Compositor, cx: &mut compositor::Context| {
+        let session =
+          compositor.find::<ui::SessionView<ChatMessageItem>>().unwrap();
+        yank_session_impl(session, cx.editor, ctx_reg);
+        // exit_select_mode(cx);
+      },
+    )),
+    ContextFocus::EditorView => {
+      yank_impl(cx.editor, cx.register.unwrap_or('"'));
+      exit_select_mode(cx);
+    },
+  }
 }
 
 fn yank_to_clipboard(cx: &mut Context) {
-  yank_impl(cx.editor, '+');
-  exit_select_mode(cx);
+  log::info!("yank to clipboard");
+  match cx.focus {
+    ContextFocus::SessionView => cx.callback.push(Box::new(
+      move |compositor: &mut Compositor, cx: &mut compositor::Context| {
+        let session =
+          compositor.find::<ui::SessionView<ChatMessageItem>>().unwrap();
+        yank_session_impl(session, cx.editor, '+');
+        // exit_select_mode(cx);
+      },
+    )),
+    ContextFocus::EditorView => {
+      yank_impl(cx.editor, '+');
+      exit_select_mode(cx);
+    },
+  }
 }
 
 fn yank_to_primary_clipboard(cx: &mut Context) {
-  yank_impl(cx.editor, '*');
-  exit_select_mode(cx);
+  match cx.focus {
+    ContextFocus::SessionView => cx.callback.push(Box::new(
+      move |compositor: &mut Compositor, cx: &mut compositor::Context| {
+        let session =
+          compositor.find::<ui::SessionView<ChatMessageItem>>().unwrap();
+        yank_session_impl(session, cx.editor, '*');
+        // exit_select_mode(cx);
+      },
+    )),
+    ContextFocus::EditorView => {
+      yank_impl(cx.editor, '*');
+      exit_select_mode(cx);
+    },
+  }
+}
+
+fn yank_session_impl(
+  session: &mut ui::SessionView<ChatMessageItem>,
+  editor: &mut Editor,
+  register: char,
+) {
+  let text = session.get_messages_plaintext();
+  let range = session.selection.primary();
+  let (head, anchor) = if range.head < range.anchor {
+    (range.head, range.anchor)
+  } else {
+    (range.anchor, range.head)
+  };
+  let values: Vec<String> =
+    text.slice(head..anchor).lines().map(String::from).collect();
+  match editor.registers.write(register, values.clone()) {
+    Ok(_) => {
+      log::info!(
+        "session -yanked selection to register {}\n{:?}",
+        register,
+        values
+      );
+      editor.set_status(format!("yanked selection to register {register}",))
+    },
+    Err(err) => editor.set_error(err.to_string()),
+  }
+
+  if editor.mode == Mode::Select {
+    editor.mode = Mode::Normal;
+  }
 }
 
 fn yank_impl(editor: &mut Editor, register: char) {

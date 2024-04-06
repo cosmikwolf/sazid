@@ -267,8 +267,8 @@ impl Application {
     );
 
     // session must be pushed after input in order for input not to overwrite style changes made in session
-    compositor.push(Box::new(markdown_session));
     compositor.push(Box::new(input));
+    compositor.push(Box::new(markdown_session));
 
     #[cfg(windows)]
     let signals = futures_util::stream::empty();

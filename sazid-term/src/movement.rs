@@ -108,7 +108,7 @@ pub fn session_move_horizontally(
     Direction::Forward => pos + count,
     Direction::Backward => pos.saturating_sub(count),
   }
-  .clamp(original_row_start, original_row_end);
+  .clamp(0, all_messages_text.len_chars() - 1);
 
   log::warn!("move_horizontally original_pos: {}, new_pos: {}", pos, new_pos);
   // Compute the final new range.
