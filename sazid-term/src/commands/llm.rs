@@ -5,10 +5,7 @@ use crate::{
   compositor::{self, Compositor},
   job::Callback,
   ui::{self, overlay::overlaid},
-  widgets::{
-    plaintext_reflow::{LineComposerStr, WordWrapperStr},
-    reflow::{LineComposer, WordWrapper},
-  },
+  widgets::{paragraph::Wrap, table::MessageCell},
 };
 
 use crate::ui::MarkdownRenderer;
@@ -24,44 +21,36 @@ use sazid::app::messages::{
   chat_completion_request_message_content_as_str,
   chat_completion_request_message_tool_calls_as_str,
 };
-use tui::text::{Span, Spans, Text};
+use tui::{
+  buffer::Buffer,
+  text::{Span, Spans, Text},
+};
 
 use helix_core::{syntax, Rope};
-use unicode_segmentation::UnicodeSegmentation;
 
-/// Gets the first language server that is attached to a document which supports a specific feature.
-/// If there is no configured language server that supports the feature, this displays a status message.
-/// Using this macro in a context where the editor automatically queries the LSP
-/// (instead of when the user explicitly does so via a keybind like `gd`)
-/// will spam the "No configured language server supports \<feature>" status message confusingly.
-
-#[derive(Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum ChatMessageType {
   Error(String),
   Chat(ChatCompletionRequestMessage),
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct ChatMessageItem {
   pub id: Option<i64>,
   pub formatted_line_char_len: Vec<usize>,
   pub plain_text: Rope,
   pub select_range: Option<Range>,
-  pub config_loader: Arc<ArcSwap<syntax::Loader>>,
   pub chat_message: ChatMessageType,
   pub line_widths: Vec<u16>,
   pub plaintext_wrapped_width: u16,
   pub formatted_line_widths: Vec<(usize, String)>,
   pub plaintext_line_widths: Vec<(usize, String)>,
   pub rendered_area: Option<Rect>,
+  pub start_idx: usize,
 }
 
 impl ChatMessageItem {
-  pub fn new_chat(
-    id: i64,
-    message: ChatCompletionRequestMessage,
-    config_loader: Arc<ArcSwap<syntax::Loader>>,
-  ) -> Self {
+  pub fn new_chat(id: i64, message: ChatCompletionRequestMessage) -> Self {
     let id = Some(id);
     let message = ChatMessageType::Chat(message);
     let select_range = None;
@@ -69,7 +58,6 @@ impl ChatMessageItem {
     Self {
       id,
       formatted_line_char_len,
-      config_loader,
       chat_message: message.clone(),
       select_range,
       plain_text: Rope::new(),
@@ -78,13 +66,11 @@ impl ChatMessageItem {
       formatted_line_widths: vec![],
       plaintext_line_widths: vec![],
       rendered_area: None,
+      start_idx: 0,
     }
   }
 
-  pub fn new_error(
-    message: String,
-    config_loader: Arc<ArcSwap<syntax::Loader>>,
-  ) -> Self {
+  pub fn new_error(message: String) -> Self {
     let id = None;
     let message = ChatMessageType::Error(message);
     let select_range = None;
@@ -92,7 +78,6 @@ impl ChatMessageItem {
     Self {
       id,
       formatted_line_char_len,
-      config_loader,
       chat_message: message.clone(),
       select_range,
       plain_text: Rope::new(),
@@ -101,68 +86,62 @@ impl ChatMessageItem {
       formatted_line_widths: vec![],
       plaintext_line_widths: vec![],
       rendered_area: None,
+      start_idx: 0,
+    }
+  }
+
+  pub fn get_wrapped_height(&self, width: u16) -> usize {
+    if self.plaintext_wrapped_width == width {
+      self.plain_text.len_lines()
+    } else {
+      panic!("need to update wrapping before trying to get wrapped height, or else it is not up to date")
     }
   }
 
   pub fn update_message(&mut self, message: ChatMessageType) {
     self.chat_message = message;
   }
-  pub fn cache_wrapped_yank_text(&mut self, width: u16) {
-    let text = self.format_to_text(None);
+  pub fn cache_wrapped_plain_text(
+    &mut self,
+    width: u16,
+    config_loader: &Arc<ArcSwap<syntax::Loader>>,
+  ) {
+    let text = self.format_to_text(None, config_loader.clone());
 
-    let line_widths: Vec<u16> =
-      text.lines.iter().map(|spans| spans.width() as u16).collect();
-    //
-    // let text = text.lines.iter().flat_map(|spans| {
-    //   spans
-    //     .0
-    //     .iter()
-    //     .flat_map(|span| {
-    //       // log::info!("span: {:#?}", span);
-    //       span.content.as_ref().split_word_bounds()
-    //     })
-    //     .chain(iter::once("\n"))
-    // });
-    //
-    // let trim = false;
-    // let mut line_composer: Box<dyn LineComposerStr> =
-    //   Box::new(WordWrapperStr::new(Box::new(text), width, trim));
-    //
-    // // log::error!("width: {}", width);
-    // let mut plain_text = Rope::new();
-    // use helix_core::unicode::width::UnicodeWidthStr;
-    // while let Some((mut symbol, length)) = line_composer.next_line() {
-    //   // log::info!(
-    //   //   "symbol: {:#?}  width: {}  length:{}",
-    //   //   symbol,
-    //   //   symbol.width(),
-    //   //   length
-    //   // );
-    //   if symbol.is_empty() {
-    //     symbol = " ";
-    //   }
-    //   plain_text.insert(plain_text.len_chars(), symbol);
-    //   plain_text.insert(plain_text.len_chars(), "\n");
-    // }
-    // plain_text.remove(plain_text.len_chars() - 1..);
-    // plain_text
-    //   .insert(plain_text.len_chars(), &"\n".repeat(row_spacing as usize));
-    // drop(line_composer);
+    let style = Style::default();
+    let scroll = (0, 0);
+    let area = Rect::new(0, 0, width, 0);
+    let buf = &mut Buffer::empty(area);
+    self.plain_text = if let Some(plain_text) = MessageCell::format_text(
+      buf,
+      true,
+      false,
+      &text,
+      style,
+      Some(Wrap { trim: false }),
+      area,
+      tui::layout::Alignment::Left,
+      scroll,
+      None,
+      None,
+      None,
+    ) {
+      plain_text
+    } else {
+      self.plain_text.clone()
+    };
 
-    // log::warn!("text: {}", format!("{}", plain_text));
-    self.plain_text = Rope::from(
-      text
-        .lines
-        .iter()
-        .map(String::from)
-        .chain(iter::once("\n".to_string()))
-        .collect::<String>(),
-    );
+    // log::warn!("plain_text: {}", self.plain_text);
     self.plaintext_wrapped_width = width;
-    self.line_widths = line_widths;
+    // self.line_widths =
+    //   self.plain_text.lines().map(|l| l.len_chars() as u16).collect();
   }
 
-  fn format_to_text(&self, theme: Option<&Theme>) -> tui::text::Text {
+  pub fn format_to_text(
+    &self,
+    theme: Option<&Theme>,
+    config_loader: Arc<ArcSwap<syntax::Loader>>,
+  ) -> tui::text::Text {
     let (style, header) = match self.chat_message {
       ChatMessageType::Chat(ChatCompletionRequestMessage::System(_)) => {
         (
@@ -219,11 +198,8 @@ impl ChatMessageItem {
     // log::warn!("content: {}\nheader: {}", self.content(), header);
     let header = Spans::from(vec![Span::styled(header, style)]);
     let mut lines = vec![header];
-    let text = MarkdownRenderer::parse(
-      self.content(),
-      theme,
-      self.config_loader.clone(),
-    );
+    let text =
+      MarkdownRenderer::parse(self.content(), theme, config_loader.clone());
     lines.extend(text);
 
     if let Some(tool_calls) = self.tool_calls() {
@@ -268,7 +244,8 @@ impl ui::markdownmenu::MarkdownItem for ChatMessageItem {
     _data: &Self::Data,
     theme: Option<&Theme>,
   ) -> tui::text::Text {
-    self.format_to_text(theme)
+    // self.format_to_text(theme)
+    Text::from("")
   }
 }
 
@@ -281,11 +258,7 @@ pub fn session_messages(cx: &mut Context) {
       .clone()
       .iter()
       .map(|message| {
-        ChatMessageItem::new_chat(
-          message.message_id,
-          message.message.clone(),
-          cx.editor.syn_loader.clone(),
-        )
+        ChatMessageItem::new_chat(message.message_id, message.message.clone())
       })
       .collect::<Vec<_>>(),
   );
@@ -319,6 +292,7 @@ pub fn session_messages(cx: &mut Context) {
         messages,
         Some(editor.theme.clone()),
         editor_data,
+        editor.syn_loader.clone(),
         session_callback,
       );
       compositor.replace_or_push("markdown text", overlaid(markdown_session));

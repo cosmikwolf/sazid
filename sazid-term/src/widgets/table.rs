@@ -1,6 +1,11 @@
+use std::{iter, sync::Arc};
+
+use arc_swap::ArcSwap;
 use helix_core::{
-  movement::Direction, syntax::HighlightEvent, unicode::width::UnicodeWidthStr,
-  Position,
+  movement::Direction,
+  syntax::{self, HighlightEvent},
+  unicode::width::UnicodeWidthStr,
+  Position, Rope,
 };
 use helix_lsp::lsp::Range;
 use helix_view::{
@@ -10,8 +15,13 @@ use helix_view::{
 use tui::{
   buffer::Buffer,
   layout::{Alignment, Constraint},
-  text::Text,
+  text::{StyledGrapheme, Text},
   widgets::{Block, Widget},
+};
+
+use crate::{
+  commands::ChatMessageItem,
+  widgets::reflow::{LineComposer, LineTruncator, WordWrapper},
 };
 
 use super::paragraph::{Paragraph, Wrap};
@@ -38,8 +48,17 @@ use super::paragraph::{Paragraph, Wrap};
 /// You can apply a [`Style`] on the entire [`Cell`] using [`Cell::style`] or rely on the styling
 /// capabilities of [`Text`].
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ParagraphCell<'a> {
+#[derive(Debug, Clone, PartialEq)]
+pub enum MessageType<'a> {
+  Chat(&'a ChatMessageItem),
+  Text(String),
+}
+#[derive(Debug, Clone, PartialEq)]
+pub struct MessageCell<'a> {
+  /// The text to display
+  pub message: MessageType<'a>,
+  /// Widget style
+  style: Style,
   /// A block to wrap the widget in
   block: Option<Block<'a>>,
   /// Highlight style
@@ -50,85 +69,276 @@ pub struct ParagraphCell<'a> {
   char_idx: Option<usize>,
   /// How to wrap the text
   wrap_trim: Option<bool>,
-  /// Scroll
-  scroll: (u16, u16),
   /// Alignment of the text
   alignment: Alignment,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
-pub struct Cell<'a> {
-  char_idx: Option<u16>,
-  /// The text to display
-  pub content: Text<'a>,
-  /// Widget style
-  style: Style,
-  //// Paragraph options for multi line cells
-  pub paragraph_options: Option<ParagraphCell<'a>>,
-}
-
-impl<'a> Cell<'a> {
-  pub fn calculate_height(&self, width: u16) -> u16 {
-    if let Some(paragraph_options) = &self.paragraph_options {
-      let paragraph = Paragraph::new(&self.content)
-        .style(self.style)
-        .alignment(paragraph_options.alignment)
-        .scroll(paragraph_options.scroll);
-
-      let paragraph = if let Some(wrap_trim) = paragraph_options.wrap_trim {
-        paragraph.wrap(Wrap { trim: wrap_trim })
-      } else {
-        paragraph
-      };
-
-      paragraph.wrapped_line_count(width) as u16
-    } else {
-      self.content.lines.len() as u16
+impl<'a> MessageCell<'a> {
+  pub fn get_height(&self, width: u16) -> u16 {
+    match &self.message {
+      MessageType::Chat(message) => message.get_wrapped_height(width) as u16,
+      MessageType::Text(s) => s.lines().count() as u16,
     }
   }
+  pub fn new(message: MessageType<'a>) -> Self {
+    MessageCell {
+      message,
+      style: Style::default(),
+      block: None,
+      highlight_style: None,
+      highlight_range: None,
+      char_idx: None,
+      wrap_trim: None,
+      alignment: Alignment::Left,
+    }
+  }
+
   /// Set the `Style` of this cell.
-  pub fn style(mut self, style: Style) -> Self {
+  pub fn with_style(mut self, style: Style) -> Self {
     self.style = style;
     self
   }
 
-  #[allow(clippy::too_many_arguments)]
-  pub fn paragraph_cell(
-    mut self,
-    block: Option<Block<'a>>,
-    wrap_trim: Option<bool>,
-    scroll: (u16, u16),
-    alignment: Alignment,
-    char_idx: Option<usize>,
-    highlight_style: Option<Style>,
-    highlight_range: Option<std::ops::Range<usize>>,
-  ) -> Self {
-    self.paragraph_options = Some(ParagraphCell {
-      block,
-      wrap_trim,
-      scroll,
-      alignment,
-      char_idx,
-      highlight_style,
-      highlight_range,
-    });
+  pub fn with_block(mut self, block: Block<'a>) -> Self {
+    self.block = Some(block);
     self
   }
-}
 
-impl<'a, T> From<T> for Cell<'a>
-where
-  T: Into<Text<'a>>,
-{
-  fn from(content: T) -> Cell<'a> {
-    Cell {
-      char_idx: None,
-      content: content.into(),
-      style: Style::default(),
-      paragraph_options: None,
+  pub fn with_highlight(
+    mut self,
+    style: Style,
+    range: std::ops::Range<usize>,
+  ) -> Self {
+    self.highlight_style = Some(style);
+    self.highlight_range = Some(range);
+    self
+  }
+
+  pub fn with_char_index(mut self, char_idx: usize) -> Self {
+    self.char_idx = Some(char_idx);
+    self
+  }
+
+  pub fn with_wrap_trim(mut self, wrap_trim: bool) -> Self {
+    self.wrap_trim = Some(wrap_trim);
+    self
+  }
+
+  pub fn centered(mut self) -> Self {
+    self.alignment = Alignment::Center;
+    self
+  }
+
+  pub fn render_cell(
+    &self,
+    buf: &mut Buffer,
+    area: Rect,
+    theme: &Theme,
+    config_loader: &Arc<ArcSwap<syntax::Loader>>,
+  ) {
+    let text = match &self.message {
+      MessageType::Chat(message) => {
+        message.format_to_text(Some(theme), config_loader.clone())
+      },
+      MessageType::Text(text) => Text::from(text.clone()),
+    };
+    let style = Style::default();
+    let scroll = (0, 0);
+    Self::format_text(
+      buf,
+      false,
+      true,
+      &text,
+      style,
+      self.wrap_trim.map(|trim| Wrap { trim }),
+      area,
+      self.alignment,
+      scroll,
+      self.char_idx,
+      self.highlight_range.clone(),
+      self.highlight_style,
+    );
+  }
+
+  #[allow(clippy::too_many_arguments)]
+  pub fn format_text(
+    buf: &mut Buffer,
+    output_plain_text: bool,
+    output_buffer: bool,
+    text: &Text<'_>,
+    style: Style,
+    wrap: Option<Wrap>,
+    area: Rect,
+    alignment: Alignment,
+    scroll: (u16, u16),
+    char_idx: Option<usize>,
+    highlight_range: Option<std::ops::Range<usize>>,
+    highlight_style: Option<Style>,
+  ) -> Option<Rope> {
+    // log::warn!(
+    //   "plain:{}---------buff:{}-----\nformat text x: {} y: {} width: {} height:{}\nwrap: {:?}",
+    //   output_plain_text,
+    //   output_buffer,
+    //   area.x,
+    //   area.y,
+    //   area.width,
+    //   area.height,
+    //   wrap
+    // );
+    //
+    let mut styled = text.lines.iter().flat_map(|spans| {
+      spans
+            .0
+            .iter()
+            .flat_map(|span| span.styled_graphemes(style))
+            // Required given the way composers work but might be refactored out if we change
+            // composers to operate on lines instead of a stream of graphemes.
+            .chain(iter::once(StyledGrapheme {
+                symbol: "\n",
+                style
+            }))
+    });
+    let mut line_composer: Box<dyn LineComposer> =
+      if let Some(Wrap { trim }) = wrap {
+        Box::new(WordWrapper::new(&mut styled, area.width, trim))
+      } else {
+        let mut line_composer =
+          Box::new(LineTruncator::new(&mut styled, area.width));
+        if alignment == Alignment::Left {
+          line_composer.set_horizontal_offset(scroll.1);
+        }
+        line_composer
+      };
+
+    let mut plain_text = Rope::new();
+    let mut y = 0;
+    let mut char_counter = char_idx.unwrap_or(0);
+    let mut last_grapheme_idx = 0;
+    while let Some((current_line, current_line_width)) =
+      line_composer.next_line()
+    {
+      if y >= scroll.0 {
+        let mut x = 0; // get_line_offset(current_line_width, area.width, alignment);
+        let mut linetxt = String::new();
+        let mut linelens = vec![];
+        let idx_start = char_counter;
+        for (StyledGrapheme { symbol, style }, grapheme_index) in
+          current_line.iter().zip(idx_start..)
+        {
+          linetxt.push_str(symbol);
+          linelens.push(symbol.width());
+          let style = if let (Some(highlight_range), Some(highlight_style)) =
+            (highlight_range.as_ref(), highlight_style)
+          {
+            if highlight_range.contains(&grapheme_index) {
+              // log::info!(
+              //   "hl: {} {} {} {} {}",
+              //   symbol,
+              //   area.left() + x,
+              //   area.top() + y,
+              //   char_counter,
+              //   grapheme_index
+              // );
+              // buf.set_style(
+              //   Rect {
+              //     x: area.left() + x,
+              //     y: area.top() + y - self.scroll.0,
+              //     width: symbol.width() as u16,
+              //     height: 1,
+              //   },
+              //   highlight_style,
+              // );
+              highlight_style
+            } else {
+              *style
+            }
+          } else {
+            *style
+          };
+          // if symbol.is_empty() {
+          //   // If the symbol is empty, the last char which rendered last time will
+          //   // leave on the line. It's a quick fix.
+          //   " "
+          // } else {
+          //   symbol
+          // };
+          if output_plain_text {
+            plain_text.append(Rope::from_str(symbol));
+          }
+          if output_buffer {
+            let cell = &mut buf[(area.left() + x, area.top() + y - scroll.0)];
+            cell.set_symbol(symbol).set_style(style);
+          }
+          x += symbol.width() as u16;
+        }
+        char_counter += current_line_width as usize + 1;
+
+        if output_plain_text {
+          plain_text.append(Rope::from_str("\n"));
+        }
+        // if let Some(ref range) = highlight_range {
+        //   log::warn!(
+        //   "format_text: {:?}\nlen: {}, x: {} char_counter: {} char_idx: {} range: {:?}",
+        //   string_text,
+        //   string_text.len(),
+        //   x,
+        //   char_counter,
+        //   char_idx,
+        //   range
+        // );
+        // }
+        // if !linetxt.is_empty() {
+        //   log::info!(
+        //     "startidx: {}\tcounter: {}\thighrange: {:?}\tlen: {} x: {}, y: {}\n\t\tlinetxt: {:#?}",
+        //     char_counter - linetxt.len(),
+        //     char_counter,
+        //     highlight_range.as_ref(),
+        //     linetxt.len(),
+        //     area.left(),
+        //     area.top(),
+        //     linetxt,
+        //     // linetxt
+        //     //   .chars()
+        //     //   .zip(linelens.iter())
+        //     //   .collect::<Vec<(char, &usize)>>()
+        //   );
+        // }
+      }
+      //   log::error!(
+      // "text spans sum: {}  plaintext sum: {} spans text sum:{}\n char_idx: {:?}   char_count:{:?}  last_grapheme_idx: {:?}",
+      //   text.lines.iter().map(|s|s.width()).sum::<usize>(),
+      //   String::from(text).len(),
+      //   text.lines.iter().map(String::from).collect::<String>().len(),
+      //   char_idx,
+      //   char_counter,
+      //   last_grapheme_idx
+      // );
+      y += 1;
+      if output_buffer && y >= area.height + scroll.0 {
+        break;
+      }
+    }
+    if output_plain_text {
+      plain_text.remove(plain_text.len_chars() - 1..);
+    }
+    match output_plain_text {
+      true => Some(plain_text),
+      false => None,
     }
   }
 }
+// where
+//   T: Into<Text<'a>>,
+// {
+//   fn from(content: T) -> MessageCell<'a> {
+//     MessageCell {
+//       char_idx: None,
+//       content: content.into(),
+//       style: Style::default(),
+//       paragraph_options: None,
+//     }
+//   }
+// }
 
 /// Holds data to be displayed in a [`Table`] widget.
 ///
@@ -149,9 +359,9 @@ where
 /// ```
 ///
 /// By default, a row has a height of 1 but you can change this using [`Row::height`].
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Default)]
 pub struct Row<'a> {
-  pub cells: Vec<Cell<'a>>,
+  pub cells: Vec<MessageCell<'a>>,
   height: u16,
   style: Style,
   bottom_margin: u16,
@@ -162,7 +372,7 @@ impl<'a> Row<'a> {
   pub fn new<T>(cells: T) -> Self
   where
     T: IntoIterator,
-    T::Item: Into<Cell<'a>>,
+    T::Item: Into<MessageCell<'a>>,
   {
     Self {
       height: 1,
@@ -199,21 +409,26 @@ impl<'a> Row<'a> {
 
   /// Returns the contents of cells as plain text, without styles and colors.
   pub fn cell_text(&self) -> impl Iterator<Item = String> + '_ {
-    self.cells.iter().map(|cell| String::from(&cell.content))
+    self.cells.iter().map(|cell| match &cell.message {
+      MessageType::Chat(message) => message.plain_text.to_string(),
+      MessageType::Text(s) => s.to_string(),
+    })
   }
 
   /// Update height to cell max height, for a specific cell width
   pub fn update_wrapped_heights(&mut self, column_widths: Vec<u16>) {
-    self.cells.iter().zip(column_widths.iter()).for_each(|(cell, width)| {
-      let cell_height = cell.calculate_height(*width);
-      if cell_height > self.height {
-        self.height = cell_height;
-      }
-    });
+    self.cells.iter_mut().zip(column_widths.iter()).for_each(
+      |(cell, width)| {
+        let cell_height = cell.get_height(*width);
+        if cell_height > self.height {
+          self.height = cell_height;
+        }
+      },
+    );
   }
 }
 
-impl<'a, T: Into<Cell<'a>>> From<T> for Row<'a> {
+impl<'a, T: Into<MessageCell<'a>>> From<T> for Row<'a> {
   fn from(cell: T) -> Self {
     Row::new(vec![cell.into()])
   }
@@ -270,7 +485,7 @@ impl<'a, T: Into<Cell<'a>>> From<T> for Row<'a> {
 /// // ...and potentially show a symbol in front of the selection.
 /// .highlight_symbol(">>");
 /// ```
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Table<'a> {
   /// A block to wrap the widget in
   block: Option<Block<'a>>,
@@ -374,18 +589,33 @@ impl<'a> Table<'a> {
     self.header.as_ref().into_iter().chain(self.rows.iter()).collect()
   }
 
-  fn get_columns_areas(&self, area: Rect, has_selection: bool) -> Vec<Rect> {
-    let mut constraints = Vec::with_capacity(self.widths.len() * 2 + 1);
+  fn get_column_areas(&self, area: Rect, has_selection: bool) -> Vec<Rect> {
+    Self::calculate_column_areas(
+      area,
+      has_selection,
+      self.widths,
+      self.column_spacing,
+      self.highlight_symbol.map(String::from),
+    )
+  }
+  pub fn calculate_column_areas(
+    area: Rect,
+    has_selection: bool,
+    widths: &[Constraint],
+    column_spacing: u16,
+    highlight_symbol: Option<String>,
+  ) -> Vec<Rect> {
+    let mut constraints = Vec::with_capacity(widths.len() * 2 + 1);
     if has_selection {
       let highlight_symbol_width =
-        self.highlight_symbol.map(|s| s.width() as u16).unwrap_or(0);
+        highlight_symbol.map(|s| s.width() as u16).unwrap_or(0);
       constraints.push(Constraint::Length(highlight_symbol_width));
     }
-    for constraint in self.widths {
-      constraints.push(*constraint);
-      constraints.push(Constraint::Length(self.column_spacing));
+    for constraint in widths {
+      constraints.push(constraint.clone());
+      constraints.push(Constraint::Length(column_spacing));
     }
-    if !self.widths.is_empty() {
+    if !widths.is_empty() {
       constraints.pop();
     }
     let mut chunks = tui::layout::Layout::default()
@@ -584,6 +814,8 @@ impl<'a> Table<'a> {
     buf: &mut Buffer,
     state: &mut TableState,
     truncate: bool,
+    theme: &Theme,
+    config_loader: &Arc<ArcSwap<syntax::Loader>>,
   ) -> Vec<Rect> {
     buf.set_style(area, self.style);
     state.viewport_height = area.height;
@@ -598,16 +830,16 @@ impl<'a> Table<'a> {
       None => area,
     };
 
-    self.rows.iter().enumerate().for_each(|(i, row)| {
-      log::warn!(
-        "row idx: {}  cell count: {}",
-        i,
-        row.cells.len(),
-        // row.cell_text().collect::<String>()
-      );
-    });
+    // self.rows.iter().enumerate().for_each(|(i, row)| {
+    // log::warn!(
+    //   "row idx: {}  cell count: {}",
+    //   i,
+    //   row.cells.len(),
+    //   // row.cell_text().collect::<String>()
+    // );
+    // });
     let has_selection = state.selected.is_some();
-    let column_areas = self.get_columns_areas(table_area, has_selection);
+    let column_areas = self.get_column_areas(table_area, has_selection);
     let column_widths =
       column_areas.iter().map(|a| a.width).collect::<Vec<_>>();
     self
@@ -649,6 +881,8 @@ impl<'a> Table<'a> {
           },
           0u16,
           truncate,
+          theme,
+          config_loader,
         );
         col += *width + self.column_spacing;
       }
@@ -668,12 +902,12 @@ impl<'a> Table<'a> {
       match extents {
         None => continue,
         Some((i, row_y, row_skip_lines, row_height)) => {
-          log::info!(
-            "rendering row:   row idx: {}  row_y: {}  row_height: {}",
-            i,
-            row_y,
-            row_height
-          );
+          // log::info!(
+          //   "rendering row:   row idx: {}  row_y: {}  row_height: {}",
+          //   i,
+          //   row_y,
+          //   row_height
+          // );
           if row_height == 0 {
             continue;
           }
@@ -708,13 +942,13 @@ impl<'a> Table<'a> {
           let mut col = table_row_start_col;
           for (width, cell) in column_widths.iter().zip(table_row.cells.iter())
           {
-            log::debug!(
-              "rendering cell - width: {}  col: {}  row: {}  height: {}",
-              width,
-              col,
-              row,
-              table_row_area.height
-            );
+            // log::debug!(
+            //   "rendering cell - width: {}  col: {}  row: {}  height: {}",
+            //   width,
+            //   col,
+            //   row,
+            //   table_row_area.height
+            // );
             render_cell(
               buf,
               cell,
@@ -727,6 +961,8 @@ impl<'a> Table<'a> {
               // Rect { x: col, y: row, width: *width, height: table_row.height },
               row_skip_lines,
               truncate,
+              theme,
+              config_loader,
             );
             col += *width + self.column_spacing;
           }
@@ -739,50 +975,21 @@ impl<'a> Table<'a> {
 
 fn render_cell(
   buf: &mut Buffer,
-  cell: &Cell,
+  cell: &MessageCell,
   area: Rect,
   skip_lines: u16,
   truncate: bool,
+  theme: &Theme,
+  config_loader: &Arc<ArcSwap<syntax::Loader>>,
 ) {
-  match cell.paragraph_options.clone() {
-    Some(options) => {
-      log::warn!(
-        "rendering paragraph cell x: {}  y: {} height:{}",
-        area.x,
-        area.y,
-        area.height
-      );
-      let mut paragraph = Paragraph::new(&cell.content).set_highlight_options(
-        options.highlight_style,
-        options.highlight_range,
-      );
-      if let Some(block) = options.block {
-        // paragraph = paragraph.block(block);
-      }
-      if let Some(wrap) = options.wrap_trim {
-        paragraph = paragraph.wrap(Wrap { trim: wrap });
-      }
-      paragraph = paragraph.char_idx(options.char_idx.unwrap_or_default());
-      paragraph = paragraph.scroll((skip_lines, 0));
-      paragraph = paragraph.alignment(options.alignment);
-      paragraph.render_paragraph(area, buf);
-    },
-    None => {
-      // buf.set_style(area, cell.style);
-      // for (i, spans) in
-      //   cell.content.lines.iter().skip(skip_lines.into()).enumerate()
-      // {
-      //   if i as u16 >= area.height {
-      //     break;
-      //   }
-      //   if truncate {
-      //     buf.set_spans_truncated(area.x, area.y + i as u16, spans, area.width);
-      //   } else {
-      //     buf.set_spans(area.x, area.y + i as u16, spans, area.width);
-      //   }
-      // }
-    },
-  }
+  // log::warn!(
+  //   "rendering cell x: {}  y: {} height:{}",
+  //   area.x,
+  //   area.y,
+  //   area.height
+  // );
+
+  cell.render_cell(buf, area, theme, config_loader);
 }
 
 #[cfg(test)]

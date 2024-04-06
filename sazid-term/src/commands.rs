@@ -225,17 +225,7 @@ impl MappableCommand {
           }
         }
       },
-      Self::Static { fun, .. } => {
-        match cx.focus {
-          ContextFocus::SessionView => {
-            log::info!("execute - static: session view");
-          },
-          ContextFocus::EditorView => {
-            log::info!("execute - static: editor view");
-          },
-        }
-        (fun)(cx)
-      },
+      Self::Static { fun, .. } => (fun)(cx),
     }
   }
 
@@ -770,7 +760,7 @@ type MoveFn = fn(
 ) -> Range;
 
 type SessionMoveFn = fn(
-  Vec<ChatMessageItem>,
+  RopeSlice,
   Range,
   Direction,
   usize,
@@ -786,37 +776,28 @@ fn session_move_impl(
   behaviour: Movement,
 ) {
   let count = cx.count();
-  let (view, doc) = current!(cx.editor);
   let mut annotations = TextAnnotations::default();
   cx.callback.push(Box::new(
     move |compositor: &mut Compositor, cx: &mut compositor::Context| {
       let session =
         compositor.find::<ui::SessionView<ChatMessageItem>>().unwrap();
 
-      let text_fmt = TextFormat {
-        soft_wrap: false,
-        tab_width: 2,
-        max_wrap: 3,
-        max_indent_retain: 4,
-        wrap_indicator: Box::from(" "),
-        viewport_width: session.chat_viewport.width,
-        wrap_indicator_highlight: None,
-      };
-
-      // let primary_index = session.selection.primary_index();
+      let text = session.get_messages_plaintext();
+      log::warn!("text: {:#?}", text);
       session.selection = session.selection.clone().transform(|range| {
         move_fn(
-          session.messages,
+          text,
           range,
           dir,
           count,
           behaviour,
-          &text_fmt,
+          &TextFormat::default(),
           &mut annotations,
         )
       });
+      // .ensure_invariants(text.slice(..));
       // .into_single();
-      log::info!("move_impl callback: session view {:?}", session.selection);
+      // log::info!("move_impl callback: session view {:?}", session.selection);
     },
   ));
 }

@@ -209,11 +209,7 @@ impl Application {
       .clone()
       .iter()
       .map(|message| {
-        ChatMessageItem::new_chat(
-          message.message_id,
-          message.message.clone(),
-          editor.syn_loader.clone(),
-        )
+        ChatMessageItem::new_chat(message.message_id, message.message.clone())
       })
       .collect::<Vec<_>>();
 
@@ -255,6 +251,7 @@ impl Application {
       messages,
       Some(editor.theme.clone()),
       editor_data,
+      editor.syn_loader.clone(),
       session_callback,
     );
 
@@ -474,8 +471,7 @@ impl Application {
                           let messages = messages.iter().map(|(id, m)|{
                                ChatMessageItem::new_chat(
                                    *id,
-                                   m.clone(),
-                                   self.syn_loader.clone() )
+                                   m.clone())
                          }).collect();
 
                         let session = self.compositor.find::<ui::SessionView<ChatMessageItem>>()
@@ -490,14 +486,14 @@ impl Application {
                            .upsert_message(
                                ChatMessageItem::new_chat(
                                    id,
-                                   message,
-                                   self.syn_loader.clone() ));
+                                   message
+                                   ));
                         self.render().await;
                     },
                     SessionAction::Error(error) => {
                     self.editor.set_error(error.to_string());
                        self.compositor.find::<ui::SessionView<ChatMessageItem>>().unwrap()
-                           .upsert_message(ChatMessageItem::new_error(error,self.syn_loader.clone() ));
+                           .upsert_message(ChatMessageItem::new_error(error));
                                        self.render().await;
                                    },
                                    _ => {}

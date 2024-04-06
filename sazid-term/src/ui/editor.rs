@@ -1440,7 +1440,6 @@ impl Component for EditorView {
                 callback(compositor, cx)
               }
             });
-          log::debug!("callback: ");
           Some(callback)
         };
 

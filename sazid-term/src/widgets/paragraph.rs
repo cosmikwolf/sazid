@@ -236,11 +236,11 @@ pub fn format_text(
       for (StyledGrapheme { symbol, style }, grapheme_index) in
         current_line.iter().zip(idx_start..)
       {
-        linetxt.push_str(symbol);
         let style = if let (Some(highlight_range), Some(highlight_style)) =
           (highlight_range.as_ref(), highlight_style)
         {
           if highlight_range.contains(&grapheme_index) {
+            linetxt.push_str(symbol);
             // log::info!(
             //   "hl: {} {} {} {} {}",
             //   symbol,
@@ -265,19 +265,20 @@ pub fn format_text(
         } else {
           *style
         };
-        // if symbol.is_empty() {
-        //   // If the symbol is empty, the last char which rendered last time will
-        //   // leave on the line. It's a quick fix.
-        //   " "
-        // } else {
-        //   symbol
-        // };
+        if symbol.is_empty() {
+          // If the symbol is empty, the last char which rendered last time will
+          // leave on the line. It's a quick fix.
+          " "
+        } else {
+          symbol
+        };
         let cell = &mut buf[(area.left() + x, area.top() + y - scroll.0)];
         cell.set_symbol(symbol).set_style(style);
         x += symbol.width() as u16;
-        char_counter += symbol.width();
+        // char_counter += symbol.width();
         last_grapheme_idx = grapheme_index;
       }
+      char_counter += current_line_width as usize;
       // if let Some(ref range) = highlight_range {
       //   log::warn!(
       //   "format_text: {:?}\nlen: {}, x: {} char_counter: {} char_idx: {} range: {:?}",
@@ -289,13 +290,13 @@ pub fn format_text(
       //   range
       // );
       // }
-      // log::info!(
-      //   "idx: {}   x: {}, y: {}\nsymbol: {}  ",
-      //   char_counter,
-      //   area.left(),
-      //   area.top(),
-      //   linetxt,
-      // );
+      log::info!(
+        "idx: {}   x: {}, y: {}\nsymbol: {}  ",
+        char_counter,
+        area.left(),
+        area.top(),
+        linetxt,
+      );
     }
     log::error!(
     "text spans sum: {}  plaintext sum: {} spans text sum:{}\n char_idx: {:?}   char_count:{:?}  last_grapheme_idx: {:?}",
