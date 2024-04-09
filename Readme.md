@@ -5,6 +5,7 @@
 [![CI](https://github.com/cosmikwolf/sazid/workflows/CI/badge.svg)](https://github.com/cosmikwolf/sazid/actions)
 
 **Currently a work in progress**
+--- embeddings are not hooked up at the moment ---
 
 Sazid is an interactive LLM interface written in Rust that provides:
 

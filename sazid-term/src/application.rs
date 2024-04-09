@@ -187,7 +187,8 @@ impl Application {
 
     session_config.workspace = Some(WorkspaceParams {
       workspace_path: PathBuf::from(
-        "/Users/tenkai/Development/gpt/rust_test_project",
+        "/Users/tenkai/Development/gpt/sazid",
+        // "/Users/tenkai/Development/gpt/rust_test_project",
       ),
       language: "rust".to_string(),
       language_server: "rust-analyzer".to_string(),

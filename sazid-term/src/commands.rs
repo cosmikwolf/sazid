@@ -3721,6 +3721,11 @@ fn select_mode(cx: &mut Context) {
   cx.editor.mode = Mode::Select;
 }
 
+fn exit_select_mode_from_callback(editor: &mut Editor) {
+  if editor.mode == Mode::Select {
+    editor.mode = Mode::Normal;
+  }
+}
 fn exit_select_mode(cx: &mut Context) {
   if cx.editor.mode == Mode::Select {
     cx.editor.mode = Mode::Normal;
@@ -4257,18 +4262,21 @@ fn commit_undo_checkpoint(cx: &mut Context) {
 
 fn yank(cx: &mut Context) {
   log::info!("yank to clipboard");
-  let ctx_reg = cx.register.unwrap_or('"');
-  match cx.focus {
+  let sys_clipboard = cx.register.unwrap_or('+');
+  let copy_reg = cx.register.unwrap_or('"');
+  // let ctx = cx;
+  match &cx.focus.clone() {
     ContextFocus::SessionView => cx.callback.push(Box::new(
       move |compositor: &mut Compositor, cx: &mut compositor::Context| {
         let session =
           compositor.find::<ui::SessionView<ChatMessageItem>>().unwrap();
-        yank_session_impl(session, cx.editor, ctx_reg);
-        // exit_select_mode(cx);
+        yank_session_impl(session, cx.editor, sys_clipboard);
+        yank_session_impl(session, cx.editor, copy_reg);
+        exit_select_mode_from_callback(cx.editor);
       },
     )),
     ContextFocus::EditorView => {
-      yank_impl(cx.editor, cx.register.unwrap_or('"'));
+      yank_impl(cx.editor, cx.register.unwrap_or('*'));
       exit_select_mode(cx);
     },
   }
@@ -4321,9 +4329,9 @@ fn yank_session_impl(
   } else {
     (range.anchor, range.head)
   };
-  let values: Vec<String> =
+  let values: String =
     text.slice(head..anchor).lines().map(String::from).collect();
-  match editor.registers.write(register, values.clone()) {
+  match editor.registers.write(register, vec![values.clone()]) {
     Ok(_) => {
       log::info!(
         "session -yanked selection to register {}\n{:?}",
@@ -4333,10 +4341,6 @@ fn yank_session_impl(
       editor.set_status(format!("yanked selection to register {register}",))
     },
     Err(err) => editor.set_error(err.to_string()),
-  }
-
-  if editor.mode == Mode::Select {
-    editor.mode = Mode::Normal;
   }
 }
 
