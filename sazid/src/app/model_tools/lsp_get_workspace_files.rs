@@ -25,17 +25,14 @@ impl ToolCallTrait for LspGetWorkspaceFiles {
   {
     LspGetWorkspaceFiles {
       name: "lsp_workspace_files".to_string(),
-      description:
-        "list the workspace source files that the language server is aware of"
-          .to_string(),
+      description: "list the workspace source files that the language server is aware of"
+        .to_string(),
       parameters: FunctionProperty::Parameters {
         properties: HashMap::from([(
           "file_name_regex".to_string(),
           FunctionProperty::String {
             required: false,
-            description: Some(
-              "filter the results with a matching pattern".to_string(),
-            ),
+            description: Some("filter the results with a matching pattern".to_string()),
           },
         )]),
       },
@@ -57,28 +54,15 @@ impl ToolCallTrait for LspGetWorkspaceFiles {
   fn call(
     &self,
     params: ToolCallParams,
-  ) -> Pin<
-    Box<
-      dyn Future<Output = Result<Option<String>, ToolCallError>>
-        + Send
-        + 'static,
-    >,
-  > {
+  ) -> Pin<Box<dyn Future<Output = Result<Option<String>, ToolCallError>> + Send + 'static>> {
     log::info!("LspGetWorkspaceFiles::call");
 
-    let pattern = validate_and_extract_pattern_argument(
-      &params.function_args,
-      "file_name_regex",
-      false,
-    )
-    .expect("error validating regex");
+    let pattern =
+      validate_and_extract_pattern_argument(&params.function_args, "file_name_regex", false)
+        .expect("error validating regex");
 
-    let workspace_root = params
-      .session_config
-      .workspace
-      .expect("workspace not set")
-      .workspace_path
-      .clone();
+    let workspace_root =
+      params.session_config.workspace.expect("workspace not set").workspace_path.clone();
 
     let lsi_query = LsiQuery {
       workspace_root,
@@ -91,9 +75,7 @@ impl ToolCallTrait for LspGetWorkspaceFiles {
     Box::pin(async move {
       params
         .tx
-        .send(ChatToolAction::LsiRequest(Box::new(
-          LsiAction::GetWorkspaceFiles(lsi_query),
-        )))
+        .send(ChatToolAction::LsiRequest(Box::new(LsiAction::GetWorkspaceFiles(lsi_query))))
         .unwrap();
       Ok(None)
     })

@@ -1,9 +1,6 @@
 use crate::{
   action::SessionAction,
-  app::{
-    database::data_manager::*, errors::SazidError,
-    session_config::SessionConfig,
-  },
+  app::{database::data_manager::*, errors::SazidError, session_config::SessionConfig},
 };
 use async_openai::types::ChatCompletionRequestMessage;
 use core::result::Result;
@@ -51,27 +48,16 @@ impl DataManager {
         });
         Ok(None)
       },
-      DataManagerAction::AddMessageEmbedding(
-        session_id,
-        message_id,
-        message,
-      ) => {
+      DataManagerAction::AddMessageEmbedding(session_id, message_id, message) => {
         tokio::spawn(async move {
-          match add_message_embedding(
-            &db_url, session_id, message_id, model, message,
-          )
-          .await
-          {
+          match add_message_embedding(&db_url, session_id, message_id, model, message).await {
             Ok(id) => tx
               .send(DataManagerAction::SessionAction(Box::new(
                 SessionAction::MessageEmbeddingSuccess(id),
               )))
               .unwrap(),
             Err(e) => tx
-              .send(DataManagerAction::Error(format!(
-                "embeddings_manager- update: {:#?}",
-                e
-              )))
+              .send(DataManagerAction::Error(format!("embeddings_manager- update: {:#?}", e)))
               .unwrap(),
           }
         });

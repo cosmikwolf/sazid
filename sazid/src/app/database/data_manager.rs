@@ -19,11 +19,7 @@ pub struct DataManager {
 }
 
 impl DataManager {
-  pub async fn run_cli(
-    &mut self,
-    args: Cli,
-    db_url: &str,
-  ) -> Result<Option<String>, SazidError> {
+  pub async fn run_cli(&mut self, args: Cli, db_url: &str) -> Result<Option<String>, SazidError> {
     println!("args: {:#?}", args);
     Ok(match args {
       Cli { list_embeddings: true, .. } => {
@@ -36,9 +32,7 @@ impl DataManager {
           Some(
             embeddings
               .into_iter()
-              .map(|(fe, vec_ep)| {
-                format!("{} -- {} pages", fe.filepath, vec_ep.len())
-              })
+              .map(|(fe, vec_ep)| format!("{} -- {} pages", fe.filepath, vec_ep.len()))
               .collect::<Vec<String>>()
               .join("\n"),
           )
@@ -60,18 +54,11 @@ impl DataManager {
         }
       },
       Cli { search_embeddings: Some(text), .. } => {
-        let embeddings =
-          search_all_embeddings(db_url, &self.model, &text).await?;
+        let embeddings = search_all_embeddings(db_url, &self.model, &text).await?;
         if embeddings.is_empty() {
           Some("No embeddings found".to_string())
         } else {
-          Some(
-            embeddings
-              .into_iter()
-              .map(|e| format!("{}", e))
-              .collect::<Vec<String>>()
-              .join("\n"),
-          )
+          Some(embeddings.into_iter().map(|e| format!("{}", e)).collect::<Vec<String>>().join("\n"))
         }
       },
       Cli { parse_source_embeddings: Some(_), .. } => {
@@ -83,23 +70,15 @@ impl DataManager {
         // read the file at filepath
         match add_textfile_embedding(db_url, &self.model, &filepath).await {
           Ok(_) => Some(format!("Added embedding for file at {}", filepath)),
-          Err(e) => Some(format!(
-            "Error adding embedding for file at {}: {}",
-            filepath, e
-          )),
+          Err(e) => Some(format!("Error adding embedding for file at {}: {}", filepath, e)),
         }
       },
-      Cli { add_text_embeddings: Some(_text), .. } => {
-        Some("deprecated".to_string())
-      },
+      Cli { add_text_embeddings: Some(_text), .. } => Some("deprecated".to_string()),
       _ => None,
     })
   }
 
-  pub async fn new(
-    model: EmbeddingModel,
-    db_url: &str,
-  ) -> Result<Self, SazidError> {
+  pub async fn new(model: EmbeddingModel, db_url: &str) -> Result<Self, SazidError> {
     Ok(DataManager { action_tx: None, model, db_url: db_url.to_string() })
   }
 }
@@ -142,17 +121,10 @@ pub async fn add_session(
   Ok(session)
 }
 
-pub async fn load_session(
-  db_url: &str,
-  session_id: i64,
-) -> Result<QueryableSession, SazidError> {
+pub async fn load_session(db_url: &str, session_id: i64) -> Result<QueryableSession, SazidError> {
   use super::schema::sessions::dsl::*;
   let conn = &mut establish_connection(db_url).await;
-  let session = sessions
-    .find(session_id)
-    .select(QueryableSession::as_select())
-    .first(conn)
-    .await?;
+  let session = sessions.find(session_id).select(QueryableSession::as_select()).first(conn).await?;
   Ok(session)
 }
 
@@ -260,13 +232,10 @@ pub async fn get_all_embeddings(
 ) -> Result<Vec<(FileEmbedding, Vec<EmbeddingPage>)>, SazidError> {
   use super::schema::file_embeddings::dsl::file_embeddings;
   let conn = &mut establish_connection(db_url).await;
-  let all_files =
-    file_embeddings.select(FileEmbedding::as_select()).load(conn).await?;
+  let all_files = file_embeddings.select(FileEmbedding::as_select()).load(conn).await?;
 
-  let pages = EmbeddingPage::belonging_to(&all_files)
-    .select(EmbeddingPage::as_select())
-    .load(conn)
-    .await?;
+  let pages =
+    EmbeddingPage::belonging_to(&all_files).select(EmbeddingPage::as_select()).load(conn).await?;
 
   Ok(
     pages
@@ -293,10 +262,7 @@ pub async fn get_similar_embeddings(
   Ok(embeddings)
 }
 
-pub async fn add_embedding_tag(
-  db_url: &str,
-  tag_name: &str,
-) -> Result<usize, SazidError> {
+pub async fn add_embedding_tag(db_url: &str, tag_name: &str) -> Result<usize, SazidError> {
   use super::schema::tags::dsl::*;
   let conn = &mut establish_connection(db_url).await;
   Ok(diesel::insert_into(tags).values(tag.eq(tag_name)).execute(conn).await?)
@@ -311,21 +277,15 @@ pub async fn add_textfile_embedding(
   let checksum = blake3::hash(content.as_bytes()).to_hex().to_string();
   let vector_content = [filepath.to_string(), content.to_string()].join("\n");
   let embedding = model.create_embedding_vector(&vector_content).await?;
-  let new_embedding = InsertableFileEmbedding {
-    filepath: filepath.to_string(),
-    checksum: checksum.clone(),
-  };
-  let new_page =
-    InsertablePage { content, page_number: 0, checksum, embedding };
+  let new_embedding =
+    InsertableFileEmbedding { filepath: filepath.to_string(), checksum: checksum.clone() };
+  let new_page = InsertablePage { content, page_number: 0, checksum, embedding };
   add_embedding(db_url, &new_embedding, vec![&new_page]).await
 }
 // Method to retrieve indexing progress information
-pub async fn get_indexing_progress(
-  db_url: &str,
-) -> Result<Vec<PgVectorIndexInfo>, SazidError> {
+pub async fn get_indexing_progress(db_url: &str) -> Result<Vec<PgVectorIndexInfo>, SazidError> {
   let conn = &mut establish_connection(db_url).await;
-  let progress_info = sql_query("SELECT * FROM pg_vector_index_info;")
-    .load::<PgVectorIndexInfo>(conn)
-    .await?;
+  let progress_info =
+    sql_query("SELECT * FROM pg_vector_index_info;").load::<PgVectorIndexInfo>(conn).await?;
   Ok(progress_info)
 }

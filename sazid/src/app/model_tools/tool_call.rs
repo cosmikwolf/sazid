@@ -3,8 +3,8 @@ use crate::{
   app::messages::ChatMessage,
 };
 use async_openai::types::{
-  ChatCompletionMessageToolCall, ChatCompletionRequestToolMessage,
-  ChatCompletionTool, ChatCompletionToolType, FunctionObject, Role,
+  ChatCompletionMessageToolCall, ChatCompletionRequestToolMessage, ChatCompletionTool,
+  ChatCompletionToolType, FunctionObject, Role,
 };
 use serde_json::Value;
 use std::{any::Any, collections::HashMap, pin::Pin, sync::Arc};
@@ -44,13 +44,7 @@ pub trait ToolCallTrait: Any + Send + Sync {
   fn call(
     &self,
     params: ToolCallParams,
-  ) -> Pin<
-    Box<
-      dyn Future<Output = Result<Option<String>, ToolCallError>>
-        + Send
-        + 'static,
-    >,
-  >;
+  ) -> Pin<Box<dyn Future<Output = Result<Option<String>, ToolCallError>> + Send + 'static>>;
 
   fn parameters(&self) -> FunctionProperty;
 
@@ -64,18 +58,14 @@ pub trait ToolCallTrait: Any + Send + Sync {
     }
   }
 
-  fn to_chat_completion_tool(
-    &self,
-  ) -> Result<ChatCompletionTool, ToolCallError> {
+  fn to_chat_completion_tool(&self) -> Result<ChatCompletionTool, ToolCallError> {
     let tool_call = self.function_definition();
     Ok(ChatCompletionTool {
       r#type: ChatCompletionToolType::Function,
       function: FunctionObject {
         name: tool_call.name,
         description: tool_call.description,
-        parameters: tool_call
-          .parameters
-          .map(|p| serde_json::to_value(p).unwrap()),
+        parameters: tool_call.parameters.map(|p| serde_json::to_value(p).unwrap()),
       },
     })
   }
@@ -109,8 +99,7 @@ impl ChatTools {
     Self { tx, config, tools }
   }
 
-  pub fn all_tools(
-  ) -> Result<Vec<Arc<dyn ToolCallTrait + 'static>>, ToolCallError> {
+  pub fn all_tools() -> Result<Vec<Arc<dyn ToolCallTrait + 'static>>, ToolCallError> {
     Ok(vec![
       // Arc::new(CargoCheckFunction::init()),
       // Arc::new(Pcre2GrepFunction::init()),
@@ -156,9 +145,9 @@ impl ChatTools {
           .collect::<Result<Vec<ChatCompletionTool>, ToolCallError>>()?;
         // log::debug!("tools request: {:#?}", tools);
 
-        Ok(Some(ChatToolAction::SessionAction(Box::new(
-          SessionAction::UpdateToolList(session_id, tools),
-        ))))
+        Ok(Some(ChatToolAction::SessionAction(Box::new(SessionAction::UpdateToolList(
+          session_id, tools,
+        )))))
       },
       _ => Ok(None),
     }
@@ -170,15 +159,12 @@ impl ChatTools {
     session_and_tool_call_id: Option<(i64, String)>,
   ) {
     log::error!("Chat Tool Error: {}", error);
-    tx.send(ChatToolAction::Error(format!("Chat Tool Error: {}", error)))
-      .unwrap();
+    tx.send(ChatToolAction::Error(format!("Chat Tool Error: {}", error))).unwrap();
     if let Some((session_id, tool_call_id)) = session_and_tool_call_id {
-      tx.send(ChatToolAction::SessionAction(Box::new(
-        SessionAction::ToolCallError(
-          ToolType::Generic(session_id, tool_call_id),
-          format!("Tool Call Error: {}", error),
-        ),
-      )))
+      tx.send(ChatToolAction::SessionAction(Box::new(SessionAction::ToolCallError(
+        ToolType::Generic(session_id, tool_call_id),
+        format!("Tool Call Error: {}", error),
+      ))))
       .unwrap();
     }
   }
@@ -191,9 +177,7 @@ impl ChatTools {
       Ok(config) => self
         .tools
         .iter()
-        .filter(|tool| {
-          !config.disabled_tools.contains(&tool.name().to_string())
-        })
+        .filter(|tool| !config.disabled_tools.contains(&tool.name().to_string()))
         .collect(),
       Err(e) => {
         Self::send_chat_tool_error(self.tx.clone(), &e, None);
@@ -203,17 +187,13 @@ impl ChatTools {
     if tools.is_empty() {
       Ok(None)
     } else {
-      let tools =
-        tools.iter().flat_map(|tool| tool.to_chat_completion_tool()).collect();
+      let tools = tools.iter().flat_map(|tool| tool.to_chat_completion_tool()).collect();
       log::debug!("tools: {:#?}", tools);
       Ok(Some(tools))
     }
   }
 
-  fn validate_session_tool_config(
-    &self,
-    session_id: i64,
-  ) -> Result<&SessionConfig, ToolCallError> {
+  fn validate_session_tool_config(&self, session_id: i64) -> Result<&SessionConfig, ToolCallError> {
     let config = match self.config.get(&session_id) {
       Some(config) => config,
       None => {
@@ -228,15 +208,8 @@ impl ChatTools {
     };
 
     for tool in config.disabled_tools.clone() {
-      if !self
-        .tools
-        .iter()
-        .any(|tool_func| *tool_func.name().to_string() == tool)
-      {
-        return Err(ToolCallError::new(&format!(
-          "disabled tool not found: {}",
-          tool
-        )));
+      if !self.tools.iter().any(|tool_func| *tool_func.name().to_string() == tool) {
+        return Err(ToolCallError::new(&format!("disabled tool not found: {}", tool)));
       }
     }
     Ok(config)
@@ -252,9 +225,7 @@ impl ChatTools {
         self
           .tools
           .iter()
-          .filter(|tool| {
-            !config.disabled_tools.contains(&tool.name().to_string())
-          })
+          .filter(|tool| !config.disabled_tools.contains(&tool.name().to_string()))
           .find(|tool| tool.name() == tool_name)
           .cloned(),
       ),
@@ -281,9 +252,7 @@ impl ChatTools {
       None => {
         Self::send_chat_tool_error(
           self.tx.clone(),
-          &ToolCallError::new(
-            "session config not found. session_id: {} tool_call_id: {}",
-          ),
+          &ToolCallError::new("session config not found. session_id: {} tool_call_id: {}"),
           Some((session_id, tool_call_id.clone())),
         );
         return;
@@ -311,22 +280,16 @@ impl ChatTools {
             // if a tool call has some output, then the call is complete
             Ok(Some(output)) => {
               log::debug!("tool call complete: {:?}", output);
-              tx.send(ChatToolAction::SessionAction(Box::new(
-                SessionAction::ToolCallComplete(
-                  ToolType::Generic(session_id, tool_call_id),
-                  output,
-                ),
-              )))
+              tx.send(ChatToolAction::SessionAction(Box::new(SessionAction::ToolCallComplete(
+                ToolType::Generic(session_id, tool_call_id),
+                output,
+              ))))
               .unwrap();
             },
             // if the tool call is none, then another module is responsible for the completion
             Ok(None) => {},
             Err(e) => {
-              Self::send_chat_tool_error(
-                tx.clone(),
-                &e,
-                Some((session_id, tool_call_id)),
-              );
+              Self::send_chat_tool_error(tx.clone(), &e, Some((session_id, tool_call_id)));
             },
           }
         });
@@ -334,18 +297,12 @@ impl ChatTools {
       Ok(None) => {
         Self::send_chat_tool_error(
           tx.clone(),
-          &ToolCallError::new(
-            format!("Tool Call Error: Tool not found: {}", tool_name).as_str(),
-          ),
+          &ToolCallError::new(format!("Tool Call Error: Tool not found: {}", tool_name).as_str()),
           Some((session_id, tool_call_id)),
         );
       },
       Err(e) => {
-        Self::send_chat_tool_error(
-          tx.clone(),
-          &e,
-          Some((session_id, tool_call_id)),
-        );
+        Self::send_chat_tool_error(tx.clone(), &e, Some((session_id, tool_call_id)));
       },
     }
   }
@@ -361,20 +318,16 @@ impl ChatTools {
       false => {
         self
           .tx
-          .send(ChatToolAction::SessionAction(Box::new(
-            SessionAction::ToolCallComplete(
-              ToolType::Generic(session_id, tool_call_id),
-              tool_output,
-            ),
-          )))
+          .send(ChatToolAction::SessionAction(Box::new(SessionAction::ToolCallComplete(
+            ToolType::Generic(session_id, tool_call_id),
+            tool_output,
+          ))))
           .unwrap();
       },
       true => {
         Self::send_chat_tool_error(
           self.tx.clone(),
-          &ToolCallError::new(
-            format!("Tool Call Error- output: {}", tool_output).as_str(),
-          ),
+          &ToolCallError::new(format!("Tool Call Error- output: {}", tool_output).as_str()),
           Some((session_id, tool_call_id)),
         );
       },
@@ -400,21 +353,13 @@ impl ChatTools {
       .unwrap();
     self
       .tx
-      .send(ChatToolAction::SessionAction(Box::new(
-        SessionAction::RequestChatCompletion(),
-      )))
+      .send(ChatToolAction::SessionAction(Box::new(SessionAction::RequestChatCompletion())))
       .unwrap()
   }
 
-  pub fn handle_tool_call(
-    &self,
-    tool_call: &ChatCompletionMessageToolCall,
-    session_id: i64,
-  ) {
-    let function_args_result: Result<
-      HashMap<String, serde_json::Value>,
-      serde_json::Error,
-    > = serde_json::from_str(tool_call.function.arguments.as_str());
+  pub fn handle_tool_call(&self, tool_call: &ChatCompletionMessageToolCall, session_id: i64) {
+    let function_args_result: Result<HashMap<String, serde_json::Value>, serde_json::Error> =
+      serde_json::from_str(tool_call.function.arguments.as_str());
 
     match function_args_result {
       Ok(function_args) => {
@@ -434,7 +379,13 @@ impl ChatTools {
       Err(e) => {
         Self::send_chat_tool_error(
           self.tx.clone(),
-          &ToolCallError::new( format!( "Failed to parse function arguments:\nfunction:{:?}\nargs:{:?}\nerror:{:?}", tool_call.function.name, tool_call.function.arguments, e).as_str()),
+          &ToolCallError::new(
+            format!(
+              "Failed to parse function arguments:\nfunction:{:?}\nargs:{:?}\nerror:{:?}",
+              tool_call.function.name, tool_call.function.arguments, e
+            )
+            .as_str(),
+          ),
           Some((session_id, tool_call.id.clone())),
         );
       },

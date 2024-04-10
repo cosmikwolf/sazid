@@ -7,9 +7,7 @@ use tui::{
 
 use std::sync::Arc;
 
-use pulldown_cmark::{
-  CodeBlockKind, Event, HeadingLevel, Options, Parser, Tag, TagEnd,
-};
+use pulldown_cmark::{CodeBlockKind, Event, HeadingLevel, Options, Parser, Tag, TagEnd};
 
 use helix_core::{
   syntax::{self, HighlightEvent, InjectionLanguageMarker, Syntax},
@@ -23,11 +21,8 @@ use helix_view::{
 };
 
 fn styled_multiline_text<'a>(text: &str, style: Style) -> Text<'a> {
-  let spans: Vec<_> = text
-    .lines()
-    .map(|line| Span::styled(line.to_string(), style))
-    .map(Spans::from)
-    .collect();
+  let spans: Vec<_> =
+    text.lines().map(|line| Span::styled(line.to_string(), style)).map(Spans::from).collect();
   Text::from(spans)
 }
 
@@ -41,8 +36,7 @@ pub fn highlighted_code_block<'a>(
   let mut spans = Vec::new();
   let mut lines = Vec::new();
 
-  let get_theme =
-    |key: &str| -> Style { theme.map(|t| t.get(key)).unwrap_or_default() };
+  let get_theme = |key: &str| -> Style { theme.map(|t| t.get(key)).unwrap_or_default() };
   let text_style = get_theme(Markdown::TEXT_STYLE);
   let code_style = get_theme(Markdown::BLOCK_STYLE);
 
@@ -54,21 +48,16 @@ pub fn highlighted_code_block<'a>(
   let ropeslice = RopeSlice::from(text);
   let syntax = config_loader
     .load()
-    .language_configuration_for_injection_string(
-      &InjectionLanguageMarker::Name(language.into()),
-    )
+    .language_configuration_for_injection_string(&InjectionLanguageMarker::Name(language.into()))
     .and_then(|config| config.highlight_config(theme.scopes()))
-    .and_then(|config| {
-      Syntax::new(ropeslice, config, Arc::clone(&config_loader))
-    });
+    .and_then(|config| Syntax::new(ropeslice, config, Arc::clone(&config_loader)));
 
   let syntax = match syntax {
     Some(s) => s,
     None => return styled_multiline_text(text, code_style),
   };
 
-  let highlight_iter =
-    syntax.highlight_iter(ropeslice, None, None).map(|e| e.unwrap());
+  let highlight_iter = syntax.highlight_iter(ropeslice, None, None).map(|e| e.unwrap());
   let highlight_iter: Box<dyn Iterator<Item = HighlightEvent>> =
     if let Some(spans) = additional_highlight_spans {
       Box::new(helix_core::syntax::merge(highlight_iter, spans))
@@ -86,9 +75,8 @@ pub fn highlighted_code_block<'a>(
         highlights.pop();
       },
       HighlightEvent::Source { start, end } => {
-        let style = highlights
-          .iter()
-          .fold(text_style, |acc, span| acc.patch(theme.highlight(span.0)));
+        let style =
+          highlights.iter().fold(text_style, |acc, span| acc.patch(theme.highlight(span.0)));
 
         let mut slice = &text[start..end];
         // TODO: do we need to handle all unicode line endings
@@ -147,10 +135,7 @@ impl Markdown {
   ];
   const INDENT: &'static str = "  ";
 
-  pub fn new(
-    contents: String,
-    config_loader: Arc<ArcSwap<syntax::Loader>>,
-  ) -> Self {
+  pub fn new(contents: String, config_loader: Arc<ArcSwap<syntax::Loader>>) -> Self {
     Self { contents, config_loader }
   }
 
@@ -180,8 +165,7 @@ impl Markdown {
       }
     };
 
-    let get_theme =
-      |key: &str| -> Style { theme.map(|t| t.get(key)).unwrap_or_default() };
+    let get_theme = |key: &str| -> Style { theme.map(|t| t.get(key)).unwrap_or_default() };
     let text_style = get_theme(Self::TEXT_STYLE);
     let code_style = get_theme(Self::BLOCK_STYLE);
     let heading_styles: Vec<Style> =
@@ -191,8 +175,7 @@ impl Markdown {
     let mut in_code = false;
     let parser = parser.filter_map(|event| match event {
       Event::Html(tag)
-        if tag.starts_with("<code")
-          && matches!(tag.chars().nth(5), Some(' ' | '>')) =>
+        if tag.starts_with("<code") && matches!(tag.chars().nth(5), Some(' ' | '>')) =>
       {
         in_code = true;
         None
@@ -256,10 +239,7 @@ impl Markdown {
         Event::End(tag) => {
           tags.pop();
           match tag {
-            TagEnd::Heading(_)
-            | TagEnd::Paragraph
-            | TagEnd::CodeBlock
-            | TagEnd::Item => {
+            TagEnd::Heading(_) | TagEnd::Paragraph | TagEnd::CodeBlock | TagEnd::Item => {
               push_line(&mut spans, &mut lines);
             },
             _ => (),
@@ -279,13 +259,8 @@ impl Markdown {
               CodeBlockKind::Fenced(language) => language,
               CodeBlockKind::Indented => "",
             };
-            let tui_text = highlighted_code_block(
-              &text,
-              language,
-              theme,
-              Arc::clone(&self.config_loader),
-              None,
-            );
+            let tui_text =
+              highlighted_code_block(&text, language, theme, Arc::clone(&self.config_loader), None);
             lines.extend(tui_text.lines.into_iter());
           } else {
             let style = match tags.last() {
@@ -299,9 +274,7 @@ impl Markdown {
               },
               Some(Tag::Emphasis) => text_style.add_modifier(Modifier::ITALIC),
               Some(Tag::Strong) => text_style.add_modifier(Modifier::BOLD),
-              Some(Tag::Strikethrough) => {
-                text_style.add_modifier(Modifier::CROSSED_OUT)
-              },
+              Some(Tag::Strikethrough) => text_style.add_modifier(Modifier::CROSSED_OUT),
               _ => text_style,
             };
             spans.push(Span::styled(text, style));
@@ -365,8 +338,7 @@ impl Component for Markdown {
 
     // TODO: account for tab width
     let max_text_width = (viewport.0.saturating_sub(padding)).min(120);
-    let (width, height) =
-      crate::ui::text::required_size(&contents, max_text_width);
+    let (width, height) = crate::ui::text::required_size(&contents, max_text_width);
 
     Some((width + padding, height + padding))
   }

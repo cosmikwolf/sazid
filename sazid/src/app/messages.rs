@@ -15,11 +15,10 @@ use async_openai::{
   types::{
     ChatCompletionMessageToolCall, ChatCompletionRequestAssistantMessage,
     ChatCompletionRequestFunctionMessage, ChatCompletionRequestMessage,
-    ChatCompletionRequestMessageContentPart,
-    ChatCompletionRequestSystemMessage, ChatCompletionRequestToolMessage,
-    ChatCompletionRequestUserMessage, ChatCompletionRequestUserMessageContent,
-    CreateChatCompletionResponse, CreateChatCompletionStreamResponse,
-    FunctionCall, FunctionCallStream, Role,
+    ChatCompletionRequestMessageContentPart, ChatCompletionRequestSystemMessage,
+    ChatCompletionRequestToolMessage, ChatCompletionRequestUserMessage,
+    ChatCompletionRequestUserMessageContent, CreateChatCompletionResponse,
+    CreateChatCompletionStreamResponse, FunctionCall, FunctionCallStream, Role,
   },
 };
 
@@ -93,11 +92,7 @@ impl MessageContainer {
     self.message_state.contains(MessageState::IS_CURRENT_TRANSACTION)
   }
 
-  pub fn vertical_height(
-    &self,
-    _window_width: usize,
-    _lang_config: Arc<Loader>,
-  ) -> usize {
+  pub fn vertical_height(&self, _window_width: usize, _lang_config: Arc<Loader>) -> usize {
     let _content = format!("{}", self);
     // let markdown = Markdown::new(content, window_width, lang_config);
     //
@@ -109,10 +104,7 @@ impl MessageContainer {
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct MessageContainer {
-  #[serde(
-    serialize_with = "serialize_message",
-    deserialize_with = "deserialize_message"
-  )]
+  #[serde(serialize_with = "serialize_message", deserialize_with = "deserialize_message")]
   pub message: ChatCompletionRequestMessage,
   pub receive_buffer: Option<ReceiveBuffer>,
   pub tool_calls: Vec<ChatCompletionMessageToolCall>,
@@ -162,9 +154,7 @@ where
   .serialize(serializer)
 }
 
-fn deserialize_message<'de, D>(
-  deserializer: D,
-) -> Result<ChatCompletionRequestMessage, D::Error>
+fn deserialize_message<'de, D>(deserializer: D) -> Result<ChatCompletionRequestMessage, D::Error>
 where
   D: Deserializer<'de>,
 {
@@ -207,22 +197,12 @@ pub enum ReceiveBuffer {
 impl From<ReceiveBuffer> for ChatCompletionRequestMessage {
   fn from(buffer: ReceiveBuffer) -> Self {
     match buffer {
-      ReceiveBuffer::Response(response) => {
-        ChatCompletionRequestMessage::Assistant(
-          get_assistant_message_from_create_chat_completion_response(
-            0, &response,
-          )
-          .unwrap(),
-        )
-      },
-      ReceiveBuffer::StreamResponse(response) => {
-        ChatCompletionRequestMessage::Assistant(
-          get_assistant_message_from_create_chat_completion_stream_response(
-            0, &response,
-          )
-          .unwrap(),
-        )
-      },
+      ReceiveBuffer::Response(response) => ChatCompletionRequestMessage::Assistant(
+        get_assistant_message_from_create_chat_completion_response(0, &response).unwrap(),
+      ),
+      ReceiveBuffer::StreamResponse(response) => ChatCompletionRequestMessage::Assistant(
+        get_assistant_message_from_create_chat_completion_stream_response(0, &response).unwrap(),
+      ),
     }
   }
 }
@@ -237,9 +217,7 @@ impl From<ReceiveBuffer> for MessageContainer {
   fn from(receive_buffer: ReceiveBuffer) -> Self {
     let message = receive_buffer.clone().into();
     let (message_state, stream_id) = match &receive_buffer {
-      ReceiveBuffer::StreamResponse(srvec) => {
-        (MessageState::RECEIVING, Some(srvec[0].id.clone()))
-      },
+      ReceiveBuffer::StreamResponse(srvec) => (MessageState::RECEIVING, Some(srvec[0].id.clone())),
       _ => (MessageState::RECEIVE_COMPLETE, None),
     };
     MessageContainer {
@@ -247,10 +225,7 @@ impl From<ReceiveBuffer> for MessageContainer {
       receive_buffer: Some(receive_buffer),
       message_id: rand::random::<i64>(),
       message,
-      timestamp: time::SystemTime::now()
-        .duration_since(time::UNIX_EPOCH)
-        .unwrap()
-        .as_secs() as i64,
+      timestamp: time::SystemTime::now().duration_since(time::UNIX_EPOCH).unwrap().as_secs() as i64,
       stream_id,
       tool_calls: Vec::new(),
       wrapped_content: String::new(),
@@ -270,37 +245,23 @@ impl From<ReceiveBuffer> for MessageContainer {
 impl From<ChatMessage> for MessageContainer {
   fn from(message: ChatMessage) -> Self {
     match message {
-      ChatMessage::Response(response) => {
-        ReceiveBuffer::Response(response).into()
-      },
-      ChatMessage::StreamResponse(response) => {
-        ReceiveBuffer::StreamResponse(response).into()
-      },
+      ChatMessage::Response(response) => ReceiveBuffer::Response(response).into(),
+      ChatMessage::StreamResponse(response) => ReceiveBuffer::StreamResponse(response).into(),
       ChatMessage::Tool(message) => {
-        MessageContainer::new_from_completed_message(
-          ChatCompletionRequestMessage::Tool(message),
-        )
+        MessageContainer::new_from_completed_message(ChatCompletionRequestMessage::Tool(message))
       },
-      ChatMessage::Function(message) => {
-        MessageContainer::new_from_completed_message(
-          ChatCompletionRequestMessage::Function(message),
-        )
-      },
+      ChatMessage::Function(message) => MessageContainer::new_from_completed_message(
+        ChatCompletionRequestMessage::Function(message),
+      ),
       ChatMessage::System(message) => {
-        MessageContainer::new_from_completed_message(
-          ChatCompletionRequestMessage::System(message),
-        )
+        MessageContainer::new_from_completed_message(ChatCompletionRequestMessage::System(message))
       },
       ChatMessage::User(message) => {
-        MessageContainer::new_from_completed_message(
-          ChatCompletionRequestMessage::User(message),
-        )
+        MessageContainer::new_from_completed_message(ChatCompletionRequestMessage::User(message))
       },
-      ChatMessage::Assistant(message) => {
-        MessageContainer::new_from_completed_message(
-          ChatCompletionRequestMessage::Assistant(message),
-        )
-      },
+      ChatMessage::Assistant(message) => MessageContainer::new_from_completed_message(
+        ChatCompletionRequestMessage::Assistant(message),
+      ),
     }
   }
 }
@@ -314,10 +275,7 @@ pub fn chat_completion_request_message_tool_calls_as_str(
         tool_calls
           .iter()
           .map(|tool_call| {
-            (
-              tool_call.function.name.as_str(),
-              tool_call.function.arguments.as_str(),
-            )
+            (tool_call.function.name.as_str(), tool_call.function.arguments.as_str())
           })
           .collect()
       })
@@ -329,25 +287,17 @@ pub fn chat_completion_request_message_content_as_str(
   message: &ChatCompletionRequestMessage,
 ) -> &str {
   match &message {
-    ChatCompletionRequestMessage::System(system_message) => {
-      &system_message.content
-    },
-    ChatCompletionRequestMessage::User(user_message) => {
-      match &user_message.content {
-        ChatCompletionRequestUserMessageContent::Text(text) => text,
-        ChatCompletionRequestUserMessageContent::Array(parts) => parts
-          .iter()
-          .map(|part| match part {
-            ChatCompletionRequestMessageContentPart::Text(text) => {
-              text.text.as_str()
-            },
-            ChatCompletionRequestMessageContentPart::Image(image) => {
-              image.image_url.url.as_str()
-            },
-          })
-          .next()
-          .unwrap_or(""),
-      }
+    ChatCompletionRequestMessage::System(system_message) => &system_message.content,
+    ChatCompletionRequestMessage::User(user_message) => match &user_message.content {
+      ChatCompletionRequestUserMessageContent::Text(text) => text,
+      ChatCompletionRequestUserMessageContent::Array(parts) => parts
+        .iter()
+        .map(|part| match part {
+          ChatCompletionRequestMessageContentPart::Text(text) => text.text.as_str(),
+          ChatCompletionRequestMessageContentPart::Image(image) => image.image_url.url.as_str(),
+        })
+        .next()
+        .unwrap_or(""),
     },
     ChatCompletionRequestMessage::Assistant(assistant_message) => {
       match &assistant_message.content {
@@ -373,29 +323,23 @@ pub fn chat_completion_request_message_content_as_str(
       // .as_str()
     },
     ChatCompletionRequestMessage::Tool(tool_message) => &tool_message.content,
-    ChatCompletionRequestMessage::Function(function_message) => {
-      match &function_message.content {
-        Some(content) => content.as_str(),
-        None => "",
-      }
+    ChatCompletionRequestMessage::Function(function_message) => match &function_message.content {
+      Some(content) => content.as_str(),
+      None => "",
     },
   }
 }
 
 pub fn get_chat_message_text(message: &ChatCompletionRequestMessage) -> String {
   match message {
-    ChatCompletionRequestMessage::System(message) => {
-      message.content.to_string()
-    },
+    ChatCompletionRequestMessage::System(message) => message.content.to_string(),
     ChatCompletionRequestMessage::User(message) => match &message.content {
       ChatCompletionRequestUserMessageContent::Text(content) => content.clone(),
       ChatCompletionRequestUserMessageContent::Array(parts) => {
         let mut content: Vec<String> = Vec::new();
         for part in parts {
           content.push(match part {
-            ChatCompletionRequestMessageContentPart::Text(content) => {
-              content.text.clone()
-            },
+            ChatCompletionRequestMessageContentPart::Text(content) => content.text.clone(),
             ChatCompletionRequestMessageContentPart::Image(content) => {
               content.image_url.url.clone()
             },
@@ -422,8 +366,7 @@ pub fn get_chat_message_text(message: &ChatCompletionRequestMessage) -> String {
       content.join(" ")
     },
     ChatCompletionRequestMessage::Tool(message) => {
-      let content =
-        vec![message.tool_call_id.clone(), message.content.to_string()];
+      let content = vec![message.tool_call_id.clone(), message.content.to_string()];
       content.join(" ")
     },
     ChatCompletionRequestMessage::Function(message) => {
@@ -453,10 +396,7 @@ impl MessageContainer {
       tool_calls: Vec::new(),
       message_id: rand::random::<i64>(),
       stream_id: None,
-      timestamp: time::SystemTime::now()
-        .duration_since(time::UNIX_EPOCH)
-        .unwrap()
-        .as_secs() as i64,
+      timestamp: time::SystemTime::now().duration_since(time::UNIX_EPOCH).unwrap().as_secs() as i64,
       selected_choice: 0,
       embedding_saved: false,
       stylize_complete: false,
@@ -471,9 +411,7 @@ impl MessageContainer {
     }
   }
 
-  pub fn new_from_completed_message(
-    message: ChatCompletionRequestMessage,
-  ) -> Self {
+  pub fn new_from_completed_message(message: ChatCompletionRequestMessage) -> Self {
     let mut message_container = MessageContainer::new(message);
     message_container.message_state = MessageState::RECEIVE_COMPLETE;
     message_container
@@ -486,21 +424,24 @@ impl MessageContainer {
     if self.stream_id == Some(stream_message.id.clone()) {
       match &mut self.receive_buffer {
         Some(ReceiveBuffer::StreamResponse(srvec)) => {
-
           srvec.push(stream_message);
 
           self.message = ChatCompletionRequestMessage::Assistant(
-            get_assistant_message_from_create_chat_completion_stream_response(self.selected_choice, srvec).unwrap(),
+            get_assistant_message_from_create_chat_completion_stream_response(
+              self.selected_choice,
+              srvec,
+            )
+            .unwrap(),
           );
           self.check_if_receive_is_complete();
           Ok(())
         },
-        _ => Err(ParseError::new("MessageContainer::update_stream_response: message is not a stream response")),
+        _ => Err(ParseError::new(
+          "MessageContainer::update_stream_response: message is not a stream response",
+        )),
       }
     } else {
-      Err(ParseError::new(
-        "MessageContainer::update_stream_response: stream id does not match",
-      ))
+      Err(ParseError::new("MessageContainer::update_stream_response: stream id does not match"))
     }
   }
 
@@ -523,10 +464,7 @@ impl MessageContainer {
 
         // Now, check if every index has a corresponding finish_reason.
         srvec.iter().all(|response| {
-          response
-            .choices
-            .iter()
-            .all(|choice| indexes_with_finish_reason.contains(&choice.index))
+          response.choices.iter().all(|choice| indexes_with_finish_reason.contains(&choice.index))
         })
       },
       _ => true,
@@ -566,10 +504,7 @@ impl From<FunctionCallStream> for RenderedFunctionCall {
 
 impl From<FunctionCall> for RenderedFunctionCall {
   fn from(function_call: FunctionCall) -> Self {
-    RenderedFunctionCall {
-      name: function_call.name,
-      arguments: function_call.arguments,
-    }
+    RenderedFunctionCall { name: function_call.name, arguments: function_call.arguments }
   }
 }
 

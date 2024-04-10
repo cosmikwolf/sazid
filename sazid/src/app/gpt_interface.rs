@@ -16,9 +16,7 @@ pub struct GPTConnector {
   pub model: Model,
 }
 
-pub fn create_chat_completion_tool_args(
-  commands: Vec<ToolCall>,
-) -> Vec<ChatCompletionTool> {
+pub fn create_chat_completion_tool_args(commands: Vec<ToolCall>) -> Vec<ChatCompletionTool> {
   commands
     .iter()
     .map(|command| ChatCompletionTool {
@@ -35,9 +33,7 @@ pub fn create_chat_completion_tool_args(
     .collect()
 }
 
-pub fn create_chat_completion_function_args(
-  commands: Vec<ToolCall>,
-) -> Vec<FunctionObject> {
+pub fn create_chat_completion_function_args(commands: Vec<ToolCall>) -> Vec<FunctionObject> {
   let mut chat_completion_functions: Vec<FunctionObject> = Vec::new();
   for command in commands {
     let chat_completion_function = FunctionObject {

@@ -10,8 +10,7 @@ use tui::buffer::Buffer as Surface;
 use tui::widgets::{Block, Borders, Widget};
 
 use helix_core::{
-  unicode::segmentation::GraphemeCursor, unicode::width::UnicodeWidthStr,
-  Position,
+  unicode::segmentation::GraphemeCursor, unicode::width::UnicodeWidthStr, Position,
 };
 use helix_view::{
   graphics::{CursorKind, Margin, Rect},
@@ -125,8 +124,7 @@ impl Textbox {
       Movement::BackwardChar(rep) => {
         let mut position = self.cursor;
         for _ in 0..rep {
-          let mut cursor =
-            GraphemeCursor::new(position, self.line.len(), false);
+          let mut cursor = GraphemeCursor::new(position, self.line.len(), false);
           if let Ok(Some(pos)) = cursor.prev_boundary(&self.line, 0) {
             position = pos;
           } else {
@@ -136,8 +134,7 @@ impl Textbox {
         position
       },
       Movement::BackwardWord(rep) => {
-        let char_indices: Vec<(usize, char)> =
-          self.line.char_indices().collect();
+        let char_indices: Vec<(usize, char)> = self.line.char_indices().collect();
         if char_indices.is_empty() {
           return self.cursor;
         }
@@ -164,8 +161,7 @@ impl Textbox {
         char_indices[char_position].0
       },
       Movement::ForwardWord(rep) => {
-        let char_indices: Vec<(usize, char)> =
-          self.line.char_indices().collect();
+        let char_indices: Vec<(usize, char)> = self.line.char_indices().collect();
         if char_indices.is_empty() {
           return self.cursor;
         }
@@ -176,31 +172,23 @@ impl Textbox {
 
         for _ in 0..rep {
           // Skip any non-whitespace characters
-          while char_position < char_indices.len()
-            && !is_word_sep(char_indices[char_position].1)
-          {
+          while char_position < char_indices.len() && !is_word_sep(char_indices[char_position].1) {
             char_position += 1;
           }
 
           // Skip any whitespace characters
-          while char_position < char_indices.len()
-            && is_word_sep(char_indices[char_position].1)
-          {
+          while char_position < char_indices.len() && is_word_sep(char_indices[char_position].1) {
             char_position += 1;
           }
 
           // We are now on the start of the next word
         }
-        char_indices
-          .get(char_position)
-          .map(|(i, _)| *i)
-          .unwrap_or_else(|| self.line.len())
+        char_indices.get(char_position).map(|(i, _)| *i).unwrap_or_else(|| self.line.len())
       },
       Movement::ForwardChar(rep) => {
         let mut position = self.cursor;
         for _ in 0..rep {
-          let mut cursor =
-            GraphemeCursor::new(position, self.line.len(), false);
+          let mut cursor = GraphemeCursor::new(position, self.line.len(), false);
           if let Ok(Some(pos)) = cursor.next_boundary(&self.line, 0) {
             position = pos;
           } else {
@@ -211,11 +199,8 @@ impl Textbox {
       },
       Movement::StartOfLine => 0,
       Movement::EndOfLine => {
-        let mut cursor = GraphemeCursor::new(
-          self.line.len().saturating_sub(1),
-          self.line.len(),
-          false,
-        );
+        let mut cursor =
+          GraphemeCursor::new(self.line.len().saturating_sub(1), self.line.len(), false);
         if let Ok(Some(pos)) = cursor.next_boundary(&self.line, 0) {
           pos
         } else {
@@ -345,19 +330,14 @@ impl Textbox {
     self.recalculate_completion(cx.editor);
   }
 
-  pub fn change_completion_selection(
-    &mut self,
-    direction: CompletionDirection,
-  ) {
+  pub fn change_completion_selection(&mut self, direction: CompletionDirection) {
     if self.completion.is_empty() {
       return;
     }
 
     let index = match direction {
       CompletionDirection::Forward => self.selection.map_or(0, |i| i + 1),
-      CompletionDirection::Backward => {
-        self.selection.unwrap_or(0) + self.completion.len() - 1
-      },
+      CompletionDirection::Backward => self.selection.unwrap_or(0) + self.completion.len() - 1,
     } % self.completion.len();
 
     self.selection = Some(index);
@@ -377,10 +357,7 @@ impl Textbox {
 const BASE_WIDTH: u16 = 30;
 
 impl Textbox {
-  pub fn required_size(
-    text: &tui::text::Text,
-    max_text_width: u16,
-  ) -> (u16, u16) {
+  pub fn required_size(text: &tui::text::Text, max_text_width: u16) -> (u16, u16) {
     let mut text_width = 0;
     let mut height = 0;
     for content in &text.lines {
@@ -395,12 +372,7 @@ impl Textbox {
     }
     (text_width, height)
   }
-  pub fn render_textbox(
-    &self,
-    area: Rect,
-    surface: &mut Surface,
-    cx: &mut Context,
-  ) {
+  pub fn render_textbox(&self, area: Rect, surface: &mut Surface, cx: &mut Context) {
     let theme = &cx.editor.theme;
     let textbox_color = theme.get("ui.text");
     let completion_color = theme.get("ui.menu");
@@ -424,12 +396,8 @@ impl Textbox {
             .min(10) // at most 10 rows (or less)
             .min(area.height.saturating_sub(1));
 
-    let completion_area = Rect::new(
-      area.x,
-      (area.height - height).saturating_sub(1),
-      area.width,
-      height,
-    );
+    let completion_area =
+      Rect::new(area.x, (area.height - height).saturating_sub(1), area.width, height);
 
     if completion_area.height > 0 && !self.completion.is_empty() {
       let area = completion_area;
@@ -437,19 +405,14 @@ impl Textbox {
 
       let items = height as usize * cols as usize;
 
-      let offset = self
-        .selection
-        .map(|selection| selection / items * items)
-        .unwrap_or_default();
+      let offset = self.selection.map(|selection| selection / items * items).unwrap_or_default();
 
       surface.clear_with(area, background);
 
       let mut row = 0;
       let mut col = 0;
 
-      for (i, (_range, completion)) in
-        self.completion.iter().enumerate().skip(offset).take(items)
-      {
+      for (i, (_range, completion)) in self.completion.iter().enumerate().skip(offset).take(items) {
         let color = if Some(i) == self.selection {
           selected_color // TODO: just invert bg
         } else {
@@ -509,35 +472,23 @@ impl Textbox {
     let line_area = area.clip_left(self.textbox.len() as u16).clip_top(line);
     if self.line.is_empty() {
       // Show the most recently entered value as a suggestion.
-      if let Some(suggestion) = self
-        .history_register
-        .and_then(|reg| cx.editor.registers.first(reg, cx.editor))
+      if let Some(suggestion) =
+        self.history_register.and_then(|reg| cx.editor.registers.first(reg, cx.editor))
       {
-        surface.set_string(
-          line_area.x,
-          line_area.y,
-          suggestion,
-          suggestion_color,
-        );
+        surface.set_string(line_area.x, line_area.y, suggestion, suggestion_color);
       }
     } else if let Some((language, loader)) = self.language.as_ref() {
-      let mut text: ui::text::Text =
-        crate::ui::markdown::highlighted_code_block(
-          &self.line,
-          language,
-          Some(&cx.editor.theme),
-          loader.clone(),
-          None,
-        )
-        .into();
+      let mut text: ui::text::Text = crate::ui::markdown::highlighted_code_block(
+        &self.line,
+        language,
+        Some(&cx.editor.theme),
+        loader.clone(),
+        None,
+      )
+      .into();
       text.render(line_area, surface, cx);
     } else {
-      surface.set_string(
-        line_area.x,
-        line_area.y,
-        self.line.clone(),
-        textbox_color,
-      );
+      surface.set_string(line_area.x, line_area.y, self.line.clone(), textbox_color);
     }
   }
 }
@@ -555,12 +506,10 @@ impl Component for Textbox {
       _ => return EventResult::Ignored(None),
     };
 
-    let close_fn = EventResult::Consumed(Some(Box::new(
-      |compositor: &mut Compositor, _| {
-        // remove the layer
-        compositor.pop();
-      },
-    )));
+    let close_fn = EventResult::Consumed(Some(Box::new(|compositor: &mut Compositor, _| {
+      // remove the layer
+      compositor.pop();
+    })));
 
     match event {
       ctrl!('c') | key!(Esc) => {
@@ -616,9 +565,7 @@ impl Component for Textbox {
         }
       },
       key!(Enter) => {
-        if self.selection.is_some()
-          && self.line.ends_with(std::path::MAIN_SEPARATOR)
-        {
+        if self.selection.is_some() && self.line.ends_with(std::path::MAIN_SEPARATOR) {
           self.recalculate_completion(cx.editor);
         } else {
           let last_item = self
@@ -634,9 +581,7 @@ impl Component for Textbox {
             if last_item != self.line {
               // store in history
               if let Some(register) = self.history_register {
-                if let Err(err) =
-                  cx.editor.registers.push(register, self.line.clone())
-                {
+                if let Err(err) = cx.editor.registers.push(register, self.line.clone()) {
                   cx.editor.set_error(err.to_string());
                 }
               };
@@ -663,9 +608,7 @@ impl Component for Textbox {
       key!(Tab) => {
         self.change_completion_selection(CompletionDirection::Forward);
         // if single completion candidate is a directory list content in completion
-        if self.completion.len() == 1
-          && self.line.ends_with(std::path::MAIN_SEPARATOR)
-        {
+        if self.completion.len() == 1 && self.line.ends_with(std::path::MAIN_SEPARATOR) {
           self.recalculate_completion(cx.editor);
         }
         (self.callback_fn)(cx, &self.line, TextboxEvent::Update)
@@ -684,11 +627,7 @@ impl Component for Textbox {
           .collect();
         self.next_char_handler = Some(Box::new(|textbox, c, context| {
           textbox.insert_str(
-            &context
-              .editor
-              .registers
-              .first(c, context.editor)
-              .unwrap_or_default(),
+            &context.editor.registers.first(c, context.editor).unwrap_or_default(),
             context.editor,
           );
         }));
@@ -710,18 +649,12 @@ impl Component for Textbox {
     self.render_textbox(area, surface, cx)
   }
 
-  fn cursor(
-    &self,
-    area: Rect,
-    _editor: &Editor,
-  ) -> (Option<Position>, CursorKind) {
+  fn cursor(&self, area: Rect, _editor: &Editor) -> (Option<Position>, CursorKind) {
     let line = area.height as usize - 1;
     (
       Some(Position::new(
         area.y as usize + line,
-        area.x as usize
-          + self.textbox.len()
-          + UnicodeWidthStr::width(&self.line[..self.cursor]),
+        area.x as usize + self.textbox.len() + UnicodeWidthStr::width(&self.line[..self.cursor]),
       )),
       CursorKind::Block,
     )

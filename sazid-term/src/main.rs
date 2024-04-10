@@ -23,9 +23,8 @@ pub fn setup_tracing_logging(verbosity: u64, log_path: &Path) -> Result<()> {
 
   std::env::set_var(
     "RUST_LOG",
-    std::env::var("RUST_LOG").unwrap_or_else(|_| {
-      format!("{}={}", env!("CARGO_CRATE_NAME"), filter_level)
-    }),
+    std::env::var("RUST_LOG")
+      .unwrap_or_else(|_| format!("{}={}", env!("CARGO_CRATE_NAME"), filter_level)),
   );
 
   let file_subscriber = tracing_subscriber::fmt::layer()
@@ -44,9 +43,7 @@ pub fn setup_tracing_logging(verbosity: u64, log_path: &Path) -> Result<()> {
 
   tracing_subscriber::registry()
     .with(file_subscriber)
-    .with(
-      console_subscriber::ConsoleLayer::builder().with_default_env().spawn(),
-    )
+    .with(console_subscriber::ConsoleLayer::builder().with_default_env().spawn())
     .with(ErrorLayer::default())
     .init();
 
@@ -91,7 +88,7 @@ fn main() -> Result<()> {
 #[tokio::main]
 async fn main_impl() -> Result<i32> {
   let help = format!(
-        "\
+    "\
 {} {}
 {}
 {}
@@ -119,20 +116,18 @@ FLAGS:
     -w, --working-dir <path>       Specify an initial working directory
     +N                             Open the first given file at line number N
 ",
-        env!("CARGO_PKG_NAME"),
-        VERSION_AND_GIT_HASH,
-        env!("CARGO_PKG_AUTHORS"),
-        env!("CARGO_PKG_DESCRIPTION"),
-        helix_loader::default_log_file().display(),
-    );
+    env!("CARGO_PKG_NAME"),
+    VERSION_AND_GIT_HASH,
+    env!("CARGO_PKG_AUTHORS"),
+    env!("CARGO_PKG_DESCRIPTION"),
+    helix_loader::default_log_file().display(),
+  );
 
   let mut args = Args::parse_args().context("could not parse arguments")?;
 
   helix_loader::initialize_config_file(args.config_file.clone());
   helix_loader::initialize_log_file(args.log_file.clone());
-  sazid::utils::initialize_panic_handler()
-    .map_err(SazidError::PanicHandlerError)
-    .unwrap();
+  sazid::utils::initialize_panic_handler().map_err(SazidError::PanicHandlerError).unwrap();
   // Help has a higher priority and should be handled separately.
   if args.display_help {
     print!("{}", help);
@@ -186,9 +181,7 @@ FLAGS:
 
   let config = match Config::load_default() {
     Ok(config) => config,
-    Err(ConfigLoadError::Error(err))
-      if err.kind() == std::io::ErrorKind::NotFound =>
-    {
+    Err(ConfigLoadError::Error(err)) if err.kind() == std::io::ErrorKind::NotFound => {
       Config::default()
     },
     Err(ConfigLoadError::Error(err)) => return Err(Error::new(err)),
@@ -201,19 +194,18 @@ FLAGS:
     },
   };
 
-  let lang_loader =
-    helix_core::config::user_lang_loader().unwrap_or_else(|err| {
-      eprintln!("{}", err);
-      eprintln!("Press <ENTER> to continue with default language config");
-      use std::io::Read;
-      // This waits for an enter press.
-      let _ = std::io::stdin().read(&mut []);
-      helix_core::config::default_lang_loader()
-    });
+  let lang_loader = helix_core::config::user_lang_loader().unwrap_or_else(|err| {
+    eprintln!("{}", err);
+    eprintln!("Press <ENTER> to continue with default language config");
+    use std::io::Read;
+    // This waits for an enter press.
+    let _ = std::io::stdin().read(&mut []);
+    helix_core::config::default_lang_loader()
+  });
 
   // TODO: use the thread local executor to spawn the application task separately from the work pool
-  let mut app = Application::new(args, config, lang_loader)
-    .context("unable to create new application")?;
+  let mut app =
+    Application::new(args, config, lang_loader).context("unable to create new application")?;
 
   let exit_code = app.run(&mut EventStream::new()).await?;
 

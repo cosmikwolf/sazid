@@ -16,9 +16,7 @@ pub mod tools;
 pub mod treesitter;
 pub mod types;
 
-#[derive(
-  Default, Debug, Copy, Clone, PartialEq, Eq, Hash, Serialize, Deserialize,
-)]
+#[derive(Default, Debug, Copy, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum Mode {
   #[default]
   Home,

@@ -41,11 +41,9 @@ mod windows_rc {
   use std::{env, io, path::Path, path::PathBuf, process};
 
   pub(crate) fn link_icon_in_windows_exe(icon_path: &str) {
-    let rc_exe =
-      find_rc_exe().expect("Windows SDK is to be installed along with MSVC");
+    let rc_exe = find_rc_exe().expect("Windows SDK is to be installed along with MSVC");
 
-    let output = env::var("OUT_DIR")
-      .expect("Env var OUT_DIR should have been set by compiler");
+    let output = env::var("OUT_DIR").expect("Env var OUT_DIR should have been set by compiler");
     let output_dir = PathBuf::from(output);
 
     let rc_path = output_dir.join("resource.rc");
@@ -58,16 +56,11 @@ mod windows_rc {
     println!("cargo:rustc-link-lib=dylib=resource");
   }
 
-  fn compile_with_toolkit_msvc(
-    rc_exe: PathBuf,
-    output: PathBuf,
-    input: PathBuf,
-  ) {
+  fn compile_with_toolkit_msvc(rc_exe: PathBuf, output: PathBuf, input: PathBuf) {
     let mut command = process::Command::new(rc_exe);
     let command = command.arg(format!(
       "/I{}",
-      env::var("CARGO_MANIFEST_DIR")
-        .expect("CARGO_MANIFEST_DIR should have been set by Cargo")
+      env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR should have been set by Cargo")
     ));
 
     let status = command
@@ -98,13 +91,10 @@ mod windows_rc {
       },
       Ok(find_reg_key) => {
         if find_reg_key.status.code().unwrap() != 0 {
-          return Err(io::Error::new(
-            io::ErrorKind::Other,
-            "Can not find Windows SDK",
-          ));
+          return Err(io::Error::new(io::ErrorKind::Other, "Can not find Windows SDK"));
         } else {
-          let lines = String::from_utf8(find_reg_key.stdout)
-            .expect("Should be able to parse the output");
+          let lines =
+            String::from_utf8(find_reg_key.stdout).expect("Should be able to parse the output");
           let mut lines: Vec<&str> = lines.lines().collect();
           let mut rc_exe_paths: Vec<PathBuf> = Vec::new();
           lines.reverse();
@@ -144,10 +134,7 @@ mod windows_rc {
             }
           }
           if rc_exe_paths.is_empty() {
-            return Err(io::Error::new(
-              io::ErrorKind::Other,
-              "Can not find Windows SDK",
-            ));
+            return Err(io::Error::new(io::ErrorKind::Other, "Can not find Windows SDK"));
           }
 
           println!("{:?}", rc_exe_paths);

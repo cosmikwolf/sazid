@@ -18,11 +18,7 @@ use tui::{
   widgets::{Block, Widget},
 };
 
-fn get_line_offset(
-  line_width: u16,
-  text_area_width: u16,
-  alignment: Alignment,
-) -> u16 {
+fn get_line_offset(line_width: u16, text_area_width: u16, alignment: Alignment) -> u16 {
   match alignment {
     Alignment::Center => (text_area_width / 2).saturating_sub(line_width / 2),
     Alignment::Right => text_area_width.saturating_sub(line_width),
@@ -171,12 +167,11 @@ impl<'a> Paragraph<'a> {
         .chain(iter::once(StyledGrapheme { symbol: "\n", style: self.style }))
     });
 
-    let mut line_composer: Box<dyn LineComposer> =
-      if let Some(Wrap { trim }) = self.wrap {
-        Box::new(WordWrapper::new(&mut styled, width, trim))
-      } else {
-        Box::new(LineTruncator::new(&mut styled, width))
-      };
+    let mut line_composer: Box<dyn LineComposer> = if let Some(Wrap { trim }) = self.wrap {
+      Box::new(WordWrapper::new(&mut styled, width, trim))
+    } else {
+      Box::new(LineTruncator::new(&mut styled, width))
+    };
 
     let mut line_count = 0;
     while line_composer.next_line().is_some() {
@@ -212,29 +207,25 @@ pub fn format_text(
                 style
             }))
   });
-  let mut line_composer: Box<dyn LineComposer> =
-    if let Some(Wrap { trim }) = wrap {
-      Box::new(WordWrapper::new(&mut styled, area.width, trim))
-    } else {
-      let mut line_composer =
-        Box::new(LineTruncator::new(&mut styled, area.width));
-      if alignment == Alignment::Left {
-        line_composer.set_horizontal_offset(scroll.1);
-      }
-      line_composer
-    };
+  let mut line_composer: Box<dyn LineComposer> = if let Some(Wrap { trim }) = wrap {
+    Box::new(WordWrapper::new(&mut styled, area.width, trim))
+  } else {
+    let mut line_composer = Box::new(LineTruncator::new(&mut styled, area.width));
+    if alignment == Alignment::Left {
+      line_composer.set_horizontal_offset(scroll.1);
+    }
+    line_composer
+  };
   let mut y = 0;
   let mut buf = Buffer::empty(area);
   let mut char_counter = char_idx.unwrap();
   let mut last_grapheme_idx = 0;
-  while let Some((current_line, current_line_width)) = line_composer.next_line()
-  {
+  while let Some((current_line, current_line_width)) = line_composer.next_line() {
     if y >= scroll.0 {
       let mut x = 0; // get_line_offset(current_line_width, area.width, alignment);
       let mut linetxt = String::new();
       let idx_start = char_counter;
-      for (StyledGrapheme { symbol, style }, grapheme_index) in
-        current_line.iter().zip(idx_start..)
+      for (StyledGrapheme { symbol, style }, grapheme_index) in current_line.iter().zip(idx_start..)
       {
         let style = if let (Some(highlight_range), Some(highlight_style)) =
           (highlight_range.as_ref(), highlight_style)
@@ -317,12 +308,7 @@ pub fn format_text(
 
 impl<'a> Paragraph<'a> {
   pub fn render_paragraph(mut self, area: Rect, buf: &mut Buffer) {
-    log::warn!(
-      "rendering paragraph x: {}  y: {} height:{}",
-      area.x,
-      area.y,
-      area.height
-    );
+    log::warn!("rendering paragraph x: {}  y: {} height:{}", area.x, area.y, area.height);
     let text_area = match self.block.take() {
       Some(b) => {
         let inner_area = b.inner(area);

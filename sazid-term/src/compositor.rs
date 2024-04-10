@@ -48,23 +48,15 @@ impl<'a> Context<'a> {
   /// Waits on all pending jobs, and then tries to flush all pending write
   /// operations for all documents.
   pub fn block_try_flush_writes(&mut self) -> anyhow::Result<()> {
-    tokio::task::block_in_place(|| {
-      helix_lsp::block_on(self.jobs.finish(self.editor, None))
-    })?;
-    tokio::task::block_in_place(|| {
-      helix_lsp::block_on(self.editor.flush_writes())
-    })?;
+    tokio::task::block_in_place(|| helix_lsp::block_on(self.jobs.finish(self.editor, None)))?;
+    tokio::task::block_in_place(|| helix_lsp::block_on(self.editor.flush_writes()))?;
     Ok(())
   }
 }
 
 pub trait Component: Any + AnyComponent {
   /// Process input events, return true if handled.
-  fn handle_event(
-    &mut self,
-    _event: &Event,
-    _ctx: &mut Context,
-  ) -> EventResult {
+  fn handle_event(&mut self, _event: &Event, _ctx: &mut Context) -> EventResult {
     EventResult::Ignored(None)
   }
   // , args: ()
@@ -78,11 +70,7 @@ pub trait Component: Any + AnyComponent {
   fn render(&mut self, area: Rect, frame: &mut Surface, ctx: &mut Context);
 
   /// Get cursor position and cursor kind.
-  fn cursor(
-    &self,
-    _area: Rect,
-    _ctx: &Editor,
-  ) -> (Option<Position>, CursorKind) {
+  fn cursor(&self, _area: Rect, _ctx: &Editor) -> (Option<Position>, CursorKind) {
     (None, CursorKind::Hidden)
   }
 
@@ -159,9 +147,7 @@ impl Compositor {
 
   pub fn handle_event(&mut self, event: &Event, cx: &mut Context) -> bool {
     // If it is a key event and a macro is being recorded, push the key event to the recording.
-    if let (Event::Key(key), Some((_, keys))) =
-      (event, &mut cx.editor.macro_recording)
-    {
+    if let (Event::Key(key), Some((_, keys))) = (event, &mut cx.editor.macro_recording) {
       keys.push(*key);
     }
 
@@ -196,23 +182,14 @@ impl Compositor {
     consumed
   }
 
-  pub fn render(
-    &mut self,
-    area: Rect,
-    surface: &mut Surface,
-    cx: &mut Context,
-  ) {
+  pub fn render(&mut self, area: Rect, surface: &mut Surface, cx: &mut Context) {
     // reversed layer rendering so that the editor draws popup menus over the session view
     for layer in &mut self.layers.iter_mut() {
       layer.render(area, surface, cx);
     }
   }
 
-  pub fn cursor(
-    &self,
-    area: Rect,
-    editor: &Editor,
-  ) -> (Option<Position>, CursorKind) {
+  pub fn cursor(&self, area: Rect, editor: &Editor) -> (Option<Position>, CursorKind) {
     for layer in self.layers.iter().rev() {
       if let (Some(pos), kind) = layer.cursor(area, editor) {
         return (Some(pos), kind);

@@ -9,12 +9,8 @@ use std::{
 use anyhow::bail;
 use crossterm::event::{Event, KeyEvent};
 use helix_core::{diagnostic::Severity, test, Selection, Transaction};
-use helix_view::{
-  current_ref, doc, editor::LspConfig, input::parse_macro, Editor,
-};
-use sazid_term::{
-  application::Application, args::Args, config::Config, keymap::merge_keys,
-};
+use helix_view::{current_ref, doc, editor::LspConfig, input::parse_macro, Editor};
+use sazid_term::{application::Application, args::Args, config::Config, keymap::merge_keys};
 use tempfile::NamedTempFile;
 use tokio_stream::wrappers::UnboundedReceiverStream;
 
@@ -37,13 +33,7 @@ where
     let (in_text, in_selection) = test::print(&input.into());
     let (out_text, out_selection) = test::print(&output.into());
 
-    TestCase {
-      in_text,
-      in_selection,
-      in_keys: keys.into(),
-      out_text,
-      out_selection,
-    }
+    TestCase { in_text, in_selection, in_keys: keys.into(), out_text, out_selection }
   }
 }
 
@@ -88,10 +78,7 @@ pub async fn test_key_sequences(
       let (view, doc) = current_ref!(app.editor);
       let state = test::plain(doc.text().slice(..), doc.selection(view.id));
 
-      log::debug!(
-        "finished running test with document state:\n\n-----\n\n{}",
-        state
-      );
+      log::debug!("finished running test with document state:\n\n-----\n\n{}", state);
     }
 
     // the app should not exit from any test until the last one
@@ -143,11 +130,7 @@ pub async fn test_key_sequence_with_input_text<T: Into<TestCase>>(
   let test_case = test_case.into();
   let mut app = match app {
     Some(app) => app,
-    None => Application::new(
-      Args::default(),
-      test_config(),
-      test_syntax_loader(None),
-    )?,
+    None => Application::new(Args::default(), test_config(), test_syntax_loader(None))?,
   };
 
   let (view, doc) = helix_view::current!(app.editor);
@@ -161,20 +144,12 @@ pub async fn test_key_sequence_with_input_text<T: Into<TestCase>>(
 
   doc.apply(&transaction, view.id);
 
-  test_key_sequence(
-    &mut app,
-    Some(&test_case.in_keys),
-    Some(test_fn),
-    should_exit,
-  )
-  .await
+  test_key_sequence(&mut app, Some(&test_case.in_keys), Some(test_fn), should_exit).await
 }
 
 /// Generates language config loader that merge in overrides, like a user language
 /// config. The argument string must be a raw TOML document.
-pub fn test_syntax_loader(
-  overrides: Option<String>,
-) -> helix_core::syntax::Loader {
+pub fn test_syntax_loader(overrides: Option<String>) -> helix_core::syntax::Loader {
   let mut lang = helix_loader::config::default_lang_config();
 
   if let Some(overrides) = overrides {
@@ -231,11 +206,7 @@ pub fn temp_file_with_contents<S: AsRef<str>>(
 
 /// Generates a config with defaults more suitable for integration tests
 pub fn test_config() -> Config {
-  Config {
-    editor: test_editor_config(),
-    keys: sazid_term::keymap::default(),
-    ..Default::default()
-  }
+  Config { editor: test_editor_config(), keys: sazid_term::keymap::default(), ..Default::default() }
 }
 
 pub fn test_editor_config() -> helix_view::editor::Config {
@@ -296,11 +267,7 @@ impl AppBuilder {
     AppBuilder::default()
   }
 
-  pub fn with_file<P: Into<PathBuf>>(
-    mut self,
-    path: P,
-    pos: Option<helix_core::Position>,
-  ) -> Self {
+  pub fn with_file<P: Into<PathBuf>>(mut self, path: P, pos: Option<helix_core::Position>) -> Self {
     self.args.files.push((path.into(), pos.unwrap_or_default()));
     self
   }
@@ -319,21 +286,22 @@ impl AppBuilder {
     self
   }
 
-  pub fn with_lang_loader(
-    mut self,
-    syn_loader: helix_core::syntax::Loader,
-  ) -> Self {
+  pub fn with_lang_loader(mut self, syn_loader: helix_core::syntax::Loader) -> Self {
     self.syn_loader = syn_loader;
     self
   }
 
   pub fn build(self) -> anyhow::Result<Application> {
     if let Some(path) = &self.args.working_directory {
-      bail!("Changing the working directory to {path:?} is not yet supported for integration tests");
+      bail!(
+        "Changing the working directory to {path:?} is not yet supported for integration tests"
+      );
     }
 
     if let Some((path, _)) = self.args.files.first().filter(|p| p.0.is_dir()) {
-      bail!("Having the directory {path:?} in args.files[0] is not yet supported for integration tests");
+      bail!(
+        "Having the directory {path:?} in args.files[0] is not yet supported for integration tests"
+      );
     }
 
     let mut app = Application::new(self.args, self.config, self.syn_loader)?;
@@ -360,10 +328,7 @@ pub async fn run_event_loop_until_idle(app: &mut Application) {
   app.event_loop_until_idle(&mut rx_stream).await;
 }
 
-pub fn assert_file_has_content(
-  file: &mut File,
-  content: &str,
-) -> anyhow::Result<()> {
+pub fn assert_file_has_content(file: &mut File, content: &str) -> anyhow::Result<()> {
   file.flush()?;
   file.sync_all()?;
 

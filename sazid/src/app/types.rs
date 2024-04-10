@@ -8,11 +8,7 @@ use std::{collections::BTreeMap, ffi::OsString, path::PathBuf};
 
 // options
 #[derive(Parser, Clone, Default, Debug)]
-#[clap(
-  version = "1.0",
-  author = "Tenkai Kariya",
-  about = "Interactive chat with GPT"
-)]
+#[clap(version = "1.0", author = "Tenkai Kariya", about = "Interactive chat with GPT")]
 pub struct Opts {
   #[clap(short = 'n', long = "new", help = "Start a new chat session")]
   pub new: bool,
@@ -28,18 +24,10 @@ pub struct Opts {
   #[clap(short = 'b', long = "batch", help = "Respond to stdin and exit")]
   pub batch: bool,
 
-  #[clap(
-    short = 'f',
-    long = "include-functions",
-    help = "Include chat functions"
-  )]
+  #[clap(short = 'f', long = "include-functions", help = "Include chat functions")]
   pub include_functions: bool,
 
-  #[clap(
-    short = 'l',
-    long = "list-sessions",
-    help = "List the models the user has access to"
-  )]
+  #[clap(short = 'l', long = "list-sessions", help = "List the models the user has access to")]
   pub list_models: bool,
 
   #[clap(
@@ -197,10 +185,7 @@ mod tests {
   #[test]
   fn test_concatenate_option_strings() {
     assert_eq!(
-      concatenate_option_strings(
-        Some("Hello".to_string()),
-        Some(" world!".to_string())
-      ),
+      concatenate_option_strings(Some("Hello".to_string()), Some(" world!".to_string())),
       Some("Hello world!".to_string())
     );
     assert_eq!(
@@ -211,22 +196,15 @@ mod tests {
       concatenate_option_strings(None, Some("world!".to_string())),
       Some("world!".to_string())
     );
-    assert_eq!(
-      concatenate_option_strings(None::<String>, None::<String>),
-      None
-    );
+    assert_eq!(concatenate_option_strings(None::<String>, None::<String>), None);
   }
 
   #[test]
   fn test_concatenate_function_call_streams() {
-    let fc1 = FunctionCallStream {
-      name: Some("func1".to_string()),
-      arguments: Some("arg1".to_string()),
-    };
-    let fc2 = FunctionCallStream {
-      name: Some("func2".to_string()),
-      arguments: Some("arg2".to_string()),
-    };
+    let fc1 =
+      FunctionCallStream { name: Some("func1".to_string()), arguments: Some("arg1".to_string()) };
+    let fc2 =
+      FunctionCallStream { name: Some("func2".to_string()), arguments: Some("arg2".to_string()) };
     assert_eq!(
       concatenate_function_call_streams(Some(fc1.clone()), Some(fc2.clone())),
       Some(FunctionCallStream {
@@ -234,19 +212,10 @@ mod tests {
         arguments: Some("arg1arg2".to_string())
       })
     );
+    assert_eq!(concatenate_function_call_streams(Some(fc1.clone()), None), Some(fc1.clone()));
+    assert_eq!(concatenate_function_call_streams(None, Some(fc2.clone())), Some(fc2.clone()));
     assert_eq!(
-      concatenate_function_call_streams(Some(fc1.clone()), None),
-      Some(fc1.clone())
-    );
-    assert_eq!(
-      concatenate_function_call_streams(None, Some(fc2.clone())),
-      Some(fc2.clone())
-    );
-    assert_eq!(
-      concatenate_function_call_streams(
-        None::<FunctionCallStream>,
-        None::<FunctionCallStream>
-      ),
+      concatenate_function_call_streams(None::<FunctionCallStream>, None::<FunctionCallStream>),
       None
     );
   }

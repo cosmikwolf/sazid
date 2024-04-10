@@ -313,10 +313,7 @@ async fn test_character_info() -> anyhow::Result<()> {
     &mut helpers::AppBuilder::new().build()?,
     Some("ih<esc>h:char<ret>"),
     Some(&|app| {
-      assert_eq!(
-        r#""h" (U+0068) Dec 104 Hex 68"#,
-        app.editor.get_status().unwrap().0
-      );
+      assert_eq!(r#""h" (U+0068) Dec 104 Hex 68"#, app.editor.get_status().unwrap().0);
     }),
     false,
   )
@@ -327,10 +324,7 @@ async fn test_character_info() -> anyhow::Result<()> {
     &mut helpers::AppBuilder::new().build()?,
     Some("ië<esc>h:char<ret>"),
     Some(&|app| {
-      assert_eq!(
-        r#""ë" (U+0065 U+0308) Hex 65 + cc 88"#,
-        app.editor.get_status().unwrap().0
-      );
+      assert_eq!(r#""ë" (U+0065 U+0308) Hex 65 + cc 88"#, app.editor.get_status().unwrap().0);
     }),
     false,
   )
@@ -341,10 +335,7 @@ async fn test_character_info() -> anyhow::Result<()> {
     &mut helpers::AppBuilder::new().build()?,
     Some(":line<minus>ending crlf<ret>:char<ret>"),
     Some(&|app| {
-      assert_eq!(
-        r#""\r\n" (U+000d U+000a) Hex 0d + 0a"#,
-        app.editor.get_status().unwrap().0
-      );
+      assert_eq!(r#""\r\n" (U+000d U+000a) Hex 0d + 0a"#, app.editor.get_status().unwrap().0);
     }),
     false,
   )
@@ -367,12 +358,8 @@ async fn test_character_info() -> anyhow::Result<()> {
 #[tokio::test(flavor = "multi_thread")]
 async fn test_delete_char_backward() -> anyhow::Result<()> {
   // don't panic when deleting overlapping ranges
-  test((
-    platform_line("#(x|)# #[x|]#"),
-    "c<space><backspace><esc>",
-    platform_line("#[\n|]#"),
-  ))
-  .await?;
+  test((platform_line("#(x|)# #[x|]#"), "c<space><backspace><esc>", platform_line("#[\n|]#")))
+    .await?;
   test((
     platform_line("#( |)##( |)#a#( |)#axx#[x|]#a"),
     "li<backspace><esc>",
@@ -386,24 +373,14 @@ async fn test_delete_char_backward() -> anyhow::Result<()> {
 #[tokio::test(flavor = "multi_thread")]
 async fn test_delete_word_backward() -> anyhow::Result<()> {
   // don't panic when deleting overlapping ranges
-  test((
-    platform_line("fo#[o|]#ba#(r|)#"),
-    "a<C-w><esc>",
-    platform_line("#[\n|]#"),
-  ))
-  .await?;
+  test((platform_line("fo#[o|]#ba#(r|)#"), "a<C-w><esc>", platform_line("#[\n|]#"))).await?;
   Ok(())
 }
 
 #[tokio::test(flavor = "multi_thread")]
 async fn test_delete_word_forward() -> anyhow::Result<()> {
   // don't panic when deleting overlapping ranges
-  test((
-    platform_line("fo#[o|]#b#(|ar)#"),
-    "i<A-d><esc>",
-    platform_line("fo#[\n|]#"),
-  ))
-  .await?;
+  test((platform_line("fo#[o|]#b#(|ar)#"), "i<A-d><esc>", platform_line("fo#[\n|]#"))).await?;
   Ok(())
 }
 

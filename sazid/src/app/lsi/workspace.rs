@@ -43,8 +43,7 @@ impl Workspace {
         .filter(|e| {
           file_types.iter().any(|file_type| match file_type {
             FileType::Extension(file_type) => {
-              e.path().extension().unwrap_or_default().to_str().unwrap()
-                == file_type
+              e.path().extension().unwrap_or_default().to_str().unwrap() == file_type
             },
             FileType::Glob(glob) => {
               let matcher = glob.compile_matcher();
@@ -54,11 +53,7 @@ impl Workspace {
         })
         .flat_map(|e| e.path().canonicalize())
         .map(|file_path| {
-          WorkspaceFile::new(
-            &file_path,
-            &self.workspace_path,
-            &self.offset_encoding,
-          )
+          WorkspaceFile::new(&file_path, &self.workspace_path, &self.offset_encoding)
         })
         .collect::<Vec<WorkspaceFile>>(),
     );
@@ -67,28 +62,15 @@ impl Workspace {
     Ok(())
   }
 
-  pub fn get_mut_file(
-    &mut self,
-    file_path: &Path,
-  ) -> Option<&mut WorkspaceFile> {
+  pub fn get_mut_file(&mut self, file_path: &Path) -> Option<&mut WorkspaceFile> {
     self.files.iter_mut().find(|f| f.file_path == file_path)
   }
 
-  pub fn query_symbol_by_id(
-    &self,
-    symbol_id: &[u8; 32],
-  ) -> Option<Arc<SourceSymbol>> {
-    self
-      .all_symbols_weak()
-      .iter()
-      .map(|s| s.upgrade().unwrap())
-      .find(|s| &s.symbol_id == symbol_id)
+  pub fn query_symbol_by_id(&self, symbol_id: &[u8; 32]) -> Option<Arc<SourceSymbol>> {
+    self.all_symbols_weak().iter().map(|s| s.upgrade().unwrap()).find(|s| &s.symbol_id == symbol_id)
   }
 
-  pub fn query_symbols(
-    &self,
-    query: &LsiQuery,
-  ) -> anyhow::Result<Vec<Arc<SourceSymbol>>> {
+  pub fn query_symbols(&self, query: &LsiQuery) -> anyhow::Result<Vec<Arc<SourceSymbol>>> {
     log::info!("query: {:#?}", query);
     Ok(
       self
@@ -98,12 +80,7 @@ impl Workspace {
         .filter(|s| {
           if let Some(file_name) = &query.file_path_regex {
             s.file_path.file_name().unwrap().to_str().unwrap() == file_name
-              || &s
-                .file_path
-                .strip_prefix(&self.workspace_path)
-                .unwrap()
-                .display()
-                .to_string()
+              || &s.file_path.strip_prefix(&self.workspace_path).unwrap().display().to_string()
                 == file_name
           } else {
             true
@@ -116,15 +93,7 @@ impl Workspace {
             true
           }
         })
-        .filter(
-          |s| {
-            if let Some(kind) = query.kind {
-              s.kind == kind
-            } else {
-              true
-            }
-          },
-        )
+        .filter(|s| if let Some(kind) = query.kind { s.kind == kind } else { true })
         .filter(|s| {
           if let Some(range) = query.range {
             *s.range.lock().unwrap() == range

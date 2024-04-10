@@ -113,9 +113,7 @@ pub struct InsertableFileEmbedding {
   pub checksum: String,
 }
 
-#[derive(
-  Queryable, Selectable, Debug, Clone, PartialEq, Identifiable, AsChangeset,
-)]
+#[derive(Queryable, Selectable, Debug, Clone, PartialEq, Identifiable, AsChangeset)]
 #[diesel(table_name = tags)]
 pub struct Tag {
   id: i64,
@@ -135,9 +133,7 @@ pub struct InsertableTag {
   tag: String,
 }
 
-#[derive(
-  Debug, Clone, PartialEq, Queryable, Selectable, Associations, Identifiable,
-)]
+#[derive(Debug, Clone, PartialEq, Queryable, Selectable, Associations, Identifiable)]
 #[diesel(belongs_to(FileEmbedding))]
 #[diesel(table_name = embedding_tags)]
 #[diesel(primary_key(file_embedding_id, tag_id))]
@@ -147,10 +143,7 @@ pub struct EmbeddingTag {
 }
 
 impl FileEmbedding {
-  pub async fn page_count(
-    &self,
-    conn: &mut AsyncPgConnection,
-  ) -> Result<usize, SazidError> {
+  pub async fn page_count(&self, conn: &mut AsyncPgConnection) -> Result<usize, SazidError> {
     let all_pages = EmbeddingPage::belonging_to(self)
       .select(EmbeddingPage::as_select())
       .load::<EmbeddingPage>(conn)
@@ -241,11 +234,7 @@ impl fmt::Display for EmbeddingPage {
 
 impl fmt::Display for FileEmbedding {
   fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-    write!(
-      f,
-      "TextFileEmbedding(filename: {}\tchecksum: {}) ",
-      self.filepath, self.checksum,
-    )
+    write!(f, "TextFileEmbedding(filename: {}\tchecksum: {}) ", self.filepath, self.checksum,)
   }
 }
 

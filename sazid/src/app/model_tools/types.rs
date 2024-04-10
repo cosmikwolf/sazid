@@ -119,9 +119,7 @@ pub fn validate_arguments(
   parameters: &FunctionProperty,
   workspace_root: Option<&PathBuf>,
 ) -> Result<HashMap<String, Value>, String> {
-  let properties = if let FunctionProperty::Parameters { properties } =
-    parameters
-  {
+  let properties = if let FunctionProperty::Parameters { properties } = parameters {
     properties
   } else {
     return Err("parameters must be FunctionProperty::Parameters".to_string());
@@ -145,8 +143,7 @@ pub fn validate_arguments(
       },
       (Some(value), FunctionProperty::Number { required: _, .. }) => {
         if let Some(v) = value.as_f64() {
-          validated_args
-            .insert(name.clone(), serde_json::Number::from_f64(v).into());
+          validated_args.insert(name.clone(), serde_json::Number::from_f64(v).into());
         } else {
           return Err(format!(
             "Invalid type for argument '{}'. Expected: number, Found: {:?}",
@@ -164,25 +161,26 @@ pub fn validate_arguments(
           ));
         }
       },
-      (
-        Some(value),
-        FunctionProperty::Array {
-          items,
-          min_items,
-          max_items,
-          required: _,
-          ..
-        },
-      ) => {
+      (Some(value), FunctionProperty::Array { items, min_items, max_items, required: _, .. }) => {
         if let Some(arr) = value.as_array() {
           if let Some(min) = min_items {
             if arr.len() < *min {
-              return Err(format!("Array length for argument '{}' is below the minimum. Expected: {}, Found: {}", name, min, arr.len()));
+              return Err(format!(
+                "Array length for argument '{}' is below the minimum. Expected: {}, Found: {}",
+                name,
+                min,
+                arr.len()
+              ));
             }
           }
           if let Some(max) = max_items {
             if arr.len() > *max {
-              return Err(format!("Array length for argument '{}' exceeds the maximum. Expected: {}, Found: {}", name, max, arr.len()));
+              return Err(format!(
+                "Array length for argument '{}' exceeds the maximum. Expected: {}, Found: {}",
+                name,
+                max,
+                arr.len()
+              ));
             }
           }
           let mut validated_arr = Vec::new();
@@ -190,7 +188,10 @@ pub fn validate_arguments(
             if is_valid_type(item, items) {
               validated_arr.push(item.clone());
             } else {
-              return Err(format!("Invalid type for array item in argument '{}'. Expected: {:?}, Found: {:?}", name, items, item));
+              return Err(format!(
+                "Invalid type for array item in argument '{}'. Expected: {:?}, Found: {:?}",
+                name, items, item
+              ));
             }
           }
           validated_args.insert(name.clone(), Value::Array(validated_arr));
@@ -211,19 +212,22 @@ pub fn validate_arguments(
           ));
         }
       },
-      (
-        Some(value),
-        FunctionProperty::Integer { minimum, maximum, required: _, .. },
-      ) => {
+      (Some(value), FunctionProperty::Integer { minimum, maximum, required: _, .. }) => {
         if let Some(v) = value.as_i64() {
           if let Some(min) = minimum {
             if v < *min {
-              return Err(format!("Value for argument '{}' is below the minimum. Expected: {}, Found: {}", name, min, v));
+              return Err(format!(
+                "Value for argument '{}' is below the minimum. Expected: {}, Found: {}",
+                name, min, v
+              ));
             }
           }
           if let Some(max) = maximum {
             if v > *max {
-              return Err(format!("Value for argument '{}' exceeds the maximum. Expected: {}, Found: {}", name, max, v));
+              return Err(format!(
+                "Value for argument '{}' exceeds the maximum. Expected: {}, Found: {}",
+                name, max, v
+              ));
             }
           }
           validated_args.insert(name.clone(), Value::Number(v.into()));
@@ -238,39 +242,33 @@ pub fn validate_arguments(
         if let Some(pattern_str) = value.as_str() {
           match regex::Regex::new(pattern_str) {
             Ok(regex) => {
-              validated_args
-                .insert(name.clone(), Value::String(pattern_str.to_string()));
+              validated_args.insert(name.clone(), Value::String(pattern_str.to_string()));
             },
             Err(err) => {
               return Err(format!(
-                                "Invalid regular expression pattern for argument '{}'. Error: {}",
-                                name, err
-                            ));
+                "Invalid regular expression pattern for argument '{}'. Error: {}",
+                name, err
+              ));
             },
           }
         } else {
           return Err(format!(
-                        "Invalid type for argument '{}'. Expected: string (regex pattern), Found: {:?}",
-                        name, value
-                    ));
+            "Invalid type for argument '{}'. Expected: string (regex pattern), Found: {:?}",
+            name, value
+          ));
         }
       },
       (Some(value), FunctionProperty::PathBuf { required: _, .. }) => {
         if workspace_root.is_none() {
-          return Err(format!(
-            "Workspace root is required to validate path argument '{}'",
-            name
-          ));
+          return Err(format!("Workspace root is required to validate path argument '{}'", name));
         }
         if let Some(path_str) = value.as_str() {
           let path = PathBuf::from(path_str);
           if !path.is_absolute() {
             let absolute_path = workspace_root.unwrap().join(path);
             if absolute_path.exists() {
-              validated_args.insert(
-                name.clone(),
-                Value::String(absolute_path.to_string_lossy().into_owned()),
-              );
+              validated_args
+                .insert(name.clone(), Value::String(absolute_path.to_string_lossy().into_owned()));
             } else {
               return Err(format!(
                 "Invalid path for argument '{}'. Path does not exist: {:?}",
@@ -278,10 +276,7 @@ pub fn validate_arguments(
               ));
             }
           } else if path.exists() {
-            validated_args.insert(
-              name.clone(),
-              Value::String(path.to_string_lossy().into_owned()),
-            );
+            validated_args.insert(name.clone(), Value::String(path.to_string_lossy().into_owned()));
           } else {
             return Err(format!(
               "Invalid path for argument '{}'. Path does not exist: {:?}",
@@ -290,9 +285,9 @@ pub fn validate_arguments(
           }
         } else {
           return Err(format!(
-                        "Invalid type for argument '{}'. Expected: string (path), Found: {:?}",
-                        name, value
-                    ));
+            "Invalid type for argument '{}'. Expected: string (path), Found: {:?}",
+            name, value
+          ));
         }
       },
       (None, FunctionProperty::Bool { required: true, .. })
@@ -328,9 +323,7 @@ pub fn get_validated_argument<T: serde::de::DeserializeOwned>(
   validated_arguments: &HashMap<String, Value>,
   key: &str,
 ) -> Option<T> {
-  validated_arguments
-    .get(key)
-    .and_then(|value| serde_json::from_value(value.clone()).ok())
+  validated_arguments.get(key).and_then(|value| serde_json::from_value(value.clone()).ok())
 }
 fn is_valid_type(value: &Value, expected_type: &FunctionProperty) -> bool {
   matches!(

@@ -38,12 +38,7 @@ pub fn translate_char_index_to_pos(
   )
 }
 
-pub fn put_cursor(
-  range: Range,
-  text: RopeSlice,
-  char_idx: usize,
-  extend: bool,
-) -> Range {
+pub fn put_cursor(range: Range, text: RopeSlice, char_idx: usize, extend: bool) -> Range {
   if extend {
     Range::new(range.anchor, char_idx)
     // if range.head == char_idx {
@@ -74,9 +69,7 @@ pub fn put_cursor(
   }
 }
 
-pub fn min_width_1(
-  range: &helix_core::selection::Range,
-) -> helix_core::selection::Range {
+pub fn min_width_1(range: &helix_core::selection::Range) -> helix_core::selection::Range {
   if range.anchor == range.head {
     helix_core::selection::Range {
       anchor: range.head,
@@ -101,8 +94,7 @@ pub fn session_move_horizontally(
   let original_row = all_messages_text.char_to_line(pos);
   let original_row_start = all_messages_text.line_to_char(original_row);
   let original_row_len = all_messages_text.line(original_row).len_chars();
-  let original_row_end =
-    original_row_start + original_row_len.saturating_sub(1);
+  let original_row_end = original_row_start + original_row_len.saturating_sub(1);
   // Compute the new position.
   let new_pos = match dir {
     Direction::Forward => pos + count,
@@ -151,12 +143,7 @@ pub fn session_move_vertically(
           )
         },
         Direction::Backward => {
-          return put_cursor(
-            range,
-            all_messages_text,
-            0,
-            behaviour == Movement::Extend,
-          )
+          return put_cursor(range, all_messages_text, 0, behaviour == Movement::Extend)
         },
       }
     },

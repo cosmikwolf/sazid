@@ -20,16 +20,11 @@ use color_eyre::eyre::Result;
 use lazy_static::lazy_static;
 
 lazy_static! {
-  pub static ref PROJECT_NAME: String =
-    env!("CARGO_CRATE_NAME").to_uppercase().to_string();
+  pub static ref PROJECT_NAME: String = env!("CARGO_CRATE_NAME").to_uppercase().to_string();
   pub static ref DATA_FOLDER: Option<PathBuf> =
-    std::env::var(format!("{}_DATA", PROJECT_NAME.clone()))
-      .ok()
-      .map(PathBuf::from);
+    std::env::var(format!("{}_DATA", PROJECT_NAME.clone())).ok().map(PathBuf::from);
   pub static ref CONFIG_FOLDER: Option<PathBuf> =
-    std::env::var(format!("{}_CONFIG", PROJECT_NAME.clone()))
-      .ok()
-      .map(PathBuf::from);
+    std::env::var(format!("{}_CONFIG", PROJECT_NAME.clone())).ok().map(PathBuf::from);
   pub static ref GIT_COMMIT_HASH: String =
     std::env::var(format!("{}_GIT_INFO", PROJECT_NAME.clone()))
       .unwrap_or_else(|_| String::from("UNKNOWN"));
@@ -38,11 +33,7 @@ lazy_static! {
 }
 
 fn project_directory() -> Option<ProjectDirs> {
-  ProjectDirs::from(
-    "com",
-    "zetaohm",
-    PROJECT_NAME.clone().to_lowercase().as_str(),
-  )
+  ProjectDirs::from("com", "zetaohm", PROJECT_NAME.clone().to_lowercase().as_str())
 }
 
 // pub fn initialize_panic_handler() -> Result<()> {
@@ -133,10 +124,7 @@ pub fn initialize_logging() -> Result<()> {
     .with_target(false)
     .with_ansi(false)
     .with_filter(tracing_subscriber::filter::EnvFilter::from_default_env());
-  tracing_subscriber::registry()
-    .with(file_subscriber)
-    .with(ErrorLayer::default())
-    .init();
+  tracing_subscriber::registry().with(file_subscriber).with(ErrorLayer::default()).init();
   Ok(())
 }
 
@@ -218,11 +206,7 @@ pub fn initialize_tracing() -> Result<(), Box<dyn std::error::Error>> {
   let log_path = directory.join(LOG_FILE.clone());
   println!("log_path: {:?}", log_path);
   // create file at log_path, ensuring the parent directory exists
-  let log_file = std::fs::OpenOptions::new()
-    .create(true)
-    
-    .append(true)
-    .open(log_path)?;
+  let log_file = std::fs::OpenOptions::new().create(true).append(true).open(log_path)?;
 
   let log_subscriber = fmt::layer()
         // Use a more compact, abbreviated log format

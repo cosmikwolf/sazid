@@ -67,13 +67,7 @@ impl ToolCallTrait for TemplatedFunction {
   fn call(
     &self,
     params: ToolCallParams,
-  ) -> Pin<
-    Box<
-      dyn Future<Output = Result<Option<String>, ToolCallError>>
-        + Send
-        + 'static,
-    >,
-  > {
+  ) -> Pin<Box<dyn Future<Output = Result<Option<String>, ToolCallError>> + Send + 'static>> {
     let paths = validate_and_extract_paths_from_argument(
       &params.function_args,
       params.session_config,
@@ -82,12 +76,8 @@ impl ToolCallTrait for TemplatedFunction {
     )
     .expect("error validating paths")
     .expect("paths are required");
-    let reverse = validate_and_extract_boolean_argument(
-      &params.function_args,
-      "reverse",
-      false,
-    )
-    .expect("error validating argument reverse");
+    let reverse = validate_and_extract_boolean_argument(&params.function_args, "reverse", false)
+      .expect("error validating argument reverse");
 
     Box::pin(async move {
       // Begin Example Call Code
@@ -103,10 +93,7 @@ impl ToolCallTrait for TemplatedFunction {
 
       if !output.status.success() {
         return Ok(Some(
-          ToolCallError::new(&String::from_utf8_lossy(
-            output.stderr.as_slice(),
-          ))
-          .to_string(),
+          ToolCallError::new(&String::from_utf8_lossy(output.stderr.as_slice())).to_string(),
         ));
       }
 

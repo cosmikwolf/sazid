@@ -134,9 +134,7 @@ impl SourceSymbol {
     hasher.update(&bincode::serialize(&self.kind).unwrap());
     hasher.update(&bincode::serialize(&self.tags).unwrap());
     hasher.update(&bincode::serialize(&*self.range.lock().unwrap()).unwrap());
-    hasher.update(
-      &bincode::serialize(&*self.selection_range.lock().unwrap()).unwrap(),
-    );
+    hasher.update(&bincode::serialize(&*self.selection_range.lock().unwrap()).unwrap());
     hasher.update(self.workspace_path.to_string_lossy().as_bytes());
     hasher.update(self.file_path.to_string_lossy().as_bytes());
     self.symbol_id = *hasher.finalize().as_bytes();
@@ -159,10 +157,7 @@ impl SourceSymbol {
     *child.parent.lock().unwrap() = Arc::downgrade(parent);
     parent.children.lock().unwrap().push(Arc::clone(child));
     if parent.kind == lsp::SymbolKind::FILE
-      && position_gt(
-        child.range.lock().unwrap().end,
-        parent.range.lock().unwrap().end,
-      )
+      && position_gt(child.range.lock().unwrap().end, parent.range.lock().unwrap().end)
     {
       let new_range = lsp::Range {
         start: parent.range.lock().unwrap().start,
@@ -174,10 +169,7 @@ impl SourceSymbol {
 }
 
 impl Display for SourceSymbol {
-  fn fmt(
-    &self,
-    f: &mut fmt::Formatter,
-  ) -> std::result::Result<(), std::fmt::Error> {
+  fn fmt(&self, f: &mut fmt::Formatter) -> std::result::Result<(), std::fmt::Error> {
     let filename = PathBuf::from(&self.file_path);
     let filename = filename.file_name().unwrap().to_str().unwrap();
     write!(f, "{:?} - {:?}: {}", filename, self.kind, self.name)?;

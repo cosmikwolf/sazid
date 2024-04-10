@@ -41,11 +41,7 @@ impl WorkspaceFile {
   }
 
   pub fn get_current_contents(&self) -> Rope {
-    self
-      .contents
-      .get(&self.version)
-      .cloned()
-      .expect("No contents found for current version")
+    self.contents.get(&self.version).cloned().expect("No contents found for current version")
   }
 
   pub fn get_previous_version_contents(&self) -> Option<Rope> {
@@ -58,12 +54,8 @@ impl WorkspaceFile {
     Ok(blake3::hash(contents.as_slice()))
   }
 
-  pub fn get_text_document_id(
-    &self,
-  ) -> anyhow::Result<lsp::TextDocumentIdentifier> {
-    Ok(lsp::TextDocumentIdentifier::new(
-      Url::from_file_path(&self.file_path).unwrap(),
-    ))
+  pub fn get_text_document_id(&self) -> anyhow::Result<lsp::TextDocumentIdentifier> {
+    Ok(lsp::TextDocumentIdentifier::new(Url::from_file_path(&self.file_path).unwrap()))
   }
 
   pub fn needs_update(&self) -> anyhow::Result<bool> {
@@ -81,10 +73,7 @@ impl WorkspaceFile {
   pub fn update_contents(&mut self) -> anyhow::Result<DocumentChange> {
     self.version += 1;
     self.checksum = Some(self.get_checksum()?);
-    self.contents.insert(
-      self.version,
-      Rope::from_str(&std::fs::read_to_string(&self.file_path)?),
-    );
+    self.contents.insert(self.version, Rope::from_str(&std::fs::read_to_string(&self.file_path)?));
     Ok(DocumentChange {
       original_contents: self.get_previous_version_contents(),
       new_contents: self.get_current_contents(),
@@ -95,10 +84,7 @@ impl WorkspaceFile {
     })
   }
 
-  pub fn update_symbols(
-    &mut self,
-    doc_symbols: Vec<lsp::DocumentSymbol>,
-  ) -> anyhow::Result<()> {
+  pub fn update_symbols(&mut self, doc_symbols: Vec<lsp::DocumentSymbol>) -> anyhow::Result<()> {
     self.file_tree = Arc::new(
       SourceSymbol {
         name: self

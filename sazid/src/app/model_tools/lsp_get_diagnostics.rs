@@ -78,43 +78,26 @@ impl ToolCallTrait for LspGetDiagnostics {
   fn call(
     &self,
     params: ToolCallParams,
-  ) -> Pin<
-    Box<
-      dyn Future<Output = Result<Option<String>, ToolCallError>>
-        + Send
-        + 'static,
-    >,
-  > {
-    let validated_arguments =
-      validate_arguments(params.function_args, &self.parameters, None)
-        .expect("error validating arguments");
+  ) -> Pin<Box<dyn Future<Output = Result<Option<String>, ToolCallError>> + Send + 'static>> {
+    let validated_arguments = validate_arguments(params.function_args, &self.parameters, None)
+      .expect("error validating arguments");
 
-    let file_path_regex =
-      get_validated_argument(&validated_arguments, "file_path_regex");
+    let file_path_regex = get_validated_argument(&validated_arguments, "file_path_regex");
 
-    let include_errors =
-      get_validated_argument(&validated_arguments, "include_errors");
+    let include_errors = get_validated_argument(&validated_arguments, "include_errors");
 
-    let include_warnings =
-      get_validated_argument(&validated_arguments, "include_warnings");
+    let include_warnings = get_validated_argument(&validated_arguments, "include_warnings");
 
-    let include_information =
-      get_validated_argument(&validated_arguments, "include_information");
+    let include_information = get_validated_argument(&validated_arguments, "include_information");
 
-    let include_hints =
-      get_validated_argument(&validated_arguments, "include_hints");
+    let include_hints = get_validated_argument(&validated_arguments, "include_hints");
 
-    let include_no_severity =
-      get_validated_argument(&validated_arguments, "include_no_severity");
+    let include_no_severity = get_validated_argument(&validated_arguments, "include_no_severity");
 
     let range = get_validated_argument(&validated_arguments, "range");
 
-    let workspace_root = params
-      .session_config
-      .workspace
-      .expect("workspace not set")
-      .workspace_path
-      .clone();
+    let workspace_root =
+      params.session_config.workspace.expect("workspace not set").workspace_path.clone();
 
     Box::pin(async move {
       let query = LsiQuery {
@@ -135,9 +118,7 @@ impl ToolCallTrait for LspGetDiagnostics {
 
       params
         .tx
-        .send(ChatToolAction::LsiRequest(Box::new(LsiAction::GetDiagnostics(
-          query,
-        ))))
+        .send(ChatToolAction::LsiRequest(Box::new(LsiAction::GetDiagnostics(query))))
         .unwrap();
       Ok(None)
     })

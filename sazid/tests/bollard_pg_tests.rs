@@ -67,10 +67,7 @@ mod pg_embed_tests {
     let containers = docker.list_containers::<String>(None).await.unwrap();
     println!("Containers: {:#?}", containers);
 
-    if containers
-      .iter()
-      .any(|c| c.names.as_ref().unwrap()[0].contains(container_name))
-    {
+    if containers.iter().any(|c| c.names.as_ref().unwrap()[0].contains(container_name)) {
       println!("Container already exists. Deleting and removing it");
       docker.stop_container(container_name, None).await.unwrap();
       docker.remove_container(container_name, None).await.unwrap();
@@ -118,20 +115,14 @@ mod pg_embed_tests {
     let config = Config {
       image: Some("ankane/pgvector:latest"),
       env: Some(env_vars.iter().map(|s| s.as_str()).collect()),
-      host_config: Some(HostConfig {
-        port_bindings: Some(port_bindings),
-        ..Default::default()
-      }),
+      host_config: Some(HostConfig { port_bindings: Some(port_bindings), ..Default::default() }),
       ..Default::default()
     };
 
     // Create the container
     let container = docker
       .create_container(
-        Some(CreateContainerOptions {
-          name: container_name,
-          platform: Some(&platform),
-        }),
+        Some(CreateContainerOptions { name: container_name, platform: Some(&platform) }),
         config,
       )
       .await
@@ -143,40 +134,44 @@ mod pg_embed_tests {
     // Perform your tests here...
 
     // Construct the database URI
-    let db_uri = format!(
-      "postgresql://{}:{}@localhost:{}/{}",
-      username, password, port, db_name
-    );
+    let db_uri = format!("postgresql://{}:{}@localhost:{}/{}", username, password, port, db_name);
 
     Ok(db_uri)
   }
 
-  pub async fn connect_to_db(
-    db_url: &str,
-  ) -> anyhow::Result<AsyncPgConnection> {
+  pub async fn connect_to_db(db_url: &str) -> anyhow::Result<AsyncPgConnection> {
     // get time now
     let now = std::time::Instant::now();
 
     let sync_db_url = db_url.to_string();
     tokio::task::spawn_blocking(move || {
       use diesel_migrations::MigrationHarness;
-    println!("Connecting to db: {}", sync_db_url);
-      let mut conn =
-        AsyncConnectionWrapper::<AsyncPgConnection>::establish(&sync_db_url)
-          .unwrap();
+      println!("Connecting to db: {}", sync_db_url);
+      let mut conn = AsyncConnectionWrapper::<AsyncPgConnection>::establish(&sync_db_url).unwrap();
 
-      diesel::RunQueryDsl::execute(diesel::sql_query("CREATE EXTENSION IF NOT EXISTS vector") , &mut conn) .unwrap();
-      diesel::RunQueryDsl::execute(diesel::sql_query("DROP TABLE IF EXISTS plaintexts") , &mut conn) .unwrap();
-      diesel::RunQueryDsl::execute(diesel::sql_query("CREATE TABLE plaintexts (id BigSerial PRIMARY KEY, content TEXT, embedding vector(3))") , &mut conn) .unwrap();
+      diesel::RunQueryDsl::execute(
+        diesel::sql_query("CREATE EXTENSION IF NOT EXISTS vector"),
+        &mut conn,
+      )
+      .unwrap();
+      diesel::RunQueryDsl::execute(diesel::sql_query("DROP TABLE IF EXISTS plaintexts"), &mut conn)
+        .unwrap();
+      diesel::RunQueryDsl::execute(
+        diesel::sql_query(
+          "CREATE TABLE plaintexts (id BigSerial PRIMARY KEY, content TEXT, embedding vector(3))",
+        ),
+        &mut conn,
+      )
+      .unwrap();
 
-      pub const MIGRATIONS: EmbeddedMigrations =
-        embed_migrations!("../migrations");
+      pub const MIGRATIONS: EmbeddedMigrations = embed_migrations!("../migrations");
       //
       // let conn = AsyncConnectionWrapper::from(conn);
       // // just use `run_migrations` here because that's the easiest one without additional setup
       conn.run_pending_migrations(MIGRATIONS).unwrap();
     })
-    .await.unwrap();
+    .await
+    .unwrap();
 
     log::info!("Time taken to setup db: {:?}", now.elapsed());
 
@@ -193,8 +188,7 @@ mod pg_embed_tests {
     let username = "sazid";
     let password = "db_password";
     let db_name = "embeddings";
-    let uri =
-      run_pgvector_container(port, username, password, db_name).await.unwrap();
+    let uri = run_pgvector_container(port, username, password, db_name).await.unwrap();
 
     // run migration sql scripts
     // to enable migrations view [Usage] for details
@@ -217,10 +211,7 @@ mod pg_embed_tests {
         content: "hello world".to_string(),
         embedding: Some(Vector::from(vec![2.0, 1.0, 1.0])),
       },
-      NewPlainTextEmbedding {
-        content: "hello world".to_string(),
-        embedding: None,
-      },
+      NewPlainTextEmbedding { content: "hello world".to_string(), embedding: None },
     ];
 
     diesel::insert_into(plaintexts::table)
@@ -241,18 +232,12 @@ mod pg_embed_tests {
     assert_eq!(4, all.len());
 
     let neighbors = plaintexts::table
-      .order(
-        plaintexts::embedding
-          .cosine_distance(Vector::from(vec![1.0, 1.0, 1.0])),
-      )
+      .order(plaintexts::embedding.cosine_distance(Vector::from(vec![1.0, 1.0, 1.0])))
       .limit(5)
       .load::<PlainTextEmbedding>(&mut conn)
       .await?;
 
-    assert_eq!(
-      vec![1, 2, 3, 4],
-      neighbors.iter().map(|v| v.id).collect::<Vec<i64>>()
-    );
+    assert_eq!(vec![1, 2, 3, 4], neighbors.iter().map(|v| v.id).collect::<Vec<i64>>());
 
     // This will run the necessary migrations.
     // embedded_migrations::run(&connection);

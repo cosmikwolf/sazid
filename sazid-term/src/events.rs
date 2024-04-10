@@ -12,9 +12,9 @@ events! {
 }
 
 pub fn register() {
-    register_event::<OnModeSwitch>();
-    register_event::<PostInsertChar>();
-    register_event::<PostCommand>();
-    register_event::<DocumentDidChange>();
-    register_event::<SelectionDidChange>();
+  register_event::<OnModeSwitch>();
+  register_event::<PostInsertChar>();
+  register_event::<PostCommand>();
+  register_event::<DocumentDidChange>();
+  register_event::<SelectionDidChange>();
 }

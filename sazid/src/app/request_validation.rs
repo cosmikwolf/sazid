@@ -21,8 +21,7 @@ impl fmt::Display for ValidationError {
       "{:#?}\nPath: {:#?}\nValue:\n{}",
       self.message,
       self.path,
-      to_string_pretty(&self.value)
-        .unwrap_or_else(|_| "Invalid value".to_string())
+      to_string_pretty(&self.value).unwrap_or_else(|_| "Invalid value".to_string())
     )
   }
 }
@@ -58,10 +57,8 @@ fn validate_schema(schema: &str, json: &str) -> Result<(), Box<dyn Error>> {
     Ok(_) => Ok(()),
     Err(errors) => {
       // Collect all validation errors with their JSON paths.
-      let error_messages: Vec<String> = errors
-        .into_iter()
-        .map(|e| format!("Error at path {}: {}", e.instance_path, e))
-        .collect();
+      let error_messages: Vec<String> =
+        errors.into_iter().map(|e| format!("Error at path {}: {}", e.instance_path, e)).collect();
       Err(format!("Validation errors: {:?}", error_messages).into())
     },
   }
@@ -80,8 +77,7 @@ pub fn debug_request_validation(request: &CreateChatCompletionRequest) {
         let failed_requests_dir = ".data/failed_requests";
         match ensure_directory_exists(failed_requests_dir) {
           Ok(_) => {
-            let request_file_path =
-              Path::new(failed_requests_dir).join(timestamp + "_failed.json");
+            let request_file_path = Path::new(failed_requests_dir).join(timestamp + "_failed.json");
             fs::write(request_file_path.clone(), request_as_json).unwrap();
             log::error!(
               "request failed. failed request saved to\n{:#?}\nErrors:\n{}",
@@ -102,26 +98,24 @@ pub fn debug_request_validation(request: &CreateChatCompletionRequest) {
 
   let schema = include_str!("../../assets/openapi_v30.yaml");
   if let Some(tools) = request.tools.as_ref() {
-    tools.iter().flat_map(|tool| tool.function.parameters.clone()).for_each(
-      |parameter| {
-        let parameter_json = serde_json::to_string_pretty(&parameter).unwrap();
-        match validate_schema(schema, parameter_json.as_str()) {
-          Ok(_) => {
-            log::info!("schema validated - no errors found");
-            log::info!("parameter: {:#?}", parameter);
-            log::info!("parameter_json:\n{}", parameter_json);
+    tools.iter().flat_map(|tool| tool.function.parameters.clone()).for_each(|parameter| {
+      let parameter_json = serde_json::to_string_pretty(&parameter).unwrap();
+      match validate_schema(schema, parameter_json.as_str()) {
+        Ok(_) => {
+          log::info!("schema validated - no errors found");
+          log::info!("parameter: {:#?}", parameter);
+          log::info!("parameter_json:\n{}", parameter_json);
+        },
+        Err(e) => match e.downcast::<ValidationError>() {
+          Ok(validation_error) => {
+            log::error!("request failed. \nErrors:\n{}", validation_error);
           },
-          Err(e) => match e.downcast::<ValidationError>() {
-            Ok(validation_error) => {
-              log::error!("request failed. \nErrors:\n{}", validation_error);
-            },
-            Err(e) => {
-              log::error!("request failed. Errors:\n{:#?}", e);
-            },
+          Err(e) => {
+            log::error!("request failed. Errors:\n{:#?}", e);
           },
-        }
-      },
-    )
+        },
+      }
+    })
   }
 }
 
@@ -204,9 +198,7 @@ mod tests {
         }
         "#;
 
-    let schema = include_str!(
-      "../../assets/create_chat_completion_request_schema_11_6_23.json"
-    );
+    let schema = include_str!("../../assets/create_chat_completion_request_schema_11_6_23.json");
     validate_schema(schema, json_request)?;
     Ok(())
   }
@@ -223,9 +215,7 @@ mod tests {
             }
         "#;
 
-    let schema = include_str!(
-      "../../assets/create_chat_completion_request_schema_11_6_23.json"
-    );
+    let schema = include_str!("../../assets/create_chat_completion_request_schema_11_6_23.json");
     let result = validate_schema(schema, json_request);
     if let Err(e) = &result {
       println!("Validation error: {}", e);

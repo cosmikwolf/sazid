@@ -34,8 +34,7 @@ impl<'a> LineComposerStr<'a> for WordWrapperStr<'a> {
     std::mem::swap(&mut self.current_line, &mut self.next_line);
     self.next_line.clear();
 
-    let mut current_line_width =
-      self.current_line.chars().map(|c| c.len_utf16() as u16).sum();
+    let mut current_line_width = self.current_line.chars().map(|c| c.len_utf16() as u16).sum();
     let mut words_exhausted = true;
 
     while let Some(&word) = self.words.peek() {
@@ -72,8 +71,7 @@ impl<'a> LineComposerStr<'a> for WordWrapperStr<'a> {
 
     // Trim trailing whitespace from the current line.
     self.current_line = self.current_line.trim_end().to_string();
-    current_line_width =
-      self.current_line.chars().map(|c| c.len_utf16() as u16).sum();
+    current_line_width = self.current_line.chars().map(|c| c.len_utf16() as u16).sum();
 
     // Push the remainder to the next line, removing leading spaces.
     while let Some(&word) = self.words.peek() {

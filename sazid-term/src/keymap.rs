@@ -41,11 +41,7 @@ impl<'de> Deserialize<'de> for KeyTrieNode {
 }
 
 impl KeyTrieNode {
-  pub fn new(
-    name: &str,
-    map: HashMap<KeyEvent, KeyTrie>,
-    order: Vec<KeyEvent>,
-  ) -> Self {
+  pub fn new(name: &str, map: HashMap<KeyEvent, KeyTrie>, order: Vec<KeyEvent>) -> Self {
     Self { name: name.to_string(), map, order, is_sticky: false }
   }
 
@@ -70,8 +66,7 @@ impl KeyTrieNode {
   }
 
   pub fn infobox(&self) -> Info {
-    let mut body: Vec<(BTreeSet<KeyEvent>, &str)> =
-      Vec::with_capacity(self.len());
+    let mut body: Vec<(BTreeSet<KeyEvent>, &str)> = Vec::with_capacity(self.len());
     for (&key, trie) in self.iter() {
       let desc = match trie {
         KeyTrie::MappableCommand(cmd) => {
@@ -91,11 +86,7 @@ impl KeyTrieNode {
       }
     }
     body.sort_unstable_by_key(|(keys, _)| {
-      self
-        .order
-        .iter()
-        .position(|&k| k == *keys.iter().next().unwrap())
-        .unwrap()
+      self.order.iter().position(|&k| k == *keys.iter().next().unwrap()).unwrap()
     });
 
     let body: Vec<_> = body
@@ -158,10 +149,7 @@ impl<'de> serde::de::Visitor<'de> for KeyTrieVisitor {
   where
     E: serde::de::Error,
   {
-    command
-      .parse::<MappableCommand>()
-      .map(KeyTrie::MappableCommand)
-      .map_err(E::custom)
+    command.parse::<MappableCommand>().map(KeyTrie::MappableCommand).map_err(E::custom)
   }
 
   fn visit_seq<S>(self, mut seq: S) -> Result<Self::Value, S::Error>
@@ -170,9 +158,7 @@ impl<'de> serde::de::Visitor<'de> for KeyTrieVisitor {
   {
     let mut commands = Vec::new();
     while let Some(command) = seq.next_element::<String>()? {
-      commands.push(
-        command.parse::<MappableCommand>().map_err(serde::de::Error::custom)?,
-      )
+      commands.push(command.parse::<MappableCommand>().map_err(serde::de::Error::custom)?)
     }
     Ok(KeyTrie::Sequence(commands))
   }
@@ -194,11 +180,7 @@ impl<'de> serde::de::Visitor<'de> for KeyTrieVisitor {
 impl KeyTrie {
   pub fn reverse_map(&self) -> ReverseKeymap {
     // recursively visit all nodes in keymap
-    fn map_node(
-      cmd_map: &mut ReverseKeymap,
-      node: &KeyTrie,
-      keys: &mut Vec<KeyEvent>,
-    ) {
+    fn map_node(cmd_map: &mut ReverseKeymap, node: &KeyTrie, keys: &mut Vec<KeyEvent>) {
       match node {
         KeyTrie::MappableCommand(cmd) => {
           let name = cmd.name();
@@ -371,16 +353,9 @@ impl Default for Keymaps {
 }
 
 /// Merge default config keys with user overwritten keys for custom user config.
-pub fn merge_keys(
-  dst: &mut HashMap<Mode, KeyTrie>,
-  mut delta: HashMap<Mode, KeyTrie>,
-) {
+pub fn merge_keys(dst: &mut HashMap<Mode, KeyTrie>, mut delta: HashMap<Mode, KeyTrie>) {
   for (mode, keys) in dst {
-    keys.merge_nodes(
-      delta
-        .remove(mode)
-        .unwrap_or_else(|| KeyTrie::Node(KeyTrieNode::default())),
-    )
+    keys.merge_nodes(delta.remove(mode).unwrap_or_else(|| KeyTrie::Node(KeyTrieNode::default())))
   }
 }
 
@@ -462,20 +437,10 @@ mod tests {
     );
 
     assert!(
-      merged_keyamp
-        .get(&Mode::Normal)
-        .and_then(|key_trie| key_trie.node())
-        .unwrap()
-        .len()
-        > 1
+      merged_keyamp.get(&Mode::Normal).and_then(|key_trie| key_trie.node()).unwrap().len() > 1
     );
     assert!(
-      merged_keyamp
-        .get(&Mode::Insert)
-        .and_then(|key_trie| key_trie.node())
-        .unwrap()
-        .len()
-        > 0
+      merged_keyamp.get(&Mode::Insert).and_then(|key_trie| key_trie.node()).unwrap().len() > 0
     );
   }
 
@@ -566,8 +531,7 @@ mod tests {
 ]
         "#;
 
-    let key =
-      KeyEvent { code: KeyCode::Char('+'), modifiers: KeyModifiers::NONE };
+    let key = KeyEvent { code: KeyCode::Char('+'), modifiers: KeyModifiers::NONE };
 
     let expectation = KeyTrie::Node(KeyTrieNode::new(
       "",

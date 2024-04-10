@@ -57,10 +57,7 @@ impl EmbeddingModel {
     texts.iter().map(|s| count_tokens(s)).sum::<usize>() > self.token_limit()
   }
 
-  pub async fn create_embedding_vector(
-    &self,
-    text: &str,
-  ) -> Result<Vector, SazidError> {
+  pub async fn create_embedding_vector(&self, text: &str) -> Result<Vector, SazidError> {
     if self.exceeds_token_limit(text) {
       return Err(
         ParseError::new(&format!(

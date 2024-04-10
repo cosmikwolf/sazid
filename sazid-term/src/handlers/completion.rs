@@ -7,8 +7,7 @@ use futures_util::stream::FuturesUnordered;
 use helix_core::chars::char_is_word;
 use helix_core::syntax::LanguageServerFeature;
 use helix_event::{
-  cancelable_future, cancelation, register_hook, send_blocking, CancelRx,
-  CancelTx,
+  cancelable_future, cancelation, register_hook, send_blocking, CancelRx, CancelTx,
 };
 use helix_lsp::lsp;
 use helix_lsp::util::pos_to_lsp_pos;
@@ -70,43 +69,25 @@ impl CompletionHandler {
 impl helix_event::AsyncHook for CompletionHandler {
   type Event = CompletionEvent;
 
-  fn handle_event(
-    &mut self,
-    event: Self::Event,
-    _old_timeout: Option<Instant>,
-  ) -> Option<Instant> {
+  fn handle_event(&mut self, event: Self::Event, _old_timeout: Option<Instant>) -> Option<Instant> {
     match event {
       CompletionEvent::AutoTrigger { cursor: trigger_pos, doc, view } => {
         // techically it shouldn't be possible to switch views/documents in insert mode
         // but people may create weird keymaps/use the mouse so lets be extra careful
-        if self
-          .trigger
-          .as_ref()
-          .map_or(true, |trigger| trigger.doc != doc || trigger.view != view)
+        if self.trigger.as_ref().map_or(true, |trigger| trigger.doc != doc || trigger.view != view)
         {
-          self.trigger = Some(Trigger {
-            pos: trigger_pos,
-            view,
-            doc,
-            kind: TriggerKind::Auto,
-          });
+          self.trigger = Some(Trigger { pos: trigger_pos, view, doc, kind: TriggerKind::Auto });
         }
       },
       CompletionEvent::TriggerChar { cursor, doc, view } => {
         // immediately request completions and drop all auto completion requests
         self.request = None;
-        self.trigger = Some(Trigger {
-          pos: cursor,
-          view,
-          doc,
-          kind: TriggerKind::TriggerChar,
-        });
+        self.trigger = Some(Trigger { pos: cursor, view, doc, kind: TriggerKind::TriggerChar });
       },
       CompletionEvent::ManualTrigger { cursor, doc, view } => {
         // immediately request completions and drop all auto completion requests
         self.request = None;
-        self.trigger =
-          Some(Trigger { pos: cursor, view, doc, kind: TriggerKind::Manual });
+        self.trigger = Some(Trigger { pos: cursor, view, doc, kind: TriggerKind::Manual });
         // stop debouncing immediately and request the completion
         self.finish_debounce();
         return None;
@@ -170,8 +151,7 @@ fn request_completion(
 
   let text = doc.text();
   let cursor = doc.selection(view.id).primary().cursor(text.slice(..));
-  if trigger.view != view.id || trigger.doc != doc.id() || cursor < trigger.pos
-  {
+  if trigger.view != view.id || trigger.doc != doc.id() || cursor < trigger.pos {
     return;
   }
   // this looks odd... Why are we not using the trigger position from
@@ -200,14 +180,13 @@ fn request_completion(
           trigger_character: None,
         }
       } else {
-        let trigger_char =
-          ls.capabilities().completion_provider.as_ref().and_then(|provider| {
-            provider
-              .trigger_characters
-              .as_deref()?
-              .iter()
-              .find(|&trigger| trigger_text.ends_with(trigger))
-          });
+        let trigger_char = ls.capabilities().completion_provider.as_ref().and_then(|provider| {
+          provider
+            .trigger_characters
+            .as_deref()?
+            .iter()
+            .find(|&trigger| trigger_text.ends_with(trigger))
+        });
 
         if trigger_char.is_some() {
           lsp::CompletionContext {
@@ -222,12 +201,10 @@ fn request_completion(
         }
       };
 
-      let completion_response =
-        ls.completion(doc_id, pos, None, context).unwrap();
+      let completion_response = ls.completion(doc_id, pos, None, context).unwrap();
       async move {
         let json = completion_response.await?;
-        let response: Option<lsp::CompletionResponse> =
-          serde_json::from_value(json)?;
+        let response: Option<lsp::CompletionResponse> = serde_json::from_value(json)?;
         let items = match response {
           Some(lsp::CompletionResponse::Array(items)) => items,
           // TODO: do something with is_incomplete
@@ -238,11 +215,7 @@ fn request_completion(
           None => Vec::new(),
         }
         .into_iter()
-        .map(|item| CompletionItem {
-          item,
-          language_server_id,
-          resolved: false,
-        })
+        .map(|item| CompletionItem { item, language_server_id, resolved: false })
         .collect();
         anyhow::Ok(items)
       }
@@ -291,10 +264,7 @@ fn show_completion(
   // Completions are completed asynchronously and therefore the user could
   //switch document/view or leave insert mode. In all of thoise cases the
   // completion should be discarded
-  if editor.mode != Mode::Insert
-    || view.id != trigger.view
-    || doc.id() != trigger.doc
-  {
+  if editor.mode != Mode::Insert || view.id != trigger.view || doc.id() != trigger.doc {
     return;
   }
 
@@ -304,14 +274,12 @@ fn show_completion(
     return;
   }
 
-  let completion_area =
-    ui.set_completion(editor, savepoint, items, trigger.pos, size);
+  let completion_area = ui.set_completion(editor, savepoint, items, trigger.pos, size);
   let signature_help_area = compositor
     .find_id::<Popup<SignatureHelp>>(SignatureHelp::ID)
     .map(|signature_help| signature_help.area(size, editor));
   // Delete the signature help popup if they intersect.
-  if matches!((completion_area, signature_help_area),(Some(a), Some(b)) if a.intersects(b))
-  {
+  if matches!((completion_area, signature_help_area),(Some(a), Some(b)) if a.intersects(b)) {
     compositor.remove(SignatureHelp::ID);
   }
 }
@@ -325,25 +293,20 @@ pub fn trigger_auto_completion(
   if !config.auto_completion {
     return;
   }
-  let (view, doc): (&helix_view::View, &helix_view::Document) =
-    current_ref!(editor);
+  let (view, doc): (&helix_view::View, &helix_view::Document) = current_ref!(editor);
   let mut text = doc.text().slice(..);
   let cursor = doc.selection(view.id).primary().cursor(text);
   text = doc.text().slice(..cursor);
 
-  let is_trigger_char = doc
-        .language_servers_with_feature(LanguageServerFeature::Completion)
-        .any(|ls| {
-            matches!(&ls.capabilities().completion_provider, Some(lsp::CompletionOptions {
+  let is_trigger_char =
+    doc.language_servers_with_feature(LanguageServerFeature::Completion).any(|ls| {
+      matches!(&ls.capabilities().completion_provider, Some(lsp::CompletionOptions {
                         trigger_characters: Some(triggers),
                         ..
                     }) if triggers.iter().any(|trigger| text.ends_with(trigger)))
-        });
+    });
   if is_trigger_char {
-    send_blocking(
-      tx,
-      CompletionEvent::TriggerChar { cursor, doc: doc.id(), view: view.id },
-    );
+    send_blocking(tx, CompletionEvent::TriggerChar { cursor, doc: doc.id(), view: view.id });
     return;
   }
 
@@ -356,10 +319,7 @@ pub fn trigger_auto_completion(
       .all(char_is_word);
 
   if is_auto_trigger {
-    send_blocking(
-      tx,
-      CompletionEvent::AutoTrigger { cursor, doc: doc.id(), view: view.id },
-    );
+    send_blocking(tx, CompletionEvent::AutoTrigger { cursor, doc: doc.id(), view: view.id });
   }
 }
 
@@ -373,11 +333,7 @@ fn update_completions(cx: &mut commands::Context, c: Option<char>) {
         // clearing completions might mean we want to immediately rerequest them (usually
         // this occurs if typing a trigger char)
         if c.is_some() {
-          trigger_auto_completion(
-            &cx.editor.handlers.completions,
-            cx.editor,
-            false,
-          );
+          trigger_auto_completion(&cx.editor.handlers.completions, cx.editor, false);
         }
       }
     }
@@ -410,21 +366,18 @@ fn completion_post_command_hook(
     } else {
       let event = match command {
         MappableCommand::Static {
-          name:
-            "delete_char_backward" | "delete_word_forward" | "delete_char_forward",
+          name: "delete_char_backward" | "delete_word_forward" | "delete_char_forward",
           ..
         } => {
           let (view, doc) = current!(cx.editor);
-          let primary_cursor =
-            doc.selection(view.id).primary().cursor(doc.text().slice(..));
+          let primary_cursor = doc.selection(view.id).primary().cursor(doc.text().slice(..));
           CompletionEvent::DeleteText { cursor: primary_cursor }
         },
         // hacks: some commands are handeled elsewhere and we don't want to
         // cancel in that case
-        MappableCommand::Static {
-          name: "completion" | "insert_mode" | "append_mode",
-          ..
-        } => return Ok(()),
+        MappableCommand::Static { name: "completion" | "insert_mode" | "append_mode", .. } => {
+          return Ok(())
+        },
         _ => CompletionEvent::Cancel,
       };
       send_blocking(tx, event);

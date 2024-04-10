@@ -26,8 +26,7 @@ pub trait MarkdownItem: Sync + Send + 'static {
   /// Additional editor state that is used for label calculation.
   type Data: Sync + Send + 'static;
 
-  fn format(&self, data: &Self::Data, theme: Option<&Theme>)
-    -> tui::text::Text;
+  fn format(&self, data: &Self::Data, theme: Option<&Theme>) -> tui::text::Text;
 
   fn sort_text(&self, data: &Self::Data, theme: Option<&Theme>) -> Cow<str> {
     let label: String = self.format(data, theme).into();
@@ -40,8 +39,7 @@ pub trait MarkdownItem: Sync + Send + 'static {
   }
 }
 
-pub type MarkdownMenuCallback<T> =
-  Box<dyn Fn(&mut Editor, Option<&T>, MarkdownMenuEvent)>;
+pub type MarkdownMenuCallback<T> = Box<dyn Fn(&mut Editor, Option<&T>, MarkdownMenuEvent)>;
 
 pub struct MarkdownMenu<T: MarkdownItem> {
   items: Vec<T>,
@@ -96,15 +94,13 @@ impl<T: MarkdownItem> MarkdownMenu<T> {
   pub fn score(&mut self, pattern: &str, incremental: bool) {
     let mut matcher = MATCHER.lock();
     matcher.config = Config::DEFAULT;
-    let pattern =
-      Atom::new(pattern, CaseMatching::Ignore, AtomKind::Fuzzy, false);
+    let pattern = Atom::new(pattern, CaseMatching::Ignore, AtomKind::Fuzzy, false);
     let mut buf = Vec::new();
     if incremental {
       self.matches.retain_mut(|(index, score)| {
         let option = &self.items[*index as usize];
         let text = option.filter_text(&self.editor_data, self.theme.as_ref());
-        let new_score =
-          pattern.score(Utf32Str::new(&text, &mut buf), &mut matcher);
+        let new_score = pattern.score(Utf32Str::new(&text, &mut buf), &mut matcher);
         match new_score {
           Some(new_score) => {
             *score = new_score as u32;
@@ -158,9 +154,7 @@ impl<T: MarkdownItem> MarkdownMenu<T> {
     let n = self
       .items
       .first()
-      .map(|option| {
-        option.format(&self.editor_data, self.theme.as_ref()).lines.len()
-      })
+      .map(|option| option.format(&self.editor_data, self.theme.as_ref()).lines.len())
       .unwrap_or_default();
     let max_lens = self.items.iter().fold(vec![0; n], |mut acc, option| {
       let text = option.format(&self.editor_data, self.theme.as_ref());
@@ -216,19 +210,13 @@ impl<T: MarkdownItem> MarkdownMenu<T> {
 
   pub fn selection(&self) -> Option<&T> {
     self.cursor.and_then(|cursor| {
-      self
-        .matches
-        .get(cursor)
-        .map(|(index, _score)| &self.items[*index as usize])
+      self.matches.get(cursor).map(|(index, _score)| &self.items[*index as usize])
     })
   }
 
   pub fn selection_mut(&mut self) -> Option<&mut T> {
     self.cursor.and_then(|cursor| {
-      self
-        .matches
-        .get(cursor)
-        .map(|(index, _score)| &mut self.items[*index as usize])
+      self.matches.get(cursor).map(|(index, _score)| &mut self.items[*index as usize])
     })
   }
 
@@ -261,11 +249,10 @@ impl<T: MarkdownItem + 'static> Component for MarkdownMenu<T> {
       _ => return EventResult::Ignored(None),
     };
 
-    let close_fn: Option<Callback> =
-      Some(Box::new(|compositor: &mut Compositor, _| {
-        // remove the layer
-        compositor.pop();
-      }));
+    let close_fn: Option<Callback> = Some(Box::new(|compositor: &mut Compositor, _| {
+      // remove the layer
+      compositor.pop();
+    }));
 
     // Ignore tab key when supertab is turned on in order not to interfere
     // with it. (Is there a better way to do this?)
@@ -282,40 +269,24 @@ impl<T: MarkdownItem + 'static> Component for MarkdownMenu<T> {
     match event {
       // esc or ctrl-c aborts the completion and closes the menu
       key!(Esc) | ctrl!('c') => {
-        (self.callback_fn)(
-          cx.editor,
-          self.selection(),
-          MarkdownMenuEvent::Abort,
-        );
+        (self.callback_fn)(cx.editor, self.selection(), MarkdownMenuEvent::Abort);
         return EventResult::Consumed(close_fn);
       },
       // arrow up/ctrl-p/shift-tab prev completion choice (including updating the doc)
       shift!(Tab) | key!(Up) | ctrl!('p') => {
         self.move_up();
-        (self.callback_fn)(
-          cx.editor,
-          self.selection(),
-          MarkdownMenuEvent::Update,
-        );
+        (self.callback_fn)(cx.editor, self.selection(), MarkdownMenuEvent::Update);
         return EventResult::Consumed(None);
       },
       key!(Tab) | key!(Down) | ctrl!('n') => {
         // arrow down/ctrl-n/tab advances completion choice (including updating the doc)
         self.move_down();
-        (self.callback_fn)(
-          cx.editor,
-          self.selection(),
-          MarkdownMenuEvent::Update,
-        );
+        (self.callback_fn)(cx.editor, self.selection(), MarkdownMenuEvent::Update);
         return EventResult::Consumed(None);
       },
       key!(Enter) => {
         if let Some(selection) = self.selection() {
-          (self.callback_fn)(
-            cx.editor,
-            Some(selection),
-            MarkdownMenuEvent::Validate,
-          );
+          (self.callback_fn)(cx.editor, Some(selection), MarkdownMenuEvent::Validate);
           return EventResult::Consumed(close_fn);
         } else {
           return EventResult::Ignored(close_fn);
@@ -352,8 +323,7 @@ impl<T: MarkdownItem + 'static> Component for MarkdownMenu<T> {
 
   fn render(&mut self, area: Rect, surface: &mut Surface, cx: &mut Context) {
     let theme = &cx.editor.theme;
-    let style =
-      theme.try_get("ui.menu").unwrap_or_else(|| theme.get("ui.text"));
+    let style = theme.try_get("ui.menu").unwrap_or_else(|| theme.get("ui.text"));
     let selected = theme.get("ui.menu.selected");
     surface.clear_with(area, style);
 
@@ -415,8 +385,7 @@ impl<T: MarkdownItem + 'static> Component for MarkdownMenu<T> {
         let offset_from_top = cursor - scroll;
         let left = &mut surface[(area.left(), area.y + offset_from_top as u16)];
         left.set_style(selected);
-        let right = &mut surface
-          [(area.right().saturating_sub(1), area.y + offset_from_top as u16)];
+        let right = &mut surface[(area.right().saturating_sub(1), area.y + offset_from_top as u16)];
         right.set_style(selected);
       }
     }
@@ -426,8 +395,8 @@ impl<T: MarkdownItem + 'static> Component for MarkdownMenu<T> {
     let scroll_style = theme.get("ui.menu.scroll");
     if !fits {
       let scroll_height = div_ceil(win_height.pow(2), len).min(win_height);
-      let scroll_line = (win_height - scroll_height) * scroll
-        / std::cmp::max(1, len.saturating_sub(win_height));
+      let scroll_line =
+        (win_height - scroll_height) * scroll / std::cmp::max(1, len.saturating_sub(win_height));
 
       let mut cell;
       for i in 0..win_height {
@@ -438,13 +407,11 @@ impl<T: MarkdownItem + 'static> Component for MarkdownMenu<T> {
         if scroll_line <= i && i < scroll_line + scroll_height {
           // Draw scroll thumb
           cell.set_symbol(half_block);
-          cell
-            .set_fg(scroll_style.fg.unwrap_or(helix_view::theme::Color::Reset));
+          cell.set_fg(scroll_style.fg.unwrap_or(helix_view::theme::Color::Reset));
         } else if !render_borders {
           // Draw scroll track
           cell.set_symbol(half_block);
-          cell
-            .set_fg(scroll_style.bg.unwrap_or(helix_view::theme::Color::Reset));
+          cell.set_fg(scroll_style.bg.unwrap_or(helix_view::theme::Color::Reset));
         }
       }
     }

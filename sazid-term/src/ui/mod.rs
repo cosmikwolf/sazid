@@ -42,11 +42,9 @@ pub fn prompt(
   prompt: std::borrow::Cow<'static, str>,
   history_register: Option<char>,
   completion_fn: impl FnMut(&Editor, &str) -> Vec<textbox::Completion> + 'static,
-  callback_fn: impl FnMut(&mut crate::compositor::Context, &str, PromptEvent)
-    + 'static,
+  callback_fn: impl FnMut(&mut crate::compositor::Context, &str, PromptEvent) + 'static,
 ) {
-  let mut prompt =
-    Prompt::new(prompt, history_register, completion_fn, callback_fn);
+  let mut prompt = Prompt::new(prompt, history_register, completion_fn, callback_fn);
   // Calculate the initial completion
   prompt.recalculate_completion(cx.editor);
   cx.push_layer(Box::new(prompt));
@@ -58,12 +56,10 @@ pub fn prompt_with_input(
   input: String,
   history_register: Option<char>,
   completion_fn: impl FnMut(&Editor, &str) -> Vec<textbox::Completion> + 'static,
-  callback_fn: impl FnMut(&mut crate::compositor::Context, &str, PromptEvent)
-    + 'static,
+  callback_fn: impl FnMut(&mut crate::compositor::Context, &str, PromptEvent) + 'static,
 ) {
   let prompt =
-    Prompt::new(prompt, history_register, completion_fn, callback_fn)
-      .with_line(input, cx.editor);
+    Prompt::new(prompt, history_register, completion_fn, callback_fn).with_line(input, cx.editor);
   cx.push_layer(Box::new(prompt));
 }
 
@@ -74,21 +70,16 @@ pub fn regex_prompt(
   completion_fn: impl FnMut(&Editor, &str) -> Vec<textbox::Completion> + 'static,
   fun: impl Fn(&mut crate::compositor::Context, rope::Regex, PromptEvent) + 'static,
 ) {
-  raw_regex_prompt(
-    cx,
-    prompt,
-    history_register,
-    completion_fn,
-    move |cx, regex, _, event| fun(cx, regex, event),
-  );
+  raw_regex_prompt(cx, prompt, history_register, completion_fn, move |cx, regex, _, event| {
+    fun(cx, regex, event)
+  });
 }
 pub fn raw_regex_prompt(
   cx: &mut crate::commands::Context,
   prompt: std::borrow::Cow<'static, str>,
   history_register: Option<char>,
   completion_fn: impl FnMut(&Editor, &str) -> Vec<textbox::Completion> + 'static,
-  fun: impl Fn(&mut crate::compositor::Context, rope::Regex, &str, PromptEvent)
-    + 'static,
+  fun: impl Fn(&mut crate::compositor::Context, rope::Regex, &str, PromptEvent) + 'static,
 ) {
   let (view, doc) = current!(cx.editor);
   let doc_id = view.doc;
@@ -100,9 +91,7 @@ pub fn raw_regex_prompt(
     prompt,
     history_register,
     completion_fn,
-    move |cx: &mut crate::compositor::Context,
-          input: &str,
-          event: PromptEvent| {
+    move |cx: &mut crate::compositor::Context, input: &str, event: PromptEvent| {
       match event {
         PromptEvent::Abort => {
           let (view, doc) = current!(cx.editor);
@@ -115,18 +104,11 @@ pub fn raw_regex_prompt(
             return;
           }
 
-          let case_insensitive = if config.search.smart_case {
-            !input.chars().any(char::is_uppercase)
-          } else {
-            false
-          };
+          let case_insensitive =
+            if config.search.smart_case { !input.chars().any(char::is_uppercase) } else { false };
 
           match rope::RegexBuilder::new()
-            .syntax(
-              rope::Config::new()
-                .case_insensitive(case_insensitive)
-                .multi_line(true),
-            )
+            .syntax(rope::Config::new().case_insensitive(case_insensitive).multi_line(true))
             .build(input)
           {
             Ok(regex) => {
@@ -152,23 +134,21 @@ pub fn raw_regex_prompt(
 
               if event == PromptEvent::Validate {
                 let callback = async move {
-                  let call: job::Callback =
-                    Callback::EditorCompositor(Box::new(
-                      move |_editor: &mut Editor,
-                            compositor: &mut Compositor| {
-                        let contents = Text::new(format!("{}", err));
-                        let size = compositor.size();
-                        let mut popup = Popup::new("invalid-regex", contents)
-                          .position(Some(helix_core::Position::new(
-                            size.height as usize - 2, // 2 = statusline + commandline
-                            0,
-                          )))
-                          .auto_close(true);
-                        popup.required_size((size.width, size.height));
+                  let call: job::Callback = Callback::EditorCompositor(Box::new(
+                    move |_editor: &mut Editor, compositor: &mut Compositor| {
+                      let contents = Text::new(format!("{}", err));
+                      let size = compositor.size();
+                      let mut popup = Popup::new("invalid-regex", contents)
+                        .position(Some(helix_core::Position::new(
+                          size.height as usize - 2, // 2 = statusline + commandline
+                          0,
+                        )))
+                        .auto_close(true);
+                      popup.required_size((size.width, size.height));
 
-                        compositor.replace_or_push("invalid-regex", popup);
-                      },
-                    ));
+                      compositor.replace_or_push("invalid-regex", popup);
+                    },
+                  ));
                   Ok(call)
                 };
 
@@ -187,10 +167,7 @@ pub fn raw_regex_prompt(
   cx.push_layer(Box::new(prompt));
 }
 
-pub fn file_picker(
-  root: PathBuf,
-  config: &helix_view::editor::Config,
-) -> Picker<PathBuf> {
+pub fn file_picker(root: PathBuf, config: &helix_view::editor::Config) -> Picker<PathBuf> {
   use ignore::{types::TypesBuilder, WalkBuilder};
   use std::time::Instant;
 
@@ -210,25 +187,18 @@ pub fn file_picker(
     .git_exclude(config.file_picker.git_exclude)
     .sort_by_file_name(|name1, name2| name1.cmp(name2))
     .max_depth(config.file_picker.max_depth)
-    .filter_entry(move |entry| {
-      filter_picker_entry(entry, &absolute_root, dedup_symlinks)
-    });
+    .filter_entry(move |entry| filter_picker_entry(entry, &absolute_root, dedup_symlinks));
 
-  walk_builder
-    .add_custom_ignore_filename(helix_loader::config_dir().join("ignore"));
+  walk_builder.add_custom_ignore_filename(helix_loader::config_dir().join("ignore"));
   walk_builder.add_custom_ignore_filename(".helix/ignore");
 
   // We want to exclude files that the editor can't handle yet
   let mut type_builder = TypesBuilder::new();
   type_builder
-    .add(
-      "compressed",
-      "*.{zip,gz,bz2,zst,lzo,sz,tgz,tbz2,lz,lz4,lzma,lzo,z,Z,xz,7z,rar,cab}",
-    )
+    .add("compressed", "*.{zip,gz,bz2,zst,lzo,sz,tgz,tbz2,lz,lz4,lzma,lzo,z,Z,xz,7z,rar,cab}")
     .expect("Invalid type definition");
   type_builder.negate("all");
-  let excluded_types =
-    type_builder.build().expect("failed to build excluded_types");
+  let excluded_types = type_builder.build().expect("failed to build excluded_types");
   walk_builder.types(excluded_types);
   let mut files = walk_builder.build().filter_map(|entry| {
     let entry = entry.ok()?;
@@ -239,21 +209,19 @@ pub fn file_picker(
   });
   log::debug!("file_picker init {:?}", Instant::now().duration_since(now));
 
-  let picker =
-    Picker::new(Vec::new(), root, move |cx, path: &PathBuf, action| {
-      if let Err(e) = cx.editor.open(path, action) {
-        let err = if let Some(err) = e.source() {
-          format!("{}", err)
-        } else {
-          format!("unable to open \"{}\"", path.display())
-        };
-        cx.editor.set_error(err);
-      }
-    })
-    .with_preview(|_editor, path| Some((path.clone().into(), None)));
+  let picker = Picker::new(Vec::new(), root, move |cx, path: &PathBuf, action| {
+    if let Err(e) = cx.editor.open(path, action) {
+      let err = if let Some(err) = e.source() {
+        format!("{}", err)
+      } else {
+        format!("unable to open \"{}\"", path.display())
+      };
+      cx.editor.set_error(err);
+    }
+  })
+  .with_preview(|_editor, path| Some((path.clone().into(), None)));
   let injector = picker.injector();
-  let timeout =
-    std::time::Instant::now() + std::time::Duration::from_millis(30);
+  let timeout = std::time::Instant::now() + std::time::Duration::from_millis(30);
 
   let mut hit_timeout = false;
   for file in &mut files {
@@ -301,15 +269,11 @@ pub mod completers {
         .unwrap_or_else(|| Cow::from(SCRATCH_BUFFER_NAME))
     });
 
-    fuzzy_match(input, names, true)
-      .into_iter()
-      .map(|(name, _)| ((0..), name))
-      .collect()
+    fuzzy_match(input, names, true).into_iter().map(|(name, _)| ((0..), name)).collect()
   }
 
   pub fn theme(_editor: &Editor, input: &str) -> Vec<Completion> {
-    let mut names =
-      theme::Loader::read_names(&helix_loader::config_dir().join("themes"));
+    let mut names = theme::Loader::read_names(&helix_loader::config_dir().join("themes"));
     for rt_dir in helix_loader::runtime_dirs() {
       names.extend(theme::Loader::read_names(&rt_dir.join("themes")));
     }
@@ -318,18 +282,11 @@ pub mod completers {
     names.sort();
     names.dedup();
 
-    fuzzy_match(input, names, false)
-      .into_iter()
-      .map(|(name, _)| ((0..), name.into()))
-      .collect()
+    fuzzy_match(input, names, false).into_iter().map(|(name, _)| ((0..), name.into())).collect()
   }
 
   /// Recursive function to get all keys from this value and add them to vec
-  fn get_keys(
-    value: &serde_json::Value,
-    vec: &mut Vec<String>,
-    scope: Option<&str>,
-  ) {
+  fn get_keys(value: &serde_json::Value, vec: &mut Vec<String>, scope: Option<&str>) {
     if let Some(map) = value.as_object() {
       for (key, value) in map.iter() {
         let key = match scope {
@@ -352,10 +309,7 @@ pub mod completers {
       keys
     });
 
-    fuzzy_match(input, &*KEYS, false)
-      .into_iter()
-      .map(|(name, _)| ((0..), name.into()))
-      .collect()
+    fuzzy_match(input, &*KEYS, false).into_iter().map(|(name, _)| ((0..), name.into())).collect()
   }
 
   pub fn filename(editor: &Editor, input: &str) -> Vec<Completion> {
@@ -382,10 +336,8 @@ pub mod completers {
     let text: String = "text".into();
 
     let loader = editor.syn_loader.load();
-    let language_ids = loader
-      .language_configs()
-      .map(|config| &config.language_id)
-      .chain(std::iter::once(&text));
+    let language_ids =
+      loader.language_configs().map(|config| &config.language_id).chain(std::iter::once(&text));
 
     fuzzy_match(input, language_ids, false)
       .into_iter()
@@ -393,10 +345,7 @@ pub mod completers {
       .collect()
   }
 
-  pub fn lsp_workspace_command(
-    editor: &Editor,
-    input: &str,
-  ) -> Vec<Completion> {
+  pub fn lsp_workspace_command(editor: &Editor, input: &str) -> Vec<Completion> {
     let Some(options) = doc!(editor)
       .language_servers_with_feature(LanguageServerFeature::WorkspaceCommand)
       .find_map(|ls| ls.capabilities().execute_command_provider.as_ref())
@@ -462,16 +411,13 @@ pub mod completers {
     let (dir, file_name) = if input.ends_with(std::path::MAIN_SEPARATOR) {
       (path, None)
     } else {
-      let is_period = (input
-        .ends_with((format!("{}.", std::path::MAIN_SEPARATOR)).as_str())
+      let is_period = (input.ends_with((format!("{}.", std::path::MAIN_SEPARATOR)).as_str())
         && input.len() > 2)
         || input == ".";
       let file_name = if is_period {
         Some(String::from("."))
       } else {
-        path
-          .file_name()
-          .and_then(|file| file.to_str().map(|path| path.to_owned()))
+        path.file_name().and_then(|file| file.to_str().map(|path| path.to_owned()))
       };
 
       let path = if is_period {

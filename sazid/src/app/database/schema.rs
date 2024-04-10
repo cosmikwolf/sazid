@@ -91,11 +91,11 @@ diesel::joinable!(embedding_tags -> tags (tag_id));
 diesel::joinable!(messages -> sessions (session_id));
 
 diesel::allow_tables_to_appear_in_same_query!(
-    embedding_pages,
-    embedding_tags,
-    file_embeddings,
-    messages,
-    sessions,
-    source_trees,
-    tags,
+  embedding_pages,
+  embedding_tags,
+  file_embeddings,
+  messages,
+  sessions,
+  source_trees,
+  tags,
 );

@@ -35,8 +35,7 @@ use std::{
 use crate::ui::{Prompt, PromptEvent};
 use helix_core::{
   char_idx_at_visual_offset, fuzzy::MATCHER, movement::Direction,
-  text_annotations::TextAnnotations,
-  unicode::segmentation::UnicodeSegmentation, Position, Syntax,
+  text_annotations::TextAnnotations, unicode::segmentation::UnicodeSegmentation, Position, Syntax,
 };
 use helix_view::{
   editor::Action,
@@ -123,14 +122,10 @@ impl Preview<'_, '_> {
   }
 }
 
-fn item_to_nucleo<T: Item>(
-  item: T,
-  editor_data: &T::Data,
-) -> Option<(T, Utf32String)> {
+fn item_to_nucleo<T: Item>(item: T, editor_data: &T::Data) -> Option<(T, Utf32String)> {
   let row = item.format(editor_data);
   let mut cells = row.cells.iter();
-  let mut text =
-    String::with_capacity(row.cell_text().map(|cell| cell.len()).sum());
+  let mut text = String::with_capacity(row.cell_text().map(|cell| cell.len()).sum());
   let cell = cells.next()?;
   if let Some(cell) = cell.content.lines.first() {
     for span in &cell.0 {
@@ -173,8 +168,7 @@ impl<T: Item> Injector<T> {
       return Err(InjectorShutdown);
     }
 
-    if let Some((item, matcher_text)) = item_to_nucleo(item, &self.editor_data)
-    {
+    if let Some((item, matcher_text)) = item_to_nucleo(item, &self.editor_data) {
       self.dst.push(item, |dst| dst[0] = matcher_text);
     }
     Ok(())
@@ -210,12 +204,7 @@ pub struct Picker<T: Item> {
 
 impl<T: Item + 'static> Picker<T> {
   pub fn stream(editor_data: T::Data) -> (Nucleo<T>, Injector<T>) {
-    let matcher = Nucleo::new(
-      Config::DEFAULT,
-      Arc::new(helix_event::request_redraw),
-      None,
-      1,
-    );
+    let matcher = Nucleo::new(Config::DEFAULT, Arc::new(helix_event::request_redraw), None, 1);
     let streamer = Injector {
       dst: matcher.injector(),
       editor_data: Arc::new(editor_data),
@@ -229,24 +218,14 @@ impl<T: Item + 'static> Picker<T> {
     editor_data: T::Data,
     callback_fn: impl Fn(&mut Context, &T, Action) + 'static,
   ) -> Self {
-    let matcher = Nucleo::new(
-      Config::DEFAULT,
-      Arc::new(helix_event::request_redraw),
-      None,
-      1,
-    );
+    let matcher = Nucleo::new(Config::DEFAULT, Arc::new(helix_event::request_redraw), None, 1);
     let injector = matcher.injector();
     for item in options {
       if let Some((item, matcher_text)) = item_to_nucleo(item, &editor_data) {
         injector.push(item, |dst| dst[0] = matcher_text);
       }
     }
-    Self::with(
-      matcher,
-      Arc::new(editor_data),
-      Arc::new(AtomicBool::new(false)),
-      callback_fn,
-    )
+    Self::with(matcher, Arc::new(editor_data), Arc::new(AtomicBool::new(false)), callback_fn)
   }
 
   pub fn with_stream(
@@ -316,9 +295,7 @@ impl<T: Item + 'static> Picker<T> {
     self.matcher.restart(false);
     let injector = self.matcher.injector();
     for item in new_options {
-      if let Some((item, matcher_text)) =
-        item_to_nucleo(item, &self.editor_data)
-      {
+      if let Some((item, matcher_text)) = item_to_nucleo(item, &self.editor_data) {
         injector.push(item, |dst| dst[0] = matcher_text);
       }
     }
@@ -338,8 +315,7 @@ impl<T: Item + 'static> Picker<T> {
         self.cursor = self.cursor.saturating_add(amount) % len;
       },
       Direction::Backward => {
-        self.cursor =
-          self.cursor.saturating_add(len).saturating_sub(amount) % len;
+        self.cursor = self.cursor.saturating_add(len).saturating_sub(amount) % len;
       },
     }
   }
@@ -361,8 +337,7 @@ impl<T: Item + 'static> Picker<T> {
 
   /// Move the cursor to the last entry
   pub fn to_end(&mut self) {
-    self.cursor =
-      self.matcher.snapshot().matched_item_count().saturating_sub(1);
+    self.cursor = self.matcher.snapshot().matched_item_count().saturating_sub(1);
   }
 
   pub fn selection(&self) -> Option<&T> {
@@ -373,11 +348,7 @@ impl<T: Item + 'static> Picker<T> {
     self.show_preview = !self.show_preview;
   }
 
-  fn prompt_handle_event(
-    &mut self,
-    event: &Event,
-    cx: &mut Context,
-  ) -> EventResult {
+  fn prompt_handle_event(&mut self, event: &Event, cx: &mut Context) -> EventResult {
     if let EventResult::Consumed(_) = self.prompt.handle_event(event, cx) {
       let pattern = self.prompt.line();
       // TODO: better track how the pattern has changed
@@ -428,18 +399,12 @@ impl<T: Item + 'static> Picker<T> {
           Ok((metadata, content_type))
         });
         let preview = data
-          .map(|(metadata, content_type)| {
-            match (metadata.len(), content_type) {
-              (_, content_inspector::ContentType::BINARY) => {
-                CachedPreview::Binary
-              },
-              (size, _) if size > MAX_FILE_SIZE_FOR_PREVIEW => {
-                CachedPreview::LargeFile
-              },
-              _ => Document::open(path, None, None, editor.config.clone())
-                .map(|doc| CachedPreview::Document(Box::new(doc)))
-                .unwrap_or(CachedPreview::NotFound),
-            }
+          .map(|(metadata, content_type)| match (metadata.len(), content_type) {
+            (_, content_inspector::ContentType::BINARY) => CachedPreview::Binary,
+            (size, _) if size > MAX_FILE_SIZE_FOR_PREVIEW => CachedPreview::LargeFile,
+            _ => Document::open(path, None, None, editor.config.clone())
+              .map(|doc| CachedPreview::Document(Box::new(doc)))
+              .unwrap_or(CachedPreview::NotFound),
           })
           .unwrap_or(CachedPreview::NotFound);
         self.preview_cache.insert(path.to_owned(), preview);
@@ -470,54 +435,44 @@ impl<T: Item + 'static> Picker<T> {
 
     // Then attempt to highlight it if it has no language set
     if doc.language_config().is_none() {
-      if let Some(language_config) =
-        doc.detect_language_config(&cx.editor.syn_loader.load())
-      {
+      if let Some(language_config) = doc.detect_language_config(&cx.editor.syn_loader.load()) {
         doc.language = Some(language_config.clone());
         let text = doc.text().clone();
         let loader = cx.editor.syn_loader.clone();
         let job = tokio::task::spawn_blocking(move || {
           let syntax = language_config
             .highlight_config(&loader.load().scopes())
-            .and_then(|highlight_config| {
-              Syntax::new(text.slice(..), highlight_config, loader)
-            });
-          let callback =
-            move |editor: &mut Editor, compositor: &mut Compositor| {
-              let Some(syntax) = syntax else {
-                log::info!("highlighting picker item failed");
-                return;
-              };
-              let picker = match compositor.find::<Overlay<Self>>() {
-                Some(Overlay { content, .. }) => Some(content),
-                None => compositor
-                  .find::<Overlay<DynamicPicker<T>>>()
-                  .map(|overlay| &mut overlay.content.file_picker),
-              };
-              let Some(picker) = picker else {
-                log::info!("picker closed before syntax highlighting finished");
-                return;
-              };
-              // Try to find a document in the cache
-              let doc = match current_file {
-                PathOrId::Id(doc_id) => doc_mut!(editor, &doc_id),
-                PathOrId::Path(path) => {
-                  match picker.preview_cache.get_mut(&path) {
-                    Some(CachedPreview::Document(ref mut doc)) => {
-                      let diagnostics = Editor::doc_diagnostics(
-                        &editor.language_servers,
-                        &editor.diagnostics,
-                        doc,
-                      );
-                      doc.replace_diagnostics(diagnostics, &[], None);
-                      doc
-                    },
-                    _ => return,
-                  }
-                },
-              };
-              doc.syntax = Some(syntax);
+            .and_then(|highlight_config| Syntax::new(text.slice(..), highlight_config, loader));
+          let callback = move |editor: &mut Editor, compositor: &mut Compositor| {
+            let Some(syntax) = syntax else {
+              log::info!("highlighting picker item failed");
+              return;
             };
+            let picker = match compositor.find::<Overlay<Self>>() {
+              Some(Overlay { content, .. }) => Some(content),
+              None => compositor
+                .find::<Overlay<DynamicPicker<T>>>()
+                .map(|overlay| &mut overlay.content.file_picker),
+            };
+            let Some(picker) = picker else {
+              log::info!("picker closed before syntax highlighting finished");
+              return;
+            };
+            // Try to find a document in the cache
+            let doc = match current_file {
+              PathOrId::Id(doc_id) => doc_mut!(editor, &doc_id),
+              PathOrId::Path(path) => match picker.preview_cache.get_mut(&path) {
+                Some(CachedPreview::Document(ref mut doc)) => {
+                  let diagnostics =
+                    Editor::doc_diagnostics(&editor.language_servers, &editor.diagnostics, doc);
+                  doc.replace_diagnostics(diagnostics, &[], None);
+                  doc
+                },
+                _ => return,
+              },
+            };
+            doc.syntax = Some(syntax);
+          };
           Callback::EditorCompositor(Box::new(callback))
         });
         let tmp: compositor::Callback = Box::new(move |_, ctx| {
@@ -533,23 +488,16 @@ impl<T: Item + 'static> Picker<T> {
     EventResult::Consumed(callback)
   }
 
-  fn render_picker(
-    &mut self,
-    area: Rect,
-    surface: &mut Surface,
-    cx: &mut Context,
-  ) {
+  fn render_picker(&mut self, area: Rect, surface: &mut Surface, cx: &mut Context) {
     let status = self.matcher.tick(10);
     let snapshot = self.matcher.snapshot();
     if status.changed {
-      self.cursor =
-        self.cursor.min(snapshot.matched_item_count().saturating_sub(1))
+      self.cursor = self.cursor.min(snapshot.matched_item_count().saturating_sub(1))
     }
 
     let text_style = cx.editor.theme.get("ui.text");
     let selected = cx.editor.theme.get("ui.text.focus");
-    let highlight_style =
-      cx.editor.theme.get("special").add_modifier(Modifier::BOLD);
+    let highlight_style = cx.editor.theme.get("special").add_modifier(Modifier::BOLD);
 
     // -- Render the frame:
     // clear area
@@ -635,8 +583,7 @@ impl<T: Item + 'static> Picker<T> {
         let mut current_style = Style::default();
         let mut width = 0;
 
-        let spans: &[Span] =
-          cell.content.lines.first().map_or(&[], |it| it.0.as_slice());
+        let spans: &[Span] = cell.content.lines.first().map_or(&[], |it| it.0.as_slice());
         for span in spans {
           // this looks like a bug on first glance, we are iterating
           // graphemes but treating them as char indices. The reason that
@@ -696,12 +643,7 @@ impl<T: Item + 'static> Picker<T> {
     );
   }
 
-  fn render_preview(
-    &mut self,
-    area: Rect,
-    surface: &mut Surface,
-    cx: &mut Context,
-  ) {
+  fn render_preview(&mut self, area: Rect, surface: &mut Surface, cx: &mut Context) {
     // -- Render the frame:
     // clear area
     let background = cx.editor.theme.get("ui.background");
@@ -722,16 +664,13 @@ impl<T: Item + 'static> Picker<T> {
       let preview = self.get_preview(path, cx.editor);
       let doc = match preview.document() {
         Some(doc)
-          if range.map_or(true, |(start, end)| {
-            start <= end && end <= doc.text().len_lines()
-          }) =>
+          if range.map_or(true, |(start, end)| start <= end && end <= doc.text().len_lines()) =>
         {
           doc
         },
         _ => {
           let alt_text = preview.placeholder();
-          let x =
-            inner.x + inner.width.saturating_sub(alt_text.len() as u16) / 2;
+          let x = inner.x + inner.width.saturating_sub(alt_text.len() as u16) / 2;
           let y = inner.y + inner.height / 2;
           surface.set_stringn(x, y, alt_text, inner.width as usize, text);
           return;
@@ -765,22 +704,16 @@ impl<T: Item + 'static> Picker<T> {
         }
       }
 
-      let syntax_highlights = EditorView::doc_syntax_highlights(
-        doc,
-        offset.anchor,
-        area.height,
-        &cx.editor.theme,
-      );
+      let syntax_highlights =
+        EditorView::doc_syntax_highlights(doc, offset.anchor, area.height, &cx.editor.theme);
 
       let mut overlay_highlights =
         EditorView::empty_highlight_iter(doc, offset.anchor, area.height);
-      for spans in EditorView::doc_diagnostics_highlights(doc, &cx.editor.theme)
-      {
+      for spans in EditorView::doc_diagnostics_highlights(doc, &cx.editor.theme) {
         if spans.is_empty() {
           continue;
         }
-        overlay_highlights =
-          Box::new(helix_core::syntax::merge(overlay_highlights, spans));
+        overlay_highlights = Box::new(helix_core::syntax::merge(overlay_highlights, spans));
       }
       let mut decorations: Vec<Box<dyn LineDecoration>> = Vec::new();
 
@@ -790,8 +723,7 @@ impl<T: Item + 'static> Picker<T> {
           .theme
           .try_get("ui.highlight")
           .unwrap_or_else(|| cx.editor.theme.get("ui.selection"));
-        let draw_highlight = move |renderer: &mut TextRenderer,
-                                   pos: LinePos| {
+        let draw_highlight = move |renderer: &mut TextRenderer, pos: LinePos| {
           if (start..=end).contains(&pos.doc_line) {
             let area = Rect::new(
               renderer.viewport.x,
@@ -831,9 +763,8 @@ impl<T: Item + 'static + Send + Sync> Component for Picker<T> {
     // |         | |         |
     // +---------+ +---------+
 
-    let render_preview = self.show_preview
-      && self.file_fn.is_some()
-      && area.width > MIN_AREA_WIDTH_FOR_PREVIEW;
+    let render_preview =
+      self.show_preview && self.file_fn.is_some() && area.width > MIN_AREA_WIDTH_FOR_PREVIEW;
 
     let picker_width = if render_preview { area.width / 2 } else { area.width };
 
@@ -862,23 +793,22 @@ impl<T: Item + 'static + Send + Sync> Component for Picker<T> {
     let close_fn = |picker: &mut Self| {
       // if the picker is very large don't store it as last_picker to avoid
       // excessive memory consumption
-      let callback: compositor::Callback =
-        if picker.matcher.snapshot().item_count() > 100_000 {
-          Box::new(|compositor: &mut Compositor, _ctx| {
-            // remove the layer
-            compositor.pop();
-          })
-        } else {
-          // stop streaming in new items in the background, really we should
-          // be restarting the stream somehow once the picker gets
-          // reopened instead (like for an FS crawl) that would also remove the
-          // need for the special case above but that is pretty tricky
-          picker.shutdown.store(true, atomic::Ordering::Relaxed);
-          Box::new(|compositor: &mut Compositor, _ctx| {
-            // remove the layer
-            compositor.last_picker = compositor.pop();
-          })
-        };
+      let callback: compositor::Callback = if picker.matcher.snapshot().item_count() > 100_000 {
+        Box::new(|compositor: &mut Compositor, _ctx| {
+          // remove the layer
+          compositor.pop();
+        })
+      } else {
+        // stop streaming in new items in the background, really we should
+        // be restarting the stream somehow once the picker gets
+        // reopened instead (like for an FS crawl) that would also remove the
+        // need for the special case above but that is pretty tricky
+        picker.shutdown.store(true, atomic::Ordering::Relaxed);
+        Box::new(|compositor: &mut Compositor, _ctx| {
+          // remove the layer
+          compositor.last_picker = compositor.pop();
+        })
+      };
       EventResult::Consumed(Some(callback))
     };
 
@@ -939,11 +869,7 @@ impl<T: Item + 'static + Send + Sync> Component for Picker<T> {
     EventResult::Consumed(None)
   }
 
-  fn cursor(
-    &self,
-    area: Rect,
-    editor: &Editor,
-  ) -> (Option<Position>, CursorKind) {
+  fn cursor(&self, area: Rect, editor: &Editor) -> (Option<Position>, CursorKind) {
     let block = Block::default().borders(Borders::ALL);
     // calculate the inner area inside the box
     let inner = block.inner(area);
@@ -954,10 +880,7 @@ impl<T: Item + 'static + Send + Sync> Component for Picker<T> {
     self.prompt.cursor(area, editor)
   }
 
-  fn required_size(
-    &mut self,
-    (width, height): (u16, u16),
-  ) -> Option<(u16, u16)> {
+  fn required_size(&mut self, (width, height): (u16, u16)) -> Option<(u16, u16)> {
     self.completion_height = height.saturating_sub(4);
     Some((width, height))
   }
@@ -977,9 +900,8 @@ type PickerCallback<T> = Box<dyn Fn(&mut Context, &T, Action)>;
 
 /// Returns a new list of options to replace the contents of the picker
 /// when called with the current picker query,
-pub type DynQueryCallback<T> = Box<
-  dyn Fn(String, &mut Editor) -> BoxFuture<'static, anyhow::Result<Vec<T>>>,
->;
+pub type DynQueryCallback<T> =
+  Box<dyn Fn(String, &mut Editor) -> BoxFuture<'static, anyhow::Result<Vec<T>>>>;
 
 /// A picker that updates its contents via a callback whenever the
 /// query string changes. Useful for live grep, workspace symbols, etc.
@@ -990,10 +912,7 @@ pub struct DynamicPicker<T: ui::menu::Item + Send + Sync> {
 }
 
 impl<T: ui::menu::Item + Send + Sync> DynamicPicker<T> {
-  pub fn new(
-    file_picker: Picker<T>,
-    query_callback: DynQueryCallback<T>,
-  ) -> Self {
+  pub fn new(file_picker: Picker<T>, query_callback: DynQueryCallback<T>) -> Self {
     Self { file_picker, query_callback, query: String::new() }
   }
 }
@@ -1013,23 +932,20 @@ impl<T: Item + Send + Sync + 'static> Component for DynamicPicker<T> {
 
     self.query.clone_from(current_query);
 
-    let new_options =
-      (self.query_callback)(current_query.to_owned(), cx.editor);
+    let new_options = (self.query_callback)(current_query.to_owned(), cx.editor);
 
     cx.jobs.callback(async move {
       let new_options = new_options.await?;
-      let callback =
-        Callback::EditorCompositor(Box::new(move |editor, compositor| {
-          // Wrapping of pickers in overlay is done outside the picker code,
-          // so this is fragile and will break if wrapped in some other widget.
-          let picker = match compositor.find_id::<Overlay<DynamicPicker<T>>>(ID)
-          {
-            Some(overlay) => &mut overlay.content.file_picker,
-            None => return,
-          };
-          picker.set_options(new_options);
-          editor.reset_idle_timer();
-        }));
+      let callback = Callback::EditorCompositor(Box::new(move |editor, compositor| {
+        // Wrapping of pickers in overlay is done outside the picker code,
+        // so this is fragile and will break if wrapped in some other widget.
+        let picker = match compositor.find_id::<Overlay<DynamicPicker<T>>>(ID) {
+          Some(overlay) => &mut overlay.content.file_picker,
+          None => return,
+        };
+        picker.set_options(new_options);
+        editor.reset_idle_timer();
+      }));
       anyhow::Ok(callback)
     });
     EventResult::Consumed(None)

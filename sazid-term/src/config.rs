@@ -45,10 +45,7 @@ pub enum ConfigLoadError {
 
 impl Default for ConfigLoadError {
   fn default() -> Self {
-    ConfigLoadError::Error(IOError::new(
-      std::io::ErrorKind::NotFound,
-      "place holder",
-    ))
+    ConfigLoadError::Error(IOError::new(std::io::ErrorKind::NotFound, "place holder"))
   }
 }
 
@@ -67,13 +64,9 @@ impl Config {
     local: Result<String, ConfigLoadError>,
   ) -> Result<Config, ConfigLoadError> {
     let global_config: Result<ConfigRaw, ConfigLoadError> =
-      global.and_then(|file| {
-        toml::from_str(&file).map_err(ConfigLoadError::BadConfig)
-      });
+      global.and_then(|file| toml::from_str(&file).map_err(ConfigLoadError::BadConfig));
     let local_config: Result<ConfigRaw, ConfigLoadError> =
-      local.and_then(|file| {
-        toml::from_str(&file).map_err(ConfigLoadError::BadConfig)
-      });
+      local.and_then(|file| toml::from_str(&file).map_err(ConfigLoadError::BadConfig));
 
     let res = match (global_config, local_config) {
       (Ok(global), Ok(local)) => {
@@ -90,9 +83,9 @@ impl Config {
           (None, Some(val)) | (Some(val), None) => {
             val.try_into().map_err(ConfigLoadError::BadConfig)?
           },
-          (Some(global), Some(local)) => merge_toml_values(global, local, 3)
-            .try_into()
-            .map_err(ConfigLoadError::BadConfig)?,
+          (Some(global), Some(local)) => {
+            merge_toml_values(global, local, 3).try_into().map_err(ConfigLoadError::BadConfig)?
+          },
         };
 
         let session = match (global.session, local.session) {
@@ -100,16 +93,15 @@ impl Config {
           (None, Some(val)) | (Some(val), None) => {
             val.try_into().map_err(ConfigLoadError::BadConfig)?
           },
-          (Some(global), Some(local)) => merge_toml_values(global, local, 3)
-            .try_into()
-            .map_err(ConfigLoadError::BadConfig)?,
+          (Some(global), Some(local)) => {
+            merge_toml_values(global, local, 3).try_into().map_err(ConfigLoadError::BadConfig)?
+          },
         };
 
         Config { theme: local.theme.or(global.theme), keys, editor, session }
       },
       // if any configs are invalid return that first
-      (_, Err(ConfigLoadError::BadConfig(err)))
-      | (Err(ConfigLoadError::BadConfig(err)), _) => {
+      (_, Err(ConfigLoadError::BadConfig(err))) | (Err(ConfigLoadError::BadConfig(err)), _) => {
         return Err(ConfigLoadError::BadConfig(err))
       },
       (Ok(config), Err(_)) | (Err(_), Ok(config)) => {
@@ -138,11 +130,10 @@ impl Config {
   }
 
   pub fn load_default() -> Result<Config, ConfigLoadError> {
-    let global_config = fs::read_to_string(helix_loader::config_file())
-      .map_err(ConfigLoadError::Error);
+    let global_config =
+      fs::read_to_string(helix_loader::config_file()).map_err(ConfigLoadError::Error);
     let local_config =
-      fs::read_to_string(helix_loader::workspace_config_file())
-        .map_err(ConfigLoadError::Error);
+      fs::read_to_string(helix_loader::workspace_config_file()).map_err(ConfigLoadError::Error);
     Config::load(global_config, local_config)
   }
 }
@@ -153,8 +144,7 @@ mod tests {
 
   impl Config {
     fn load_test(config: &str) -> Config {
-      Config::load(Ok(config.to_owned()), Err(ConfigLoadError::default()))
-        .unwrap()
+      Config::load(Ok(config.to_owned()), Err(ConfigLoadError::default())).unwrap()
     }
   }
 
@@ -186,10 +176,7 @@ mod tests {
       },
     );
 
-    assert_eq!(
-      Config::load_test(sample_keymaps),
-      Config { keys, ..Default::default() }
-    );
+    assert_eq!(Config::load_test(sample_keymaps), Config { keys, ..Default::default() });
   }
 
   #[test]

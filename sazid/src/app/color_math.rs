@@ -1,10 +1,7 @@
 use helix_view::theme::Color;
 
 // Compute both rainbow color and its hue-inverted counterpart.
-pub fn get_rainbow_and_inverse_colors(
-  step: u32,
-  total_steps: u32,
-) -> (Color, Color) {
+pub fn get_rainbow_and_inverse_colors(step: u32, total_steps: u32) -> (Color, Color) {
   let hue = step as f32 / total_steps as f32;
   let inverse_hue = (hue + 0.5) % 1.0; // Add 0.5 to invert the hue in the spectrum and use modulo to wrap around
 

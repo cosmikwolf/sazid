@@ -38,12 +38,7 @@ pub struct Cli {
   )]
   pub add_text_file_embeddings: Option<String>,
 
-  #[arg(
-    short,
-    long,
-    value_name = "BOOL",
-    help = "delete all embeddings from the database"
-  )]
+  #[arg(short, long, value_name = "BOOL", help = "delete all embeddings from the database")]
   pub delete_all_embeddings: bool,
 
   #[arg(

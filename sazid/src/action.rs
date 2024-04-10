@@ -10,8 +10,7 @@ use crate::{
   components::data_manager::DataManagerAction,
 };
 use async_openai::types::{
-  ChatCompletionMessageToolCall, ChatCompletionRequestMessage,
-  ChatCompletionTool,
+  ChatCompletionMessageToolCall, ChatCompletionRequestMessage, ChatCompletionTool,
 };
 use helix_lsp::Call;
 use serde::{Deserialize, Serialize, Serializer};

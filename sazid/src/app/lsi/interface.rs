@@ -40,10 +40,7 @@ pub struct LanguageServerInterface {
 }
 
 impl LanguageServerInterface {
-  pub fn new(
-    syn_loader: Arc<ArcSwap<syntax::Loader>>,
-    tx: UnboundedSender<LsiAction>,
-  ) -> Self {
+  pub fn new(syn_loader: Arc<ArcSwap<syntax::Loader>>, tx: UnboundedSender<LsiAction>) -> Self {
     let loader = syn_loader.clone();
     // let language_servers = Arc::new(Mutex::new(Registry::new(loader.clone())))
     let language_servers = helix_lsp::Registry::new(syn_loader.clone());
@@ -57,10 +54,7 @@ impl LanguageServerInterface {
     }
   }
 
-  pub async fn handle_action(
-    &mut self,
-    action: LsiAction,
-  ) -> anyhow::Result<Option<LsiAction>> {
+  pub async fn handle_action(&mut self, action: LsiAction) -> anyhow::Result<Option<LsiAction>> {
     match action {
       LsiAction::Error(error) => {
         log::error!("{}", error);
@@ -80,21 +74,16 @@ impl LanguageServerInterface {
         ) {
           Ok(()) => match self.update_workspace_symbols().await {
             Ok(()) => Ok(None),
-            Err(e) => Ok(Some(LsiAction::Error(format!(
-              "error updating workspace symbols: {}",
-              e
-            )))),
+            Err(e) => {
+              Ok(Some(LsiAction::Error(format!("error updating workspace symbols: {}", e))))
+            },
           },
-          Err(e) => Ok(Some(LsiAction::Error(format!(
-            "error creating workspace: {}",
-            e
-          )))),
+          Err(e) => Ok(Some(LsiAction::Error(format!("error creating workspace: {}", e)))),
         }
       },
       LsiAction::QueryWorkspaceSymbols(lsi_query) => {
         log::info!("query_workspace_symbols: {:#?}", lsi_query);
-        let lsi_query_result =
-          self.lsi_query_workspace_symbols(&lsi_query).await;
+        let lsi_query_result = self.lsi_query_workspace_symbols(&lsi_query).await;
         self.handle_lsi_query_result(lsi_query, lsi_query_result)
       },
       LsiAction::SessionAction(_) => Ok(None),
@@ -130,17 +119,12 @@ impl LanguageServerInterface {
     log::info!("lsi_query_result: {:#?}", result);
     match result {
       Ok(response) => Ok(Some(LsiAction::SessionAction(Box::new(
-        SessionAction::ToolCallComplete(
-          ToolType::LsiQuery(lsi_query),
-          response,
-        ),
+        SessionAction::ToolCallComplete(ToolType::LsiQuery(lsi_query), response),
       )))),
-      Err(e) => Ok(Some(LsiAction::SessionAction(Box::new(
-        SessionAction::ToolCallError(
-          ToolType::LsiQuery(lsi_query),
-          e.to_string(),
-        ),
-      )))),
+      Err(e) => Ok(Some(LsiAction::SessionAction(Box::new(SessionAction::ToolCallError(
+        ToolType::LsiQuery(lsi_query),
+        e.to_string(),
+      ))))),
     }
   }
 
@@ -175,9 +159,7 @@ impl LanguageServerInterface {
   //   ls.incoming.next()
   // }
 
-  pub async fn server_capabilities(
-    &self,
-  ) -> anyhow::Result<Vec<lsp::ServerCapabilities>> {
+  pub async fn server_capabilities(&self) -> anyhow::Result<Vec<lsp::ServerCapabilities>> {
     // let ls = self.language_servers.lock().await;
     Ok(
       self
@@ -201,13 +183,7 @@ impl LanguageServerInterface {
     let enable_snippets = false;
 
     let language_server = self
-      .initialize_client(
-        language_name,
-        languge_server_name,
-        doc_path,
-        root_dirs,
-        enable_snippets,
-      )
+      .initialize_client(language_name, languge_server_name, doc_path, root_dirs, enable_snippets)
       .unwrap()
       .expect("unable to initialize language server");
 
@@ -228,11 +204,7 @@ impl LanguageServerInterface {
   pub async fn update_workspace_symbols(&mut self) -> anyhow::Result<()> {
     log::info!("update_workspace_symbols");
 
-    let clients = self
-      .language_servers
-      .iter_clients()
-      .cloned()
-      .collect::<Vec<Arc<Client>>>();
+    let clients = self.language_servers.iter_clients().cloned().collect::<Vec<Arc<Client>>>();
     let ids = clients.iter().map(|client| client.id()).collect::<Vec<usize>>();
 
     self.wait_for_language_server_initialization(&ids).await?;
@@ -242,10 +214,10 @@ impl LanguageServerInterface {
         for workspace in self.workspaces.iter_mut() {
           workspace.scan_workspace_files().unwrap();
           log::info!("workspace files: {:#?}", workspace.files.len());
-          for workspace_file in
-            workspace.files.iter_mut().filter(|workspace_file| {
-              workspace_file.needs_update().unwrap_or_default()
-            })
+          for workspace_file in workspace
+            .files
+            .iter_mut()
+            .filter(|workspace_file| workspace_file.needs_update().unwrap_or_default())
           {
             let language_server = clients
               .iter()
@@ -253,10 +225,7 @@ impl LanguageServerInterface {
               .expect("cannot find workspace language server");
 
             workspace.offset_encoding = language_server.offset_encoding();
-            log::info!(
-              "updating workspace file: {:#?}",
-              workspace_file.file_path
-            );
+            log::info!("updating workspace file: {:#?}", workspace_file.file_path);
 
             // update workspace file contents
             let doc_change = workspace_file.update_contents().unwrap();
@@ -307,13 +276,10 @@ impl LanguageServerInterface {
                 .expect("failed to open document with language server")
             }
 
-            if let Some(request) = language_server
-              .document_symbols(workspace_file.get_text_document_id().unwrap())
+            if let Some(request) =
+              language_server.document_symbols(workspace_file.get_text_document_id().unwrap())
             {
-              log::info!(
-                "requesting document symbols for {}",
-                workspace_file.file_path.display()
-              );
+              log::info!("requesting document symbols for {}", workspace_file.file_path.display());
               let response_json = request.await.unwrap();
               let response_parsed: Option<lsp::DocumentSymbolResponse> =
                 serde_json::from_value(response_json)?;
@@ -331,15 +297,11 @@ impl LanguageServerInterface {
                 Some(lsp::DocumentSymbolResponse::Flat(_symbols)) => {
                   // log::info!("flat symbols: {:#?}", _symbols);
                   // symbols.into_iter().map(|symbol| SymbolInformationItem { symbol, offset_encoding }).collect()
-                  return Err(anyhow::anyhow!(
-                    "document symbol support is required"
-                  ));
+                  return Err(anyhow::anyhow!("nested document symbol support is required"));
                 },
                 None => {
                   log::info!("document symbol response is None");
-                  return Err(anyhow::anyhow!(
-                    "document symbol response is None"
-                  ));
+                  return Err(anyhow::anyhow!("document symbol response is None"));
                 },
               };
               workspace_file.update_symbols(doc_symbols).unwrap();
@@ -371,8 +333,7 @@ impl LanguageServerInterface {
             let _offset_encoding = language_server.offset_encoding();
             if let Some(s) = language_server.document_symbols(doc_id.clone()) {
               let symbols = s.await.unwrap();
-              let response: Option<lsp::DocumentSymbolResponse> =
-                serde_json::from_value(symbols)?;
+              let response: Option<lsp::DocumentSymbolResponse> = serde_json::from_value(symbols)?;
 
               let symbols = match response {
                 Some(symbols) => symbols,
@@ -389,9 +350,7 @@ impl LanguageServerInterface {
                 },
                 lsp::DocumentSymbolResponse::Flat(_symbols) => {
                   // symbols.into_iter().map(|symbol| SymbolInformationItem { symbol, offset_encoding }).collect()
-                  return Err(anyhow::anyhow!(
-                    "document symbol support is required"
-                  ));
+                  return Err(anyhow::anyhow!("document symbol support is required"));
                 },
               };
               results.extend(symbols);
@@ -408,10 +367,7 @@ impl LanguageServerInterface {
     &mut self,
     language_server_ids: &[usize],
   ) -> anyhow::Result<()> {
-    log::info!(
-      "wait_for_language_server_initialization: {:#?}",
-      language_server_ids
-    );
+    log::info!("wait_for_language_server_initialization: {:#?}", language_server_ids);
 
     let active_clients = self
       .language_servers
@@ -422,8 +378,7 @@ impl LanguageServerInterface {
 
     tokio::spawn({
       async move {
-        let mut interval =
-          tokio::time::interval(std::time::Duration::from_secs(1));
+        let mut interval = tokio::time::interval(std::time::Duration::from_secs(1));
         while !active_clients.iter().all(|client| client.is_initialized()) {
           interval.tick().await;
           log::info!("waiting for language server initialization");
@@ -435,10 +390,7 @@ impl LanguageServerInterface {
     .map_err(|e| anyhow::anyhow!(e))
   }
 
-  pub async fn wait_for_progress_token_completion(
-    &self,
-    ids: &[usize],
-  ) -> anyhow::Result<()> {
+  pub async fn wait_for_progress_token_completion(&self, ids: &[usize]) -> anyhow::Result<()> {
     log::info!("wait_for_progress_token_completion: {:#?}", ids);
     // let ls = self.language_servers.lock().await;
     //
@@ -463,8 +415,7 @@ impl LanguageServerInterface {
     //   .await;
 
     log::info!("waiting for progress token completion loop");
-    let mut interval =
-      tokio::time::interval(std::time::Duration::from_millis(1000));
+    let mut interval = tokio::time::interval(std::time::Duration::from_millis(1000));
     while ids.iter().any(|c| {
       log::info!("lsp_progress: {:#?}", self.lsp_progress.progress_map(*c));
       self.lsp_progress.is_progressing(*c)
@@ -503,10 +454,7 @@ impl LanguageServerInterface {
     }
   }
 
-  pub fn language_configuration_by_name(
-    &self,
-    name: &str,
-  ) -> Option<Arc<LanguageConfiguration>> {
+  pub fn language_configuration_by_name(&self, name: &str) -> Option<Arc<LanguageConfiguration>> {
     self.loader.load().language_config_for_name(name)
   }
 
@@ -514,10 +462,8 @@ impl LanguageServerInterface {
     &self,
     language_server_name: String,
   ) -> Option<Arc<helix_lsp::Client>> {
-    let client = self
-      .language_servers
-      .iter_clients()
-      .find(|client| client.name() == language_server_name);
+    let client =
+      self.language_servers.iter_clients().find(|client| client.name() == language_server_name);
     client.cloned()
   }
 
@@ -525,10 +471,8 @@ impl LanguageServerInterface {
     &self,
     language_server_id: usize,
   ) -> Option<Arc<helix_lsp::Client>> {
-    let client = self
-      .language_servers
-      .iter_clients()
-      .find(|client| client.id() == language_server_id);
+    let client =
+      self.language_servers.iter_clients().find(|client| client.id() == language_server_id);
     client.cloned()
   }
 
@@ -560,11 +504,7 @@ impl LanguageServerInterface {
     }
 
     match call {
-      Call::Notification(helix_lsp::jsonrpc::Notification {
-        method,
-        params,
-        ..
-      }) => {
+      Call::Notification(helix_lsp::jsonrpc::Notification { method, params, .. }) => {
         let notification = match Notification::parse(&method, params) {
           Ok(notification) => notification,
           Err(helix_lsp::Error::Unhandled) => {
@@ -572,10 +512,7 @@ impl LanguageServerInterface {
             return;
           },
           Err(err) => {
-            error!(
-              "Ignoring unknown notification from Language Server: {}",
-              err
-            );
+            error!("Ignoring unknown notification from Language Server: {}", err);
             return;
           },
         };
@@ -588,9 +525,7 @@ impl LanguageServerInterface {
             // This might not be required by the spec but Neovim does this as well, so it's
             // probably a good idea for compatibility.
             if let Some(config) = language_server.config() {
-              tokio::spawn(
-                language_server.did_change_configuration(config.clone()),
-              );
+              tokio::spawn(language_server.did_change_configuration(config.clone()));
             }
 
             // let docs = self.editor.documents().filter(|doc| doc.supports_language_server(server_id));
@@ -610,22 +545,14 @@ impl LanguageServerInterface {
           },
           Notification::PublishDiagnostics(params) => {
             let file_path = params.uri.to_file_path().unwrap();
-            match workspaces
-              .iter_mut()
-              .find_map(|ws| ws.get_mut_file(&file_path))
-            {
+            match workspaces.iter_mut().find_map(|ws| ws.get_mut_file(&file_path)) {
               Some(file) => {
                 let new_diagnostics = params.diagnostics;
                 match params.version {
                   Some(version) => {
-                    if let Some(diagnostics) =
-                      file.diagnostics.get_mut(&version)
-                    {
+                    if let Some(diagnostics) = file.diagnostics.get_mut(&version) {
                       diagnostics.extend(new_diagnostics);
-                      log::info!(
-                        "updated diagnostics for version: {}",
-                        version
-                      );
+                      log::info!("updated diagnostics for version: {}", version);
                       log::debug!("diagnostics: {:#?}", diagnostics);
                     } else {
                       file.diagnostics.insert(version, new_diagnostics.clone());
@@ -634,24 +561,17 @@ impl LanguageServerInterface {
                     }
                   },
                   None => {
-                    log::warn!("no version supplied with server message, using file version {}", file.version);
-                    if let Some(diagnostics) =
-                      file.diagnostics.get_mut(&file.version)
-                    {
+                    log::warn!(
+                      "no version supplied with server message, using file version {}",
+                      file.version
+                    );
+                    if let Some(diagnostics) = file.diagnostics.get_mut(&file.version) {
                       diagnostics.extend(new_diagnostics);
-                      log::info!(
-                        "updated diagnostics for version: {}",
-                        file.version
-                      );
+                      log::info!("updated diagnostics for version: {}", file.version);
                       log::debug!("diagnostics: {:#?}", diagnostics);
                     } else {
-                      file
-                        .diagnostics
-                        .insert(file.version, new_diagnostics.clone());
-                      log::info!(
-                        "added diagnostics for file.version: {}",
-                        file.version
-                      );
+                      file.diagnostics.insert(file.version, new_diagnostics.clone());
+                      log::info!("added diagnostics for file.version: {}", file.version);
                       log::debug!("diagnostics: {:#?}", new_diagnostics);
                     }
                   },
@@ -672,35 +592,34 @@ impl LanguageServerInterface {
             let lsp::ProgressParams { token, value } = params;
 
             let lsp::ProgressParamsValue::WorkDone(work) = value;
-            let parts =
-              match &work {
-                lsp::WorkDoneProgress::Begin(lsp::WorkDoneProgressBegin {
-                  title,
-                  message,
-                  percentage,
-                  ..
-                }) => (Some(title), message, percentage),
-                lsp::WorkDoneProgress::Report(
-                  lsp::WorkDoneProgressReport { message, percentage, .. },
-                ) => (None, message, percentage),
-                lsp::WorkDoneProgress::End(lsp::WorkDoneProgressEnd {
-                  message,
-                }) => {
-                  log::error!("UNKNOWN MESSAGE: {:#?}", message);
-                  // if message.is_some() {
-                  (None, message, &None)
-                  // } else {
-                  // self.lsp_progress.end_progress(server_id, &token);
-                  // if !self.lsp_progress.is_progressing(server_id) {
-                  // editor_view.spinners_mut().get_or_create(server_id).stop();
-                  // }
-                  // self.clear_status();
+            let parts = match &work {
+              lsp::WorkDoneProgress::Begin(lsp::WorkDoneProgressBegin {
+                title,
+                message,
+                percentage,
+                ..
+              }) => (Some(title), message, percentage),
+              lsp::WorkDoneProgress::Report(lsp::WorkDoneProgressReport {
+                message,
+                percentage,
+                ..
+              }) => (None, message, percentage),
+              lsp::WorkDoneProgress::End(lsp::WorkDoneProgressEnd { message }) => {
+                log::error!("UNKNOWN MESSAGE: {:#?}", message);
+                // if message.is_some() {
+                (None, message, &None)
+                // } else {
+                // self.lsp_progress.end_progress(server_id, &token);
+                // if !self.lsp_progress.is_progressing(server_id) {
+                // editor_view.spinners_mut().get_or_create(server_id).stop();
+                // }
+                // self.clear_status();
 
-                  // we want to render to clear any leftover spinners or messages
-                  // return;
-                  // }
-                },
-              };
+                // we want to render to clear any leftover spinners or messages
+                // return;
+                // }
+              },
+            };
 
             let token_d: &dyn std::fmt::Display = match &token {
               lsp::NumberOrString::Number(n) => n,
@@ -772,18 +691,10 @@ impl LanguageServerInterface {
           },
         }
       },
-      Call::MethodCall(helix_lsp::jsonrpc::MethodCall {
-        method,
-        params,
-        id,
-        ..
-      }) => {
+      Call::MethodCall(helix_lsp::jsonrpc::MethodCall { method, params, id, .. }) => {
         let reply = match MethodCall::parse(&method, params) {
           Err(helix_lsp::Error::Unhandled) => {
-            error!(
-              "Language Server: Method {} not found in request {}",
-              method, id
-            );
+            error!("Language Server: Method {} not found in request {}", method, id);
             Err(helix_lsp::jsonrpc::Error {
               code: helix_lsp::jsonrpc::ErrorCode::MethodNotFound,
               message: format!("Method not found: {}", method),
@@ -791,7 +702,12 @@ impl LanguageServerInterface {
             })
           },
           Err(err) => {
-            log::error!("Language Server: Received malformed method call {} in request {}: {}", method, id, err);
+            log::error!(
+              "Language Server: Received malformed method call {} in request {}: {}",
+              method,
+              id,
+              err
+            );
             Err(helix_lsp::jsonrpc::Error {
               code: helix_lsp::jsonrpc::ErrorCode::ParseError,
               message: format!("Malformed method call: {}", method),
@@ -836,9 +752,7 @@ impl LanguageServerInterface {
             Ok(json!(result))
           },
           Ok(MethodCall::RegisterCapability(params)) => {
-            if let Some(client) =
-              registry.iter_clients().find(|client| client.id() == server_id)
-            {
+            if let Some(client) = registry.iter_clients().find(|client| client.id() == server_id) {
               for reg in params.registrations {
                 match reg.method.as_str() {
                   lsp::notification::DidChangeWatchedFiles::METHOD => {
@@ -849,7 +763,9 @@ impl LanguageServerInterface {
                       match serde_json::from_value(options) {
                         Ok(ops) => ops,
                         Err(err) => {
-                          log::warn!("Failed to deserialize DidChangeWatchedFilesRegistrationOptions: {err}");
+                          log::warn!(
+                            "Failed to deserialize DidChangeWatchedFilesRegistrationOptions: {err}"
+                          );
                           continue;
                         },
                       };
@@ -882,7 +798,10 @@ impl LanguageServerInterface {
                   registry.file_event_handler.unregister(server_id, unreg.id);
                 },
                 _ => {
-                  log::warn!("Received unregistration request for unsupported method: {}", unreg.method);
+                  log::warn!(
+                    "Received unregistration request for unsupported method: {}",
+                    unreg.method
+                  );
                 },
               }
             }

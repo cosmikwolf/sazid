@@ -18,10 +18,7 @@ fn position_gt(pos1: lsp::Position, pos2: lsp::Position) -> bool {
   }
 }
 
-fn get_file_range_contents(
-  file_path: &Path,
-  range: lsp::Range,
-) -> anyhow::Result<String> {
+fn get_file_range_contents(file_path: &Path, range: lsp::Range) -> anyhow::Result<String> {
   let source_code = std::fs::read_to_string(file_path)?;
   if range.start == range.end {
     return Ok(String::new());

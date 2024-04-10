@@ -86,9 +86,7 @@ impl From<OpenAIError> for SazidError {
 impl TryFrom<Result<(), config::ConfigError>> for SazidError {
   type Error = config::ConfigError;
 
-  fn try_from(
-    result: Result<(), config::ConfigError>,
-  ) -> Result<Self, config::ConfigError> {
+  fn try_from(result: Result<(), config::ConfigError>) -> Result<Self, config::ConfigError> {
     match result {
       Ok(_) => Ok(SazidError::Other("".to_string())),
       Err(err) => Err(err),

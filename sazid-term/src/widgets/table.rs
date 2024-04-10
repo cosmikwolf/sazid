@@ -104,11 +104,7 @@ impl<'a> MessageCell<'a> {
     self
   }
 
-  pub fn with_highlight(
-    mut self,
-    style: Style,
-    range: std::ops::Range<usize>,
-  ) -> Self {
+  pub fn with_highlight(mut self, style: Style, range: std::ops::Range<usize>) -> Self {
     self.highlight_style = Some(style);
     self.highlight_range = Some(range);
     self
@@ -137,9 +133,7 @@ impl<'a> MessageCell<'a> {
     config_loader: &Arc<ArcSwap<syntax::Loader>>,
   ) {
     let text = match &self.message {
-      MessageType::Chat(message) => {
-        message.format_to_text(Some(theme), config_loader.clone())
-      },
+      MessageType::Chat(message) => message.format_to_text(Some(theme), config_loader.clone()),
       MessageType::Text(text) => Text::from(text.clone()),
     };
     let style = Style::default();
@@ -198,25 +192,21 @@ impl<'a> MessageCell<'a> {
                 style
             }))
     });
-    let mut line_composer: Box<dyn LineComposer> =
-      if let Some(Wrap { trim }) = wrap {
-        Box::new(WordWrapper::new(&mut styled, area.width, trim))
-      } else {
-        let mut line_composer =
-          Box::new(LineTruncator::new(&mut styled, area.width));
-        if alignment == Alignment::Left {
-          line_composer.set_horizontal_offset(scroll.1);
-        }
-        line_composer
-      };
+    let mut line_composer: Box<dyn LineComposer> = if let Some(Wrap { trim }) = wrap {
+      Box::new(WordWrapper::new(&mut styled, area.width, trim))
+    } else {
+      let mut line_composer = Box::new(LineTruncator::new(&mut styled, area.width));
+      if alignment == Alignment::Left {
+        line_composer.set_horizontal_offset(scroll.1);
+      }
+      line_composer
+    };
 
     let mut plain_text = Rope::new();
     let mut y = 0;
     let mut char_counter = char_idx.unwrap_or(0);
     let mut last_grapheme_idx = 0;
-    while let Some((current_line, current_line_width)) =
-      line_composer.next_line()
-    {
+    while let Some((current_line, current_line_width)) = line_composer.next_line() {
       if y >= scroll.0 {
         let mut x = 0; // get_line_offset(current_line_width, area.width, alignment);
         let mut linetxt = String::new();
@@ -417,14 +407,12 @@ impl<'a> Row<'a> {
 
   /// Update height to cell max height, for a specific cell width
   pub fn update_wrapped_heights(&mut self, column_widths: Vec<u16>) {
-    self.cells.iter_mut().zip(column_widths.iter()).for_each(
-      |(cell, width)| {
-        let cell_height = cell.get_height(*width);
-        if cell_height > self.height {
-          self.height = cell_height;
-        }
-      },
-    );
+    self.cells.iter_mut().zip(column_widths.iter()).for_each(|(cell, width)| {
+      let cell_height = cell.get_height(*width);
+      if cell_height > self.height {
+        self.height = cell_height;
+      }
+    });
   }
 }
 
@@ -607,8 +595,7 @@ impl<'a> Table<'a> {
   ) -> Vec<Rect> {
     let mut constraints = Vec::with_capacity(widths.len() * 2 + 1);
     if has_selection {
-      let highlight_symbol_width =
-        highlight_symbol.map(|s| s.width() as u16).unwrap_or(0);
+      let highlight_symbol_width = highlight_symbol.map(|s| s.width() as u16).unwrap_or(0);
       constraints.push(Constraint::Length(highlight_symbol_width));
     }
     for constraint in widths {
@@ -742,10 +729,11 @@ pub struct TableState {
 impl TableState {
   // if the scroll is at the end, scroll with incoming text
   pub fn update_sticky_scroll(&mut self) {
-    self.scroll_max =
-      self.row_heights.iter().sum::<u16>().saturating_sub(
-        self.viewport_height.saturating_sub(self.scroll_offset),
-      );
+    self.scroll_max = self
+      .row_heights
+      .iter()
+      .sum::<u16>()
+      .saturating_sub(self.viewport_height.saturating_sub(self.scroll_offset));
 
     // .saturating_sub(self.viewport_height.saturating_sub(0));
     if self.sticky_scroll {
@@ -778,12 +766,10 @@ impl TableState {
   pub fn scroll_to_selection(&mut self) {
     if let Some(selected) = self.selected {
       let selection_top: u16 = self.row_heights.iter().take(selected).sum();
-      let selection_bottom: u16 =
-        self.row_heights.iter().take(selected + 1).sum();
+      let selection_bottom: u16 = self.row_heights.iter().take(selected + 1).sum();
 
       if selection_bottom > self.vertical_scroll + self.viewport_height {
-        self.vertical_scroll =
-          selection_bottom.saturating_sub(self.viewport_height);
+        self.vertical_scroll = selection_bottom.saturating_sub(self.viewport_height);
       }
 
       if selection_top < self.vertical_scroll {
@@ -840,12 +826,8 @@ impl<'a> Table<'a> {
     // });
     let has_selection = state.selected.is_some();
     let column_areas = self.get_column_areas(table_area, has_selection);
-    let column_widths =
-      column_areas.iter().map(|a| a.width).collect::<Vec<_>>();
-    self
-      .rows
-      .iter_mut()
-      .for_each(|row| row.update_wrapped_heights(column_widths.clone()));
+    let column_widths = column_areas.iter().map(|a| a.width).collect::<Vec<_>>();
+    self.rows.iter_mut().for_each(|row| row.update_wrapped_heights(column_widths.clone()));
 
     state.row_heights = self.row_heights();
 
@@ -873,12 +855,7 @@ impl<'a> Table<'a> {
         render_cell(
           buf,
           cell,
-          Rect {
-            x: col,
-            y: table_area.top(),
-            width: *width,
-            height: max_header_height,
-          },
+          Rect { x: col, y: table_area.top(), width: *width, height: max_header_height },
           0u16,
           truncate,
           theme,
@@ -913,18 +890,12 @@ impl<'a> Table<'a> {
           }
           let (row, col) = (table_area.top() + row_y, table_area.left());
           // row_height.min(table_area.height.saturating_sub(current_height));
-          let table_row_area = Rect {
-            x: col,
-            y: row,
-            width: table_area.width,
-            height: row_height,
-          };
+          let table_row_area = Rect { x: col, y: row, width: table_area.width, height: row_height };
 
           // buf.set_style(table_row_area, table_row.style);
           let is_selected = state.selected.map(|s| s == i).unwrap_or(false);
           let table_row_start_col = if has_selection {
-            let symbol =
-              if is_selected { highlight_symbol } else { &blank_symbol };
+            let symbol = if is_selected { highlight_symbol } else { &blank_symbol };
             // let (col, _) = buf.set_stringn(
             //   col,
             //   row,
@@ -940,8 +911,7 @@ impl<'a> Table<'a> {
             // buf.set_style(table_row_area, self.highlight_style);
           }
           let mut col = table_row_start_col;
-          for (width, cell) in column_widths.iter().zip(table_row.cells.iter())
-          {
+          for (width, cell) in column_widths.iter().zip(table_row.cells.iter()) {
             // log::debug!(
             //   "rendering cell - width: {}  col: {}  row: {}  height: {}",
             //   width,
@@ -952,12 +922,7 @@ impl<'a> Table<'a> {
             render_cell(
               buf,
               cell,
-              Rect {
-                x: col,
-                y: table_row_area.y,
-                height: table_row_area.height,
-                width: *width,
-              },
+              Rect { x: col, y: table_row_area.y, height: table_row_area.height, width: *width },
               // Rect { x: col, y: row, width: *width, height: table_row.height },
               row_skip_lines,
               truncate,

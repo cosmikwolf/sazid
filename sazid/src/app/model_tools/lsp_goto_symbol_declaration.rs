@@ -31,8 +31,7 @@ impl ToolCallTrait for LspGotoSymbolDeclaration {
           FunctionProperty::Array {
             required: true,
             description: Some(
-              "the 32 byte symbol_id for which to find the declaration"
-                .to_string(),
+              "the 32 byte symbol_id for which to find the declaration".to_string(),
             ),
             items: Box::new(FunctionProperty::Integer {
               description: None,
@@ -62,31 +61,19 @@ impl ToolCallTrait for LspGotoSymbolDeclaration {
   fn call(
     &self,
     params: ToolCallParams,
-  ) -> Pin<
-    Box<
-      dyn Future<Output = Result<Option<String>, ToolCallError>>
-        + Send
-        + 'static,
-    >,
-  > {
-    let validated_arguments =
-      validate_arguments(params.function_args, &self.parameters, None)
-        .expect("error validating arguments");
+  ) -> Pin<Box<dyn Future<Output = Result<Option<String>, ToolCallError>> + Send + 'static>> {
+    let validated_arguments = validate_arguments(params.function_args, &self.parameters, None)
+      .expect("error validating arguments");
 
-    let symbol_id =
-      get_validated_argument::<Vec<u8>>(&validated_arguments, "symbol_id");
+    let symbol_id = get_validated_argument::<Vec<u8>>(&validated_arguments, "symbol_id");
 
     log::info!(
       "LspGotoSymbolDeclaration::call symbol_id: {:#?}\nvalidated args: {:#?}",
       symbol_id,
       validated_arguments
     );
-    let workspace_root = params
-      .session_config
-      .workspace
-      .expect("workspace not set")
-      .workspace_path
-      .clone();
+    let workspace_root =
+      params.session_config.workspace.expect("workspace not set").workspace_path.clone();
 
     Box::pin(async move {
       let query = LsiQuery {
@@ -101,9 +88,7 @@ impl ToolCallTrait for LspGotoSymbolDeclaration {
 
       params
         .tx
-        .send(ChatToolAction::LsiRequest(Box::new(
-          LsiAction::GoToSymbolDeclaration(query),
-        )))
+        .send(ChatToolAction::LsiRequest(Box::new(LsiAction::GoToSymbolDeclaration(query))))
         .unwrap();
       Ok(None)
     })

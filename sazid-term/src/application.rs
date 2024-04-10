@@ -115,11 +115,7 @@ fn setup_integration_logging() {
 }
 
 impl Application {
-  pub fn new(
-    _args: Args,
-    config: Config,
-    lang_loader: syntax::Loader,
-  ) -> Result<Self, Error> {
+  pub fn new(_args: Args, config: Config, lang_loader: syntax::Loader) -> Result<Self, Error> {
     #[cfg(feature = "integration")]
     setup_integration_logging();
 
@@ -127,8 +123,7 @@ impl Application {
 
     let mut theme_parent_dirs = vec![helix_loader::config_dir()];
     theme_parent_dirs.extend(helix_loader::runtime_dirs().iter().cloned());
-    let theme_loader =
-      std::sync::Arc::new(theme::Loader::new(&theme_parent_dirs));
+    let theme_loader = std::sync::Arc::new(theme::Loader::new(&theme_parent_dirs));
 
     let true_color = config.editor.true_color || crate::true_color();
     let theme = config
@@ -168,8 +163,7 @@ impl Application {
       handlers,
     );
 
-    let _keys =
-      Box::new(Map::new(Arc::clone(&config), |config: &Config| &config.keys));
+    let _keys = Box::new(Map::new(Arc::clone(&config), |config: &Config| &config.keys));
 
     editor.new_file(Action::VerticalSplit);
     editor.set_theme(theme);
@@ -177,8 +171,7 @@ impl Application {
     // Language Server Interface Configuration
     let (lsi_tx, lsi_rx) = mpsc::unbounded_channel();
     let language_server_interface_events = UnboundedReceiverStream::new(lsi_rx);
-    let language_server_interface =
-      LanguageServerInterface::new(syn_loader.clone(), lsi_tx);
+    let language_server_interface = LanguageServerInterface::new(syn_loader.clone(), lsi_tx);
 
     // Session Configuration
     let (session_tx, session_rx) = mpsc::unbounded_channel();
@@ -187,7 +180,7 @@ impl Application {
 
     session_config.workspace = Some(WorkspaceParams {
       workspace_path: PathBuf::from(
-        "/Users/tenkai/Development/gpt/sazid",
+        "/Users/tenkai/Development/gpt/sazid/sazid-term",
         // "/Users/tenkai/Development/gpt/rust_test_project",
       ),
       language: "rust".to_string(),
@@ -200,8 +193,7 @@ impl Application {
 
     // Tool Configuration
     let (tool_tx, tool_rx) = mpsc::unbounded_channel();
-    let chat_tools: ChatTools =
-      ChatTools::new(tool_tx, session.id, session.config.clone());
+    let chat_tools: ChatTools = ChatTools::new(tool_tx, session.id, session.config.clone());
     let chat_tools_events = UnboundedReceiverStream::new(tool_rx);
 
     // Load existing messages
@@ -209,17 +201,14 @@ impl Application {
       .messages
       .clone()
       .iter()
-      .map(|message| {
-        ChatMessageItem::new_chat(message.message_id, message.message.clone())
-      })
+      .map(|message| ChatMessageItem::new_chat(message.message_id, message.message.clone()))
       .collect::<Vec<_>>();
 
-    let session_callback =
-      |_context: &mut compositor::Context,
-       _message: &ChatMessageItem,
-       _action: helix_view::editor::Action| {
-        log::info!("session callback");
-      };
+    let session_callback = |_context: &mut compositor::Context,
+                            _message: &ChatMessageItem,
+                            _action: helix_view::editor::Action| {
+      log::info!("session callback");
+    };
 
     let editor_data = String::new();
     // let editor_data = match &messages[0].message {
@@ -262,10 +251,7 @@ impl Application {
     editor.switch(doc_id, Action::Replace);
 
     let mut input = EditorView::new(crate::keymap::minimal_keymap());
-    input.override_height(
-      markdown_session.input_height,
-      ui::editor::VerticalAlign::Bottom,
-    );
+    input.override_height(markdown_session.input_height, ui::editor::VerticalAlign::Bottom);
 
     // session must be pushed after input in order for input not to overwrite style changes made in session
     compositor.push(Box::new(input));
@@ -327,8 +313,7 @@ impl Application {
     helix_event::start_frame();
     cx.editor.needs_redraw = false;
 
-    let area =
-      self.terminal.autoresize().expect("Unable to determine terminal size");
+    let area = self.terminal.autoresize().expect("Unable to determine terminal size");
 
     // TODO: need to recalculate view tree if necessary
 
@@ -538,9 +523,7 @@ impl Application {
       ConfigEvent::Update(editor_config) => {
         let mut app_config = (*self.config.load().clone()).clone();
         app_config.editor = *editor_config;
-        if let Err(err) =
-          self.terminal.reconfigure(app_config.editor.clone().into())
-        {
+        if let Err(err) = self.terminal.reconfigure(app_config.editor.clone().into()) {
           self.editor.set_error(err.to_string());
         };
         self.config.store(Arc::new(app_config));
@@ -567,11 +550,8 @@ impl Application {
     self.editor.syn_loader = self.syn_loader.clone();
     for document in self.editor.documents.values_mut() {
       document.detect_language(self.syn_loader.clone());
-      let diagnostics = Editor::doc_diagnostics(
-        &self.editor.language_servers,
-        &self.editor.diagnostics,
-        document,
-      );
+      let diagnostics =
+        Editor::doc_diagnostics(&self.editor.language_servers, &self.editor.diagnostics, document);
       document.replace_diagnostics(diagnostics, &[], None);
     }
 
@@ -603,8 +583,8 @@ impl Application {
 
   fn refresh_config(&mut self) {
     let mut refresh_config = || -> Result<(), Error> {
-      let default_config = Config::load_default()
-        .map_err(|err| anyhow::anyhow!("Failed to load config: {}", err))?;
+      let default_config =
+        Config::load_default().map_err(|err| anyhow::anyhow!("Failed to load config: {}", err))?;
       self.refresh_language_config()?;
       self.refresh_theme(&default_config)?;
       self.terminal.reconfigure(default_config.editor.clone().into())?;
@@ -704,17 +684,13 @@ impl Application {
       jobs: &mut self.jobs,
       scroll: None,
     };
-    let should_render =
-      self.compositor.handle_event(&Event::IdleTimeout, &mut cx);
+    let should_render = self.compositor.handle_event(&Event::IdleTimeout, &mut cx);
     if should_render || self.editor.needs_redraw {
       self.render().await;
     }
   }
 
-  pub fn handle_document_write(
-    &mut self,
-    doc_save_event: DocumentSavedEventResult,
-  ) {
+  pub fn handle_document_write(&mut self, doc_save_event: DocumentSavedEventResult) {
     let doc_save_event = match doc_save_event {
       Ok(event) => event,
       Err(err) => {
@@ -725,21 +701,14 @@ impl Application {
 
     let doc = match self.editor.document_mut(doc_save_event.doc_id) {
       None => {
-        warn!(
-          "received document saved event for non-existent doc id: {}",
-          doc_save_event.doc_id
-        );
+        warn!("received document saved event for non-existent doc id: {}", doc_save_event.doc_id);
 
         return;
       },
       Some(doc) => doc,
     };
 
-    debug!(
-      "document {:?} saved with revision {}",
-      doc.path(),
-      doc_save_event.revision
-    );
+    debug!("document {:?} saved with revision {}", doc.path(), doc_save_event.revision);
 
     doc.set_last_saved_revision(doc_save_event.revision);
 
@@ -797,10 +766,7 @@ impl Application {
     false
   }
 
-  pub async fn handle_terminal_events(
-    &mut self,
-    event: std::io::Result<CrosstermEvent>,
-  ) {
+  pub async fn handle_terminal_events(&mut self, event: std::io::Result<CrosstermEvent>) {
     let mut cx = crate::compositor::Context {
       focus: &mut self.focus,
       session: &mut self.session,
@@ -811,10 +777,7 @@ impl Application {
     // Handle key events
     let should_redraw = match event.unwrap() {
       CrosstermEvent::Resize(width, height) => {
-        self
-          .terminal
-          .resize(Rect::new(0, 0, width, height))
-          .expect("Unable to resize terminal");
+        self.terminal.resize(Rect::new(0, 0, width, height)).expect("Unable to resize terminal");
 
         let area = self.terminal.size().expect("couldn't get terminal size");
 
@@ -835,11 +798,7 @@ impl Application {
     }
   }
 
-  pub async fn handle_language_server_message(
-    &mut self,
-    call: helix_lsp::Call,
-    server_id: usize,
-  ) {
+  pub async fn handle_language_server_message(&mut self, call: helix_lsp::Call, server_id: usize) {
     use helix_lsp::{Call, MethodCall, Notification};
 
     macro_rules! language_server {
@@ -855,11 +814,7 @@ impl Application {
     }
 
     match call {
-      Call::Notification(helix_lsp::jsonrpc::Notification {
-        method,
-        params,
-        ..
-      }) => {
+      Call::Notification(helix_lsp::jsonrpc::Notification { method, params, .. }) => {
         let notification = match Notification::parse(&method, params) {
           Ok(notification) => notification,
           Err(helix_lsp::Error::Unhandled) => {
@@ -867,10 +822,7 @@ impl Application {
             return;
           },
           Err(err) => {
-            error!(
-              "Ignoring unknown notification from Language Server: {}",
-              err
-            );
+            error!("Ignoring unknown notification from Language Server: {}", err);
             return;
           },
         };
@@ -883,15 +835,11 @@ impl Application {
             // This might not be required by the spec but Neovim does this as well, so it's
             // probably a good idea for compatibility.
             if let Some(config) = language_server.config() {
-              tokio::spawn(
-                language_server.did_change_configuration(config.clone()),
-              );
+              tokio::spawn(language_server.did_change_configuration(config.clone()));
             }
 
-            let docs = self
-              .editor
-              .documents()
-              .filter(|doc| doc.supports_language_server(server_id));
+            let docs =
+              self.editor.documents().filter(|doc| doc.supports_language_server(server_id));
 
             // trigger textDocument/didOpen for docs that are already open
             for doc in docs {
@@ -900,8 +848,7 @@ impl Application {
                 None => continue, // skip documents with no path
               };
 
-              let language_id =
-                doc.language_id().map(ToOwned::to_owned).unwrap_or_default();
+              let language_id = doc.language_id().map(ToOwned::to_owned).unwrap_or_default();
 
               tokio::spawn(language_server.text_document_did_open(
                 url,
@@ -921,7 +868,10 @@ impl Application {
             };
             let language_server = language_server!();
             if !language_server.is_initialized() {
-              log::error!("Discarding publishDiagnostic notification sent by an uninitialized server: {}", language_server.name());
+              log::error!(
+                "Discarding publishDiagnostic notification sent by an uninitialized server: {}",
+                language_server.name()
+              );
               return;
             }
             // have to inline the function because of borrow checking...
@@ -942,26 +892,19 @@ impl Application {
               let lang_conf = doc.language.clone();
 
               if let Some(lang_conf) = &lang_conf {
-                if let Some(old_diagnostics) =
-                  self.editor.diagnostics.get(&path)
-                {
+                if let Some(old_diagnostics) = self.editor.diagnostics.get(&path) {
                   if !lang_conf.persistent_diagnostic_sources.is_empty() {
                     // Sort diagnostics first by severity and then by line numbers.
                     // Note: The `lsp::DiagnosticSeverity` enum is already defined in decreasing order
-                    params
-                      .diagnostics
-                      .sort_unstable_by_key(|d| (d.severity, d.range.start));
+                    params.diagnostics.sort_unstable_by_key(|d| (d.severity, d.range.start));
                   }
                   for source in &lang_conf.persistent_diagnostic_sources {
-                    let new_diagnostics = params
-                      .diagnostics
-                      .iter()
-                      .filter(|d| d.source.as_ref() == Some(source));
+                    let new_diagnostics =
+                      params.diagnostics.iter().filter(|d| d.source.as_ref() == Some(source));
                     let old_diagnostics = old_diagnostics
                       .iter()
                       .filter(|(d, d_server)| {
-                        *d_server == server_id
-                          && d.source.as_ref() == Some(source)
+                        *d_server == server_id && d.source.as_ref() == Some(source)
                       })
                       .map(|(d, _)| d);
                     if new_diagnostics.eq(old_diagnostics) {
@@ -972,8 +915,7 @@ impl Application {
               }
             }
 
-            let diagnostics =
-              params.diagnostics.into_iter().map(|d| (d, server_id));
+            let diagnostics = params.diagnostics.into_iter().map(|d| (d, server_id));
 
             // Insert the original lsp::Diagnostics here because we may have no open document
             // for diagnosic message and so we can't calculate the exact position.
@@ -992,17 +934,17 @@ impl Application {
 
             // Sort diagnostics first by severity and then by line numbers.
             // Note: The `lsp::DiagnosticSeverity` enum is already defined in decreasing order
-            diagnostics.sort_unstable_by_key(|(d, server_id)| {
-              (d.severity, d.range.start, *server_id)
-            });
+            diagnostics
+              .sort_unstable_by_key(|(d, server_id)| (d.severity, d.range.start, *server_id));
 
             if let Some(doc) = doc {
               let diagnostic_of_language_server_and_not_in_unchanged_sources =
                 |diagnostic: &lsp::Diagnostic, ls_id| {
                   ls_id == server_id
-                    && diagnostic.source.as_ref().map_or(true, |source| {
-                      !unchanged_diag_sources.contains(source)
-                    })
+                    && diagnostic
+                      .source
+                      .as_ref()
+                      .map_or(true, |source| !unchanged_diag_sources.contains(source))
                 };
               let diagnostics = Editor::doc_diagnostics_with_filter(
                 &self.editor.language_servers,
@@ -1010,11 +952,7 @@ impl Application {
                 doc,
                 diagnostic_of_language_server_and_not_in_unchanged_sources,
               );
-              doc.replace_diagnostics(
-                diagnostics,
-                &unchanged_diag_sources,
-                Some(server_id),
-              );
+              doc.replace_diagnostics(diagnostics, &unchanged_diag_sources, Some(server_id));
             }
           },
           Notification::ShowMessage(params) => {
@@ -1024,14 +962,10 @@ impl Application {
             log::info!("window/logMessage: {:?}", params);
           },
           Notification::ProgressMessage(params)
-            if !self
-              .compositor
-              .has_component(std::any::type_name::<ui::Prompt>()) =>
+            if !self.compositor.has_component(std::any::type_name::<ui::Prompt>()) =>
           {
-            let editor_view = self
-              .compositor
-              .find::<ui::EditorView>()
-              .expect("expected at least one EditorView");
+            let editor_view =
+              self.compositor.find::<ui::EditorView>().expect("expected at least one EditorView");
             let lsp::ProgressParams { token, value } = params;
 
             let lsp::ProgressParamsValue::WorkDone(work) = value;
@@ -1047,9 +981,7 @@ impl Application {
                 percentage,
                 ..
               }) => (None, message, percentage),
-              lsp::WorkDoneProgress::End(lsp::WorkDoneProgressEnd {
-                message,
-              }) => {
+              lsp::WorkDoneProgress::End(lsp::WorkDoneProgressEnd { message }) => {
                 if message.is_some() {
                   (None, message, &None)
                 } else {
@@ -1133,18 +1065,10 @@ impl Application {
           },
         }
       },
-      Call::MethodCall(helix_lsp::jsonrpc::MethodCall {
-        method,
-        params,
-        id,
-        ..
-      }) => {
+      Call::MethodCall(helix_lsp::jsonrpc::MethodCall { method, params, id, .. }) => {
         let reply = match MethodCall::parse(&method, params) {
           Err(helix_lsp::Error::Unhandled) => {
-            error!(
-              "Language Server: Method {} not found in request {}",
-              method, id
-            );
+            error!("Language Server: Method {} not found in request {}", method, id);
             Err(helix_lsp::jsonrpc::Error {
               code: helix_lsp::jsonrpc::ErrorCode::MethodNotFound,
               message: format!("Method not found: {}", method),
@@ -1153,11 +1077,11 @@ impl Application {
           },
           Err(err) => {
             log::error!(
-                            "Language Server: Received malformed method call {} in request {}: {}",
-                            method,
-                            id,
-                            err
-                        );
+              "Language Server: Received malformed method call {} in request {}: {}",
+              method,
+              id,
+              err
+            );
             Err(helix_lsp::jsonrpc::Error {
               code: helix_lsp::jsonrpc::ErrorCode::ParseError,
               message: format!("Malformed method call: {}", method),
@@ -1167,10 +1091,8 @@ impl Application {
           Ok(MethodCall::WorkDoneProgressCreate(params)) => {
             self.lsp_progress.create(server_id, params.token);
 
-            let editor_view = self
-              .compositor
-              .find::<ui::EditorView>()
-              .expect("expected at least one EditorView");
+            let editor_view =
+              self.compositor.find::<ui::EditorView>().expect("expected at least one EditorView");
             let spinner = editor_view.spinners_mut().get_or_create(server_id);
             if spinner.is_stopped() {
               spinner.start();
@@ -1182,26 +1104,17 @@ impl Application {
             let language_server = language_server!();
             if language_server.is_initialized() {
               let offset_encoding = language_server.offset_encoding();
-              let res =
-                self.editor.apply_workspace_edit(offset_encoding, &params.edit);
+              let res = self.editor.apply_workspace_edit(offset_encoding, &params.edit);
 
               Ok(json!(lsp::ApplyWorkspaceEditResponse {
                 applied: res.is_ok(),
-                failure_reason: res
-                  .as_ref()
-                  .err()
-                  .map(|err| err.kind.to_string()),
-                failed_change: res
-                  .as_ref()
-                  .err()
-                  .map(|err| err.failed_change_idx as u32),
+                failure_reason: res.as_ref().err().map(|err| err.kind.to_string()),
+                failed_change: res.as_ref().err().map(|err| err.failed_change_idx as u32),
               }))
             } else {
               Err(helix_lsp::jsonrpc::Error {
                 code: helix_lsp::jsonrpc::ErrorCode::InvalidRequest,
-                message:
-                  "Server must be initialized to request workspace edits"
-                    .to_string(),
+                message: "Server must be initialized to request workspace edits".to_string(),
                 data: None,
               })
             }
@@ -1230,11 +1143,8 @@ impl Application {
             Ok(json!(result))
           },
           Ok(MethodCall::RegisterCapability(params)) => {
-            if let Some(client) = self
-              .editor
-              .language_servers
-              .iter_clients()
-              .find(|client| client.id() == server_id)
+            if let Some(client) =
+              self.editor.language_servers.iter_clients().find(|client| client.id() == server_id)
             {
               for reg in params.registrations {
                 match reg.method.as_str() {
@@ -1246,7 +1156,9 @@ impl Application {
                       match serde_json::from_value(options) {
                         Ok(ops) => ops,
                         Err(err) => {
-                          log::warn!("Failed to deserialize DidChangeWatchedFilesRegistrationOptions: {err}");
+                          log::warn!(
+                            "Failed to deserialize DidChangeWatchedFilesRegistrationOptions: {err}"
+                          );
                           continue;
                         },
                       };
@@ -1276,14 +1188,13 @@ impl Application {
             for unreg in params.unregisterations {
               match unreg.method.as_str() {
                 lsp::notification::DidChangeWatchedFiles::METHOD => {
-                  self
-                    .editor
-                    .language_servers
-                    .file_event_handler
-                    .unregister(server_id, unreg.id);
+                  self.editor.language_servers.file_event_handler.unregister(server_id, unreg.id);
                 },
                 _ => {
-                  log::warn!("Received unregistration request for unsupported method: {}", unreg.method);
+                  log::warn!(
+                    "Received unregistration request for unsupported method: {}",
+                    unreg.method
+                  );
                 },
               }
             }
@@ -1342,17 +1253,12 @@ impl Application {
     let doc = doc_mut!(self.editor, &doc_id);
     if let Some(range) = selection {
       // TODO: convert inside server
-      if let Some(new_range) =
-        lsp_range_to_range(doc.text(), range, offset_encoding)
-      {
+      if let Some(new_range) = lsp_range_to_range(doc.text(), range, offset_encoding) {
         let view = view_mut!(self.editor);
 
         // we flip the range so that the cursor sits on the start of the symbol
         // (for example start of the function).
-        doc.set_selection(
-          view.id,
-          Selection::single(new_range.head, new_range.anchor),
-        );
+        doc.set_selection(view.id, Selection::single(new_range.head, new_range.anchor));
         if action.align_view(view, doc.id()) {
           align_view(doc, view, Align::Center);
         }
@@ -1411,9 +1317,7 @@ impl Application {
     //        errors along the way
     let mut errs = Vec::new();
 
-    if let Err(err) =
-      self.jobs.finish(&mut self.editor, Some(&mut self.compositor)).await
-    {
+    if let Err(err) = self.jobs.finish(&mut self.editor, Some(&mut self.compositor)).await {
       log::error!("Error executing job: {}", err);
       errs.push(err);
     };
@@ -1425,9 +1329,7 @@ impl Application {
 
     if self.editor.close_language_servers(None).await.is_err() {
       log::error!("Timed out waiting for language servers to shutdown");
-      errs.push(anyhow::format_err!(
-        "Timed out waiting for language servers to shutdown"
-      ));
+      errs.push(anyhow::format_err!("Timed out waiting for language servers to shutdown"));
     }
 
     errs

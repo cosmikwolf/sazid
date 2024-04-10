@@ -29,37 +29,25 @@ impl Error for ToolCallError {}
 
 impl From<globset::Error> for ToolCallError {
   fn from(error: globset::Error) -> Self {
-    ToolCallError {
-      message: format!("Globset Error: {}", error),
-      source: Some(Box::new(error)),
-    }
+    ToolCallError { message: format!("Globset Error: {}", error), source: Some(Box::new(error)) }
   }
 }
 
 impl From<grep::regex::Error> for ToolCallError {
   fn from(error: grep::regex::Error) -> Self {
-    ToolCallError {
-      message: format!("Grep Regex Error: {}", error),
-      source: Some(Box::new(error)),
-    }
+    ToolCallError { message: format!("Grep Regex Error: {}", error), source: Some(Box::new(error)) }
   }
 }
 
 impl From<serde_json::Error> for ToolCallError {
   fn from(error: serde_json::Error) -> Self {
-    ToolCallError {
-      message: format!("Serde JSON Error: {}", error),
-      source: Some(Box::new(error)),
-    }
+    ToolCallError { message: format!("Serde JSON Error: {}", error), source: Some(Box::new(error)) }
   }
 }
 
 impl From<io::Error> for ToolCallError {
   fn from(error: io::Error) -> Self {
-    ToolCallError {
-      message: format!("IO Error: {}", error),
-      source: Some(Box::new(error)),
-    }
+    ToolCallError { message: format!("IO Error: {}", error), source: Some(Box::new(error)) }
   }
 }
 

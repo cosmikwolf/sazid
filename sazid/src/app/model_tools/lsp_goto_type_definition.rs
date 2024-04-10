@@ -24,17 +24,14 @@ impl ToolCallTrait for LspGotoTypeDefinition {
   {
     LspGotoTypeDefinition {
       name: "lsp_goto_type_definition".to_string(),
-      description:
-        "get the symbol information for where a symbol type is defined"
-          .to_string(),
+      description: "get the symbol information for where a symbol type is defined".to_string(),
       parameters: FunctionProperty::Parameters {
         properties: HashMap::from([(
           "symbol_id".to_string(),
           FunctionProperty::Array {
             required: true,
             description: Some(
-              "the 32 byte symbol_id for which to find the declaration"
-                .to_string(),
+              "the 32 byte symbol_id for which to find the declaration".to_string(),
             ),
             items: Box::new(FunctionProperty::Integer {
               description: None,
@@ -64,26 +61,14 @@ impl ToolCallTrait for LspGotoTypeDefinition {
   fn call(
     &self,
     params: ToolCallParams,
-  ) -> Pin<
-    Box<
-      dyn Future<Output = Result<Option<String>, ToolCallError>>
-        + Send
-        + 'static,
-    >,
-  > {
-    let validated_arguments =
-      validate_arguments(params.function_args, &self.parameters, None)
-        .expect("error validating arguments");
+  ) -> Pin<Box<dyn Future<Output = Result<Option<String>, ToolCallError>> + Send + 'static>> {
+    let validated_arguments = validate_arguments(params.function_args, &self.parameters, None)
+      .expect("error validating arguments");
 
-    let symbol_id =
-      get_validated_argument::<Vec<u8>>(&validated_arguments, "symbol_id");
+    let symbol_id = get_validated_argument::<Vec<u8>>(&validated_arguments, "symbol_id");
 
-    let workspace_root = params
-      .session_config
-      .workspace
-      .expect("workspace not set")
-      .workspace_path
-      .clone();
+    let workspace_root =
+      params.session_config.workspace.expect("workspace not set").workspace_path.clone();
 
     Box::pin(async move {
       let query = LsiQuery {
@@ -97,9 +82,7 @@ impl ToolCallTrait for LspGotoTypeDefinition {
 
       params
         .tx
-        .send(ChatToolAction::LsiRequest(Box::new(
-          LsiAction::GoToTypeDefinition(query),
-        )))
+        .send(ChatToolAction::LsiRequest(Box::new(LsiAction::GoToTypeDefinition(query))))
         .unwrap();
       // return none, so the tool completes when it receieves a response from the language server
       Ok(None)

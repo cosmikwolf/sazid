@@ -1,8 +1,6 @@
 use crate::{
   commands::ChatMessageItem,
-  compositor::{
-    self, Component, Compositor, Context, ContextFocus, Event, EventResult,
-  },
+  compositor::{self, Component, Compositor, Context, ContextFocus, Event, EventResult},
   ctrl, filter_picker_entry,
   job::Callback,
   key,
@@ -137,10 +135,7 @@ impl Preview<'_, '_> {
   }
 }
 
-pub fn item_to_nucleo<T: MarkdownItem>(
-  item: T,
-  editor_data: &T::Data,
-) -> Option<(T, Utf32String)> {
+pub fn item_to_nucleo<T: MarkdownItem>(item: T, editor_data: &T::Data) -> Option<(T, Utf32String)> {
   let text: String = item.format(editor_data, None).into();
   Some((item, text.into()))
 }
@@ -169,8 +164,7 @@ impl<T: MarkdownItem> Injector<T> {
       return Err(InjectorShutdown);
     }
 
-    if let Some((item, matcher_text)) = item_to_nucleo(item, &self.editor_data)
-    {
+    if let Some((item, matcher_text)) = item_to_nucleo(item, &self.editor_data) {
       self.dst.push(item, |dst| dst[0] = matcher_text);
     }
     Ok(())
@@ -215,12 +209,7 @@ pub struct SessionView<T: MarkdownItem> {
 
 impl<T: MarkdownItem + 'static> SessionView<T> {
   pub fn stream(editor_data: T::Data) -> (Nucleo<T>, Injector<T>) {
-    let matcher = Nucleo::new(
-      Config::DEFAULT,
-      Arc::new(helix_event::request_redraw),
-      None,
-      1,
-    );
+    let matcher = Nucleo::new(Config::DEFAULT, Arc::new(helix_event::request_redraw), None, 1);
     let streamer = Injector {
       dst: matcher.injector(),
       editor_data: Arc::new(editor_data),
@@ -236,12 +225,7 @@ impl<T: MarkdownItem + 'static> SessionView<T> {
     syn_loader: Arc<ArcSwap<syntax::Loader>>,
     callback_fn: impl Fn(&mut Context, &T, Action) + 'static,
   ) -> Self {
-    let matcher = Nucleo::new(
-      Config::DEFAULT,
-      Arc::new(helix_event::request_redraw),
-      None,
-      1,
-    );
+    let matcher = Nucleo::new(Config::DEFAULT, Arc::new(helix_event::request_redraw), None, 1);
     let injector = matcher.injector();
     for item in options {
       if let Some((item, matcher_text)) = item_to_nucleo(item, &editor_data) {
@@ -265,14 +249,7 @@ impl<T: MarkdownItem + 'static> SessionView<T> {
     syn_loader: Arc<ArcSwap<syntax::Loader>>,
     callback_fn: impl Fn(&mut Context, &T, Action) + 'static,
   ) -> Self {
-    Self::with(
-      matcher,
-      theme,
-      injector.editor_data,
-      injector.shutown,
-      syn_loader,
-      callback_fn,
-    )
+    Self::with(matcher, theme, injector.editor_data, injector.shutown, syn_loader, callback_fn)
   }
 
   fn with(
@@ -359,8 +336,7 @@ impl<T: MarkdownItem + 'static> SessionView<T> {
       self.messages.iter_mut().find(|m| m.id.is_some() && m.id == message.id)
     {
       existing_message.update_message(message.chat_message);
-      existing_message
-        .cache_wrapped_plain_text(self.chat_viewport.width, &self.syn_loader);
+      existing_message.cache_wrapped_plain_text(self.chat_viewport.width, &self.syn_loader);
       self.update_messages_plaintext();
     } else {
       self.messages.push(message);
@@ -377,8 +353,7 @@ impl<T: MarkdownItem + 'static> SessionView<T> {
   pub fn reload_messages(&mut self, messages: Vec<ChatMessageItem>) {
     self.messages = messages;
     self.messages.iter_mut().for_each(|message| {
-      message
-        .cache_wrapped_plain_text(self.chat_viewport.width, &self.syn_loader);
+      message.cache_wrapped_plain_text(self.chat_viewport.width, &self.syn_loader);
     });
     self.update_messages_plaintext();
     self.state.scroll_top();
@@ -416,9 +391,7 @@ impl<T: MarkdownItem + 'static> SessionView<T> {
     self.matcher.restart(false);
     let injector = self.matcher.injector();
     for item in new_options {
-      if let Some((item, matcher_text)) =
-        item_to_nucleo(item, &self.editor_data)
-      {
+      if let Some((item, matcher_text)) = item_to_nucleo(item, &self.editor_data) {
         injector.push(item, |dst| dst[0] = matcher_text);
       }
     }
@@ -435,9 +408,9 @@ impl<T: MarkdownItem + 'static> SessionView<T> {
     match direction {
       Direction::Forward => {
         self.state.selected = match self.state.selected {
-          Some(selected) => Some(
-            selected.saturating_add(amount as usize).clamp(0, len as usize - 1),
-          ),
+          Some(selected) => {
+            Some(selected.saturating_add(amount as usize).clamp(0, len as usize - 1))
+          },
           None => Some(0_usize),
         };
         self.state.scroll_to_selection()
@@ -478,27 +451,18 @@ impl<T: MarkdownItem + 'static> SessionView<T> {
 
   /// Move the cursor to the last entry
   pub fn to_end(&mut self) {
-    self.selected_option =
-      self.matcher.snapshot().matched_item_count().saturating_sub(1);
+    self.selected_option = self.matcher.snapshot().matched_item_count().saturating_sub(1);
   }
 
   pub fn selection(&self) -> Option<&T> {
-    self
-      .matcher
-      .snapshot()
-      .get_matched_item(self.selected_option)
-      .map(|item| item.data)
+    self.matcher.snapshot().get_matched_item(self.selected_option).map(|item| item.data)
   }
 
   pub fn toggle_preview(&mut self) {
     self.show_preview = !self.show_preview;
   }
 
-  fn prompt_handle_event(
-    &mut self,
-    _event: &Event,
-    _cx: &mut Context,
-  ) -> EventResult {
+  fn prompt_handle_event(&mut self, _event: &Event, _cx: &mut Context) -> EventResult {
     // if let EventResult::Consumed(_) = self.textbox.handle_event(event, cx) {
     //   let pattern = self.textbox.line();
     //   // TODO: better track how the pattern has changed
@@ -549,18 +513,12 @@ impl<T: MarkdownItem + 'static> SessionView<T> {
           Ok((metadata, content_type))
         });
         let preview = data
-          .map(|(metadata, content_type)| {
-            match (metadata.len(), content_type) {
-              (_, content_inspector::ContentType::BINARY) => {
-                CachedPreview::Binary
-              },
-              (size, _) if size > MAX_FILE_SIZE_FOR_PREVIEW => {
-                CachedPreview::LargeFile
-              },
-              _ => Document::open(path, None, None, editor.config.clone())
-                .map(|doc| CachedPreview::Document(Box::new(doc)))
-                .unwrap_or(CachedPreview::NotFound),
-            }
+          .map(|(metadata, content_type)| match (metadata.len(), content_type) {
+            (_, content_inspector::ContentType::BINARY) => CachedPreview::Binary,
+            (size, _) if size > MAX_FILE_SIZE_FOR_PREVIEW => CachedPreview::LargeFile,
+            _ => Document::open(path, None, None, editor.config.clone())
+              .map(|doc| CachedPreview::Document(Box::new(doc)))
+              .unwrap_or(CachedPreview::NotFound),
           })
           .unwrap_or(CachedPreview::NotFound);
         self.preview_cache.insert(path.to_owned(), preview);
@@ -591,56 +549,44 @@ impl<T: MarkdownItem + 'static> SessionView<T> {
 
     // Then attempt to highlight it if it has no language set
     if doc.language_config().is_none() {
-      if let Some(language_config) =
-        doc.detect_language_config(&cx.editor.syn_loader.load())
-      {
+      if let Some(language_config) = doc.detect_language_config(&cx.editor.syn_loader.load()) {
         doc.language = Some(language_config.clone());
         let text = doc.text().clone();
         let loader = cx.editor.syn_loader.clone();
         let job = tokio::task::spawn_blocking(move || {
           let syntax = language_config
             .highlight_config(&loader.load().scopes())
-            .and_then(|highlight_config| {
-              Syntax::new(text.slice(..), highlight_config, loader)
-            });
-          let callback =
-            move |editor: &mut Editor, compositor: &mut Compositor| {
-              let Some(syntax) = syntax else {
-                log::info!("highlighting session item failed");
-                return;
-              };
-              let session = match compositor.find::<Overlay<Self>>() {
-                Some(Overlay { content, .. }) => Some(content),
-                None => compositor
-                  .find::<Overlay<DynamicSession<T>>>()
-                  .map(|overlay| &mut overlay.content.file_session),
-              };
-              let Some(session) = session else {
-                log::info!(
-                  "session closed before syntax highlighting finished"
-                );
-                return;
-              };
-              // Try to find a document in the cache
-              let doc = match current_file {
-                PathOrId::Id(doc_id) => doc_mut!(editor, &doc_id),
-                PathOrId::Path(path) => {
-                  match session.preview_cache.get_mut(&path) {
-                    Some(CachedPreview::Document(ref mut doc)) => {
-                      let diagnostics = Editor::doc_diagnostics(
-                        &editor.language_servers,
-                        &editor.diagnostics,
-                        doc,
-                      );
-                      doc.replace_diagnostics(diagnostics, &[], None);
-                      doc
-                    },
-                    _ => return,
-                  }
-                },
-              };
-              doc.syntax = Some(syntax);
+            .and_then(|highlight_config| Syntax::new(text.slice(..), highlight_config, loader));
+          let callback = move |editor: &mut Editor, compositor: &mut Compositor| {
+            let Some(syntax) = syntax else {
+              log::info!("highlighting session item failed");
+              return;
             };
+            let session = match compositor.find::<Overlay<Self>>() {
+              Some(Overlay { content, .. }) => Some(content),
+              None => compositor
+                .find::<Overlay<DynamicSession<T>>>()
+                .map(|overlay| &mut overlay.content.file_session),
+            };
+            let Some(session) = session else {
+              log::info!("session closed before syntax highlighting finished");
+              return;
+            };
+            // Try to find a document in the cache
+            let doc = match current_file {
+              PathOrId::Id(doc_id) => doc_mut!(editor, &doc_id),
+              PathOrId::Path(path) => match session.preview_cache.get_mut(&path) {
+                Some(CachedPreview::Document(ref mut doc)) => {
+                  let diagnostics =
+                    Editor::doc_diagnostics(&editor.language_servers, &editor.diagnostics, doc);
+                  doc.replace_diagnostics(diagnostics, &[], None);
+                  doc
+                },
+                _ => return,
+              },
+            };
+            doc.syntax = Some(syntax);
+          };
           Callback::EditorCompositor(Box::new(callback))
         });
         let tmp: compositor::Callback = Box::new(move |_, ctx| {
@@ -675,16 +621,14 @@ impl<T: MarkdownItem + 'static> SessionView<T> {
     let status = self.matcher.tick(10);
     let snapshot = self.matcher.snapshot();
     if status.changed {
-      self.selected_option = self
-        .selected_option
-        .min(snapshot.matched_item_count().saturating_sub(1))
+      self.selected_option =
+        self.selected_option.min(snapshot.matched_item_count().saturating_sub(1))
     }
 
     let text_style = cx.editor.theme.get("ui.text");
     let cursor_style = cx.editor.theme.get("ui.cursor");
     let selected = cx.editor.theme.get("ui.selection");
-    let highlight_style =
-      cx.editor.theme.get("special").add_modifier(Modifier::BOLD);
+    let highlight_style = cx.editor.theme.get("special").add_modifier(Modifier::BOLD);
 
     // -- Render the frame:
     // clear area
@@ -720,8 +664,7 @@ impl<T: MarkdownItem + 'static> SessionView<T> {
       matcher.config.set_match_paths()
     }
 
-    if let (Some(position), cursor) = self.cursor(self.chat_viewport, cx.editor)
-    {
+    if let (Some(position), cursor) = self.cursor(self.chat_viewport, cx.editor) {
       self.state.cursor_position = Some(position);
     };
 
@@ -778,7 +721,7 @@ impl<T: MarkdownItem + 'static> SessionView<T> {
     // );
     //
     let seltex = text.slice(highlight_range.clone());
-    log::info!("selected text:\n{:?} {}", seltex, seltex.len_chars());
+    // log::info!("selected text:\n{:?} {}", seltex, seltex.len_chars());
 
     Table::new(
       self
@@ -798,8 +741,7 @@ impl<T: MarkdownItem + 'static> SessionView<T> {
             .centered()
             .with_block(Block::default().borders(Borders::RIGHT));
 
-          Row::new(vec![index_cell, message_cell])
-            .height(message.plain_text.len_lines() as u16)
+          Row::new(vec![index_cell, message_cell]).height(message.plain_text.len_lines() as u16)
         })
         .collect::<Vec<Row>>(),
     )
@@ -827,8 +769,7 @@ impl<T: MarkdownItem + 'static> SessionView<T> {
     // Calculate viewport byte ranges:
     // Saturating subs to make it inclusive zero indexing.
     let last_line = text.len_lines().saturating_sub(1);
-    let last_visible_line =
-      (row + height as usize).saturating_sub(1).min(last_line);
+    let last_visible_line = (row + height as usize).saturating_sub(1).min(last_line);
     let start = text.line_to_byte(row.min(last_line));
     let end = text.line_to_byte(last_visible_line + 1);
 
@@ -987,12 +928,10 @@ impl<T: MarkdownItem + 'static> SessionView<T> {
     let selection_scope = theme
       .find_scope_index_exact("ui.selection")
       .expect("could not find `ui.selection` scope in the theme!");
-    let primary_selection_scope = theme
-      .find_scope_index_exact("ui.selection.primary")
-      .unwrap_or(selection_scope);
+    let primary_selection_scope =
+      theme.find_scope_index_exact("ui.selection.primary").unwrap_or(selection_scope);
 
-    let base_cursor_scope =
-      theme.find_scope_index_exact("ui.cursor").unwrap_or(selection_scope);
+    let base_cursor_scope = theme.find_scope_index_exact("ui.cursor").unwrap_or(selection_scope);
     let base_primary_cursor_scope =
       theme.find_scope_index("ui.cursor.primary").unwrap_or(base_cursor_scope);
 
@@ -1055,11 +994,7 @@ impl<T: MarkdownItem + 'static> SessionView<T> {
           spans.push((cursor_scope, cursor_start..range.head));
         }
         */
-        log::info!(
-          "standard case: head {} anchor {}",
-          range.head,
-          range.anchor
-        );
+        log::info!("standard case: head {} anchor {}", range.head, range.anchor);
 
         spans.push((cursor_scope, range.head..range.head));
       } else {
@@ -1083,23 +1018,14 @@ impl<T: MarkdownItem + 'static> SessionView<T> {
         };
         spans.push((selection_scope, selection_start..range.anchor));
           */
-        log::info!(
-          "reverse case: cursor head {} anchor {}",
-          range.head,
-          range.anchor
-        );
+        log::info!("reverse case: cursor head {} anchor {}", range.head, range.anchor);
         spans.push((cursor_scope, range.head..range.anchor));
       }
     }
 
     spans
   }
-  fn render_preview(
-    &mut self,
-    area: Rect,
-    surface: &mut Surface,
-    cx: &mut Context,
-  ) {
+  fn render_preview(&mut self, area: Rect, surface: &mut Surface, cx: &mut Context) {
     // -- Render the frame:
     // clear area
     let background = cx.editor.theme.get("ui.background");
@@ -1120,16 +1046,13 @@ impl<T: MarkdownItem + 'static> SessionView<T> {
       let preview = self.get_preview(path, cx.editor);
       let doc = match preview.document() {
         Some(doc)
-          if range.map_or(true, |(start, end)| {
-            start <= end && end <= doc.text().len_lines()
-          }) =>
+          if range.map_or(true, |(start, end)| start <= end && end <= doc.text().len_lines()) =>
         {
           doc
         },
         _ => {
           let alt_text = preview.placeholder();
-          let x =
-            inner.x + inner.width.saturating_sub(alt_text.len() as u16) / 2;
+          let x = inner.x + inner.width.saturating_sub(alt_text.len() as u16) / 2;
           let y = inner.y + inner.height / 2;
           surface.set_stringn(x, y, alt_text, inner.width as usize, text);
           return;
@@ -1163,22 +1086,16 @@ impl<T: MarkdownItem + 'static> SessionView<T> {
         }
       }
 
-      let syntax_highlights = EditorView::doc_syntax_highlights(
-        doc,
-        offset.anchor,
-        area.height,
-        &cx.editor.theme,
-      );
+      let syntax_highlights =
+        EditorView::doc_syntax_highlights(doc, offset.anchor, area.height, &cx.editor.theme);
 
       let mut overlay_highlights =
         EditorView::empty_highlight_iter(doc, offset.anchor, area.height);
-      for spans in EditorView::doc_diagnostics_highlights(doc, &cx.editor.theme)
-      {
+      for spans in EditorView::doc_diagnostics_highlights(doc, &cx.editor.theme) {
         if spans.is_empty() {
           continue;
         }
-        overlay_highlights =
-          Box::new(helix_core::syntax::merge(overlay_highlights, spans));
+        overlay_highlights = Box::new(helix_core::syntax::merge(overlay_highlights, spans));
       }
       let mut decorations: Vec<Box<dyn LineDecoration>> = Vec::new();
 
@@ -1188,8 +1105,7 @@ impl<T: MarkdownItem + 'static> SessionView<T> {
           .theme
           .try_get("ui.highlight")
           .unwrap_or_else(|| cx.editor.theme.get("ui.selection"));
-        let draw_highlight = move |renderer: &mut TextRenderer,
-                                   pos: LinePos| {
+        let draw_highlight = move |renderer: &mut TextRenderer, pos: LinePos| {
           if (start..=end).contains(&pos.doc_line) {
             let area = Rect::new(
               renderer.viewport.x,
@@ -1236,9 +1152,7 @@ impl<H: Iterator<Item = HighlightEvent>> Iterator for StyleIter<'_, H> {
   fn next(&mut self) -> Option<(Style, usize)> {
     while let Some(event) = self.highlight_iter.next() {
       match event {
-        HighlightEvent::HighlightStart(highlights) => {
-          self.active_highlights.push(highlights)
-        },
+        HighlightEvent::HighlightStart(highlights) => self.active_highlights.push(highlights),
         HighlightEvent::HighlightEnd => {
           self.active_highlights.pop();
         },
@@ -1246,10 +1160,10 @@ impl<H: Iterator<Item = HighlightEvent>> Iterator for StyleIter<'_, H> {
           if start == end {
             continue;
           }
-          let style =
-            self.active_highlights.iter().fold(self.text_style, |acc, span| {
-              acc.patch(self.theme.highlight(span.0))
-            });
+          let style = self
+            .active_highlights
+            .iter()
+            .fold(self.text_style, |acc, span| acc.patch(self.theme.highlight(span.0)));
           return Some((style, end));
         },
       }
@@ -1274,24 +1188,20 @@ impl<T: MarkdownItem + 'static + Send + Sync> Component for SessionView<T> {
     // |         | |         |
     // +---------+ +---------+
 
-    let render_preview = self.show_preview
-      && self.file_fn.is_some()
-      && area.width > MIN_AREA_WIDTH_FOR_PREVIEW;
+    let render_preview =
+      self.show_preview && self.file_fn.is_some() && area.width > MIN_AREA_WIDTH_FOR_PREVIEW;
 
-    let session_width =
-      if render_preview { area.width / 2 } else { area.width };
+    let session_width = if render_preview { area.width / 2 } else { area.width };
 
     let session_area = area.with_width(session_width);
 
-    let selection_highlights =
-      self.get_selection_highlights(session_area, surface, cx);
+    let selection_highlights = self.get_selection_highlights(session_area, surface, cx);
 
     self.render_session(session_area, surface, cx, selection_highlights);
 
     if let (Some(pos), kind) = self.cursor(area, cx.editor) {
       // log::debug!("Cursor Position: {:?}", pos);
-      let cursor_area =
-        Rect { x: pos.col as u16, y: pos.row as u16, width: 1, height: 1 };
+      let cursor_area = Rect { x: pos.col as u16, y: pos.row as u16, width: 1, height: 1 };
       if cursor_area.intersects(area) {
         surface.set_style(
           cursor_area,
@@ -1301,11 +1211,7 @@ impl<T: MarkdownItem + 'static + Send + Sync> Component for SessionView<T> {
             .bg(Color::Blue),
         )
       } else {
-        log::error!(
-          "CURSOR OUT OF BOUNDS {:?} not within {:?}",
-          cursor_area,
-          area
-        );
+        log::error!("CURSOR OUT OF BOUNDS {:?} not within {:?}", cursor_area, area);
       }
     };
     // if render_preview {
@@ -1323,23 +1229,22 @@ impl<T: MarkdownItem + 'static + Send + Sync> Component for SessionView<T> {
     let close_fn = |session: &mut Self| {
       // if the session is very large don't store it as last_session to avoid
       // excessive memory consumption
-      let callback: compositor::Callback =
-        if session.matcher.snapshot().item_count() > 100_000 {
-          Box::new(|compositor: &mut Compositor, _ctx| {
-            // remove the layer
-            compositor.pop();
-          })
-        } else {
-          // stop streaming in new items in the background, really we should
-          // be restarting the stream somehow once the session gets
-          // reopened instead (like for an FS crawl) that would also remove the
-          // need for the special case above but that is pretty tricky
-          session.shutdown.store(true, atomic::Ordering::Relaxed);
-          Box::new(|compositor: &mut Compositor, _ctx| {
-            // remove the layer
-            compositor.last_picker = compositor.pop();
-          })
-        };
+      let callback: compositor::Callback = if session.matcher.snapshot().item_count() > 100_000 {
+        Box::new(|compositor: &mut Compositor, _ctx| {
+          // remove the layer
+          compositor.pop();
+        })
+      } else {
+        // stop streaming in new items in the background, really we should
+        // be restarting the stream somehow once the session gets
+        // reopened instead (like for an FS crawl) that would also remove the
+        // need for the special case above but that is pretty tricky
+        session.shutdown.store(true, atomic::Ordering::Relaxed);
+        Box::new(|compositor: &mut Compositor, _ctx| {
+          // remove the layer
+          compositor.last_picker = compositor.pop();
+        })
+      };
       EventResult::Consumed(Some(callback))
     };
 
@@ -1361,12 +1266,12 @@ impl<T: MarkdownItem + 'static + Send + Sync> Component for SessionView<T> {
           log::info!("mouse drag event: {:?}", event);
         },
         MouseEventKind::ScrollUp => {
-          log::info!("scroll up");
+          // log::info!("scroll up");
           self.state.scroll_by(1, Direction::Backward);
           helix_event::request_redraw();
         },
         MouseEventKind::ScrollDown => {
-          log::info!("scroll down");
+          // log::info!("scroll down");
           self.state.scroll_by(1, Direction::Forward);
           helix_event::request_redraw();
         },
@@ -1452,14 +1357,9 @@ impl<T: MarkdownItem + 'static + Send + Sync> Component for SessionView<T> {
     EventResult::Consumed(None)
   }
 
-  fn cursor(
-    &self,
-    _area: Rect,
-    editor: &Editor,
-  ) -> (Option<Position>, CursorKind) {
+  fn cursor(&self, _area: Rect, editor: &Editor) -> (Option<Position>, CursorKind) {
     let text = self.get_messages_plaintext();
-    let session_cursor =
-      self.selection.primary().cursor(text.slice(..)).min(text.len_chars());
+    let session_cursor = self.selection.primary().cursor(text.slice(..)).min(text.len_chars());
 
     // let mut row = text
     //   .try_char_to_line(session_cursor)
@@ -1470,10 +1370,7 @@ impl<T: MarkdownItem + 'static + Send + Sync> Component for SessionView<T> {
     //   .try_line_to_char(row)
     //   .map_err(|e| format!("cursor out of bounds {}", e))
     //   .unwrap();
-    let mut pos = crate::movement::translate_char_index_to_pos(
-      text.slice(..),
-      session_cursor,
-    );
+    let mut pos = crate::movement::translate_char_index_to_pos(text.slice(..), session_cursor);
     // let mut col = session_cursor.saturating_sub(char_at_line_start);
     // if col > text.line(row).len_chars() {
     //   col = text.line(row).len_chars();
@@ -1511,10 +1408,7 @@ impl<T: MarkdownItem + 'static + Send + Sync> Component for SessionView<T> {
     editor.cursor_cache.set(Some(cursor_res.0));
     cursor_res
   }
-  fn required_size(
-    &mut self,
-    (width, height): (u16, u16),
-  ) -> Option<(u16, u16)> {
+  fn required_size(&mut self, (width, height): (u16, u16)) -> Option<(u16, u16)> {
     self.completion_height = height.saturating_sub(4);
     Some((width, height))
   }
@@ -1535,9 +1429,8 @@ type SessionCallback<T> = Box<dyn Fn(&mut Context, &T, Action)>;
 
 /// Returns a new list of options to replace the contents of the session
 /// when called with the current session query,
-pub type DynQueryCallback<T> = Box<
-  dyn Fn(String, &mut Editor) -> BoxFuture<'static, anyhow::Result<Vec<T>>>,
->;
+pub type DynQueryCallback<T> =
+  Box<dyn Fn(String, &mut Editor) -> BoxFuture<'static, anyhow::Result<Vec<T>>>>;
 
 /// A session that updates its contents via a callback whenever the
 /// query string changes. Useful for live grep, workspace symbols, etc.
@@ -1548,10 +1441,7 @@ pub struct DynamicSession<T: MarkdownItem + Send + Sync> {
 }
 
 impl<T: MarkdownItem + Send + Sync> DynamicSession<T> {
-  pub fn new(
-    file_session: SessionView<T>,
-    query_callback: DynQueryCallback<T>,
-  ) -> Self {
+  pub fn new(file_session: SessionView<T>, query_callback: DynQueryCallback<T>) -> Self {
     Self { file_session, query_callback, query: String::new() }
   }
 }
@@ -1606,10 +1496,7 @@ impl<T: MarkdownItem + Send + Sync + 'static> Component for DynamicSession<T> {
   }
 }
 
-pub fn session_picker(
-  root: PathBuf,
-  config: &helix_view::editor::Config,
-) -> Picker<PathBuf> {
+pub fn session_picker(root: PathBuf, config: &helix_view::editor::Config) -> Picker<PathBuf> {
   use ignore::{types::TypesBuilder, WalkBuilder};
   use std::time::Instant;
 
@@ -1629,25 +1516,18 @@ pub fn session_picker(
     .git_exclude(config.file_picker.git_exclude)
     .sort_by_file_name(|name1, name2| name1.cmp(name2))
     .max_depth(config.file_picker.max_depth)
-    .filter_entry(move |entry| {
-      filter_picker_entry(entry, &absolute_root, dedup_symlinks)
-    });
+    .filter_entry(move |entry| filter_picker_entry(entry, &absolute_root, dedup_symlinks));
 
-  walk_builder
-    .add_custom_ignore_filename(helix_loader::config_dir().join("ignore"));
+  walk_builder.add_custom_ignore_filename(helix_loader::config_dir().join("ignore"));
   walk_builder.add_custom_ignore_filename(".helix/ignore");
 
   // We want to exclude files that the editor can't handle yet
   let mut type_builder = TypesBuilder::new();
   type_builder
-    .add(
-      "compressed",
-      "*.{zip,gz,bz2,zst,lzo,sz,tgz,tbz2,lz,lz4,lzma,lzo,z,Z,xz,7z,rar,cab}",
-    )
+    .add("compressed", "*.{zip,gz,bz2,zst,lzo,sz,tgz,tbz2,lz,lz4,lzma,lzo,z,Z,xz,7z,rar,cab}")
     .expect("Invalid type definition");
   type_builder.negate("all");
-  let excluded_types =
-    type_builder.build().expect("failed to build excluded_types");
+  let excluded_types = type_builder.build().expect("failed to build excluded_types");
   walk_builder.types(excluded_types);
   let mut files = walk_builder.build().filter_map(|entry| {
     let entry = entry.ok()?;
@@ -1658,21 +1538,19 @@ pub fn session_picker(
   });
   log::debug!("file_picker init {:?}", Instant::now().duration_since(now));
 
-  let picker =
-    Picker::new(Vec::new(), root, move |cx, path: &PathBuf, _action| {
-      if let Err(e) = cx.session.load_session(path) {
-        // let err = if let Some(err) = e.source() {
-        //   format!("{}", err)
-        // } else {
-        let err = format!("unable to open \"{}\" {}", path.display(), e);
-        // };
-        cx.editor.set_error(err);
-      }
-    })
-    .with_preview(|_editor, path| Some((path.clone().into(), None)));
+  let picker = Picker::new(Vec::new(), root, move |cx, path: &PathBuf, _action| {
+    if let Err(e) = cx.session.load_session(path) {
+      // let err = if let Some(err) = e.source() {
+      //   format!("{}", err)
+      // } else {
+      let err = format!("unable to open \"{}\" {}", path.display(), e);
+      // };
+      cx.editor.set_error(err);
+    }
+  })
+  .with_preview(|_editor, path| Some((path.clone().into(), None)));
   let injector = picker.injector();
-  let timeout =
-    std::time::Instant::now() + std::time::Duration::from_millis(30);
+  let timeout = std::time::Instant::now() + std::time::Duration::from_millis(30);
 
   let mut hit_timeout = false;
   for file in &mut files {

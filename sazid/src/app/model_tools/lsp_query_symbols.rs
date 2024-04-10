@@ -66,16 +66,9 @@ impl ToolCallTrait for LspQuerySymbol {
   fn call(
     &self,
     params: ToolCallParams,
-  ) -> Pin<
-    Box<
-      dyn Future<Output = Result<Option<String>, ToolCallError>>
-        + Send
-        + 'static,
-    >,
-  > {
-    let validated_arguments =
-      validate_arguments(params.function_args, &self.parameters, None)
-        .expect("error validating arguments");
+  ) -> Pin<Box<dyn Future<Output = Result<Option<String>, ToolCallError>> + Send + 'static>> {
+    let validated_arguments = validate_arguments(params.function_args, &self.parameters, None)
+      .expect("error validating arguments");
 
     let workspace_root = params
       .session_config
@@ -85,19 +78,14 @@ impl ToolCallTrait for LspQuerySymbol {
       .workspace_path
       .to_path_buf();
 
-    let name_regex =
-      get_validated_argument::<String>(&validated_arguments, "name_regex");
+    let name_regex = get_validated_argument::<String>(&validated_arguments, "name_regex");
     let kind = get_validated_argument::<String>(&validated_arguments, "kind");
     let range = get_validated_argument::<Range>(&validated_arguments, "range");
 
-    let file_path_regex =
-      get_validated_argument::<String>(&validated_arguments, "file_path_regex");
+    let file_path_regex = get_validated_argument::<String>(&validated_arguments, "file_path_regex");
 
     Box::pin(async move {
-      params
-        .session_config
-        .workspace
-        .expect("workspace must be initialized before query");
+      params.session_config.workspace.expect("workspace must be initialized before query");
 
       let kind: Option<SymbolKind> = kind.and_then(|kind| {
         let kind = change_case::pascal_case(&kind);
@@ -118,9 +106,7 @@ impl ToolCallTrait for LspQuerySymbol {
 
       params
         .tx
-        .send(ChatToolAction::LsiRequest(Box::new(
-          LsiAction::QueryWorkspaceSymbols(query),
-        )))
+        .send(ChatToolAction::LsiRequest(Box::new(LsiAction::QueryWorkspaceSymbols(query))))
         .unwrap();
       Ok(None)
     }) // End example call function code

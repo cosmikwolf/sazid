@@ -6,10 +6,7 @@ use std::collections::BTreeMap;
 use std::error::Error;
 use std::path::Path;
 
-fn filter_func(
-  object_id: (u32, u16),
-  object: &mut Object,
-) -> Option<((u32, u16), Object)> {
+fn filter_func(object_id: (u32, u16), object: &mut Object) -> Option<((u32, u16), Object)> {
   if PDF_IGNORE.contains(&object.type_name().unwrap_or_default()) {
     return None;
   }
@@ -53,17 +50,15 @@ impl PdfText {
   /// Extracts text from a given PDF file
   pub fn from_pdf<P: AsRef<Path>>(pdf_path: P) -> Result<Self, Box<dyn Error>> {
     let mut pdf_text = Self { text: BTreeMap::new(), errors: Vec::new() };
-    let doc = Document::load_filtered(pdf_path, filter_func).map_err(|e| {
-      Box::<dyn Error>::from(format!("Failed to load PDF: {}", e))
-    })?;
+    let doc = Document::load_filtered(pdf_path, filter_func)
+      .map_err(|e| Box::<dyn Error>::from(format!("Failed to load PDF: {}", e)))?;
 
     let pages = doc.get_pages();
     for &page_num in pages.keys() {
       let text_result = doc.extract_text(&[page_num]);
       match text_result {
         Ok(text) => {
-          let lines =
-            text.split('\n').map(|s| s.trim_end().to_string()).collect();
+          let lines = text.split('\n').map(|s| s.trim_end().to_string()).collect();
           pdf_text.text.insert(page_num, lines);
         },
         Err(e) => {

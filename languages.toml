@@ -186,6 +186,7 @@ command = [
 
 [language-server.rust-analyzer]
 command = "rust-analyzer"
+args = ["-v", "--log-file", "/tmp/rust-analyzer.log"]
 
 [language-server.rust-analyzer.config]
 inlayHints.bindingModeHints.enable = false

@@ -38,18 +38,13 @@ pub fn validate_and_extract_pattern_argument(
       serde_json::Value::String(s) => match regex::Regex::new(s) {
         Ok(r) => Ok(Some(r)),
         Err(e) => Err(ToolCallError::new(
-          format!("{} argument must be a valid regex: {}", argument, e)
-            .as_str(),
+          format!("{} argument must be a valid regex: {}", argument, e).as_str(),
         )),
       },
-      _ => Err(ToolCallError::new(
-        format!("{} argument must be a boolean", argument).as_str(),
-      )),
+      _ => Err(ToolCallError::new(format!("{} argument must be a boolean", argument).as_str())),
     },
     None => match required {
-      true => Err(ToolCallError::new(
-        format!("{} argument is required", argument).as_str(),
-      )),
+      true => Err(ToolCallError::new(format!("{} argument is required", argument).as_str())),
       false => Ok(None),
     },
   }
@@ -63,14 +58,10 @@ pub fn validate_and_extract_boolean_argument(
   match function_args.get(argument) {
     Some(argument) => match argument {
       serde_json::Value::Bool(b) => Ok(Some(*b)),
-      _ => Err(ToolCallError::new(
-        format!("{} argument must be a boolean", argument).as_str(),
-      )),
+      _ => Err(ToolCallError::new(format!("{} argument must be a boolean", argument).as_str())),
     },
     None => match required {
-      true => Err(ToolCallError::new(
-        format!("{} argument is required", argument).as_str(),
-      )),
+      true => Err(ToolCallError::new(format!("{} argument is required", argument).as_str())),
       false => Ok(None),
     },
   }
@@ -84,14 +75,10 @@ pub fn validate_and_extract_numeric_argument(
   match function_args.get(argument) {
     Some(argument) => match argument {
       serde_json::Value::Number(n) => Ok(Some(n.as_f64().unwrap())),
-      _ => Err(ToolCallError::new(
-        format!("{} argument must be a number", argument).as_str(),
-      )),
+      _ => Err(ToolCallError::new(format!("{} argument must be a number", argument).as_str())),
     },
     None => match required {
-      true => Err(ToolCallError::new(
-        format!("{} argument is required", argument).as_str(),
-      )),
+      true => Err(ToolCallError::new(format!("{} argument is required", argument).as_str())),
       false => Ok(None),
     },
   }
@@ -105,14 +92,10 @@ pub fn validate_and_extract_byte_array(
   match function_args.get(argument) {
     Some(argument) => match argument {
       serde_json::Value::String(s) => Ok(Some(s.clone())),
-      _ => Err(ToolCallError::new(
-        format!("{} argument must be a string", argument).as_str(),
-      )),
+      _ => Err(ToolCallError::new(format!("{} argument must be a string", argument).as_str())),
     },
     None => match required {
-      true => Err(ToolCallError::new(
-        format!("{} argument is required", argument).as_str(),
-      )),
+      true => Err(ToolCallError::new(format!("{} argument is required", argument).as_str())),
       false => Ok(None),
     },
   }
@@ -126,14 +109,10 @@ pub fn validate_and_extract_string_argument(
   match function_args.get(argument) {
     Some(argument) => match argument {
       serde_json::Value::String(s) => Ok(Some(s.clone())),
-      _ => Err(ToolCallError::new(
-        format!("{} argument must be a string", argument).as_str(),
-      )),
+      _ => Err(ToolCallError::new(format!("{} argument must be a string", argument).as_str())),
     },
     None => match required {
-      true => Err(ToolCallError::new(
-        format!("{} argument is required", argument).as_str(),
-      )),
+      true => Err(ToolCallError::new(format!("{} argument is required", argument).as_str())),
       false => Ok(None),
     },
   }
@@ -164,14 +143,10 @@ pub fn validate_and_extract_range_argument(
           _ => Err(ToolCallError::new("Failed to parse range")),
         }
       },
-      _ => Err(ToolCallError::new(
-        format!("{} argument must be a string", argument).as_str(),
-      )),
+      _ => Err(ToolCallError::new(format!("{} argument must be a string", argument).as_str())),
     },
     None => match required {
-      true => Err(ToolCallError::new(
-        format!("{} argument is required", argument).as_str(),
-      )),
+      true => Err(ToolCallError::new(format!("{} argument is required", argument).as_str())),
       false => Ok(None),
     },
   }
@@ -186,14 +161,12 @@ pub fn validate_and_extract_path_from_argument(
   match function_args.get("path") {
     Some(path) => {
       if let serde_json::Value::String(path_str) = path {
-        let accesible_paths = get_accessible_file_paths(
-          session_config.accessible_paths.clone(),
-          root_dir,
-        );
+        let accesible_paths =
+          get_accessible_file_paths(session_config.accessible_paths.clone(), root_dir);
         let path_buf = PathBuf::from(path_str);
-        if accesible_paths.contains_key(path_buf.to_str().ok_or_else(|| {
-          ToolCallError::new("Path contains invalid Unicode.")
-        })?) {
+        if accesible_paths.contains_key(
+          path_buf.to_str().ok_or_else(|| ToolCallError::new("Path contains invalid Unicode."))?,
+        ) {
           Ok(Some(path_buf))
         } else {
           Err(ToolCallError::new(&format!(
@@ -202,9 +175,7 @@ pub fn validate_and_extract_path_from_argument(
           )))
         }
       } else {
-        Err(ToolCallError::new(
-          "Expected a string for 'path' argument but got a different type.",
-        ))
+        Err(ToolCallError::new("Expected a string for 'path' argument but got a different type."))
       }
     },
     None if required => Err(ToolCallError::new("path argument is required.")),
@@ -229,27 +200,20 @@ pub fn validate_and_extract_paths_from_argument(
           .map(|g| g.compile_matcher())
           .collect();
 
-        let paths: Vec<PathBuf> = get_accessible_file_paths(
-          session_config.accessible_paths.clone(),
-          root_dir,
-        )
-        .values()
-        .flat_map(|path| {
-          if globmatchers.iter().any(|g| g.is_match(path)) {
-            Ok(path.to_path_buf())
-          } else {
-            Err(ToolCallError::new(&format!(
-              "File path is not accessible: {:?}.",
-              path
-            )))
-          }
-        })
-        .collect();
+        let paths: Vec<PathBuf> =
+          get_accessible_file_paths(session_config.accessible_paths.clone(), root_dir)
+            .values()
+            .flat_map(|path| {
+              if globmatchers.iter().any(|g| g.is_match(path)) {
+                Ok(path.to_path_buf())
+              } else {
+                Err(ToolCallError::new(&format!("File path is not accessible: {:?}.", path)))
+              }
+            })
+            .collect();
         Ok(Some(paths))
       } else {
-        Err(ToolCallError::new(
-          "Expected a string for 'paths' argument but got a different type.",
-        ))
+        Err(ToolCallError::new("Expected a string for 'paths' argument but got a different type."))
       }
     },
     None if required => Err(ToolCallError::new("paths argument is required.")),
@@ -275,8 +239,7 @@ pub fn get_accessible_file_paths(
     if path.exists() {
       WalkDir::new(path).into_iter().flatten().for_each(|entry| {
         let path = entry.path();
-        file_paths
-          .insert(path.to_string_lossy().to_string(), path.to_path_buf());
+        file_paths.insert(path.to_string_lossy().to_string(), path.to_path_buf());
       });
     }
   }

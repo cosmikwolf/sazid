@@ -18,8 +18,7 @@ use helix_view::{
   Editor, Theme,
 };
 use sazid::app::messages::{
-  chat_completion_request_message_content_as_str,
-  chat_completion_request_message_tool_calls_as_str,
+  chat_completion_request_message_content_as_str, chat_completion_request_message_tool_calls_as_str,
 };
 use tui::{
   buffer::Buffer,
@@ -94,7 +93,10 @@ impl ChatMessageItem {
     if self.plaintext_wrapped_width == width {
       self.plain_text.len_lines()
     } else {
-      panic!("need to update wrapping before trying to get wrapped height, or else it is not up to date")
+      log::error!(
+        "need to update wrapping before trying to get wrapped height, or else it is not up to date"
+      );
+      self.plain_text.len_lines()
     }
   }
 
@@ -189,17 +191,14 @@ impl ChatMessageItem {
         )
       },
       ChatMessageType::Error(_) => (
-        Style::default()
-          .fg(Color::Red)
-          .add_modifier(helix_view::theme::Modifier::BOLD),
+        Style::default().fg(Color::Red).add_modifier(helix_view::theme::Modifier::BOLD),
         "ERROR".to_string(),
       ),
     };
     // log::warn!("content: {}\nheader: {}", self.content(), header);
     let header = Spans::from(vec![Span::styled(header, style)]);
     let mut lines = vec![header];
-    let text =
-      MarkdownRenderer::parse(self.content(), theme, config_loader.clone());
+    let text = MarkdownRenderer::parse(self.content(), theme, config_loader.clone());
     lines.extend(text);
 
     if let Some(tool_calls) = self.tool_calls() {
@@ -219,17 +218,13 @@ impl ChatMessageItem {
 
   pub fn content(&self) -> &str {
     match &self.chat_message {
-      ChatMessageType::Chat(message) => {
-        chat_completion_request_message_content_as_str(message)
-      },
+      ChatMessageType::Chat(message) => chat_completion_request_message_content_as_str(message),
       ChatMessageType::Error(error) => error,
     }
   }
   pub fn tool_calls(&self) -> Option<Vec<(&str, &str)>> {
     match &self.chat_message {
-      ChatMessageType::Chat(message) => {
-        chat_completion_request_message_tool_calls_as_str(message)
-      },
+      ChatMessageType::Chat(message) => chat_completion_request_message_tool_calls_as_str(message),
       ChatMessageType::Error(_) => None,
     }
   }
@@ -239,11 +234,7 @@ impl ui::markdownmenu::MarkdownItem for ChatMessageItem {
   /// Current working directory.
   type Data = String;
 
-  fn format(
-    &self,
-    _data: &Self::Data,
-    theme: Option<&Theme>,
-  ) -> tui::text::Text {
+  fn format(&self, _data: &Self::Data, theme: Option<&Theme>) -> tui::text::Text {
     // self.format_to_text(theme)
     Text::from("")
   }
@@ -257,16 +248,13 @@ pub fn session_messages(cx: &mut Context) {
       .messages
       .clone()
       .iter()
-      .map(|message| {
-        ChatMessageItem::new_chat(message.message_id, message.message.clone())
-      })
+      .map(|message| ChatMessageItem::new_chat(message.message_id, message.message.clone()))
       .collect::<Vec<_>>(),
   );
 
-  let session_callback =
-    |_context: &mut compositor::Context,
-     _message: &ChatMessageItem,
-     _action: helix_view::editor::Action| {};
+  let session_callback = |_context: &mut compositor::Context,
+                          _message: &ChatMessageItem,
+                          _action: helix_view::editor::Action| {};
 
   cx.jobs.callback(async move {
     // let mut messages = Vec::new();

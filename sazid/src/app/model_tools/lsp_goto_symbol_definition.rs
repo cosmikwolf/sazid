@@ -24,16 +24,14 @@ impl ToolCallTrait for LspGotoSymbolDefinition {
   {
     LspGotoSymbolDefinition {
       name: "lsp_goto_symbol_definition".to_string(),
-      description: "get the symbol information for where a symbol is defined"
-        .to_string(),
+      description: "get the symbol information for where a symbol is defined".to_string(),
       parameters: FunctionProperty::Parameters {
         properties: HashMap::from([(
           "symbol_id".to_string(),
           FunctionProperty::Array {
             required: true,
             description: Some(
-              "the 32 byte symbol_id for which to find the declaration"
-                .to_string(),
+              "the 32 byte symbol_id for which to find the declaration".to_string(),
             ),
             items: Box::new(FunctionProperty::Integer {
               description: None,
@@ -63,25 +61,14 @@ impl ToolCallTrait for LspGotoSymbolDefinition {
   fn call(
     &self,
     params: ToolCallParams,
-  ) -> Pin<
-    Box<
-      dyn Future<Output = Result<Option<String>, ToolCallError>>
-        + Send
-        + 'static,
-    >,
-  > {
-    let validated_arguments =
-      validate_arguments(params.function_args, &self.parameters, None)
-        .expect("error validating arguments");
+  ) -> Pin<Box<dyn Future<Output = Result<Option<String>, ToolCallError>> + Send + 'static>> {
+    let validated_arguments = validate_arguments(params.function_args, &self.parameters, None)
+      .expect("error validating arguments");
 
     let symbol_id = get_validated_argument(&validated_arguments, "symbol_id");
 
-    let workspace_root = params
-      .session_config
-      .workspace
-      .expect("workspace not set")
-      .workspace_path
-      .clone();
+    let workspace_root =
+      params.session_config.workspace.expect("workspace not set").workspace_path.clone();
 
     Box::pin(async move {
       let query = LsiQuery {
@@ -95,9 +82,7 @@ impl ToolCallTrait for LspGotoSymbolDefinition {
 
       params
         .tx
-        .send(ChatToolAction::LsiRequest(Box::new(
-          LsiAction::GoToSymbolDefinition(query),
-        )))
+        .send(ChatToolAction::LsiRequest(Box::new(LsiAction::GoToSymbolDefinition(query))))
         .unwrap();
       Ok(None)
     })

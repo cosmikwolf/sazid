@@ -11,11 +11,9 @@ pub const VERSION_AND_GIT_HASH: &str = env!("VERSION_AND_GIT_HASH");
 static RUNTIME_DIRS: once_cell::sync::Lazy<Vec<PathBuf>> =
   once_cell::sync::Lazy::new(prioritize_runtime_dirs);
 
-static CONFIG_FILE: once_cell::sync::OnceCell<PathBuf> =
-  once_cell::sync::OnceCell::new();
+static CONFIG_FILE: once_cell::sync::OnceCell<PathBuf> = once_cell::sync::OnceCell::new();
 
-static LOG_FILE: once_cell::sync::OnceCell<PathBuf> =
-  once_cell::sync::OnceCell::new();
+static LOG_FILE: once_cell::sync::OnceCell<PathBuf> = once_cell::sync::OnceCell::new();
 
 pub fn initialize_config_file(specified_file: Option<PathBuf>) {
   let config_file = specified_file.unwrap_or_else(default_config_file);
@@ -110,15 +108,13 @@ fn find_runtime_file(rel_path: &Path) -> Option<PathBuf> {
 /// file found to exist is returned, otherwise the path to the final attempt
 /// that failed.
 pub fn runtime_file(rel_path: &Path) -> PathBuf {
-  find_runtime_file(rel_path).unwrap_or_else(|| {
-    RUNTIME_DIRS.last().map(|dir| dir.join(rel_path)).unwrap_or_default()
-  })
+  find_runtime_file(rel_path)
+    .unwrap_or_else(|| RUNTIME_DIRS.last().map(|dir| dir.join(rel_path)).unwrap_or_default())
 }
 
 pub fn data_dir() -> PathBuf {
   // TODO: allow env var override
-  let strategy =
-    choose_base_strategy().expect("Unable to find the data directory!");
+  let strategy = choose_base_strategy().expect("Unable to find the data directory!");
   let mut path = strategy.data_dir();
   path.push("sazid");
   path
@@ -126,8 +122,7 @@ pub fn data_dir() -> PathBuf {
 
 pub fn config_dir() -> PathBuf {
   // TODO: allow env var override
-  let strategy =
-    choose_base_strategy().expect("Unable to find the config directory!");
+  let strategy = choose_base_strategy().expect("Unable to find the config directory!");
   let mut path = strategy.config_dir();
   path.push("sazid");
   path
@@ -135,8 +130,7 @@ pub fn config_dir() -> PathBuf {
 
 pub fn cache_dir() -> PathBuf {
   // TODO: allow env var override
-  let strategy =
-    choose_base_strategy().expect("Unable to find the config directory!");
+  let strategy = choose_base_strategy().expect("Unable to find the config directory!");
   let mut path = strategy.cache_dir();
   path.push("sazid");
   path
@@ -175,11 +169,7 @@ pub fn default_log_file() -> PathBuf {
 /// documents that use a top-level array of values like the `languages.toml`,
 /// where one usually wants to override or add to the array instead of
 /// replacing it altogether.
-pub fn merge_toml_values(
-  left: toml::Value,
-  right: toml::Value,
-  merge_depth: usize,
-) -> toml::Value {
+pub fn merge_toml_values(left: toml::Value, right: toml::Value, merge_depth: usize) -> toml::Value {
   use toml::Value;
 
   fn get_name(v: &Value) -> Option<&str> {
@@ -197,9 +187,7 @@ pub fn merge_toml_values(
         left_items.reserve(right_items.len());
         for rvalue in right_items {
           let lvalue = get_name(&rvalue)
-            .and_then(|rname| {
-              left_items.iter().position(|v| get_name(v) == Some(rname))
-            })
+            .and_then(|rname| left_items.iter().position(|v| get_name(v) == Some(rname)))
             .map(|lpos| left_items.remove(lpos));
           let mvalue = match lvalue {
             Some(lvalue) => merge_toml_values(lvalue, rvalue, merge_depth - 1),
@@ -217,8 +205,7 @@ pub fn merge_toml_values(
         for (rname, rvalue) in right_map {
           match left_map.remove(&rname) {
             Some(lvalue) => {
-              let merged_value =
-                merge_toml_values(lvalue, rvalue, merge_depth - 1);
+              let merged_value = merge_toml_values(lvalue, rvalue, merge_depth - 1);
               left_map.insert(rname, merged_value);
             },
             None => {
@@ -283,18 +270,13 @@ mod merge_toml_tests {
         "#;
 
     let base = include_bytes!("../../languages.toml");
-    let base =
-      str::from_utf8(base).expect("Couldn't parse built-in languages config");
-    let base: Value =
-      toml::from_str(base).expect("Couldn't parse built-in languages config");
+    let base = str::from_utf8(base).expect("Couldn't parse built-in languages config");
+    let base: Value = toml::from_str(base).expect("Couldn't parse built-in languages config");
     let user: Value = toml::from_str(USER).unwrap();
 
     let merged = merge_toml_values(base, user, 3);
     let languages = merged.get("language").unwrap().as_array().unwrap();
-    let nix = languages
-      .iter()
-      .find(|v| v.get("name").unwrap().as_str().unwrap() == "nix")
-      .unwrap();
+    let nix = languages.iter().find(|v| v.get("name").unwrap().as_str().unwrap() == "nix").unwrap();
     let nix_indent = nix.get("indent").unwrap();
 
     // We changed tab-width and unit in indent so check them if they are the new values
@@ -316,25 +298,16 @@ mod merge_toml_tests {
         "#;
 
     let base = include_bytes!("../../languages.toml");
-    let base =
-      str::from_utf8(base).expect("Couldn't parse built-in languages config");
-    let base: Value =
-      toml::from_str(base).expect("Couldn't parse built-in languages config");
+    let base = str::from_utf8(base).expect("Couldn't parse built-in languages config");
+    let base: Value = toml::from_str(base).expect("Couldn't parse built-in languages config");
     let user: Value = toml::from_str(USER).unwrap();
 
     let merged = merge_toml_values(base, user, 3);
     let languages = merged.get("language").unwrap().as_array().unwrap();
-    let ts = languages
-      .iter()
-      .find(|v| v.get("name").unwrap().as_str().unwrap() == "typescript")
-      .unwrap();
+    let ts =
+      languages.iter().find(|v| v.get("name").unwrap().as_str().unwrap() == "typescript").unwrap();
     assert_eq!(
-      ts.get("language-server")
-        .unwrap()
-        .get("args")
-        .unwrap()
-        .as_array()
-        .unwrap(),
+      ts.get("language-server").unwrap().get("args").unwrap().as_array().unwrap(),
       &vec![Value::String("lsp".into())]
     )
   }

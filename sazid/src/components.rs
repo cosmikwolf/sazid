@@ -19,20 +19,14 @@ pub trait Component {
     Ok(())
   }
   #[allow(unused_variables)]
-  fn register_config_handler(
-    &mut self,
-    config: Config,
-  ) -> Result<(), SazidError> {
+  fn register_config_handler(&mut self, config: Config) -> Result<(), SazidError> {
     Ok(())
   }
   fn init(&mut self, _area: Rect) -> Result<(), SazidError> {
     Ok(())
   }
   #[allow(unused_variables)]
-  fn update(
-    &mut self,
-    action: SessionAction,
-  ) -> Result<Option<SessionAction>, SazidError> {
+  fn update(&mut self, action: SessionAction) -> Result<Option<SessionAction>, SazidError> {
     Ok(None)
   }
   fn draw(&mut self, b: &mut Buffer) -> Result<(), SazidError>;

@@ -49,20 +49,17 @@ mod vector_db_tests {
     dotenv().ok();
 
     let mut conn = AsyncPgConnection::establish(
-      &std::env::var("TEST_DATABASE_URL")
-        .expect("TEST_DATABASE_URL must be set"),
+      &std::env::var("TEST_DATABASE_URL").expect("TEST_DATABASE_URL must be set"),
     )
     .await?;
 
-    diesel::sql_query("CREATE EXTENSION IF NOT EXISTS vector")
-      .execute(&mut conn)
-      .await?;
-    diesel::sql_query("DROP TABLE IF EXISTS plaintexts")
-      .execute(&mut conn)
-      .await?;
-    diesel::sql_query("CREATE TABLE plaintexts (id BigSerial PRIMARY KEY, content TEXT, embedding vector(3))")
-      .execute(&mut conn)
-      .await?;
+    diesel::sql_query("CREATE EXTENSION IF NOT EXISTS vector").execute(&mut conn).await?;
+    diesel::sql_query("DROP TABLE IF EXISTS plaintexts").execute(&mut conn).await?;
+    diesel::sql_query(
+      "CREATE TABLE plaintexts (id BigSerial PRIMARY KEY, content TEXT, embedding vector(3))",
+    )
+    .execute(&mut conn)
+    .await?;
     // create an async connection
     let new_items = vec![
       NewPlainTextEmbedding {
@@ -77,10 +74,7 @@ mod vector_db_tests {
         content: "hello world".to_string(),
         embedding: Some(Vector::from(vec![2.0, 1.0, 1.0])),
       },
-      NewPlainTextEmbedding {
-        content: "hello world".to_string(),
-        embedding: None,
-      },
+      NewPlainTextEmbedding { content: "hello world".to_string(), embedding: None },
     ];
 
     diesel::insert_into(plaintexts::table)
@@ -101,18 +95,12 @@ mod vector_db_tests {
     assert_eq!(4, all.len());
 
     let neighbors = plaintexts::table
-      .order(
-        plaintexts::embedding
-          .cosine_distance(Vector::from(vec![1.0, 1.0, 1.0])),
-      )
+      .order(plaintexts::embedding.cosine_distance(Vector::from(vec![1.0, 1.0, 1.0])))
       .limit(5)
       .load::<PlainTextEmbedding>(&mut conn)
       .await?;
 
-    assert_eq!(
-      vec![1, 2, 3, 4],
-      neighbors.iter().map(|v| v.id).collect::<Vec<i64>>()
-    );
+    assert_eq!(vec![1, 2, 3, 4], neighbors.iter().map(|v| v.id).collect::<Vec<i64>>());
 
     // execute the query via the provided
     // async `diesel_async::RunQueryDsl`
