@@ -130,6 +130,7 @@ impl<'a> MessageCell<'a> {
     buf: &mut Buffer,
     area: Rect,
     theme: &Theme,
+    skip_lines: u16,
     config_loader: &Arc<ArcSwap<syntax::Loader>>,
   ) {
     let text = match &self.message {
@@ -149,6 +150,7 @@ impl<'a> MessageCell<'a> {
       self.alignment,
       scroll,
       self.char_idx,
+      skip_lines,
       self.highlight_range.clone(),
       self.highlight_style,
     );
@@ -166,6 +168,7 @@ impl<'a> MessageCell<'a> {
     alignment: Alignment,
     scroll: (u16, u16),
     char_idx: Option<usize>,
+    skip_lines: u16,
     highlight_range: Option<std::ops::Range<usize>>,
     highlight_style: Option<Style>,
   ) -> Option<Rope> {
@@ -203,97 +206,94 @@ impl<'a> MessageCell<'a> {
     };
 
     let mut plain_text = Rope::new();
-    let mut y = 0;
+    let mut y = -(skip_lines as i16);
     let mut char_counter = char_idx.unwrap_or(0);
     let mut last_grapheme_idx = 0;
     while let Some((current_line, current_line_width)) = line_composer.next_line() {
-      if y >= scroll.0 {
-        let mut x = 0; // get_line_offset(current_line_width, area.width, alignment);
-        let mut linetxt = String::new();
-        let mut linelens = vec![];
-        let idx_start = char_counter;
-        for (StyledGrapheme { symbol, style }, grapheme_index) in
-          current_line.iter().zip(idx_start..)
+      let mut x = 0; // get_line_offset(current_line_width, area.width, alignment);
+      let mut linetxt = String::new();
+      let mut linelens = vec![];
+      let idx_start = char_counter;
+      for (StyledGrapheme { symbol, style }, grapheme_index) in current_line.iter().zip(idx_start..)
+      {
+        linetxt.push_str(symbol);
+        linelens.push(symbol.width());
+        let style = if let (Some(highlight_range), Some(highlight_style)) =
+          (highlight_range.as_ref(), highlight_style)
         {
-          linetxt.push_str(symbol);
-          linelens.push(symbol.width());
-          let style = if let (Some(highlight_range), Some(highlight_style)) =
-            (highlight_range.as_ref(), highlight_style)
-          {
-            if highlight_range.contains(&grapheme_index) {
-              // log::info!(
-              //   "hl: {} {} {} {} {}",
-              //   symbol,
-              //   area.left() + x,
-              //   area.top() + y,
-              //   char_counter,
-              //   grapheme_index
-              // );
-              // buf.set_style(
-              //   Rect {
-              //     x: area.left() + x,
-              //     y: area.top() + y - self.scroll.0,
-              //     width: symbol.width() as u16,
-              //     height: 1,
-              //   },
-              //   highlight_style,
-              // );
-              highlight_style
-            } else {
-              *style
-            }
+          if highlight_range.contains(&grapheme_index) {
+            // log::info!(
+            //   "hl: {} {} {} {} {}",
+            //   symbol,
+            //   area.left() + x,
+            //   area.top() + y,
+            //   char_counter,
+            //   grapheme_index
+            // );
+            // buf.set_style(
+            //   Rect {
+            //     x: area.left() + x,
+            //     y: area.top() + y - self.scroll.0,
+            //     width: symbol.width() as u16,
+            //     height: 1,
+            //   },
+            //   highlight_style,
+            // );
+            highlight_style
           } else {
             *style
-          };
-          // if symbol.is_empty() {
-          //   // If the symbol is empty, the last char which rendered last time will
-          //   // leave on the line. It's a quick fix.
-          //   " "
-          // } else {
-          //   symbol
-          // };
-          if output_plain_text {
-            plain_text.append(Rope::from_str(symbol));
           }
-          if output_buffer {
-            let cell = &mut buf[(area.left() + x, area.top() + y - scroll.0)];
-            cell.set_symbol(symbol).set_style(style);
-          }
-          x += symbol.width() as u16;
-        }
-        char_counter += current_line_width as usize + 1;
-
+        } else {
+          *style
+        };
+        // if symbol.is_empty() {
+        //   // If the symbol is empty, the last char which rendered last time will
+        //   // leave on the line. It's a quick fix.
+        //   " "
+        // } else {
+        //   symbol
+        // };
         if output_plain_text {
-          plain_text.append(Rope::from_str("\n"));
+          plain_text.append(Rope::from_str(symbol));
         }
-        // if let Some(ref range) = highlight_range {
-        //   log::warn!(
-        //   "format_text: {:?}\nlen: {}, x: {} char_counter: {} char_idx: {} range: {:?}",
-        //   string_text,
-        //   string_text.len(),
-        //   x,
-        //   char_counter,
-        //   char_idx,
-        //   range
-        // );
-        // }
-        // if !linetxt.is_empty() {
-        //   log::info!(
-        //     "startidx: {}\tcounter: {}\thighrange: {:?}\tlen: {} x: {}, y: {}\n\t\tlinetxt: {:#?}",
-        //     char_counter - linetxt.len(),
-        //     char_counter,
-        //     highlight_range.as_ref(),
-        //     linetxt.len(),
-        //     area.left(),
-        //     area.top(),
-        //     linetxt,
-        //     // linetxt
-        //     //   .chars()
-        //     //   .zip(linelens.iter())
-        //     //   .collect::<Vec<(char, &usize)>>()
-        //   );
-        // }
+        if output_buffer && y >= 0 {
+          let cell = &mut buf[(area.left() + x, area.top() + y as u16 - scroll.0)];
+          cell.set_symbol(symbol).set_style(style);
+        }
+        x += symbol.width() as u16;
       }
+      char_counter += current_line_width as usize + 1;
+
+      if output_plain_text {
+        plain_text.append(Rope::from_str("\n"));
+      }
+      // if let Some(ref range) = highlight_range {
+      //   log::warn!(
+      //   "format_text: {:?}\nlen: {}, x: {} char_counter: {} char_idx: {} range: {:?}",
+      //   string_text,
+      //   string_text.len(),
+      //   x,
+      //   char_counter,
+      //   char_idx,
+      //   range
+      // );
+      // }
+      // if !linetxt.is_empty() {
+      //   log::info!(
+      //     "startidx: {}\tcounter: {}\thighrange: {:?}\tlen: {} x: {}, y: {}\n\t\tlinetxt: {:#?}",
+      //     char_counter - linetxt.len(),
+      //     char_counter,
+      //     highlight_range.as_ref(),
+      //     linetxt.len(),
+      //     area.left(),
+      //     area.top(),
+      //     linetxt,
+      //     // linetxt
+      //     //   .chars()
+      //     //   .zip(linelens.iter())
+      //     //   .collect::<Vec<(char, &usize)>>()
+      //   );
+      // }
       //   log::error!(
       // "text spans sum: {}  plaintext sum: {} spans text sum:{}\n char_idx: {:?}   char_count:{:?}  last_grapheme_idx: {:?}",
       //   text.lines.iter().map(|s|s.width()).sum::<usize>(),
@@ -304,7 +304,7 @@ impl<'a> MessageCell<'a> {
       //   last_grapheme_idx
       // );
       y += 1;
-      if output_buffer && y >= area.height + scroll.0 {
+      if output_buffer && y >= area.height as i16 {
         break;
       }
     }
@@ -802,7 +802,7 @@ impl<'a> Table<'a> {
     truncate: bool,
     theme: &Theme,
     config_loader: &Arc<ArcSwap<syntax::Loader>>,
-  ) -> Vec<Rect> {
+  ) {
     buf.set_style(area, self.style);
     state.viewport_height = area.height;
 
@@ -868,7 +868,7 @@ impl<'a> Table<'a> {
 
     // Draw rows
     if self.rows.is_empty() {
-      return column_areas;
+      return;
     }
 
     for (table_row, extents) in self.rows.iter().zip(self.get_row_extents(
@@ -879,12 +879,13 @@ impl<'a> Table<'a> {
       match extents {
         None => continue,
         Some((i, row_y, row_skip_lines, row_height)) => {
-          // log::info!(
-          //   "rendering row:   row idx: {}  row_y: {}  row_height: {}",
-          //   i,
-          //   row_y,
-          //   row_height
-          // );
+          log::info!(
+            "rendering row:\nrow idx: {}  row_y: {}  row_height: {} skip: {}",
+            i,
+            row_y,
+            row_height,
+            row_skip_lines
+          );
           if row_height == 0 {
             continue;
           }
@@ -896,19 +897,14 @@ impl<'a> Table<'a> {
           let is_selected = state.selected.map(|s| s == i).unwrap_or(false);
           let table_row_start_col = if has_selection {
             let symbol = if is_selected { highlight_symbol } else { &blank_symbol };
-            // let (col, _) = buf.set_stringn(
-            //   col,
-            //   row,
-            //   symbol,
-            //   table_area.width as usize,
-            //   table_row.style,
-            // );
+            let (col, _) =
+              buf.set_stringn(col, row, symbol, table_area.width as usize, table_row.style);
             col
           } else {
             col
           };
           if is_selected {
-            // buf.set_style(table_row_area, self.highlight_style);
+            buf.set_style(table_row_area, self.highlight_style);
           }
           let mut col = table_row_start_col;
           for (width, cell) in column_widths.iter().zip(table_row.cells.iter()) {
@@ -923,7 +919,6 @@ impl<'a> Table<'a> {
               buf,
               cell,
               Rect { x: col, y: table_row_area.y, height: table_row_area.height, width: *width },
-              // Rect { x: col, y: row, width: *width, height: table_row.height },
               row_skip_lines,
               truncate,
               theme,
@@ -934,7 +929,6 @@ impl<'a> Table<'a> {
         },
       }
     }
-    return column_areas;
   }
 }
 
@@ -954,7 +948,7 @@ fn render_cell(
   //   area.height
   // );
 
-  cell.render_cell(buf, area, theme, config_loader);
+  cell.render_cell(buf, area, theme, skip_lines, config_loader);
 }
 
 #[cfg(test)]

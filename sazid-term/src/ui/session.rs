@@ -706,6 +706,9 @@ impl<T: MarkdownItem + 'static> SessionView<T> {
     //   column_areas
     // );
 
+    self.messages.iter_mut().for_each(|message| {
+      message.update_wrapped_plain_text_if_necessary(self.chat_viewport.width, &self.syn_loader)
+    });
     let text = self.get_messages_plaintext();
     let slice = text.slice(..);
     let hr = highlight_range.clone();
