@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, path::PathBuf};
 
 use crate::{
   app::{
@@ -12,7 +12,8 @@ use crate::{
 use async_openai::types::{
   ChatCompletionMessageToolCall, ChatCompletionRequestMessage, ChatCompletionTool,
 };
-use helix_lsp::Call;
+use lsp_types::{DocumentSymbol, TextDocumentIdentifier};
+use sazid_lsp::Call;
 use serde::{Deserialize, Serialize, Serializer};
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -66,6 +67,9 @@ pub enum LsiAction {
   GoToSymbolDeclaration(LsiQuery),
   GoToTypeDefinition(LsiQuery),
   GetDiagnostics(LsiQuery),
+  SynchronizeAllWorkspaceFileChanges(),
+  UpdateWorkspaceFileSymbols(PathBuf, TextDocumentIdentifier, Vec<DocumentSymbol>),
+  RequestWorkspaceFileSymbols(PathBuf, TextDocumentIdentifier, usize),
   Error(String),
 }
 

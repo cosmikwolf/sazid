@@ -148,7 +148,6 @@ impl<'a> MessageCell<'a> {
       self.wrap_trim.map(|trim| Wrap { trim }),
       area,
       self.alignment,
-      scroll,
       self.char_idx,
       skip_lines,
       self.highlight_range.clone(),
@@ -166,7 +165,6 @@ impl<'a> MessageCell<'a> {
     wrap: Option<Wrap>,
     area: Rect,
     alignment: Alignment,
-    scroll: (u16, u16),
     char_idx: Option<usize>,
     skip_lines: u16,
     highlight_range: Option<std::ops::Range<usize>>,
@@ -198,17 +196,16 @@ impl<'a> MessageCell<'a> {
     let mut line_composer: Box<dyn LineComposer> = if let Some(Wrap { trim }) = wrap {
       Box::new(WordWrapper::new(&mut styled, area.width, trim))
     } else {
-      let mut line_composer = Box::new(LineTruncator::new(&mut styled, area.width));
-      if alignment == Alignment::Left {
-        line_composer.set_horizontal_offset(scroll.1);
-      }
+      let line_composer = Box::new(LineTruncator::new(&mut styled, area.width));
+      // if alignment == Alignment::Left {
+      //   line_composer.set_horizontal_offset(scroll.1);
+      // }
       line_composer
     };
 
     let mut plain_text = Rope::new();
     let mut y = -(skip_lines as i16);
     let mut char_counter = char_idx.unwrap_or(0);
-    let mut last_grapheme_idx = 0;
     while let Some((current_line, current_line_width)) = line_composer.next_line() {
       let mut x = 0; // get_line_offset(current_line_width, area.width, alignment);
       let mut linetxt = String::new();
@@ -257,7 +254,7 @@ impl<'a> MessageCell<'a> {
           plain_text.append(Rope::from_str(symbol));
         }
         if output_buffer && y >= 0 {
-          let cell = &mut buf[(area.left() + x, area.top() + y as u16 - scroll.0)];
+          let cell = &mut buf[(area.left() + x, area.top() + y as u16)];
           cell.set_symbol(symbol).set_style(style);
         }
         x += symbol.width() as u16;
@@ -599,7 +596,7 @@ impl<'a> Table<'a> {
       constraints.push(Constraint::Length(highlight_symbol_width));
     }
     for constraint in widths {
-      constraints.push(constraint.clone());
+      constraints.push(*constraint);
       constraints.push(Constraint::Length(column_spacing));
     }
     if !widths.is_empty() {
@@ -616,7 +613,7 @@ impl<'a> Table<'a> {
   }
 
   pub fn row_heights(&self) -> Vec<u16> {
-    self.rows.iter().map(|r| r.total_height()).collect()
+    self.rows.iter().map(|r| r.total_height() + self.row_spacing).collect()
   }
 
   fn get_row_extents(
@@ -729,11 +726,8 @@ pub struct TableState {
 impl TableState {
   // if the scroll is at the end, scroll with incoming text
   pub fn update_sticky_scroll(&mut self) {
-    self.scroll_max = self
-      .row_heights
-      .iter()
-      .sum::<u16>()
-      .saturating_sub(self.viewport_height.saturating_sub(self.scroll_offset));
+    self.scroll_max = self.row_heights.iter().sum::<u16>().saturating_sub(self.viewport_height);
+    // .saturating_sub(self.viewport_height.saturating_sub(self.scroll_offset));
 
     // .saturating_sub(self.viewport_height.saturating_sub(0));
     if self.sticky_scroll {
@@ -879,13 +873,13 @@ impl<'a> Table<'a> {
       match extents {
         None => continue,
         Some((i, row_y, row_skip_lines, row_height)) => {
-          log::info!(
-            "rendering row:\nrow idx: {}  row_y: {}  row_height: {} skip: {}",
-            i,
-            row_y,
-            row_height,
-            row_skip_lines
-          );
+          // log::info!(
+          //   "rendering row:\nrow idx: {}  row_y: {}  row_height: {} skip: {}",
+          //   i,
+          //   row_y,
+          //   row_height,
+          //   row_skip_lines
+          // );
           if row_height == 0 {
             continue;
           }

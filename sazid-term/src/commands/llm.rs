@@ -122,7 +122,6 @@ impl ChatMessageItem {
     let text = self.format_to_text(None, config_loader.clone());
 
     let style = Style::default();
-    let scroll = (0, 0);
     let area = Rect::new(0, 0, width, 0);
     let buf = &mut Buffer::empty(area);
     self.plain_text = if let Some(plain_text) = MessageCell::format_text(
@@ -134,7 +133,6 @@ impl ChatMessageItem {
       Some(Wrap { trim: false }),
       area,
       tui::layout::Alignment::Left,
-      scroll,
       None,
       0,
       None,
@@ -207,10 +205,22 @@ impl ChatMessageItem {
         "ERROR".to_string(),
       ),
     };
+
     // log::warn!("content: {}\nheader: {}", self.content(), header);
     let header = Spans::from(vec![Span::styled(header, style)]);
     let mut lines = vec![header];
-    let text = MarkdownRenderer::parse(self.content(), theme, config_loader.clone());
+    let content =
+      if let ChatMessageType::Chat(ChatCompletionRequestMessage::Tool(_)) = &self.chat_message {
+        if self.content().lines().count() > 1 {
+          "tool call response content"
+        } else {
+          self.content()
+        }
+      } else {
+        self.content()
+      };
+
+    let text = MarkdownRenderer::parse(content, theme, config_loader.clone());
     lines.extend(text);
 
     if let Some(tool_calls) = self.tool_calls() {

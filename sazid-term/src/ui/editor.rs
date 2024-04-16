@@ -1446,7 +1446,7 @@ impl Component for EditorView {
   }
 
   fn cursor(&self, _area: Rect, editor: &Editor) -> (Option<Position>, CursorKind) {
-    let cursor = if self.editor_is_focused {
+    if self.editor_is_focused {
       match editor.cursor() {
         // all block cursors are drawn manually
         (pos, CursorKind::Block) => {
@@ -1461,9 +1461,7 @@ impl Component for EditorView {
       }
     } else {
       (None, CursorKind::Hidden)
-    };
-    // log::info!("cursor: {:#?}", cursor);
-    cursor
+    }
   }
 }
 

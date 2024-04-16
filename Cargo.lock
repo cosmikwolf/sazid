@@ -5543,6 +5543,29 @@ dependencies = [
 ]
 
 [[package]]
+name = "sazid-lsp"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "arc-swap",
+ "futures-executor",
+ "futures-util",
+ "globset",
+ "helix-core",
+ "helix-parsec",
+ "helix-stdx",
+ "log",
+ "lsp-types",
+ "parking_lot",
+ "sazid-loader",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "tokio",
+ "tokio-stream",
+]
+
+[[package]]
 name = "sazid-term"
 version = "0.1.0"
 dependencies = [

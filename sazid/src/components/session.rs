@@ -7,7 +7,6 @@ use async_openai::types::{
 use futures::StreamExt;
 use futures_util::future::{ready, Ready};
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 use std::default::Default;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -38,6 +37,8 @@ pub struct Session {
   pub config: SessionConfig,
   pub enabled_tools: Vec<ChatCompletionTool>,
   #[serde(skip)]
+  pub tool_calls_in_progress: Vec<String>,
+  #[serde(skip)]
   pub openai_config: OpenAIConfig,
   #[serde(skip)]
   pub action_tx: Option<UnboundedSender<SessionAction>>,
@@ -49,6 +50,7 @@ impl Default for Session {
       id: rand::random(),
       messages: vec![],
       config: SessionConfig::default(),
+      tool_calls_in_progress: Vec::new(),
       openai_config: OpenAIConfig::default(),
       enabled_tools: vec![],
       action_tx: None,
@@ -132,18 +134,30 @@ impl Session {
   pub fn update(&mut self, action: SessionAction) -> Result<Option<SessionAction>, SazidError> {
     let tx = self.action_tx.clone().unwrap();
     match action {
-      SessionAction::Error(e) => {
-        log::error!("Action::Error - {:?}", e);
-        Ok(None)
-      },
+      // SessionAction::Error(e) => {
+      //   log::error!("Action::Error - {:?}", e);
+      //   Ok(None)
+      // },
       SessionAction::AddMessage(id, chat_message) => {
-        if id == self.id {
-          self.add_message(chat_message.clone());
-          self.execute_tool_calls();
-          self.generate_new_message_embeddings();
+        // log::warn!("add message");
+        if id != self.id {
+          log::warn!("session id did not match, returning AddMessage action to queue");
+          return Ok(Some(SessionAction::AddMessage(id, chat_message)));
         }
+        self.add_message(chat_message.clone());
+        self.execute_tool_calls();
+        self.generate_new_message_embeddings();
         if let ChatMessage::Tool(_) = chat_message {
-          Ok(Some(SessionAction::RequestChatCompletion()))
+          if self.tool_calls_in_progress.is_empty() {
+            log::error!("requesting tool chat completion");
+            Ok(Some(SessionAction::RequestChatCompletion()))
+          } else {
+            log::error!(
+              "tool returned, {} tools still in progress",
+              self.tool_calls_in_progress.len()
+            );
+            Ok(None)
+          }
         } else {
           Ok(None)
         }
@@ -155,22 +169,56 @@ impl Session {
         Ok(None)
       },
       SessionAction::ToolCallComplete(ToolType::LsiQuery(lsi_query), content) => {
+        if lsi_query.session_id != self.id {
+          log::warn!("session id did not match, returning ToolCallComplete action to queue");
+          return Ok(Some(SessionAction::ToolCallComplete(ToolType::LsiQuery(lsi_query), content)));
+        }
+
         log::info!(
           "Tool Call Complete\nsession_id: {}, tool_call_id: {}\ncontent: {}",
           lsi_query.session_id,
           lsi_query.tool_call_id,
           content
         );
+        let tool_response = ChatMessage::Tool(ChatCompletionRequestToolMessage {
+          role: Role::Tool,
+          content,
+          tool_call_id: lsi_query.tool_call_id.clone(),
+        });
+        self.add_message(tool_response);
+        self.generate_new_message_embeddings();
 
-        Ok(Some(SessionAction::AddMessage(
-          lsi_query.session_id,
-          ChatMessage::Tool(ChatCompletionRequestToolMessage {
-            role: Role::Tool,
-            content,
-            tool_call_id: lsi_query.tool_call_id,
-          }),
-        )))
+        match self
+          .tool_calls_in_progress
+          .iter()
+          .enumerate()
+          .find(|(_idx, id)| *id == &lsi_query.tool_call_id)
+        {
+          Some((idx, _)) => {
+            self.tool_calls_in_progress.remove(idx);
+            log::error!("removing tool from in progress: {:?}", self.tool_calls_in_progress);
+          },
+          None => {
+            log::error!(
+              "tool call not found in in progress list {} {:?}",
+              &lsi_query.tool_call_id,
+              self.tool_calls_in_progress
+            );
+          },
+        };
+
+        if self.tool_calls_in_progress.is_empty() {
+          log::error!("requesting tool chat completion");
+          Ok(Some(SessionAction::RequestChatCompletion()))
+        } else {
+          log::error!(
+            "tool returned, {} tools still in progress",
+            self.tool_calls_in_progress.len()
+          );
+          Ok(None)
+        }
       },
+
       SessionAction::ToolCallError(tool_type, content) => match tool_type {
         ToolType::LsiQuery(lsi_query) => Ok(Some(SessionAction::Error(format!(
           "Language Server Interface Error\nsession_id: {}, tool_call_id: {}\nerror: {}",
@@ -283,13 +331,14 @@ impl Session {
           && matches!(m.message, ChatCompletionRequestMessage::Assistant(_))
       })
       .for_each(|m| {
-        // trace_dbg!("executing tool calls");
         if let ChatCompletionRequestMessage::Assistant(ChatCompletionRequestAssistantMessage {
           tool_calls: Some(tool_calls),
           ..
         }) = &m.message
         {
           tool_calls.iter().for_each(|tc| {
+            self.tool_calls_in_progress.push(tc.id.clone());
+            log::warn!("adding tool to in progress: {:?}", self.tool_calls_in_progress);
             tx.send(SessionAction::ChatToolAction(ChatToolAction::CallTool(tc.clone(), self.id)))
               .unwrap();
           });

@@ -3,11 +3,12 @@ members = [
   "sazid",
   "sazid-term",
   "sazid-loader",
+  "sazid-lsp",
   "lib/helix/helix-tui",
   "lib/helix/helix-stdx",
-  "lib/helix/helix-lsp",
   "lib/helix/helix-vcs",
   "lib/helix/helix-view",
+  "lib/helix/helix-lsp",
   "lib/helix/helix-dap",
   "lib/helix/helix-event",
   "lib/helix/helix-tui",
@@ -40,10 +41,12 @@ nucleo = "0.2.1"
 
 tui = { path = "lib/helix/helix-tui", package = "helix-tui", default-features = false }
 helix-stdx = { path = "lib/helix/helix-stdx" }
+sazid-lsp = { path = "lib/helix/helix-lsp", package = "helix-lsp" }
 helix-lsp = { path = "lib/helix/helix-lsp" }
 helix-vcs = { path = "lib/helix/helix-vcs" }
 helix-loader = { path = "sazid-loader", package = "sazid-loader" }
 helix-core = { path = "lib/helix/helix-core" }
+helix-parsec = { path = "lib/helix/helix-parsec" }
 helix-view = { path = "lib/helix/helix-view" }
 helix-dap = { path = "lib/helix/helix-dap" }
 helix-event = { path = "lib/helix/helix-event" }

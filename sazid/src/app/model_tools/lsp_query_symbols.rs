@@ -25,7 +25,7 @@ impl ToolCallTrait for LspQuerySymbol {
   {
     LspQuerySymbol {
             name: "lsp_query".to_string(),
-            description: "query symbols in project source code using a language server".to_string(),
+            description: "query symbols in project source code using a language server. each property will filter the results. Omit a property to query for unfiltered results".to_string(),
               parameters: FunctionProperty::Parameters {
           properties: HashMap::from([
                     ("name_regex".to_string(),

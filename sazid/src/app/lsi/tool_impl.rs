@@ -1,18 +1,19 @@
 use std::path::PathBuf;
 
+use futures_util::FutureExt;
 use serde_json::json;
 
 use super::workspace::Workspace;
 use super::{
   interface::LanguageServerInterface, query::LsiQuery, symbol_types::SerializableSourceSymbol,
 };
-use helix_lsp::lsp::{self};
+use sazid_lsp::lsp::{self};
 
 use lsp::{Diagnostic, DiagnosticSeverity, NumberOrString};
 use url::Url;
 
 impl LanguageServerInterface {
-  pub async fn goto_type_definition(&self, lsi_query: &LsiQuery) -> anyhow::Result<String> {
+  pub fn goto_type_definition(&self, lsi_query: &LsiQuery) -> anyhow::Result<()> {
     let workspace = self.get_workspace(lsi_query).unwrap();
     let symbol_id =
       TryInto::<[u8; 32]>::try_into(lsi_query.symbol_id.clone().expect("symbol_id not set"))
@@ -20,25 +21,30 @@ impl LanguageServerInterface {
     let symbol = workspace
       .query_symbol_by_id(&symbol_id)
       .unwrap_or_else(|| panic!("could not find symbol with id {:#?}", symbol_id));
-
     let text_document =
       lsp::TextDocumentIdentifier { uri: Url::from_file_path(symbol.file_path.clone()).unwrap() };
-
     let position = symbol.selection_range.lock().unwrap().start;
-    let client = self
-      .language_servers
-      .iter_clients()
-      .find(|c| c.id() == workspace.language_server_id)
-      .expect("could not obtain language server for goto request")
-      .clone();
     let work_done_token = Some(NumberOrString::String("goto type definition".to_string()));
-    let request = client
+    let response = workspace
+      .language_server
       .goto_type_definition(text_document, position, work_done_token)
       .expect("could not obtain goto definition response");
-    Ok(serde_json::from_value(request.await?)?)
+
+    let lsi_query = lsi_query.clone();
+    let tx = self.tx.clone();
+    tokio::spawn(async move {
+      let result = response.await;
+      let result = result
+        .map(|value: serde_json::Value| serde_json::to_string_pretty(&value))
+        .unwrap()
+        .unwrap();
+      Self::send_query_response(&tx, lsi_query, Ok(result));
+    });
+
+    Ok(())
   }
 
-  pub async fn goto_symbol_definition(&self, lsi_query: &LsiQuery) -> anyhow::Result<String> {
+  pub fn goto_symbol_definition(&self, lsi_query: &LsiQuery) -> anyhow::Result<()> {
     let workspace = self.get_workspace(lsi_query).unwrap();
     let symbol_id =
       TryInto::<[u8; 32]>::try_into(lsi_query.symbol_id.clone().expect("symbol_id not set"))
@@ -46,26 +52,30 @@ impl LanguageServerInterface {
     let symbol = workspace
       .query_symbol_by_id(&symbol_id)
       .unwrap_or_else(|| panic!("could not find symbol with id {:#?}", symbol_id));
-
     let text_document =
       lsp::TextDocumentIdentifier { uri: Url::from_file_path(symbol.file_path.clone()).unwrap() };
-
     let position = symbol.selection_range.lock().unwrap().start;
-    let client = self
-      .language_servers
-      .iter_clients()
-      .find(|c| c.id() == workspace.language_server_id)
-      .expect("could not obtain language server for goto request")
-      .clone();
     let work_done_token = Some(NumberOrString::String("goto definition".to_string()));
-    let request = client
+    let response = workspace
+      .language_server
       .goto_definition(text_document, position, work_done_token)
-      .expect("could not obtain goto definition response")
-      .await?;
-    Ok(serde_json::to_string_pretty(&request)?)
+      .expect("could not obtain goto definition response");
+
+    let lsi_query = lsi_query.clone();
+    let tx = self.tx.clone();
+    tokio::spawn(async move {
+      let result = response.await;
+      let result = result
+        .map(|value: serde_json::Value| serde_json::to_string_pretty(&value))
+        .unwrap()
+        .unwrap();
+      Self::send_query_response(&tx, lsi_query, Ok(result));
+    });
+
+    Ok(())
   }
 
-  pub async fn goto_symbol_declaration(&self, lsi_query: &LsiQuery) -> anyhow::Result<String> {
+  pub fn goto_symbol_declaration(&self, lsi_query: &LsiQuery) -> anyhow::Result<()> {
     let workspace = self.get_workspace(lsi_query).unwrap();
     let symbol_id =
       TryInto::<[u8; 32]>::try_into(lsi_query.symbol_id.clone().expect("symbol_id not set"))
@@ -73,23 +83,27 @@ impl LanguageServerInterface {
     let symbol = workspace
       .query_symbol_by_id(&symbol_id)
       .unwrap_or_else(|| panic!("could not find symbol with id {:#?}", symbol_id));
-
     let text_document =
       lsp::TextDocumentIdentifier { uri: Url::from_file_path(symbol.file_path.clone()).unwrap() };
-
     let position = symbol.selection_range.lock().unwrap().start;
-    let client = self
-      .language_servers
-      .iter_clients()
-      .find(|c| c.id() == workspace.language_server_id)
-      .expect("could not obtain language server for goto request")
-      .clone();
     let work_done_token = Some(NumberOrString::String("goto declaration".to_string()));
-    let request = client
+    let response = workspace
+      .language_server
       .goto_declaration(text_document, position, work_done_token)
-      .expect("could not obtain goto declaration response")
-      .await?;
-    Ok(serde_json::to_string_pretty(&request)?)
+      .expect("could not obtain goto declaration response");
+
+    let lsi_query = lsi_query.clone();
+    let tx = self.tx.clone();
+    tokio::spawn(async move {
+      let result = response.await;
+      let result = result
+        .map(|value: serde_json::Value| serde_json::to_string_pretty(&value))
+        .unwrap()
+        .unwrap();
+      Self::send_query_response(&tx, lsi_query, Ok(result));
+    });
+
+    Ok(())
   }
 
   pub fn get_diagnostics(&self, lsi_query: &LsiQuery) -> anyhow::Result<String> {
@@ -154,11 +168,7 @@ impl LanguageServerInterface {
     }
   }
 
-  pub async fn lsi_query_workspace_symbols(
-    &mut self,
-    lsi_query: &LsiQuery,
-  ) -> anyhow::Result<String> {
-    self.update_workspace_symbols().await?;
+  pub fn lsi_query_workspace_symbols(&mut self, lsi_query: &LsiQuery) -> anyhow::Result<String> {
     match self.get_workspace(lsi_query)?.query_symbols(lsi_query) {
       Ok(symbols) => match symbols.len() {
         0 => Ok("no symbols found".to_string()),

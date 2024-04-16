@@ -304,23 +304,6 @@ pub fn chat_completion_request_message_content_as_str(
         Some(content) => content.as_str(),
         None => "",
       }
-      // format!(
-      //   "{} {}",
-      // &assistant_message.content.clone().unwrap_or("".to_string()),
-      //   &assistant_message
-      //     .clone()
-      //     .tool_calls
-      //     .as_ref()
-      //     .and_then(|tool_calls| tool_calls.first())
-      //     .map(|tool_call| {
-      //       format!(
-      //         "calling tool: {} {}",
-      //         tool_call.function.name, tool_call.function.arguments
-      //       )
-      //     })
-      //     .unwrap_or("".to_string())
-      // )
-      // .as_str()
     },
     ChatCompletionRequestMessage::Tool(tool_message) => &tool_message.content,
     ChatCompletionRequestMessage::Function(function_message) => match &function_message.content {

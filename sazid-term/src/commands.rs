@@ -37,6 +37,7 @@ use helix_core::{
 use helix_view::{
   document::{FormatterError, Mode, SCRATCH_BUFFER_NAME},
   editor::Action,
+  graphics::Rect,
   info::Info,
   input::KeyEvent,
   keyboard::KeyCode,
@@ -720,6 +721,42 @@ type MoveFn =
 type SessionMoveFn =
   fn(RopeSlice, Range, Direction, usize, Movement, &TextFormat, &mut TextAnnotations) -> Range;
 
+// fn adjust_scroll(
+//   text: &RopeSlice,
+//   old_pos: Position,
+//   range: Range,
+//   count: usize,
+//   current_scroll: u16,
+//   viewport: Rect,
+// ) -> u16 {
+//   let new_pos = crate::movement::translate_char_index_to_viewport_pos(
+//     text,
+//     viewport,
+//     current_scroll,
+//     range.head,
+//   );
+//
+//   log::warn!(
+//     "
+// old_pos.row: {:?}
+// new_pos.row: {:?}
+// current_scroll: {}
+// viewport.height: {}",
+//     old_pos.row,
+//     new_pos.row,
+//     current_scroll,
+//     viewport.height
+//   );
+//   if old_pos.row != new_pos.row
+//     && (new_pos.row.saturating_sub(current_scroll as usize) > viewport.height as usize
+//       || new_pos.row as isize - (current_scroll as isize) < 0)
+//   {
+//     count as u16
+//   } else {
+//     0
+//   }
+// }
+
 fn session_move_impl(
   cx: &mut Context,
   move_fn: SessionMoveFn,
@@ -728,14 +765,37 @@ fn session_move_impl(
 ) {
   let count = cx.count();
   let mut annotations = TextAnnotations::default();
-  cx.callback.push(Box::new(move |compositor: &mut Compositor, cx: &mut compositor::Context| {
-    let session = compositor.find::<ui::SessionView<ChatMessageItem>>().unwrap();
 
-    let text = session.get_messages_plaintext();
-    log::warn!("text: {:#?}", text);
+  cx.callback.push(Box::new(move |compositor: &mut Compositor, _cx: &mut compositor::Context| {
+    let session = compositor.find::<ui::SessionView<ChatMessageItem>>().unwrap();
+    let text = Rope::from(session.get_messages_plaintext());
+
+    // log::warn!("text: {:#?}", text);
     session.selection = session.selection.clone().transform(|range| {
-      move_fn(text, range, dir, count, behaviour, &TextFormat::default(), &mut annotations)
+      move_fn(
+        text.slice(..),
+        range,
+        dir,
+        count,
+        behaviour,
+        &TextFormat::default(),
+        &mut annotations,
+      )
     });
+
+    let session_cursor = session.selection.primary().head;
+
+    let (scroll_by, direction, _) = crate::movement::translate_char_index_to_viewport_pos(
+      &text.slice(..),
+      session.chat_viewport,
+      session.state.vertical_scroll,
+      session_cursor,
+      true,
+    );
+
+    if let Some(direction) = direction {
+      session.state.scroll_by(scroll_by, direction);
+    }
     // .ensure_invariants(text.slice(..));
     // .into_single();
     // log::info!("move_impl callback: session view {:?}", session.selection);
@@ -743,9 +803,6 @@ fn session_move_impl(
 }
 
 fn move_impl(cx: &mut Context, move_fn: MoveFn, dir: Direction, behaviour: Movement) {
-  let count = cx.count();
-  let (view, doc) = current!(cx.editor);
-  let mut annotations = TextAnnotations::default();
   log::info!("move_impl: editor view");
 
   let count = cx.count();

@@ -12,10 +12,8 @@ use url::Url;
 
 pub fn test_lang_config() -> helix_core::syntax::Configuration {
   let default_config = include_bytes!("./assets/languages_test.toml");
-  toml::from_str::<helix_core::syntax::Configuration>(
-    from_utf8(default_config).unwrap(),
-  )
-  .expect("Could not parse built-in languages.toml to valid toml")
+  toml::from_str::<helix_core::syntax::Configuration>(from_utf8(default_config).unwrap())
+    .expect("Could not parse built-in languages.toml to valid toml")
 }
 
 fn copy_dir_recursively(source: &Path, target: &Path) -> anyhow::Result<()> {
@@ -95,8 +93,7 @@ async fn test_rust_analyzer_connection() -> anyhow::Result<()> {
   // panic!();
 
   let test_workspace_src_path = "tests/assets/rust_test_project";
-  let test_src_assets =
-    std::env::current_dir().unwrap().join(test_workspace_src_path);
+  let test_src_assets = std::env::current_dir().unwrap().join(test_workspace_src_path);
 
   // create temp dir for test
   let temp_dir = tempdir()?;
@@ -109,26 +106,15 @@ async fn test_rust_analyzer_connection() -> anyhow::Result<()> {
   assert!(test_workspace_path.exists());
 
   std::env::set_current_dir(&test_workspace_path).unwrap();
-  let (action_tx, action_rx) =
-    tokio::sync::mpsc::unbounded_channel::<SessionAction>();
+  let (action_tx, action_rx) = tokio::sync::mpsc::unbounded_channel::<SessionAction>();
   let mut action_loop = TestActionLoop { action_rx };
 
-  let syn_loader =
-    Arc::new(ArcSwap::from_pointee(helix_core::config::default_lang_loader()));
+  let syn_loader = Arc::new(ArcSwap::from_pointee(helix_core::config::default_lang_loader()));
   let mut lsi = LanguageServerInterface::new(syn_loader);
 
-  lsi
-    .create_workspace(
-      test_workspace_path.clone(),
-      "rust",
-      "rust-analyzer",
-      None,
-    )
-    .await
-    .unwrap();
+  lsi.create_workspace(test_workspace_path.clone(), "rust", "rust-analyzer", None).await.unwrap();
 
-  let ids =
-    lsi.language_servers.iter_clients().map(|c| c.id()).collect::<Vec<usize>>();
+  let ids = lsi.language_servers.iter_clients().map(|c| c.id()).collect::<Vec<usize>>();
 
   while ids.iter().any(|c| lsi.lsp_progress.is_progressing(*c)) {
     let _result = action_loop.test_action_loop(&mut lsi).await;
@@ -142,8 +128,7 @@ async fn test_rust_analyzer_connection() -> anyhow::Result<()> {
   //     panic!("lsi poll completge");
   //   })
   //   .await;
-  let mut interval =
-    tokio::time::interval(std::time::Duration::from_millis(1000));
+  let mut interval = tokio::time::interval(std::time::Duration::from_millis(1000));
   use owo_colors::{colors::*, OwoColorize};
   // let a: Result<(), anyhow::Error> = futures::executor::block_on(async { lsi.update_workspace_symbols().await });
   while ids.iter().any(|c| lsi.lsp_progress.is_progressing(*c)) {
@@ -169,47 +154,35 @@ async fn test_rust_analyzer_connection() -> anyhow::Result<()> {
   }
 
   log::debug!("status: {:#?}", lsi.status_msg.msg);
-  let a =
-    lsi.wait_for_progress_token_completion(ids.as_slice()).await.map(|_| {
-      for workspace in lsi.workspaces.iter() {
-        log::debug!(
-          "Workspace path: {:#?}",
-          workspace.workspace_path.display()
-        );
-        for file in workspace.files.iter() {
-          log::debug!("File: {:#?}", file);
-        }
-        workspace
-          .all_symbols_weak()
-          .iter()
-          .map(|s| s.upgrade().unwrap())
-          .for_each(|s| {
-            log::warn!(
-              "symbol: {:#?}\nname: {}\nrange:{:#?}\nwsp: {}\nfp::{}\n{}\n{}",
-              s.kind,
-              s.name,
-              s.range,
-              Url::from_file_path(
-                s.workspace_path.clone().canonicalize().unwrap()
-              )
-              .unwrap(),
-              s.file_path.to_str().unwrap(),
-              &s.get_source().unwrap().fg::<Blue>(),
-              &s.get_selection().unwrap().fg::<Green>()
-            );
-          });
-        log::warn!(
-          "{} workspace symbols found in {} files",
-          workspace.count_symbols(),
-          workspace.files.len()
-        );
+  let a = lsi.wait_for_progress_token_completion(ids.as_slice()).await.map(|_| {
+    for workspace in lsi.workspaces.iter() {
+      log::debug!("Workspace path: {:#?}", workspace.workspace_path.display());
+      for file in workspace.files.iter() {
+        log::debug!("File: {:#?}", file);
       }
-    });
+      workspace.all_symbols_weak().iter().map(|s| s.upgrade().unwrap()).for_each(|s| {
+        log::warn!(
+          "symbol: {:#?}\nname: {}\nrange:{:#?}\nwsp: {}\nfp::{}\n{}\n{}",
+          s.kind,
+          s.name,
+          s.range,
+          Url::from_file_path(s.workspace_path.clone().canonicalize().unwrap()).unwrap(),
+          s.file_path.to_str().unwrap(),
+          &s.get_source().unwrap().fg::<Blue>(),
+          &s.get_selection().unwrap().fg::<Green>()
+        );
+      });
+      log::warn!(
+        "{} workspace symbols found in {} files",
+        workspace.count_symbols(),
+        workspace.files.len()
+      );
+    }
+  });
   assert!(a.is_ok());
 
-  let omgwtf_results = lsi
-    .query_all_workspace_symbols(Some("omgwtf".to_string()), None, None, None)
-    .await;
+  let omgwtf_results =
+    lsi.query_all_workspace_symbols(Some("omgwtf".to_string()), None, None, None).await;
 
   assert!(omgwtf_results.len() == 1);
 
@@ -225,8 +198,7 @@ async fn test_rust_analyzer_connection() -> anyhow::Result<()> {
     .unwrap()
     .id();
 
-  let definition =
-    lsi.goto_symbol_definition(omgwtf, rust_analyzer_id).await.unwrap();
+  let definition = lsi.goto_symbol_definition(omgwtf, rust_analyzer_id).await.unwrap();
 
   log::warn!("definition: {:#?}", definition);
 

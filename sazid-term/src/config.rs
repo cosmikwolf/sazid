@@ -28,12 +28,14 @@ pub struct ConfigRaw {
 
 impl Default for Config {
   fn default() -> Config {
-    Config {
+    let mut config = Config {
       theme: None,
       keys: keymap::default(),
       editor: helix_view::editor::Config::default(),
       session: sazid::app::session_config::SessionConfig::default(),
-    }
+    };
+    config.editor.lsp.display_messages = true;
+    config
   }
 }
 

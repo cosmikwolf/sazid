@@ -15,14 +15,11 @@ use crate::{
 
 use arc_swap::ArcSwap;
 use futures_util::{future::BoxFuture, FutureExt};
-use helix_lsp::lsp::Range;
 use nucleo::{Config, Nucleo, Utf32String};
 
 use tui::{
   buffer::Buffer as Surface,
   layout::Constraint,
-  layout::Layout,
-  text::Text,
   widgets::{Block, Borders},
 };
 
@@ -41,7 +38,6 @@ use std::{
 use helix_core::{
   char_idx_at_visual_offset,
   fuzzy::MATCHER,
-  graphemes::{next_grapheme_boundary, prev_grapheme_boundary},
   movement::Direction,
   syntax::{self, Highlight, HighlightEvent},
   text_annotations::TextAnnotations,
@@ -311,21 +307,29 @@ impl<T: MarkdownItem + 'static> SessionView<T> {
   }
 
   pub fn update_messages_plaintext(&mut self) -> Rope {
+    let newlines_per_messages = 1 + self.table_row_spacing as usize;
     if self.messages_plaintext.len_chars()
       != self
         .messages
         .iter()
-        .map(|m| m.plain_text.len_chars() + self.table_row_spacing as usize)
+        .map(|m| m.plain_text.len_chars() + newlines_per_messages)
         .sum::<usize>()
     {
-      log::warn!("updating messages plaintext");
+      // log::warn!(
+      //   "updating messages plaintext {}  {} {} ",
+      //   self.messages_plaintext.len_chars(),
+      //   self.messages.iter().map(|m| m.plain_text.len_chars()).sum::<usize>(),
+      //   self
+      //     .messages
+      //     .iter()
+      //     .map(|m| m.plain_text.len_chars() + newlines_per_messages)
+      //     .sum::<usize>()
+      // );
       self.messages_plaintext = Rope::new();
       self.messages.iter_mut().for_each(|message| {
         message.start_idx = self.messages_plaintext.len_chars();
         self.messages_plaintext.append(message.plain_text.clone());
-        self
-          .messages_plaintext
-          .append(Rope::from("\n".repeat(1 + self.table_row_spacing as usize)));
+        self.messages_plaintext.append(Rope::from("\n".repeat(newlines_per_messages)));
       });
     };
     self.messages_plaintext.clone()
@@ -977,7 +981,7 @@ impl<T: MarkdownItem + 'static> SessionView<T> {
       }
 
       let range = min_width_1(range);
-      log::info!("range: {:?}", range);
+      // log::info!("range: {:?}", range);
       if range.head > range.anchor {
         // Standard case.
         /*
@@ -997,7 +1001,7 @@ impl<T: MarkdownItem + 'static> SessionView<T> {
           spans.push((cursor_scope, cursor_start..range.head));
         }
         */
-        log::info!("standard case: head {} anchor {}", range.head, range.anchor);
+        // log::info!("standard case: head {} anchor {}", range.head, range.anchor);
 
         spans.push((cursor_scope, range.head..range.head));
       } else {
@@ -1257,14 +1261,32 @@ impl<T: MarkdownItem + 'static + Send + Sync> Component for SessionView<T> {
     if let Event::Mouse(event) = event {
       match event.kind {
         MouseEventKind::Down(MouseButton::Left) => {
+          if let Some(char_idx) = crate::movement::translate_pos_to_char_index(
+            &self.get_messages_plaintext(),
+            self.chat_viewport,
+            self.state.vertical_scroll,
+            Position { row: event.row as usize, col: event.column as usize },
+          ) {
+            self.selection = Selection::point(char_idx);
+            helix_event::request_redraw();
+          }
           // start select
-          log::info!("mouse down event: {:?}", event);
         },
         MouseEventKind::Up(MouseButton::Left) => {
           // stop select
-          log::info!("mouse up event: {:?}", event);
+          // log::info!("mouse up event: {:?}", event);
         },
         MouseEventKind::Drag(MouseButton::Left) => {
+          if let Some(char_idx) = crate::movement::translate_pos_to_char_index(
+            &self.get_messages_plaintext(),
+            self.chat_viewport,
+            self.state.vertical_scroll,
+            Position { row: event.row as usize, col: event.column as usize },
+          ) {
+            let range = self.selection.primary();
+            self.selection = Selection::single(range.anchor, char_idx);
+            helix_event::request_redraw();
+          }
           // update select
           log::info!("mouse drag event: {:?}", event);
         },
@@ -1362,8 +1384,20 @@ impl<T: MarkdownItem + 'static + Send + Sync> Component for SessionView<T> {
 
   fn cursor(&self, _area: Rect, editor: &Editor) -> (Option<Position>, CursorKind) {
     let text = self.get_messages_plaintext();
-    let session_cursor = self.selection.primary().cursor(text.slice(..)).min(text.len_chars());
+    let session_cursor = self.selection.primary().head;
 
+    // let row = text.char_to_line(session_cursor);
+    // let col = session_cursor.saturating_sub(text.line(row).len_chars())
+    //   + self.chat_viewport.left() as usize;
+    //
+    // let pos = Position { row: row + self.chat_viewport.top() as usize, col };
+    let (_, _, pos) = crate::movement::translate_char_index_to_viewport_pos(
+      &text.slice(..),
+      self.chat_viewport,
+      self.state.vertical_scroll,
+      session_cursor,
+      false,
+    );
     // let mut row = text
     //   .try_char_to_line(session_cursor)
     //   .map_err(|e| format!("cursor out of bounds {}", e))
@@ -1373,15 +1407,11 @@ impl<T: MarkdownItem + 'static + Send + Sync> Component for SessionView<T> {
     //   .try_line_to_char(row)
     //   .map_err(|e| format!("cursor out of bounds {}", e))
     //   .unwrap();
-    let mut pos = crate::movement::translate_char_index_to_pos(text.slice(..), session_cursor);
     // let mut col = session_cursor.saturating_sub(char_at_line_start);
     // if col > text.line(row).len_chars() {
     //   col = text.line(row).len_chars();
     // }
     // let orig_row = row;
-    pos.col += self.chat_viewport.x as usize;
-    pos.row += self.chat_viewport.y as usize;
-
     // log::info!(
     //   "cursor
     //     row: {:#?}
