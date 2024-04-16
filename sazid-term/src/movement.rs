@@ -46,6 +46,7 @@ pub fn translate_char_index_to_viewport_pos(
   debug: bool,
 ) -> (u16, Option<Direction>, helix_core::Position) {
   // log::info!("translate_char_index_to_pos: index: {}", index);
+  let index = index.min(text.len_chars() - 1);
   let row = text.char_to_line(index);
   let row_start_index = text.line_to_char(row);
   let col = index - row_start_index;
