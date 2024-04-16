@@ -35,6 +35,12 @@ impl ContextFocus {
       ContextFocus::EditorView => ContextFocus::SessionView,
     };
   }
+  pub fn session_view(&mut self) {
+    *self = ContextFocus::SessionView;
+  }
+  pub fn editor_view(&mut self) {
+    *self = ContextFocus::EditorView;
+  }
 }
 pub struct Context<'a> {
   pub session: &'a mut Session,

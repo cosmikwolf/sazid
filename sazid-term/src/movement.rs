@@ -23,10 +23,10 @@ pub fn translate_pos_to_char_index(
     let col = pos.col - area.left() as usize;
     if let Ok(row_start_index) = text.try_line_to_char(row) {
       let line_max = text.line(row).len_chars();
-      let index = row_start_index + col.min(line_max - 1);
-      Some(index.min(text.len_chars() - 1))
+      let index = row_start_index + col.min(line_max.saturating_sub(1));
+      Some(index.min(text.len_chars().saturating_sub(1)))
     } else {
-      Some(text.len_chars() - 1)
+      Some(text.len_chars().saturating_sub(1))
     }
   }
 }
@@ -46,7 +46,7 @@ pub fn translate_char_index_to_viewport_pos(
   debug: bool,
 ) -> (u16, Option<Direction>, helix_core::Position) {
   // log::info!("translate_char_index_to_pos: index: {}", index);
-  let index = index.min(text.len_chars() - 1);
+  let index = index.min(text.len_chars().saturating_sub(1));
   let row = text.char_to_line(index);
   let row_start_index = text.line_to_char(row);
   let col = index - row_start_index;

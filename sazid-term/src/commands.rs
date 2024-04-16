@@ -512,6 +512,8 @@ impl MappableCommand {
         save_session, "save session to file",
         session_view_scroll_up, "scroll session text up",
         session_view_scroll_down, "scroll session text down",
+        session_page_cursor_half_up, "scroll session cursor half page up",
+        session_page_cursor_half_down, "scroll session cursor half page down",
         load_session_picker, "show saved session",
         toggle_layer_order, "toggle focus between session and editor",
     );
@@ -631,6 +633,52 @@ fn toggle_layer_order(cx: &mut Context) {
   }))
 }
 
+fn session_page_cursor_half_up(cx: &mut Context) {
+  match cx.focus {
+    ContextFocus::SessionView => cx.callback.push(Box::new(
+      move |compositor: &mut Compositor, _cx: &mut compositor::Context| {
+        let view_height =
+          compositor.find::<ui::SessionView<ChatMessageItem>>().unwrap().chat_viewport.height
+            as usize;
+        if view_height > 0 {
+          let count = view_height / 2;
+          session_move_impl_callback(
+            compositor,
+            count,
+            session_move_vertically,
+            Direction::Backward,
+            Movement::Move,
+          );
+        }
+      },
+    )),
+    ContextFocus::EditorView => cx.focus.session_view(),
+  }
+}
+
+fn session_page_cursor_half_down(cx: &mut Context) {
+  match cx.focus {
+    ContextFocus::SessionView => cx.callback.push(Box::new(
+      move |compositor: &mut Compositor, _cx: &mut compositor::Context| {
+        let view_height =
+          compositor.find::<ui::SessionView<ChatMessageItem>>().unwrap().chat_viewport.height
+            as usize;
+        if view_height > 0 {
+          let count = view_height / 2;
+          session_move_impl_callback(
+            compositor,
+            count,
+            session_move_vertically,
+            Direction::Forward,
+            Movement::Move,
+          );
+        }
+      },
+    )),
+    ContextFocus::EditorView => {},
+  }
+}
+
 fn session_view_scroll_up(cx: &mut Context) {
   cx.callback.push(Box::new(move |compositor: &mut Compositor, cx: &mut compositor::Context| {
     log::info!("session_view_scroll_up");
@@ -663,16 +711,20 @@ fn save_session(cx: &mut Context) {
     date_and_time_string,
     Some('|'),
     ui::completers::none,
-    move |cx, input: &str, _event: PromptEvent| {
-      let save_path = data_folder.join(input);
-      log::info!("saving session to: {:#?}", save_path);
-      match cx.session.save_session(save_path) {
-        Ok(_) => cx.editor.set_status("session saved"),
-        Err(e) => {
-          log::error!("error saving session: {}", e);
-          cx.editor.set_error(format!("error saving session: {}", e));
-        },
-      };
+    move |cx, input: &str, event: PromptEvent| match event {
+      PromptEvent::Validate => {
+        let save_path = data_folder.join(input);
+        log::info!("saving session to: {:#?}\nevent: {:#?}", save_path, event);
+        match cx.session.save_session(save_path.clone()) {
+          Ok(_) => cx.editor.set_status(format!("session saved to: {:?}", save_path)),
+          Err(e) => {
+            log::error!("error saving session: {}", e);
+            cx.editor.set_error(format!("error saving session: {}", e));
+          },
+        };
+      },
+      PromptEvent::Abort => cx.editor.set_status("session was not saved"),
+      _ => {},
     },
   );
 }
@@ -756,6 +808,38 @@ type SessionMoveFn =
 //     0
 //   }
 // }
+fn session_move_impl_callback(
+  compositor: &mut Compositor,
+  count: usize,
+  move_fn: SessionMoveFn,
+  dir: Direction,
+  behaviour: Movement,
+) {
+  let session = compositor.find::<ui::SessionView<ChatMessageItem>>().unwrap();
+  let text = Rope::from(session.get_messages_plaintext());
+  let mut annotations = TextAnnotations::default();
+  // log::warn!("text: {:#?}", text);
+  session.selection = session.selection.clone().transform(|range| {
+    move_fn(text.slice(..), range, dir, count, behaviour, &TextFormat::default(), &mut annotations)
+  });
+
+  let session_cursor = session.selection.primary().head;
+
+  let (scroll_by, direction, _) = crate::movement::translate_char_index_to_viewport_pos(
+    &text.slice(..),
+    session.chat_viewport,
+    session.state.vertical_scroll,
+    session_cursor,
+    true,
+  );
+
+  if let Some(direction) = direction {
+    session.state.scroll_by(scroll_by, direction);
+  }
+  // .ensure_invariants(text.slice(..));
+  // .into_single();
+  // log::info!("move_impl callback: session view {:?}", session.selection);
+}
 
 fn session_move_impl(
   cx: &mut Context,
@@ -764,41 +848,9 @@ fn session_move_impl(
   behaviour: Movement,
 ) {
   let count = cx.count();
-  let mut annotations = TextAnnotations::default();
 
   cx.callback.push(Box::new(move |compositor: &mut Compositor, _cx: &mut compositor::Context| {
-    let session = compositor.find::<ui::SessionView<ChatMessageItem>>().unwrap();
-    let text = Rope::from(session.get_messages_plaintext());
-
-    // log::warn!("text: {:#?}", text);
-    session.selection = session.selection.clone().transform(|range| {
-      move_fn(
-        text.slice(..),
-        range,
-        dir,
-        count,
-        behaviour,
-        &TextFormat::default(),
-        &mut annotations,
-      )
-    });
-
-    let session_cursor = session.selection.primary().head;
-
-    let (scroll_by, direction, _) = crate::movement::translate_char_index_to_viewport_pos(
-      &text.slice(..),
-      session.chat_viewport,
-      session.state.vertical_scroll,
-      session_cursor,
-      true,
-    );
-
-    if let Some(direction) = direction {
-      session.state.scroll_by(scroll_by, direction);
-    }
-    // .ensure_invariants(text.slice(..));
-    // .into_single();
-    // log::info!("move_impl callback: session view {:?}", session.selection);
+    session_move_impl_callback(compositor, count, move_fn, dir, behaviour);
   }));
 }
 
@@ -2771,6 +2823,7 @@ fn ensure_selections_forward(cx: &mut Context) {
 }
 
 fn enter_insert_mode(cx: &mut Context) {
+  cx.focus.editor_view();
   cx.editor.mode = Mode::Insert;
 }
 

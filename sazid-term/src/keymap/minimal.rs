@@ -187,8 +187,8 @@ pub fn minimal() -> HashMap<Mode, KeyTrie> {
       "esc" => normal_mode,
       "C-b" | "pageup" => page_up,
       "C-f" | "pagedown" => page_down,
-      "C-u" => page_cursor_half_up,
-      "C-d" => page_cursor_half_down,
+      "C-u" => session_page_cursor_half_up,
+      "C-d" => session_page_cursor_half_down,
 
       // "C-w" => { "Window"
       //     "C-w" | "w" => rotate_view,

@@ -38,7 +38,7 @@ pub struct Prompt {
   language: Option<(&'static str, Arc<ArcSwap<syntax::Loader>>)>,
 }
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum PromptEvent {
   /// The prompt input has been updated.
   Update,

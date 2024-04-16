@@ -105,11 +105,11 @@ impl LanguageServerInterface {
         }
       },
       LsiAction::UpdateWorkspaceFileSymbols(workspace_path, doc_id, doc_symbols) => {
-        log::info!(
-          "update {} workspace file symbols for doc id: {:#?}, ",
-          doc_symbols.len(),
-          doc_id.uri.path()
-        );
+        // log::info!(
+        //   "update {} workspace file symbols for doc id: {:#?}, ",
+        //   doc_symbols.len(),
+        //   doc_id.uri.path()
+        // );
         match self
           .workspaces
           .iter_mut()
@@ -126,7 +126,7 @@ impl LanguageServerInterface {
         }
       },
       LsiAction::RequestWorkspaceFileSymbols(workspace_path, doc_id, language_server_id) => {
-        log::info!("get workspace file symbols: {:#?}", doc_id);
+        // log::info!("get workspace file symbols: {:#?}", doc_id);
         let language_server = self.language_server_by_id(language_server_id).unwrap();
         let tx = self.tx.clone();
         match Self::get_workspace_file_symbols(workspace_path, doc_id, language_server, tx) {
@@ -367,7 +367,7 @@ impl LanguageServerInterface {
     language_server: Arc<Client>,
     tx: UnboundedSender<LsiAction>,
   ) -> anyhow::Result<()> {
-    log::info!("get_workspace_file_symbols {:?}", doc_id);
+    // log::info!("get_workspace_file_symbols {:?}", doc_id);
     if let Some(request_fut) = language_server.document_symbols(doc_id.clone()) {
       tokio::spawn(async move {
         request_fut

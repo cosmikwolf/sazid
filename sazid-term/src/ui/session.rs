@@ -48,7 +48,7 @@ use helix_view::{
   document::Mode,
   editor::{Action, CursorShapeConfig},
   graphics::{CursorKind, Margin, Modifier, Rect, UnderlineStyle},
-  input::{MouseButton, MouseEventKind},
+  input::{MouseButton, MouseEvent, MouseEventKind},
   theme::{Color, Style},
   view::ViewPosition,
   Document, DocumentId, Editor, Theme,
@@ -672,17 +672,6 @@ impl<T: MarkdownItem + 'static> SessionView<T> {
       self.state.cursor_position = Some(position);
     };
 
-    let overlay_styles = StyleIter {
-      text_style,
-      active_highlights: Vec::with_capacity(64),
-      highlight_iter: overlay_highlight_iter,
-      theme: &cx.editor.theme,
-    };
-
-    // let overlay_styles = overlay_styles.map(|(style, index)|{
-    //
-    // })
-
     let primary_range = self.selection.primary();
 
     let highlight_range = if primary_range.head < primary_range.anchor {
@@ -704,31 +693,9 @@ impl<T: MarkdownItem + 'static> SessionView<T> {
     );
     self.chat_viewport = column_areas[1];
 
-    // log::info!(
-    //   "wrapping text at width: {}\n{:#?}",
-    //   self.chat_viewport.width,
-    //   column_areas
-    // );
-
     self.messages.iter_mut().for_each(|message| {
       message.update_wrapped_plain_text_if_necessary(self.chat_viewport.width, &self.syn_loader)
     });
-    let text = self.get_messages_plaintext();
-    let slice = text.slice(..);
-    let hr = highlight_range.clone();
-    // let spos = crate::movement::translate_char_index_to_pos(slice, hr.start);
-    // let epos = crate::movement::translate_char_index_to_pos(slice, hr.end);
-    // log::info!(
-    //   "highlight_range: {:?}  highlight_style: {:?}, {}\nstart: {:?} end: {:?}",
-    //   highlight_range,
-    //   highlight_style.bg,
-    //   overlay_styles.count(),
-    //   spos,
-    //   epos
-    // );
-    //
-    let seltex = text.slice(highlight_range.clone());
-    // log::info!("selected text:\n{:?} {}", seltex, seltex.len_chars());
 
     Table::new(
       self
@@ -1228,158 +1195,72 @@ impl<T: MarkdownItem + 'static + Send + Sync> Component for SessionView<T> {
   }
 
   fn handle_event(&mut self, event: &Event, ctx: &mut Context) -> EventResult {
-    if let Event::IdleTimeout = event {
-      return self.handle_idle_timeout(ctx);
-    }
     // log::info!("session events--: {:?}", event);
 
-    let close_fn = |session: &mut Self| {
-      // if the session is very large don't store it as last_session to avoid
-      // excessive memory consumption
-      let callback: compositor::Callback = if session.matcher.snapshot().item_count() > 100_000 {
-        Box::new(|compositor: &mut Compositor, _ctx| {
-          // remove the layer
-          compositor.pop();
-        })
-      } else {
-        // stop streaming in new items in the background, really we should
-        // be restarting the stream somehow once the session gets
-        // reopened instead (like for an FS crawl) that would also remove the
-        // need for the special case above but that is pretty tricky
-        session.shutdown.store(true, atomic::Ordering::Relaxed);
-        Box::new(|compositor: &mut Compositor, _ctx| {
-          // remove the layer
-          compositor.last_picker = compositor.pop();
-        })
-      };
-      EventResult::Consumed(Some(callback))
+    let event_result = match event {
+      Event::IdleTimeout => self.handle_idle_timeout(ctx),
+      Event::Resize(..) => {
+        self.update_messages_plaintext();
+        EventResult::Consumed(None)
+      },
+      Event::Mouse(event) => {
+        match event.kind {
+          MouseEventKind::Down(MouseButton::Left) => {
+            if let Some(char_idx) = crate::movement::translate_pos_to_char_index(
+              &self.get_messages_plaintext(),
+              self.chat_viewport,
+              self.state.vertical_scroll,
+              Position { row: event.row as usize, col: event.column as usize },
+            ) {
+              self.selection = Selection::point(char_idx);
+              helix_event::request_redraw();
+              EventResult::Consumed(None)
+            } else {
+              EventResult::Ignored(None)
+            }
+            // start select
+          },
+          MouseEventKind::Up(MouseButton::Left) => {
+            EventResult::Ignored(None)
+            // stop select
+            // log::info!("mouse up event: {:?}", event);
+          },
+          MouseEventKind::Drag(MouseButton::Left) => {
+            if let Some(char_idx) = crate::movement::translate_pos_to_char_index(
+              &self.get_messages_plaintext(),
+              self.chat_viewport,
+              self.state.vertical_scroll,
+              Position { row: event.row as usize, col: event.column as usize },
+            ) {
+              let range = self.selection.primary();
+              self.selection = Selection::single(range.anchor, char_idx);
+              helix_event::request_redraw();
+            }
+            // update select
+            log::info!("mouse drag event: {:?}", event);
+            EventResult::Consumed(None)
+          },
+          MouseEventKind::ScrollUp => {
+            // log::info!("scroll up");
+            self.state.scroll_by(1, Direction::Backward);
+            helix_event::request_redraw();
+            EventResult::Consumed(None)
+          },
+          MouseEventKind::ScrollDown => {
+            // log::info!("scroll down");
+            self.state.scroll_by(1, Direction::Forward);
+            helix_event::request_redraw();
+            EventResult::Consumed(None)
+          },
+          _ => EventResult::Ignored(None),
+        }
+      },
+      _ => EventResult::Ignored(None),
     };
 
     // So that idle timeout retriggers
     ctx.editor.reset_idle_timer();
-
-    if let Event::Mouse(event) = event {
-      match event.kind {
-        MouseEventKind::Down(MouseButton::Left) => {
-          if let Some(char_idx) = crate::movement::translate_pos_to_char_index(
-            &self.get_messages_plaintext(),
-            self.chat_viewport,
-            self.state.vertical_scroll,
-            Position { row: event.row as usize, col: event.column as usize },
-          ) {
-            self.selection = Selection::point(char_idx);
-            helix_event::request_redraw();
-          }
-          // start select
-        },
-        MouseEventKind::Up(MouseButton::Left) => {
-          // stop select
-          // log::info!("mouse up event: {:?}", event);
-        },
-        MouseEventKind::Drag(MouseButton::Left) => {
-          if let Some(char_idx) = crate::movement::translate_pos_to_char_index(
-            &self.get_messages_plaintext(),
-            self.chat_viewport,
-            self.state.vertical_scroll,
-            Position { row: event.row as usize, col: event.column as usize },
-          ) {
-            let range = self.selection.primary();
-            self.selection = Selection::single(range.anchor, char_idx);
-            helix_event::request_redraw();
-          }
-          // update select
-          log::info!("mouse drag event: {:?}", event);
-        },
-        MouseEventKind::ScrollUp => {
-          // log::info!("scroll up");
-          self.state.scroll_by(1, Direction::Backward);
-          helix_event::request_redraw();
-        },
-        MouseEventKind::ScrollDown => {
-          // log::info!("scroll down");
-          self.state.scroll_by(1, Direction::Forward);
-          helix_event::request_redraw();
-        },
-        _ => {},
-      }
-    }
-
-    let key_event = match event {
-      // Event::Key(event) => *event,
-      Event::Paste(..) => return self.prompt_handle_event(event, ctx),
-      Event::Resize(..) => return EventResult::Consumed(None),
-      _ => {
-        return EventResult::Ignored(None);
-      },
-    };
-
-    log::info!("key event: {:?}", key_event);
-    match key_event {
-      shift!('j') | key!(Up) => {
-        log::info!("kb scroll up");
-        self.state.scroll_by(1, Direction::Backward);
-        helix_event::request_redraw();
-      },
-      shift!('k') | key!(Down) => {
-        log::info!("kb scroll down");
-        self.state.scroll_by(1, Direction::Forward);
-        helix_event::request_redraw();
-      },
-      // shift!(Tab) | ctrl!('p') => {
-      //   self.move_by(1, Direction::Backward);
-      //   log::info!("shift tab")
-      // },
-      // key!(Tab) | ctrl!('n') => {
-      //   self.move_by(1, Direction::Forward);
-      //   log::info!("tab")
-      // },
-      // key!(PageDown) | ctrl!('d') => {
-      //   self.page_down();
-      // },
-      // key!(PageUp) | ctrl!('u') => {
-      //   self.page_up();
-      // },
-      // key!(Home) => {
-      //   self.to_start();
-      // },
-      // key!(End) => {
-      //   self.to_end();
-      // },
-      // key!(Esc) | ctrl!('c') => return close_fn(self),
-      // alt!(Enter) => {
-      //   if let Some(option) = self.selection() {
-      //     (self.callback_fn)(ctx, option, Action::Load);
-      //   }
-      // },
-      // key!(Enter) => {
-      //   if let Some(option) = self.selection() {
-      //     (self.callback_fn)(ctx, option, Action::Replace);
-      //   }
-      //   return close_fn(self);
-      // },
-      ctrl!('s') => {
-        if let Some(option) = self.selection() {
-          (self.callback_fn)(ctx, option, Action::HorizontalSplit);
-        }
-        return close_fn(self);
-      },
-      ctrl!('v') => {
-        if let Some(option) = self.selection() {
-          (self.callback_fn)(ctx, option, Action::VerticalSplit);
-        }
-        return close_fn(self);
-      },
-      ctrl!('t') => {
-        self.toggle_preview();
-      },
-      _ => {
-        // self.editor_handle_event(event, ctx);
-        // log::info!("passing event to input: {:?}", event);
-        // return self.input.handle_event(event, ctx);
-        return EventResult::Ignored(None);
-      },
-    }
-    EventResult::Consumed(None)
+    event_result
   }
 
   fn cursor(&self, _area: Rect, editor: &Editor) -> (Option<Position>, CursorKind) {

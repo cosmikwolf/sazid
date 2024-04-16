@@ -409,7 +409,6 @@ impl Application {
                         chat_tool_tx.send(*action).unwrap();
                     }
                     _ => {
-                        // log::debug!("lsi action: {:#?} ", action);
                         self.language_server_interface.handle_action(action);
                     }
                 }
@@ -483,11 +482,11 @@ impl Application {
                         self.compositor.find::<ui::SessionView<ChatMessageItem>>().unwrap().upsert_message(ChatMessageItem::new_error(error));
                                     self.render().await;
                                 },
-                                _ => match self.session.update(action) {
-                                        Ok(Some(action)) => {session_tx.send(action).unwrap()},
-                                        Ok(None) => {},
-                                        Err(err) => log::debug!("session update error: {:#?}", err),
-                                    }
+                        _ => match self.session.update(action) {
+                                Ok(Some(action)) => {session_tx.send(action).unwrap()},
+                                Ok(None) => {},
+                                Err(err) => log::debug!("session update error: {:#?}", err),
+                            }
                     };
 
           }
