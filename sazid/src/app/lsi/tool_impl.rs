@@ -7,7 +7,7 @@ use super::workspace::Workspace;
 use super::{
   interface::LanguageServerInterface, query::LsiQuery, symbol_types::SerializableSourceSymbol,
 };
-use sazid_lsp::lsp::{self};
+use helix_lsp::lsp::{self};
 
 use lsp::{Diagnostic, DiagnosticSeverity, NumberOrString};
 use url::Url;

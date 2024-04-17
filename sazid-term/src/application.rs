@@ -245,15 +245,14 @@ impl Application {
 
     let doc_id = view!(editor).doc;
 
-    // let id = *id;
     editor.switch(doc_id, Action::Replace);
 
     let mut input = EditorView::new(crate::keymap::minimal_keymap());
     input.override_height(markdown_session.input_height, ui::editor::VerticalAlign::Bottom);
 
     // session must be pushed after input in order for input not to overwrite style changes made in session
-    compositor.push(Box::new(input));
     compositor.push(Box::new(markdown_session));
+    compositor.push(Box::new(input));
 
     #[cfg(windows)]
     let signals = futures_util::stream::empty();
@@ -466,7 +465,7 @@ impl Application {
                           session.reload_messages(messages );
                         self.render().await;
                       }
-                      SessionAction::MessageUpdate(message, id) => {
+                      SessionAction::UpdateMessage(message, id) => {
                        self.compositor
                            .find::<ui::SessionView<ChatMessageItem>>()
                            .unwrap()

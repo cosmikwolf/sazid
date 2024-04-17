@@ -33,7 +33,7 @@ helix-loader = { workspace = true }
 
 [dependencies]
 helix-stdx = { workspace = true }
-sazid-lsp = { workspace = true }
+helix-lsp = { workspace = true }
 helix-loader = { workspace = true }
 helix-event = { workspace = true }
 helix-core = { workspace = true }

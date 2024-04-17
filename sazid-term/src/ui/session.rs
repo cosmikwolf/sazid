@@ -201,6 +201,7 @@ pub struct SessionView<T: MarkdownItem> {
   /// Given an item in the session, return the file path and line number to display.
   file_fn: Option<FileCallback<T>>,
   messages_plaintext: Rope,
+  updating_system_prompt: bool,
 }
 
 impl<T: MarkdownItem + 'static> SessionView<T> {
@@ -299,6 +300,7 @@ impl<T: MarkdownItem + 'static> SessionView<T> {
       file_fn: None,
       selection: Selection::point(0),
       messages_plaintext: Rope::new(),
+      updating_system_prompt: false,
     }
   }
 

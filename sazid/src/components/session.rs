@@ -127,8 +127,23 @@ impl Session {
   pub fn set_system_prompt(&mut self, prompt: &str) {
     let tx = self.action_tx.clone().unwrap();
     self.config.prompt = prompt.to_string();
-    tx.send(SessionAction::AddMessage(self.id, ChatMessage::System(self.config.prompt_message())))
+    if let Some(message) =
+      self.messages.iter().find(|m| matches!(m.message, ChatCompletionRequestMessage::System(_)))
+    {
+      log::info!("updating system prompt: {:?}", prompt);
+      tx.send(SessionAction::UpdateMessage(
+        self.config.prompt_message().into(),
+        message.message_id,
+      ))
       .unwrap();
+    } else {
+      log::info!("setting system prompt: {:?}", prompt);
+      tx.send(SessionAction::AddMessage(
+        self.id,
+        ChatMessage::System(self.config.prompt_message()),
+      ))
+      .unwrap();
+    }
   }
 
   pub fn update(&mut self, action: SessionAction) -> Result<Option<SessionAction>, SazidError> {
@@ -254,7 +269,7 @@ impl Session {
   pub fn update_ui_message(&self, message_id: i64) {
     let tx = self.action_tx.clone().unwrap();
     let message = self.messages.iter().find(|m| m.message_id == message_id).unwrap();
-    tx.send(SessionAction::MessageUpdate(message.message.clone(), message_id)).unwrap();
+    tx.send(SessionAction::UpdateMessage(message.message.clone(), message_id)).unwrap();
   }
 
   pub fn add_message(&mut self, message: ChatMessage) {

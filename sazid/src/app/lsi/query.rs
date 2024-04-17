@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use sazid_lsp::lsp;
+use helix_lsp::lsp;
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Default, Debug, Eq, PartialEq, Serialize, Deserialize)]

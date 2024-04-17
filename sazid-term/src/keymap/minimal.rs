@@ -225,8 +225,13 @@ pub fn minimal() -> HashMap<Mode, KeyTrie> {
       "space" => { "Space"
           "f" => file_picker,
           "s" => save_session,
-        "l" => load_session_picker,
-        "t" => toggle_layer_order,
+          "l" => load_session_picker,
+          "n" => new_session,
+          "a" => add_session_workspace_folder,
+          "r" => remove_session_workspace_folder,
+          "p" => modify_system_prompt,
+          "t" => toggle_layer_order,
+          "q" => quit,
 
       //     "F" => file_picker_in_current_directory,
       //     "b" => buffer_picker,

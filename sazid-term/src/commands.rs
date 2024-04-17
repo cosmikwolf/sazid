@@ -3,6 +3,7 @@ pub(crate) mod llm;
 pub(crate) mod lsp;
 pub(crate) mod typed;
 
+use crossterm::event::ModifierKeyCode;
 pub use dap::*;
 use helix_stdx::rope::{self, RopeSliceExt};
 use helix_vcs::Hunk;
@@ -40,7 +41,7 @@ use helix_view::{
   graphics::Rect,
   info::Info,
   input::KeyEvent,
-  keyboard::KeyCode,
+  keyboard::{KeyCode, KeyModifiers},
   tree,
   view::View,
   Document, DocumentId, Editor, ViewId,
@@ -516,6 +517,10 @@ impl MappableCommand {
         session_page_cursor_half_down, "scroll session cursor half page down",
         load_session_picker, "show saved session",
         toggle_layer_order, "toggle focus between session and editor",
+        new_session, "create a new session",
+        add_session_workspace_folder, "add a workspace folder to this session",
+        remove_session_workspace_folder, "remove a workspace folder from current session",
+        modify_system_prompt, "modify the system prompt",
     );
 }
 
@@ -589,6 +594,37 @@ impl PartialEq for MappableCommand {
 }
 
 // Sazid Custom Commands
+fn new_session(cx: &mut Context) {
+  log::info!("new_session");
+}
+
+fn add_session_workspace_folder(cx: &mut Context) {
+  log::info!("add_workspace_folder");
+}
+
+fn remove_session_workspace_folder(cx: &mut Context) {
+  log::info!("remove_workspace_folder");
+}
+
+fn modify_system_prompt(cx: &mut Context) {
+  let (view, doc) = current!(cx.editor);
+
+  let view_id = view.id;
+  let input = doc.text().to_string().trim().to_string();
+
+  if !input.is_empty() {
+    let end = &doc.text().len_chars();
+    let selection = Selection::single(0, *end);
+    let transaction = Transaction::delete_by_selection(&doc.text().clone(), &selection, |range| {
+      (range.from(), range.to())
+    });
+    cx.session.set_system_prompt(&input);
+    doc.apply(&transaction, view_id);
+    cx.editor.set_status("system prompt updated");
+  } else {
+    cx.editor.set_status("enter text into input before setting prompt");
+  }
+}
 
 fn quit(cx: &mut Context) {
   log::debug!("quitting...");
@@ -713,7 +749,7 @@ fn save_session(cx: &mut Context) {
     ui::completers::none,
     move |cx, input: &str, event: PromptEvent| match event {
       PromptEvent::Validate => {
-        let save_path = data_folder.join(input);
+        let save_path = data_folder.join(input).join(".szd");
         log::info!("saving session to: {:#?}\nevent: {:#?}", save_path, event);
         match cx.session.save_session(save_path.clone()) {
           Ok(_) => cx.editor.set_status(format!("session saved to: {:?}", save_path)),
@@ -758,8 +794,6 @@ fn submit_input_to_session(cx: &mut Context) {
 
   let end = doc.text().len_chars();
   let selection = Selection::single(0, end);
-
-  // then delete
   let transaction =
     Transaction::delete_by_selection(doc.text(), &selection, |range| (range.from(), range.to()));
   doc.apply(&transaction, view.id);

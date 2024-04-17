@@ -207,7 +207,7 @@ pub fn session_move_vertically(
           return put_cursor(
             range,
             all_messages_text,
-            all_messages_text.len_chars() - 1,
+            all_messages_text.len_chars().saturating_sub(1),
             behaviour == Movement::Extend,
           )
         },

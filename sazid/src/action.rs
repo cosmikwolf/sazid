@@ -12,8 +12,8 @@ use crate::{
 use async_openai::types::{
   ChatCompletionMessageToolCall, ChatCompletionRequestMessage, ChatCompletionTool,
 };
+use helix_lsp::Call;
 use lsp_types::{DocumentSymbol, TextDocumentIdentifier};
-use sazid_lsp::Call;
 use serde::{Deserialize, Serialize, Serializer};
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -41,9 +41,9 @@ pub enum SessionAction {
   CommandResult(String),
   RequestChatCompletion(),
   AddMessage(i64, ChatMessage),
-  UpdateStatus(Option<String>),
-  MessageUpdate(ChatCompletionRequestMessage, i64),
+  UpdateMessage(ChatCompletionRequestMessage, i64),
   ReloadMessages(Vec<(i64, ChatCompletionRequestMessage)>),
+  UpdateStatus(Option<String>),
   UpdateToolList(i64, Vec<ChatCompletionTool>),
 
   SaveSession,

@@ -3,7 +3,7 @@ use super::symbol_types::SourceSymbol;
 use super::workspace_file::WorkspaceFile;
 use helix_core::syntax::{FileType, LanguageConfiguration};
 use lsp_types::{DocumentSymbol, TextDocumentIdentifier};
-use sazid_lsp::Client;
+use helix_lsp::Client;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Weak};
 

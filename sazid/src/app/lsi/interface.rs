@@ -2,8 +2,8 @@ use arc_swap::ArcSwap;
 use futures_util::FutureExt;
 use helix_core::diff::compare_ropes;
 use helix_core::syntax;
+use helix_lsp::Registry;
 use lsp::TextDocumentIdentifier;
-use sazid_lsp::Registry;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
@@ -11,10 +11,10 @@ use tokio::sync::mpsc::UnboundedSender;
 
 use helix_core::syntax::LanguageConfiguration;
 use helix_core::syntax::Loader;
+use helix_lsp::lsp;
+use helix_lsp::Client;
+use helix_lsp::LspProgressMap;
 use lsp::DocumentSymbol;
-use sazid_lsp::lsp;
-use sazid_lsp::Client;
-use sazid_lsp::LspProgressMap;
 
 use url::Url;
 
@@ -526,13 +526,13 @@ impl LanguageServerInterface {
   pub async fn language_server_by_name(
     &self,
     language_server_name: String,
-  ) -> Option<Arc<sazid_lsp::Client>> {
+  ) -> Option<Arc<helix_lsp::Client>> {
     let client =
       self.language_servers.iter_clients().find(|client| client.name() == language_server_name);
     client.cloned()
   }
 
-  pub fn language_server_by_id(&self, language_server_id: usize) -> Option<Arc<sazid_lsp::Client>> {
+  pub fn language_server_by_id(&self, language_server_id: usize) -> Option<Arc<helix_lsp::Client>> {
     let client =
       self.language_servers.iter_clients().find(|client| client.id() == language_server_id);
     client.cloned()

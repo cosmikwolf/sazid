@@ -1,4 +1,5 @@
 use super::symbol_types::{DocumentChange, SourceSymbol};
+use helix_lsp::OffsetEncoding;
 use lsp_types as lsp;
 use ropey::Rope;
 use std::collections::HashMap;
@@ -14,17 +15,13 @@ pub struct WorkspaceFile {
   pub diagnostics: HashMap<i32, Vec<lsp::Diagnostic>>,
   pub checksum: Option<blake3::Hash>,
   pub contents: HashMap<i32, Rope>, // hashmap of contents indexed by version
-  pub offset_encoding: sazid_lsp::OffsetEncoding,
+  pub offset_encoding: OffsetEncoding,
   pub workspace_path: PathBuf,
   pub version: i32,
 }
 
 impl WorkspaceFile {
-  pub fn new(
-    file_path: &Path,
-    workspace_path: &Path,
-    offset_encoding: &sazid_lsp::OffsetEncoding,
-  ) -> Self {
+  pub fn new(file_path: &Path, workspace_path: &Path, offset_encoding: &OffsetEncoding) -> Self {
     let version = 0;
     let file_tree = Arc::new(SourceSymbol::default());
     WorkspaceFile {
