@@ -385,59 +385,6 @@ impl Application {
               self.render().await;
           }
 
-          Some((id, call)) = self.language_server_interface.language_servers.incoming.next() => {
-            self.handle_language_server_message(
-              call.clone(),
-              id,
-            )
-            .await;
-            session_tx.send(SessionAction::LspServerMessageReceived((id, call))).unwrap();
-            helix_event::request_redraw();
-          }
-
-
-          Some(action) = self.language_server_interface_events.next() => {
-              if self.language_server_interface.language_servers.iter_clients().all(|client| {
-                  client.is_initialized() && !self.lsp_progress.is_progressing(client.id())
-              }) {
-                match action {
-                    LsiAction::SessionAction(action) => {
-                        session_tx.send(*action).unwrap();
-                    },
-                    LsiAction::ChatToolResponse(action) => {
-                        chat_tool_tx.send(*action).unwrap();
-                    }
-                    _ => {
-                        self.language_server_interface.handle_action(action);
-                    }
-                }
-              } else {
-                lsi_tx.send(action).unwrap();
-              };
-          }
-
-          Some(action) = self.chat_tools_events.next() => {
-              match action  {
-                ChatToolAction::SessionAction(action) => {
-                    session_tx.send(*action).unwrap();
-                },
-                ChatToolAction::LsiRequest(action) => {
-                    lsi_tx.send(*action).unwrap();
-                },
-                _ => {
-                  match self.chat_tools.handle_action(action) {
-                      Ok(Some(action)) => {
-                      chat_tool_tx.send(action).unwrap();
-                      },
-                      Ok(None) => {},
-                          Err(e) => {
-                            log::error!("chat tool update error: {:#?}", e);
-                              chat_tool_tx.send(ChatToolAction::Error(e.to_string())).unwrap();
-                          }
-                      }
-                  }
-                }
-              }
 
           Some(action) = self.session_events.next() => {
                   match action.clone() {
@@ -489,6 +436,60 @@ impl Application {
                     };
 
           }
+
+          Some((id, call)) = self.language_server_interface.language_servers.incoming.next() => {
+            self.handle_language_server_message(
+              call.clone(),
+              id,
+            )
+            .await;
+            session_tx.send(SessionAction::LspServerMessageReceived((id, call))).unwrap();
+            helix_event::request_redraw();
+          }
+
+          Some(action) = self.language_server_interface_events.next() => {
+              if self.language_server_interface.language_servers.iter_clients().all(|client| {
+                  client.is_initialized() && !self.lsp_progress.is_progressing(client.id())
+              }) {
+                match action {
+                    LsiAction::SessionAction(action) => {
+                        session_tx.send(*action).unwrap();
+                    },
+                    LsiAction::ChatToolResponse(action) => {
+                        chat_tool_tx.send(*action).unwrap();
+                    }
+                    _ => {
+                        self.language_server_interface.handle_action(action);
+                    }
+                }
+              } else {
+                lsi_tx.send(action).unwrap();
+              };
+          }
+
+          Some(action) = self.chat_tools_events.next() => {
+              match action  {
+                ChatToolAction::SessionAction(action) => {
+                    session_tx.send(*action).unwrap();
+                },
+                ChatToolAction::LsiRequest(action) => {
+                    lsi_tx.send(*action).unwrap();
+                },
+                _ => {
+                  match self.chat_tools.handle_action(action) {
+                      Ok(Some(action)) => {
+                      chat_tool_tx.send(action).unwrap();
+                      },
+                      Ok(None) => {},
+                          Err(e) => {
+                            log::error!("chat tool update error: {:#?}", e);
+                              chat_tool_tx.send(ChatToolAction::Error(e.to_string())).unwrap();
+                          }
+                      }
+                  }
+                }
+              }
+
 
           event = self.editor.wait_event() => {
               let _idle_handled = self.handle_editor_event(event).await;
