@@ -1,11 +1,8 @@
 use crate::{
   commands::ChatMessageItem,
-  compositor::{self, Component, Compositor, Context, ContextFocus, Event, EventResult},
-  ctrl, filter_picker_entry,
+  compositor::{self, Component, Compositor, Context, ContextFocus, Event, EventResult}, filter_picker_entry,
   job::Callback,
-  key,
   movement::min_width_1,
-  shift,
   ui::{
     document::{render_document, LineDecoration, LinePos, TextRenderer},
     EditorView,
@@ -48,7 +45,7 @@ use helix_view::{
   document::Mode,
   editor::{Action, CursorShapeConfig},
   graphics::{CursorKind, Margin, Modifier, Rect, UnderlineStyle},
-  input::{MouseButton, MouseEvent, MouseEventKind},
+  input::{MouseButton, MouseEventKind},
   theme::{Color, Style},
   view::ViewPosition,
   Document, DocumentId, Editor, Theme,
@@ -251,7 +248,7 @@ impl<T: MarkdownItem + 'static> SessionView<T> {
 
   fn with(
     matcher: Nucleo<T>,
-    theme: Option<Theme>,
+    _theme: Option<Theme>,
     editor_data: Arc<T::Data>,
     shutdown: Arc<AtomicBool>,
     syn_loader: Arc<ArcSwap<syntax::Loader>>,
@@ -613,7 +610,7 @@ impl<T: MarkdownItem + 'static> SessionView<T> {
     area: Rect,
     surface: &mut Surface,
     cx: &mut Context,
-    overlay_highlight_iter: impl Iterator<Item = HighlightEvent>,
+    _overlay_highlight_iter: impl Iterator<Item = HighlightEvent>,
   ) {
     // -- make space for the input bar:
     let input_on_top = false;
@@ -632,9 +629,9 @@ impl<T: MarkdownItem + 'static> SessionView<T> {
     }
 
     let text_style = cx.editor.theme.get("ui.text");
-    let cursor_style = cx.editor.theme.get("ui.cursor");
+    let _cursor_style = cx.editor.theme.get("ui.cursor");
     let selected = cx.editor.theme.get("ui.selection");
-    let highlight_style = cx.editor.theme.get("special").add_modifier(Modifier::BOLD);
+    let _highlight_style = cx.editor.theme.get("special").add_modifier(Modifier::BOLD);
 
     // -- Render the frame:
     // clear area
@@ -670,7 +667,7 @@ impl<T: MarkdownItem + 'static> SessionView<T> {
       matcher.config.set_match_paths()
     }
 
-    if let (Some(position), cursor) = self.cursor(self.chat_viewport, cx.editor) {
+    if let (Some(position), _cursor) = self.cursor(self.chat_viewport, cx.editor) {
       self.state.cursor_position = Some(position);
     };
 
@@ -774,7 +771,7 @@ impl<T: MarkdownItem + 'static> SessionView<T> {
   fn get_selection_highlights(
     &mut self,
     area: Rect,
-    surface: &mut Surface,
+    _surface: &mut Surface,
     cx: &mut Context,
   ) -> Box<dyn Iterator<Item = HighlightEvent>> {
     let overlay_highlights_spans = if self.session_is_focused {
@@ -789,12 +786,12 @@ impl<T: MarkdownItem + 'static> SessionView<T> {
     };
 
     let text = self.get_messages_plaintext();
-    let overlay_highlights = Box::new(helix_core::syntax::merge(
+    
+
+    (Box::new(helix_core::syntax::merge(
       Self::empty_highlight_iter(text, 7, area.height),
       overlay_highlights_spans,
-    ));
-
-    return overlay_highlights;
+    ))) as _
 
     // let mut overlay_styles = StyleIter {
     //   text_style: Style::default(),
@@ -930,7 +927,7 @@ impl<T: MarkdownItem + 'static> SessionView<T> {
     let mut spans: Vec<(usize, std::ops::Range<usize>)> = Vec::new();
     for (i, range) in selection.iter().enumerate() {
       let selection_is_primary = i == primary_idx;
-      let (cursor_scope, selection_scope) = if selection_is_primary {
+      let (cursor_scope, _selection_scope) = if selection_is_primary {
         (primary_cursor_scope, primary_selection_scope)
       } else {
         (cursor_scope, selection_scope)
@@ -1175,7 +1172,7 @@ impl<T: MarkdownItem + 'static + Send + Sync> Component for SessionView<T> {
 
     self.render_session(session_area, surface, cx, selection_highlights);
 
-    if let (Some(pos), kind) = self.cursor(area, cx.editor) {
+    if let (Some(pos), _kind) = self.cursor(area, cx.editor) {
       // log::debug!("Cursor Position: {:?}", pos);
       let cursor_area = Rect { x: pos.col as u16, y: pos.row as u16, width: 1, height: 1 };
       if cursor_area.intersects(area) {

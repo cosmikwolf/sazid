@@ -1,18 +1,14 @@
 use super::reflow::{LineComposer, LineTruncator, WordWrapper};
 use helix_core::{
-  syntax::{Highlight, HighlightEvent},
   unicode::width::UnicodeWidthStr,
-  RopeSlice,
 };
-use helix_lsp::{lsp::Range, Position};
+
 use helix_view::{
   graphics::{Rect, Style},
-  theme::Color,
-  Theme,
 };
 use std::iter;
 use tui::{
-  buffer::{Buffer, Cell},
+  buffer::{Buffer},
   layout::Alignment,
   text::{StyledGrapheme, Text},
   widgets::{Block, Widget},

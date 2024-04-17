@@ -163,7 +163,7 @@ pub fn session_move_horizontally(
   let original_row = all_messages_text.char_to_line(pos);
   let original_row_start = all_messages_text.line_to_char(original_row);
   let original_row_len = all_messages_text.line(original_row).len_chars();
-  let original_row_end = original_row_start + original_row_len.saturating_sub(1);
+  let _original_row_end = original_row_start + original_row_len.saturating_sub(1);
   // Compute the new position.
   let new_pos = match dir {
     Direction::Forward => pos + count,

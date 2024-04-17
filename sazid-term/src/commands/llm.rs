@@ -1,4 +1,4 @@
-use std::{iter, sync::Arc};
+use std::{sync::Arc};
 
 use super::Context;
 use crate::{
@@ -256,7 +256,7 @@ impl ui::markdownmenu::MarkdownItem for ChatMessageItem {
   /// Current working directory.
   type Data = String;
 
-  fn format(&self, _data: &Self::Data, theme: Option<&Theme>) -> tui::text::Text {
+  fn format(&self, _data: &Self::Data, _theme: Option<&Theme>) -> tui::text::Text {
     // self.format_to_text(theme)
     Text::from("")
   }

@@ -1313,7 +1313,7 @@ impl Component for EditorView {
       Event::FocusGained => {
         self.terminal_focused = true;
         EventResult::Consumed(Some(Box::new(
-          move |compositor: &mut Compositor, cx: &mut crate::compositor::Context| {
+          move |compositor: &mut Compositor, _cx: &mut crate::compositor::Context| {
             compositor.find::<SessionView<ChatMessageItem>>().unwrap().set_terminal_focused(true)
           },
         )))
@@ -1326,7 +1326,7 @@ impl Component for EditorView {
         }
         self.terminal_focused = false;
         EventResult::Consumed(Some(Box::new(
-          move |compositor: &mut Compositor, cx: &mut crate::compositor::Context| {
+          move |compositor: &mut Compositor, _cx: &mut crate::compositor::Context| {
             compositor.find::<SessionView<ChatMessageItem>>().unwrap().set_terminal_focused(false)
           },
         )))

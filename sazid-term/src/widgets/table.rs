@@ -3,7 +3,7 @@ use std::{iter, sync::Arc};
 use arc_swap::ArcSwap;
 use helix_core::{
   movement::Direction,
-  syntax::{self, HighlightEvent},
+  syntax::{self},
   unicode::width::UnicodeWidthStr,
   Position, Rope,
 };
@@ -24,7 +24,7 @@ use crate::{
   widgets::reflow::{LineComposer, LineTruncator, WordWrapper},
 };
 
-use super::paragraph::{Paragraph, Wrap};
+use super::paragraph::{Wrap};
 
 /// A [`Cell`] contains the [`Text`] to be displayed in a [`Row`] of a [`Table`].
 ///
@@ -138,7 +138,7 @@ impl<'a> MessageCell<'a> {
       MessageType::Text(text) => Text::from(text.clone()),
     };
     let style = Style::default();
-    let scroll = (0, 0);
+    let _scroll = (0, 0);
     Self::format_text(
       buf,
       false,
@@ -164,7 +164,7 @@ impl<'a> MessageCell<'a> {
     style: Style,
     wrap: Option<Wrap>,
     area: Rect,
-    alignment: Alignment,
+    _alignment: Alignment,
     char_idx: Option<usize>,
     skip_lines: u16,
     highlight_range: Option<std::ops::Range<usize>>,
@@ -931,7 +931,7 @@ fn render_cell(
   cell: &MessageCell,
   area: Rect,
   skip_lines: u16,
-  truncate: bool,
+  _truncate: bool,
   theme: &Theme,
   config_loader: &Arc<ArcSwap<syntax::Loader>>,
 ) {

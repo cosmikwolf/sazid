@@ -3,7 +3,7 @@ pub(crate) mod llm;
 pub(crate) mod lsp;
 pub(crate) mod typed;
 
-use crossterm::event::ModifierKeyCode;
+
 pub use dap::*;
 use helix_stdx::rope::{self, RopeSliceExt};
 use helix_vcs::Hunk;
@@ -38,10 +38,9 @@ use helix_core::{
 use helix_view::{
   document::{FormatterError, Mode, SCRATCH_BUFFER_NAME},
   editor::Action,
-  graphics::Rect,
   info::Info,
   input::KeyEvent,
-  keyboard::{KeyCode, KeyModifiers},
+  keyboard::{KeyCode},
   tree,
   view::View,
   Document, DocumentId, Editor, ViewId,
@@ -594,15 +593,15 @@ impl PartialEq for MappableCommand {
 }
 
 // Sazid Custom Commands
-fn new_session(cx: &mut Context) {
+fn new_session(_cx: &mut Context) {
   log::info!("new_session");
 }
 
-fn add_session_workspace_folder(cx: &mut Context) {
+fn add_session_workspace_folder(_cx: &mut Context) {
   log::info!("add_workspace_folder");
 }
 
-fn remove_session_workspace_folder(cx: &mut Context) {
+fn remove_session_workspace_folder(_cx: &mut Context) {
   log::info!("remove_workspace_folder");
 }
 
@@ -641,31 +640,8 @@ fn quit(cx: &mut Context) {
 }
 
 fn toggle_layer_order(cx: &mut Context) {
-  cx.callback.push(Box::new(move |compositor: &mut Compositor, cx: &mut compositor::Context| {
+  cx.callback.push(Box::new(move |_compositor: &mut Compositor, cx: &mut compositor::Context| {
     cx.focus.toggle();
-    return;
-    match compositor.pop() {
-      Some(component_a) => match compositor.pop() {
-        Some(component_b) => {
-          log::info!(
-            "last_on_stack: {}\nnext_on_stack: {}",
-            component_a.type_name(),
-            component_b.type_name()
-          );
-          cx.focus.toggle();
-
-          // compositor.push(component_a);
-          // compositor.push(component_b);
-          compositor.need_full_redraw();
-        },
-        None => {
-          log::info!("toggle_layer_order: last_component_id could nto be obtained");
-        },
-      },
-      None => {
-        log::info!("toggle_layer_order: no last component found");
-      },
-    };
   }))
 }
 
@@ -716,7 +692,7 @@ fn session_page_cursor_half_down(cx: &mut Context) {
 }
 
 fn session_view_scroll_up(cx: &mut Context) {
-  cx.callback.push(Box::new(move |compositor: &mut Compositor, cx: &mut compositor::Context| {
+  cx.callback.push(Box::new(move |compositor: &mut Compositor, _cx: &mut compositor::Context| {
     log::info!("session_view_scroll_up");
     compositor.find::<ui::SessionView<ChatMessageItem>>().unwrap().scroll_up();
     helix_event::request_redraw();
@@ -724,7 +700,7 @@ fn session_view_scroll_up(cx: &mut Context) {
 }
 
 fn session_view_scroll_down(cx: &mut Context) {
-  cx.callback.push(Box::new(move |compositor: &mut Compositor, cx: &mut compositor::Context| {
+  cx.callback.push(Box::new(move |compositor: &mut Compositor, _cx: &mut compositor::Context| {
     log::info!("session_view_scroll_down");
     compositor.find::<ui::SessionView<ChatMessageItem>>().unwrap().scroll_down();
     helix_event::request_redraw();

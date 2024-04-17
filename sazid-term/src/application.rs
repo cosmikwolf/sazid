@@ -3,7 +3,7 @@ use futures_util::Stream;
 use helix_core::{diagnostic::Severity, syntax};
 use helix_lsp::{
   lsp::{self, notification::Notification},
-  Call, Client, LspProgressMap,
+  Call, LspProgressMap,
 };
 use helix_stdx::path::get_relative_path;
 use helix_view::{
@@ -178,7 +178,7 @@ impl Application {
 
     session_config.workspace = Some(WorkspaceParams {
       workspace_path: PathBuf::from(
-        "/Users/tenkai/Development/gpt/sazid/sazid-term",
+        "/Users/tenkai/Development/gpt/sazid/sazid",
         // "/Users/tenkai/Development/gpt/rust_test_project",
       ),
       language: "rust".to_string(),
@@ -979,8 +979,8 @@ impl Application {
               },
             };
 
-            if let lsp::WorkDoneProgress::End(a) = work {
-              let res = self.lsp_progress.end_progress(server_id, &token);
+            if let lsp::WorkDoneProgress::End(_a) = work {
+              let _res = self.lsp_progress.end_progress(server_id, &token);
               // log::info!("end progress: {:#?} {:#?}", res, a);
               // if !self.lsp_progress.is_progressing(server_id) {
               // editor_view.spinners_mut().get_or_create(server_id).stop();
