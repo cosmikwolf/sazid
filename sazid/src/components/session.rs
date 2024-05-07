@@ -101,6 +101,10 @@ impl Session {
     }
   }
 
+  pub fn is_receiving(&self) -> bool {
+    self.messages.iter().any(|m| m.is_receiving())
+  }
+
   pub fn message_id_with_unrendered_content(&self) -> Ready<Option<i64>> {
     match self.messages.iter().find(|m| m.has_unrendered_content()) {
       Some(message) => ready(Some(message.message_id)),

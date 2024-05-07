@@ -31,22 +31,22 @@ impl ToolCallTrait for LspQuerySymbol {
                     ("name_regex".to_string(),
                   FunctionProperty::Pattern {
                     required: false,
-                    description: Some("include results where the symbol name matches".to_string()),
+                    description: Some("filter symbol results by name. omit to get symbols unfiltered by name".to_string()),
                 }),
                     ("kind".to_string(),
               FunctionProperty::String {
                     required: false,
-                description: Some("filter results by kind: MODULE NAMESPACE PACKAGE CLASS METHOD PROPERTY FIELD CONSTRUCTOR ENUM INTERFACE FUNCTION VARIABLE CONSTANT STRING NUMBER BOOLEAN ARRAY OBJECT KEY NULL ENUM_MEMBER STRUCT EVENT OPERATOR TYPE_PARAMETER".to_string()),
+                description: Some("filter results by kind. omit to get all symbol kinds. valid kinds include: MODULE NAMESPACE PACKAGE CLASS METHOD PROPERTY FIELD CONSTRUCTOR ENUM INTERFACE FUNCTION VARIABLE CONSTANT STRING NUMBER BOOLEAN ARRAY OBJECT KEY NULL ENUM_MEMBER STRUCT EVENT OPERATOR TYPE_PARAMETER".to_string()),
                 }),
                     ("range".to_string(),
               FunctionProperty::String {
                     required: false,
-                description: Some("filter results by byte range in source file, in the format of start_line,start_char,end_line,end_char".to_string()),
+                description: Some("filter results by byte range in source file, in the format of start_line,start_char,end_line,end_char. omit to get symbols for all ranges".to_string()),
                 }),
                     ("file_path_regex".to_string(),
               FunctionProperty::Pattern {
                     required: false,
-                description: Some("include results where the file path matches".to_string()),
+                description: Some("filter results by file path. Omit to get symbols from all files".to_string()),
                 }),
             ]),
       }

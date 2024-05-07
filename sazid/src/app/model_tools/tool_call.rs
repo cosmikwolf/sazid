@@ -16,14 +16,13 @@ use crate::app::session_config::SessionConfig;
 
 use super::{
   errors::ToolCallError,
-  // cargo_check_function::CargoCheckFunction,
-  // file_search_function::FileSearchFunction,
   lsp_get_diagnostics::LspGetDiagnostics,
   lsp_get_workspace_files::LspGetWorkspaceFiles,
   lsp_goto_symbol_declaration::LspGotoSymbolDeclaration,
   lsp_goto_symbol_definition::LspGotoSymbolDefinition,
   lsp_goto_type_definition::LspGotoTypeDefinition,
   lsp_query_symbols::LspQuerySymbol,
+  lsp_replace_symbol_text::LspReplaceSymbolText,
   types::{FunctionProperty, ToolCall},
 };
 
@@ -106,6 +105,7 @@ impl ChatTools {
       // Arc::new(FileSearchFunction::init()),
       Arc::new(LspGetWorkspaceFiles::init()),
       Arc::new(LspQuerySymbol::init()),
+      Arc::new(LspReplaceSymbolText::init()),
       Arc::new(LspGotoSymbolDefinition::init()),
       Arc::new(LspGotoSymbolDeclaration::init()),
       Arc::new(LspGotoTypeDefinition::init()),

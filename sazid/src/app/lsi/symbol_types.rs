@@ -1,4 +1,4 @@
-use super::{get_file_range_contents, position_gt};
+use super::{get_file_range_contents, position_gt, replace_file_range_contents};
 use blake3::Hasher;
 use lsp_types as lsp;
 use ropey::Rope;
@@ -145,6 +145,12 @@ impl SourceSymbol {
     let file_path = &self.file_path;
     let range = self.range.lock().unwrap();
     get_file_range_contents(file_path, *range)
+  }
+
+  pub fn replace_text(&self, replacement_text: &str) -> anyhow::Result<String> {
+    let file_path = &self.file_path;
+    let range = self.range.lock().unwrap();
+    replace_file_range_contents(file_path, *range, replacement_text.to_string())
   }
 
   pub fn get_selection(&self) -> anyhow::Result<String> {

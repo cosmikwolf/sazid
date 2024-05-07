@@ -3,7 +3,6 @@ pub(crate) mod llm;
 pub(crate) mod lsp;
 pub(crate) mod typed;
 
-
 pub use dap::*;
 use helix_stdx::rope::{self, RopeSliceExt};
 use helix_vcs::Hunk;
@@ -40,7 +39,7 @@ use helix_view::{
   editor::Action,
   info::Info,
   input::KeyEvent,
-  keyboard::{KeyCode},
+  keyboard::KeyCode,
   tree,
   view::View,
   Document, DocumentId, Editor, ViewId,
@@ -756,6 +755,16 @@ fn submit_input_to_session(cx: &mut Context) {
 
   let input = doc.text();
 
+  if input.chars().all(|c| c.is_whitespace()) {
+    cx.editor.set_status("input is empty");
+    return;
+  }
+
+  if cx.session.is_receiving() {
+    cx.editor.set_error("still receiving");
+    return;
+  }
+
   // let message = async_openai::types::ChatCompletionRequestUserMessage {
   //   content: async_openai::types::ChatCompletionRequestUserMessageContent::Text(
   //     text.into(),
@@ -766,6 +775,7 @@ fn submit_input_to_session(cx: &mut Context) {
   // cx.session.add_message(sazid::app::messages::ChatMessage::User(message));
 
   cx.session.submit_chat_completion_request(input.into());
+
   log::debug!("submitting input to session... {}", cx.session.messages.len());
 
   let end = doc.text().len_chars();

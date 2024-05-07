@@ -28,9 +28,8 @@ impl ToolCallTrait for CreateFileFunction {
   fn init() -> Self {
     CreateFileFunction {
       name: "create_file".to_string(),
-      description:
-        "create a file at path with text. this command cannot overwrite files"
-          .to_string(),
+      description: "create a file at path with text. this command cannot overwrite files"
+        .to_string(),
       properties: vec![
         FunctionProperty {
           name: "path".to_string(),
@@ -50,9 +49,7 @@ impl ToolCallTrait for CreateFileFunction {
           name: "overwrite".to_string(),
           required: true,
           property_type: PropertyType::Boolean,
-          description: Some(
-            "overwrite an existing file. default false".to_string(),
-          ),
+          description: Some("overwrite an existing file. default false".to_string()),
           enum_values: None,
         },
       ],
@@ -70,23 +67,12 @@ impl ToolCallTrait for CreateFileFunction {
   fn call(
     &self,
     params: ToolCallParams,
-  ) -> Pin<
-    Box<
-      dyn Future<Output = Result<Option<String>, ToolCallError>>
-        + Send
-        + 'static,
-    >,
-  > {
+  ) -> Pin<Box<dyn Future<Output = Result<Option<String>, ToolCallError>> + Send + 'static>> {
     Box::pin(async move {
-      let path: Option<&str> =
-        params.function_args.get("path").and_then(|s| s.as_str());
-      let text: Option<&str> =
-        params.function_args.get("text").and_then(|s| s.as_str());
-      let overwrite = params
-        .function_args
-        .get("overwrite")
-        .and_then(|b| b.as_bool())
-        .unwrap_or(false);
+      let path: Option<&str> = params.function_args.get("path").and_then(|s| s.as_str());
+      let text: Option<&str> = params.function_args.get("text").and_then(|s| s.as_str());
+      let overwrite =
+        params.function_args.get("overwrite").and_then(|b| b.as_bool()).unwrap_or(false);
 
       if let Some(path) = path {
         if let Some(text) = text {
@@ -240,8 +226,7 @@ mod tests {
     let file_path = tmp_dir.path().join("large_test_file.txt");
     let file_contents = "a".repeat(10_000_000); // 10 MB of 'a'.
 
-    let result =
-      create_file(file_path.to_str().unwrap(), &file_contents, false);
+    let result = create_file(file_path.to_str().unwrap(), &file_contents, false);
     assert!(result.is_ok());
     check_file_contents(&file_path, &file_contents);
   }

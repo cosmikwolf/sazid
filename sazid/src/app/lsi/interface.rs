@@ -49,6 +49,10 @@ impl LanguageServerInterface {
         log::error!("{}", error);
         Ok(None)
       },
+      LsiAction::ReplaceSymbolText(replacement_text, lsi_query) => {
+        let lsi_query_result = self.lsi_replace_symbol_text(replacement_text, &lsi_query);
+        Self::handle_lsi_query_result(lsi_query, lsi_query_result)
+      },
       LsiAction::GetWorkspaceFiles(lsi_query) => {
         log::info!("get_workspace_files: {:#?}", lsi_query);
         let lsi_query_result = self.get_workspace_files(&lsi_query);
@@ -174,7 +178,7 @@ impl LanguageServerInterface {
       Ok(response) => Ok(Some(LsiAction::SessionAction(Box::new(
         SessionAction::ToolCallComplete(ToolType::LsiQuery(lsi_query), response),
       )))),
-      Err(e) => Ok(Some(LsiAction::SessionAction(Box::new(SessionAction::ToolCallError(
+      Err(e) => Ok(Some(LsiAction::SessionAction(Box::new(SessionAction::ToolCallComplete(
         ToolType::LsiQuery(lsi_query),
         e.to_string(),
       ))))),

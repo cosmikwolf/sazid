@@ -1,6 +1,5 @@
 use std::path::PathBuf;
 
-use futures_util::FutureExt;
 use serde_json::json;
 
 use super::workspace::Workspace;
@@ -165,6 +164,28 @@ impl LanguageServerInterface {
         let files = workspace.files.iter().map(|file| file.file_path.clone()).collect::<Vec<_>>();
         Ok(json!(files).to_string())
       },
+    }
+  }
+
+  pub fn lsi_replace_symbol_text(
+    &mut self,
+    replacement_text: String,
+    lsi_query: &LsiQuery,
+  ) -> anyhow::Result<String> {
+    match self.get_workspace(lsi_query)?.query_symbols(lsi_query) {
+      Ok(symbols) => match symbols.len() {
+        0 => Ok("no symbols found".to_string()),
+        _ => {
+          let symbol = symbols.first().unwrap();
+          let _new_content = symbol.replace_text(&replacement_text);
+          Ok(format!(
+            "symbol text replaced on symbol id {:?} in file {:?}",
+            symbol.symbol_id,
+            symbol.file_path.display()
+          ))
+        },
+      },
+      Err(e) => Err(anyhow::anyhow!("error querying workspace symbols: {}", e)),
     }
   }
 

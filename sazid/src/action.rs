@@ -63,6 +63,7 @@ pub enum LsiAction {
   AddWorkspace(WorkspaceParams),
   QueryWorkspaceSymbols(LsiQuery),
   GetWorkspaceFiles(LsiQuery),
+  ReplaceSymbolText(String, LsiQuery),
   GoToSymbolDefinition(LsiQuery),
   GoToSymbolDeclaration(LsiQuery),
   GoToTypeDefinition(LsiQuery),
