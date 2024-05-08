@@ -1,5 +1,5 @@
 use crate::{
-  commands::{ChatMessageItem, ChatStringItem},
+  commands::ChatMessageItem,
   compositor::{self, Component, Compositor, Context, ContextFocus, Event, EventResult},
   filter_picker_entry,
   job::Callback,
@@ -693,13 +693,9 @@ impl<T: MarkdownItem + 'static> SessionView<T> {
     );
     self.chat_viewport = column_areas[1];
 
-    self.messages.iter_mut().for_each(|message| {
-      message.format_chat_message(Some(&cx.editor.theme), self.syn_loader.clone());
-    });
-
-    self.messages.iter_mut().for_each(|message| {
-      message.update_wrapped_plain_text_if_necessary(self.chat_viewport.width, &self.syn_loader)
-    });
+    // self.messages.iter_mut().for_each(|message| {
+    // message.update_wrapped_plain_text_if_necessary(self.chat_viewport.width, &self.syn_loader)
+    // });
 
     let truncate_start = self.truncate_start;
     Table::new(
