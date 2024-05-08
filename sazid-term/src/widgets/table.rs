@@ -20,11 +20,11 @@ use tui::{
 };
 
 use crate::{
-  commands::{ChatMessageItem, ChatStringItem},
+  commands::ChatMessageItem,
   widgets::reflow::{LineComposer, LineTruncator, WordWrapper},
 };
 
-use super::paragraph::Wrap;
+use super::paragraph::{Wrap};
 
 /// A [`Cell`] contains the [`Text`] to be displayed in a [`Row`] of a [`Table`].
 ///
@@ -51,7 +51,7 @@ use super::paragraph::Wrap;
 #[derive(Debug, Clone, PartialEq)]
 pub enum MessageType<'a> {
   Chat(&'a ChatMessageItem),
-  Text(ChatStringItem),
+  Text(String),
 }
 #[derive(Debug, Clone, PartialEq)]
 pub struct MessageCell<'a> {
@@ -74,21 +74,10 @@ pub struct MessageCell<'a> {
 }
 
 impl<'a> MessageCell<'a> {
-  pub fn update_rendered_text(
-    &'a self,
-    theme: &Theme,
-    config_loader: &Arc<ArcSwap<syntax::Loader>>,
-  ) -> Box<Text<'a>> {
-    match &self.message {
-      MessageType::Chat(message) => message.formatted_text.clone(),
-      MessageType::Text(text) => text.formatted_text.clone(),
-    }
-  }
-
   pub fn get_height(&self, width: u16) -> u16 {
     match &self.message {
       MessageType::Chat(message) => message.get_wrapped_height(width) as u16,
-      MessageType::Text(s) => s.formatted_text.lines.len() as u16,
+      MessageType::Text(s) => s.lines().count() as u16,
     }
   }
   pub fn new(message: MessageType<'a>) -> Self {
@@ -144,14 +133,17 @@ impl<'a> MessageCell<'a> {
     skip_lines: u16,
     config_loader: &Arc<ArcSwap<syntax::Loader>>,
   ) {
-    let text = self.update_rendered_text(theme, config_loader);
+    let text = match &self.message {
+      MessageType::Chat(message) => message.format_to_text(Some(theme), config_loader.clone()),
+      MessageType::Text(text) => Text::from(text.clone()),
+    };
     let style = Style::default();
     let _scroll = (0, 0);
     Self::format_text(
       buf,
-      text,
       false,
       true,
+      &text,
       style,
       self.wrap_trim.map(|trim| Wrap { trim }),
       area,
@@ -166,9 +158,9 @@ impl<'a> MessageCell<'a> {
   #[allow(clippy::too_many_arguments)]
   pub fn format_text(
     buf: &mut Buffer,
-    text: Box<Text<'_>>,
     output_plain_text: bool,
     output_buffer: bool,
+    text: &Text<'_>,
     style: Style,
     wrap: Option<Wrap>,
     area: Rect,
@@ -366,6 +358,14 @@ impl<'a> Row<'a> {
   /// Returns the total height of the row.
   fn total_height(&self) -> u16 {
     self.height.saturating_add(self.bottom_margin)
+  }
+
+  /// Returns the contents of cells as plain text, without styles and colors.
+  pub fn cell_text(&self) -> impl Iterator<Item = String> + '_ {
+    self.cells.iter().map(|cell| match &cell.message {
+      MessageType::Chat(message) => message.plain_text.to_string(),
+      MessageType::Text(s) => s.to_string(),
+    })
   }
 
   /// Update height to cell max height, for a specific cell width
@@ -796,7 +796,7 @@ impl<'a> Table<'a> {
     let mut current_height = 0;
 
     // Draw header
-    if let Some(ref mut header) = &mut self.header {
+    if let Some(ref header) = self.header {
       let max_header_height = table_area.height.min(header.total_height());
       buf.set_style(
         Rect {
@@ -811,7 +811,7 @@ impl<'a> Table<'a> {
       if has_selection {
         col += (highlight_symbol.width() as u16).min(table_area.width);
       }
-      for (width, cell) in column_widths.iter().zip(header.cells.iter_mut()) {
+      for (width, cell) in column_widths.iter().zip(header.cells.iter()) {
         render_cell(
           buf,
           cell,

@@ -127,8 +127,7 @@ impl MarkdownRenderer {
     contents: &'a str,
     theme: Option<&Theme>,
     config_loader: Arc<ArcSwap<syntax::Loader>>,
-    skip_events: Option<usize>,
-  ) -> Vec<tui::text::Spans<'a>> {
+  ) -> tui::text::Text<'a> {
     fn push_line<'a>(spans: &mut Vec<Span<'a>>, lines: &mut Vec<Spans<'a>>) {
       let spans = std::mem::take(spans);
       if !spans.is_empty() {
@@ -177,7 +176,7 @@ impl MarkdownRenderer {
       _ => Some(event),
     });
 
-    for event in parser.skip(skip_events.unwrap_or(0)) {
+    for event in parser {
       match event {
         Event::Start(Tag::List(list)) => {
           // if the list stack is not empty this is a sub list, in that
@@ -303,7 +302,7 @@ impl MarkdownRenderer {
       }
     }
 
-    lines
+    Text::from(lines)
   }
 }
 

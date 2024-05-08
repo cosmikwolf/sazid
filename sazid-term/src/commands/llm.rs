@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{sync::Arc};
 
 use super::Context;
 use crate::{
@@ -38,9 +38,6 @@ pub struct ChatMessageItem {
   pub id: Option<i64>,
   pub formatted_line_char_len: Vec<usize>,
   pub plain_text: Rope,
-  pub raw_text: String,
-  pub tool_call_text: Box<Vec<Spans<'static>>>,
-  pub formatted_text: Box<Text<'static>>,
   pub select_range: Option<Range>,
   pub chat_message: ChatMessageType,
   pub line_widths: Vec<u16>,
@@ -51,19 +48,6 @@ pub struct ChatMessageItem {
   pub start_idx: usize,
 }
 
-#[derive(Debug, Clone, PartialEq)]
-pub struct ChatStringItem {
-  pub text: String,
-  pub formatted_text: Box<Text<'static>>,
-}
-
-impl ChatStringItem {
-  pub fn new(text: String, style: Style) -> Self {
-    let formatted_text =
-      Box::new(Text::from(vec![Spans::from(vec![Span::styled(text.clone(), style)])]));
-    Self { text, formatted_text }
-  }
-}
 impl ChatMessageItem {
   pub fn new_chat(id: i64, message: ChatCompletionRequestMessage) -> Self {
     let id = Some(id);
@@ -76,9 +60,6 @@ impl ChatMessageItem {
       chat_message: message.clone(),
       select_range,
       plain_text: Rope::new(),
-      raw_text: String::new(),
-      tool_call_text: Box::new(Vec::new()),
-      formatted_text: Box::new(Text::from(Vec::new())),
       line_widths: Vec::new(),
       plaintext_wrapped_width: 0,
       formatted_line_widths: vec![],
@@ -99,9 +80,6 @@ impl ChatMessageItem {
       chat_message: message.clone(),
       select_range,
       plain_text: Rope::new(),
-      formatted_text: Box::new(Text::from(Vec::new())),
-      tool_call_text: Box::new(Vec::new()),
-      raw_text: String::new(),
       line_widths: Vec::new(),
       plaintext_wrapped_width: 0,
       formatted_line_widths: vec![],
@@ -141,14 +119,16 @@ impl ChatMessageItem {
     width: u16,
     config_loader: &Arc<ArcSwap<syntax::Loader>>,
   ) {
+    let text = self.format_to_text(None, config_loader.clone());
+
     let style = Style::default();
     let area = Rect::new(0, 0, width, 0);
     let buf = &mut Buffer::empty(area);
     self.plain_text = if let Some(plain_text) = MessageCell::format_text(
       buf,
-      self.formatted_text.clone(),
       true,
       false,
+      &text,
       style,
       Some(Wrap { trim: false }),
       area,
@@ -169,11 +149,11 @@ impl ChatMessageItem {
     //   self.plain_text.lines().map(|l| l.len_chars() as u16).collect();
   }
 
-  pub fn format_chat_message(
-    &'static mut self,
+  pub fn format_to_text(
+    &self,
     theme: Option<&Theme>,
     config_loader: Arc<ArcSwap<syntax::Loader>>,
-  ) {
+  ) -> tui::text::Text {
     let (style, header) = match self.chat_message {
       ChatMessageType::Chat(ChatCompletionRequestMessage::System(_)) => {
         (
@@ -228,15 +208,11 @@ impl ChatMessageItem {
 
     // log::warn!("content: {}\nheader: {}", self.content(), header);
     let header = Spans::from(vec![Span::styled(header, style)]);
-
-    if self.formatted_text.lines.len() == 0 {
-      self.formatted_text.lines.push(header)
-    }
-
-    self.raw_text =
+    let mut lines = vec![header];
+    let content =
       if let ChatMessageType::Chat(ChatCompletionRequestMessage::Tool(_)) = &self.chat_message {
         if self.content().lines().count() > 1 {
-          "tool call response content".to_string()
+          "tool call response content"
         } else {
           self.content()
         }
@@ -244,46 +220,34 @@ impl ChatMessageItem {
         self.content()
       };
 
-    let skip_events = Some(self.formatted_text.lines.len() - 1); // header length is always 1
+    let text = MarkdownRenderer::parse(content, theme, config_loader.clone());
+    lines.extend(text);
 
-    let new_lines =
-      MarkdownRenderer::parse(&self.raw_text, theme, config_loader.clone(), skip_events);
-    self.formatted_text.extend(new_lines);
-
-    let tool_calls = match &self.chat_message {
-      ChatMessageType::Chat(message) => chat_completion_request_message_tool_calls_as_str(message),
-      ChatMessageType::Error(_) => None,
-    };
-
-    self.formatted_text.extend(Self::get_tool_call_text(tool_calls))
+    if let Some(tool_calls) = self.tool_calls() {
+      tool_calls.iter().for_each(|(tool_name, tool_args)| {
+        lines.extend(Text::from(Spans::from(vec![
+          Span::styled("   Tool Call: ", Style::default().fg(Color::White)),
+          Span::styled(*tool_name, Style::default().fg(Color::Cyan)),
+        ])));
+        lines.extend(Text::from(Spans::from(vec![
+          Span::styled("   Arguments: ", Style::default().fg(Color::White)),
+          Span::styled(*tool_args, Style::default().fg(Color::Cyan)),
+        ])));
+      })
+    }
+    lines.into()
   }
 
-  pub fn content(&self) -> String {
+  pub fn content(&self) -> &str {
     match &self.chat_message {
-      ChatMessageType::Chat(message) => {
-        chat_completion_request_message_content_as_str(message).to_string()
-      },
-      ChatMessageType::Error(error) => error.to_string(),
+      ChatMessageType::Chat(message) => chat_completion_request_message_content_as_str(message),
+      ChatMessageType::Error(error) => error,
     }
   }
-  pub fn get_tool_call_text<'a>(tool_calls: Option<Vec<(&'a str, &'a str)>>) -> Vec<Spans<'a>> {
-    match tool_calls {
-      Some(tool_calls) => tool_calls
-        .iter()
-        .flat_map(|(tool_name, tool_args)| {
-          vec![
-            Spans::from(vec![
-              Span::styled("   Tool Call: ", Style::default().fg(Color::White)),
-              Span::styled(*tool_name, Style::default().fg(Color::Cyan)),
-            ]),
-            Spans::from(vec![
-              Span::styled("   Arguments: ", Style::default().fg(Color::White)),
-              Span::styled(*tool_args, Style::default().fg(Color::Cyan)),
-            ]),
-          ]
-        })
-        .collect::<Vec<Spans<'_>>>(),
-      None => vec![],
+  pub fn tool_calls(&self) -> Option<Vec<(&str, &str)>> {
+    match &self.chat_message {
+      ChatMessageType::Chat(message) => chat_completion_request_message_tool_calls_as_str(message),
+      ChatMessageType::Error(_) => None,
     }
   }
 }

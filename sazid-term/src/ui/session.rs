@@ -1,7 +1,6 @@
 use crate::{
   commands::ChatMessageItem,
-  compositor::{self, Component, Compositor, Context, ContextFocus, Event, EventResult},
-  filter_picker_entry,
+  compositor::{self, Component, Compositor, Context, ContextFocus, Event, EventResult}, filter_picker_entry,
   job::Callback,
   movement::min_width_1,
   ui::{
@@ -697,11 +696,10 @@ impl<T: MarkdownItem + 'static> SessionView<T> {
     // message.update_wrapped_plain_text_if_necessary(self.chat_viewport.width, &self.syn_loader)
     // });
 
-    let truncate_start = self.truncate_start;
     Table::new(
       self
         .messages
-        .iter_mut()
+        .iter()
         .enumerate()
         .map(|(msg_idx, message)| {
           let message_cell = MessageCell::new(MessageType::Chat(message))
@@ -711,7 +709,7 @@ impl<T: MarkdownItem + 'static> SessionView<T> {
             .with_block(Block::default())
             .with_char_index(message.start_idx);
 
-          let msg_idx = ChatStringItem::new(msg_idx.to_string(), Style::default());
+          let msg_idx = msg_idx.to_string();
           let index_cell = MessageCell::new(MessageType::Text(msg_idx))
             .centered()
             .with_block(Block::default().borders(Borders::RIGHT));
@@ -730,7 +728,7 @@ impl<T: MarkdownItem + 'static> SessionView<T> {
       table_area,
       surface,
       &mut self.state,
-      truncate_start,
+      self.truncate_start,
       &cx.editor.theme,
       &cx.editor.syn_loader,
     );
@@ -788,6 +786,7 @@ impl<T: MarkdownItem + 'static> SessionView<T> {
     };
 
     let text = self.get_messages_plaintext();
+    
 
     (Box::new(helix_core::syntax::merge(
       Self::empty_highlight_iter(text, 7, area.height),
