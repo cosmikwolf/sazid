@@ -1,6 +1,7 @@
 use crate::{
   commands::ChatMessageItem,
-  compositor::{self, Component, Compositor, Context, ContextFocus, Event, EventResult}, filter_picker_entry,
+  compositor::{self, Component, Compositor, Context, ContextFocus, Event, EventResult},
+  filter_picker_entry,
   job::Callback,
   movement::min_width_1,
   ui::{
@@ -692,9 +693,9 @@ impl<T: MarkdownItem + 'static> SessionView<T> {
     );
     self.chat_viewport = column_areas[1];
 
-    self.messages.iter_mut().for_each(|message| {
-      message.update_wrapped_plain_text_if_necessary(self.chat_viewport.width, &self.syn_loader)
-    });
+    // self.messages.iter_mut().for_each(|message| {
+    // message.update_wrapped_plain_text_if_necessary(self.chat_viewport.width, &self.syn_loader)
+    // });
 
     Table::new(
       self
@@ -786,7 +787,6 @@ impl<T: MarkdownItem + 'static> SessionView<T> {
     };
 
     let text = self.get_messages_plaintext();
-    
 
     (Box::new(helix_core::syntax::merge(
       Self::empty_highlight_iter(text, 7, area.height),

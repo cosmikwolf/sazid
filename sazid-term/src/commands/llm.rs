@@ -1,4 +1,4 @@
-use std::{sync::Arc};
+use std::sync::Arc;
 
 use super::Context;
 use crate::{
@@ -104,15 +104,15 @@ impl ChatMessageItem {
     self.chat_message = message;
   }
 
-  pub fn update_wrapped_plain_text_if_necessary(
-    &mut self,
-    width: u16,
-    config_loader: &Arc<ArcSwap<syntax::Loader>>,
-  ) {
-    if self.plaintext_wrapped_width != width {
-      self.cache_wrapped_plain_text(width, config_loader)
-    }
-  }
+  // pub fn update_wrapped_plain_text_if_necessary(
+  //   &mut self,
+  //   width: u16,
+  //   config_loader: &Arc<ArcSwap<syntax::Loader>>,
+  // ) {
+  //   if self.plaintext_wrapped_width != width {
+  //     self.cache_wrapped_plain_text(width, config_loader)
+  //   }
+  // }
 
   pub fn cache_wrapped_plain_text(
     &mut self,

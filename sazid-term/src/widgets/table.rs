@@ -24,7 +24,7 @@ use crate::{
   widgets::reflow::{LineComposer, LineTruncator, WordWrapper},
 };
 
-use super::paragraph::{Wrap};
+use super::paragraph::Wrap;
 
 /// A [`Cell`] contains the [`Text`] to be displayed in a [`Row`] of a [`Table`].
 ///
@@ -203,17 +203,18 @@ impl<'a> MessageCell<'a> {
       line_composer
     };
 
-    let mut plain_text = Rope::new();
+    let mut plain_text = String::new();
+    let mut line_buffer = String::new();
+
     let mut y = -(skip_lines as i16);
     let mut char_counter = char_idx.unwrap_or(0);
     while let Some((current_line, current_line_width)) = line_composer.next_line() {
       let mut x = 0; // get_line_offset(current_line_width, area.width, alignment);
-      let mut linetxt = String::new();
       let mut linelens = vec![];
       let idx_start = char_counter;
       for (StyledGrapheme { symbol, style }, grapheme_index) in current_line.iter().zip(idx_start..)
       {
-        linetxt.push_str(symbol);
+        line_buffer.push_str(symbol);
         linelens.push(symbol.width());
         let style = if let (Some(highlight_range), Some(highlight_style)) =
           (highlight_range.as_ref(), highlight_style)
@@ -251,7 +252,7 @@ impl<'a> MessageCell<'a> {
         //   symbol
         // };
         if output_plain_text {
-          plain_text.append(Rope::from_str(symbol));
+          plain_text.push_str(symbol);
         }
         if output_buffer && y >= 0 {
           let cell = &mut buf[(area.left() + x, area.top() + y as u16)];
@@ -262,54 +263,19 @@ impl<'a> MessageCell<'a> {
       char_counter += current_line_width as usize + 1;
 
       if output_plain_text {
-        plain_text.append(Rope::from_str("\n"));
+        plain_text.push('\n');
+        line_buffer.clear();
       }
-      // if let Some(ref range) = highlight_range {
-      //   log::warn!(
-      //   "format_text: {:?}\nlen: {}, x: {} char_counter: {} char_idx: {} range: {:?}",
-      //   string_text,
-      //   string_text.len(),
-      //   x,
-      //   char_counter,
-      //   char_idx,
-      //   range
-      // );
-      // }
-      // if !linetxt.is_empty() {
-      //   log::info!(
-      //     "startidx: {}\tcounter: {}\thighrange: {:?}\tlen: {} x: {}, y: {}\n\t\tlinetxt: {:#?}",
-      //     char_counter - linetxt.len(),
-      //     char_counter,
-      //     highlight_range.as_ref(),
-      //     linetxt.len(),
-      //     area.left(),
-      //     area.top(),
-      //     linetxt,
-      //     // linetxt
-      //     //   .chars()
-      //     //   .zip(linelens.iter())
-      //     //   .collect::<Vec<(char, &usize)>>()
-      //   );
-      // }
-      //   log::error!(
-      // "text spans sum: {}  plaintext sum: {} spans text sum:{}\n char_idx: {:?}   char_count:{:?}  last_grapheme_idx: {:?}",
-      //   text.lines.iter().map(|s|s.width()).sum::<usize>(),
-      //   String::from(text).len(),
-      //   text.lines.iter().map(String::from).collect::<String>().len(),
-      //   char_idx,
-      //   char_counter,
-      //   last_grapheme_idx
-      // );
       y += 1;
       if output_buffer && y >= area.height as i16 {
         break;
       }
     }
     if output_plain_text {
-      plain_text.remove(plain_text.len_chars() - 1..);
+      plain_text.pop();
     }
     match output_plain_text {
-      true => Some(plain_text),
+      true => Some(Rope::from(plain_text)),
       false => None,
     }
   }
