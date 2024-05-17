@@ -170,17 +170,6 @@ impl<'a> MessageCell<'a> {
     highlight_range: Option<std::ops::Range<usize>>,
     highlight_style: Option<Style>,
   ) -> Option<Rope> {
-    // log::warn!(
-    //   "plain:{}---------buff:{}-----\nformat text x: {} y: {} width: {} height:{}\nwrap: {:?}",
-    //   output_plain_text,
-    //   output_buffer,
-    //   area.x,
-    //   area.y,
-    //   area.width,
-    //   area.height,
-    //   wrap
-    // );
-    //
     let mut styled = text.lines.iter().flat_map(|spans| {
       spans
             .0
@@ -209,7 +198,7 @@ impl<'a> MessageCell<'a> {
     let mut y = -(skip_lines as i16);
     let mut char_counter = char_idx.unwrap_or(0);
     while let Some((current_line, current_line_width)) = line_composer.next_line() {
-      let mut x = 0; // get_line_offset(current_line_width, area.width, alignment);
+      let mut x = 0;
       let mut linelens = vec![];
       let idx_start = char_counter;
       for (StyledGrapheme { symbol, style }, grapheme_index) in current_line.iter().zip(idx_start..)
@@ -220,23 +209,6 @@ impl<'a> MessageCell<'a> {
           (highlight_range.as_ref(), highlight_style)
         {
           if highlight_range.contains(&grapheme_index) {
-            // log::info!(
-            //   "hl: {} {} {} {} {}",
-            //   symbol,
-            //   area.left() + x,
-            //   area.top() + y,
-            //   char_counter,
-            //   grapheme_index
-            // );
-            // buf.set_style(
-            //   Rect {
-            //     x: area.left() + x,
-            //     y: area.top() + y - self.scroll.0,
-            //     width: symbol.width() as u16,
-            //     height: 1,
-            //   },
-            //   highlight_style,
-            // );
             highlight_style
           } else {
             *style
@@ -244,13 +216,6 @@ impl<'a> MessageCell<'a> {
         } else {
           *style
         };
-        // if symbol.is_empty() {
-        //   // If the symbol is empty, the last char which rendered last time will
-        //   // leave on the line. It's a quick fix.
-        //   " "
-        // } else {
-        //   symbol
-        // };
         if output_plain_text {
           plain_text.push_str(symbol);
         }

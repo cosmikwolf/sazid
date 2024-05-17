@@ -172,7 +172,7 @@ FLAGS:
 
   // NOTE: Set the working directory early so the correct configuration is loaded. Be aware that
   // Application::new() depends on this logic so it must be updated if this changes.
-  if let Some(path) = &args.working_directory {
+  if let Some(path) = &args.workspace {
     helix_stdx::env::set_current_working_dir(path)?;
   } else if let Some((path, _)) = args.files.first().filter(|p| p.0.is_dir()) {
     // If the first file is a directory, it will be the working directory unless -w was specified

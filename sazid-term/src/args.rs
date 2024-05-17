@@ -17,7 +17,8 @@ pub struct Args {
   pub log_file: Option<PathBuf>,
   pub config_file: Option<PathBuf>,
   pub files: Vec<(PathBuf, Position)>,
-  pub working_directory: Option<PathBuf>,
+  pub workspace: Option<PathBuf>,
+  pub language: Option<String>,
 }
 
 impl Args {
@@ -32,49 +33,61 @@ impl Args {
       match arg.as_str() {
         "--" => break, // stop parsing at this point treat the remaining as files
         "--version" => args.display_version = true,
-        "--help" => args.display_help = true,
-        "--tutor" => args.load_tutor = true,
-        "--vsplit" => match args.split {
-          Some(_) => {
-            anyhow::bail!("can only set a split once of a specific type")
+        // "--help" => args.display_help = true,
+        // "--tutor" => args.load_tutor = true,
+        // "--vsplit" => match args.split {
+        //   Some(_) => {
+        //     anyhow::bail!("can only set a split once of a specific type")
+        //   },
+        //   None => args.split = Some(Layout::Vertical),
+        // },
+        // "--hsplit" => match args.split {
+        //   Some(_) => {
+        //     anyhow::bail!("can only set a split once of a specific type")
+        //   },
+        //   None => args.split = Some(Layout::Horizontal),
+        // },
+        // "--health" => {
+        //   args.health = true;
+        //   args.health_arg = argv.next_if(|opt| !opt.starts_with('-'));
+        // },
+        // "-g" | "--grammar" => match argv.next().as_deref() {
+        //   Some("fetch") => args.fetch_grammars = true,
+        //   Some("build") => args.build_grammars = true,
+        //   _ => {
+        //     anyhow::bail!("--grammar must be followed by either 'fetch' or 'build'")
+        //   },
+        // },
+        "-c" | "--config" => {
+          todo!();
+          match argv.next().as_deref() {
+            Some(path) => args.config_file = Some(path.into()),
+            None => anyhow::bail!("--config must specify a path to read"),
+          }
+        },
+        "--log" => {
+          todo!();
+          match argv.next().as_deref() {
+            Some(path) => args.log_file = Some(path.into()),
+            None => anyhow::bail!("--log must specify a path to write"),
+          }
+        },
+        "-l" | "--language" => match argv.next().as_deref() {
+          Some(language) => {
+            args.language = Some(language.into());
           },
-          None => args.split = Some(Layout::Vertical),
+          None => {},
         },
-        "--hsplit" => match args.split {
-          Some(_) => {
-            anyhow::bail!("can only set a split once of a specific type")
-          },
-          None => args.split = Some(Layout::Horizontal),
-        },
-        "--health" => {
-          args.health = true;
-          args.health_arg = argv.next_if(|opt| !opt.starts_with('-'));
-        },
-        "-g" | "--grammar" => match argv.next().as_deref() {
-          Some("fetch") => args.fetch_grammars = true,
-          Some("build") => args.build_grammars = true,
-          _ => {
-            anyhow::bail!("--grammar must be followed by either 'fetch' or 'build'")
-          },
-        },
-        "-c" | "--config" => match argv.next().as_deref() {
-          Some(path) => args.config_file = Some(path.into()),
-          None => anyhow::bail!("--config must specify a path to read"),
-        },
-        "--log" => match argv.next().as_deref() {
-          Some(path) => args.log_file = Some(path.into()),
-          None => anyhow::bail!("--log must specify a path to write"),
-        },
-        "-w" | "--working-dir" => match argv.next().as_deref() {
+        "-w" | "--workspace" => match argv.next().as_deref() {
           Some(path) => {
-            args.working_directory = if Path::new(path).is_dir() {
+            args.workspace = if Path::new(path).is_dir() {
               Some(PathBuf::from(path))
             } else {
-              anyhow::bail!("--working-dir specified does not exist or is not a directory")
+              anyhow::bail!("--workspace specified does not exist or is not a directory")
             }
           },
           None => {
-            anyhow::bail!("--working-dir must specify an initial working directory")
+            // anyhow::bail!("--workspace must specify an initial working directory")
           },
         },
         arg if arg.starts_with("--") => {
@@ -91,24 +104,9 @@ impl Args {
             }
           }
         },
-        arg if arg.starts_with('+') => {
-          match arg[1..].parse::<usize>() {
-            Ok(n) => line_number = n.saturating_sub(1),
-            _ => args.files.push(parse_file(arg)),
-          };
+        arg => {
+          anyhow::bail!("unexpected argument: {:?}", arg);
         },
-        arg => args.files.push(parse_file(arg)),
-      }
-    }
-
-    // push the remaining args, if any to the files
-    for arg in argv {
-      args.files.push(parse_file(&arg));
-    }
-
-    if let Some(file) = args.files.first_mut() {
-      if line_number != 0 {
-        file.1.row = line_number;
       }
     }
 

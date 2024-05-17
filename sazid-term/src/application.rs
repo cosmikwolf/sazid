@@ -113,7 +113,7 @@ fn setup_integration_logging() {
 }
 
 impl Application {
-  pub fn new(_args: Args, config: Config, lang_loader: syntax::Loader) -> Result<Self, Error> {
+  pub fn new(args: Args, config: Config, lang_loader: syntax::Loader) -> Result<Self, Error> {
     #[cfg(feature = "integration")]
     setup_integration_logging();
 
@@ -176,15 +176,23 @@ impl Application {
     let session_events = UnboundedReceiverStream::new(session_rx);
     let mut session_config = config.load().session.clone();
 
-    session_config.workspace = Some(WorkspaceParams {
-      workspace_path: PathBuf::from(
-        "/Users/tenkai/Development/gpt/sazid/sazid",
-        // "/Users/tenkai/Development/gpt/rust_test_project",
-      ),
-      language: "rust".to_string(),
-      language_server: "rust-analyzer".to_string(),
-      doc_path: None,
-    });
+    match (args.workspace, args.language) {
+      (Some(workspace_path), Some(language)) => {
+        session_config.workspace = Some(WorkspaceParams {
+          workspace_path,
+          language,
+          language_server: "rust-analyzer".to_string(),
+          doc_path: None,
+        });
+      },
+      (None, None) => {},
+      (None, Some(_)) => {
+        anyhow::bail!("--language must be used with --workspace");
+      },
+      (Some(_), None) => {
+        anyhow::bail!("--workspace must be used with --language");
+      },
+    }
 
     let mut session = Session::new(session_tx, Some(session_config));
     session.set_system_prompt("you are an expert programming assistant");
