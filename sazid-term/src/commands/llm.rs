@@ -1,4 +1,4 @@
-use std::{sync::Arc};
+use std::sync::Arc;
 
 use super::Context;
 use crate::{
@@ -93,9 +93,9 @@ impl ChatMessageItem {
     if self.plaintext_wrapped_width == width {
       self.plain_text.len_lines()
     } else {
-      log::error!(
-        "need to update wrapping before trying to get wrapped height, or else it is not up to date"
-      );
+      //log::error!(
+      //  "need to update wrapping before trying to get wrapped height, or else it is not up to date"
+      //);
       self.plain_text.len_lines()
     }
   }
@@ -212,7 +212,8 @@ impl ChatMessageItem {
     let content =
       if let ChatMessageType::Chat(ChatCompletionRequestMessage::Tool(_)) = &self.chat_message {
         if self.content().lines().count() > 1 {
-          "tool call response content"
+          //"tool call response content"
+          self.content()
         } else {
           self.content()
         }

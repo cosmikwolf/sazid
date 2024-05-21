@@ -19,6 +19,7 @@ pub struct Args {
   pub files: Vec<(PathBuf, Position)>,
   pub workspace: Option<PathBuf>,
   pub language: Option<String>,
+  pub language_server: Option<String>,
 }
 
 impl Args {
@@ -72,11 +73,15 @@ impl Args {
             None => anyhow::bail!("--log must specify a path to write"),
           }
         },
-        "-l" | "--language" => match argv.next().as_deref() {
-          Some(language) => {
+        "-l" | "--language" => {
+          if let Some(language) = argv.next().as_deref() {
             args.language = Some(language.into());
-          },
-          None => {},
+          }
+        },
+        "-ls" | "--language-server" => {
+          if let Some(language_server) = argv.next().as_deref() {
+            args.language_server = Some(language_server.into());
+          }
         },
         "-w" | "--workspace" => match argv.next().as_deref() {
           Some(path) => {

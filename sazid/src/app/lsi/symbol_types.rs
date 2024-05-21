@@ -36,7 +36,7 @@ pub struct SerializableSourceSymbol {
   pub kind: lsp::SymbolKind,
   pub tags: Option<Vec<lsp::SymbolTag>>,
   pub range: lsp::Range,
-  pub selection_range: lsp::Range,
+  //pub selection_range: lsp::Range,
   pub workspace_path: PathBuf,
   pub file_path: PathBuf,
   pub hash: [u8; 32],
@@ -51,7 +51,7 @@ impl From<Arc<SourceSymbol>> for SerializableSourceSymbol {
       kind: symbol.kind,
       tags: symbol.tags.clone(),
       range: *symbol.range.lock().unwrap(),
-      selection_range: *symbol.selection_range.lock().unwrap(),
+      //selection_range: *symbol.selection_range.lock().unwrap(),
       workspace_path: symbol.workspace_path.clone(),
       file_path: symbol.file_path.clone(),
       hash: symbol.symbol_id,
@@ -100,7 +100,10 @@ impl SourceSymbol {
         tags: doc_sym.tags.clone(),
         range: Arc::new(Mutex::new(doc_sym.range)),
         selection_range: Arc::new(Mutex::new(doc_sym.selection_range)),
-        file_path: file_path.to_path_buf(),
+        file_path: file_path
+          .strip_prefix(workspace_path)
+          .expect("file is not in workspace directory")
+          .to_path_buf(),
         parent: Arc::new(Mutex::new(Weak::new())),
         children: Arc::new(Mutex::new(vec![])),
         workspace_path: workspace_path.to_path_buf(),

@@ -49,6 +49,10 @@ impl LanguageServerInterface {
         log::error!("{}", error);
         Ok(None)
       },
+      LsiAction::ReadSymbolSource(lsi_query) => {
+        let lsi_query_result = self.lsi_read_symbol_source(&lsi_query);
+        Self::handle_lsi_query_result(lsi_query, lsi_query_result)
+      },
       LsiAction::ReplaceSymbolText(replacement_text, lsi_query) => {
         let lsi_query_result = self.lsi_replace_symbol_text(replacement_text, &lsi_query);
         Self::handle_lsi_query_result(lsi_query, lsi_query_result)
@@ -514,7 +518,7 @@ impl LanguageServerInterface {
             enable_snippets,
           )
           .find(|(name, _client)| name == languge_server_name)
-          .unwrap()
+          .expect("language server not found")
           .1
           .map_err(|e| anyhow::anyhow!(e))?;
         Ok(Some(client))

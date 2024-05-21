@@ -185,8 +185,9 @@ command = [
 
 
 [language-server.rust-analyzer]
+# command = "ra-multiplex"
 command = "rust-analyzer"
-args = ["-v", "--log-file", "/tmp/rust-analyzer.log"]
+# args = ["-v", "--log-file", "/tmp/rust-analyzer.log"]
 
 [language-server.rust-analyzer.config]
 inlayHints.bindingModeHints.enable = false

@@ -181,9 +181,10 @@ impl Application {
         session_config.workspace = Some(WorkspaceParams {
           workspace_path,
           language,
-          language_server: "rust-analyzer".to_string(),
+          language_server: args.language_server.unwrap_or("rust-analyzer".to_string()),
           doc_path: None,
         });
+        log::debug!("workspace: {:#?}", session_config.workspace);
       },
       (None, None) => {},
       (None, Some(_)) => {

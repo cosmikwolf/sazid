@@ -156,14 +156,41 @@ impl LanguageServerInterface {
           .files
           .iter()
           .filter(|file| pattern.is_match(&file.file_path.display().to_string()))
-          .map(|file| file.file_path.clone())
+          .map(|file| {
+            file
+              .file_path
+              .strip_prefix(workspace.workspace_path.clone())
+              .expect("file path is not in workspace")
+          })
           .collect::<Vec<_>>();
         Ok(json!(files).to_string())
       },
       None => {
-        let files = workspace.files.iter().map(|file| file.file_path.clone()).collect::<Vec<_>>();
+        let files = workspace
+          .files
+          .iter()
+          .map(|file| {
+            file
+              .file_path
+              .strip_prefix(workspace.workspace_path.clone())
+              .expect("file path is not in workspace")
+          })
+          .collect::<Vec<_>>();
         Ok(json!(files).to_string())
       },
+    }
+  }
+
+  pub fn lsi_read_symbol_source(&mut self, lsi_query: &LsiQuery) -> anyhow::Result<String> {
+    match self.get_workspace(lsi_query)?.query_symbols(lsi_query) {
+      Ok(symbols) => match symbols.len() {
+        0 => Ok("no symbols found".to_string()),
+        _ => {
+          let symbol = symbols.first().unwrap();
+          symbol.get_source()
+        },
+      },
+      Err(e) => Err(anyhow::anyhow!("error querying workspace symbols: {}", e)),
     }
   }
 

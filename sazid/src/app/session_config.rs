@@ -44,7 +44,7 @@ impl Default for SessionConfig {
       workspace: None,
       tools_enabled: true,
       accessible_paths: vec![],
-      model: GPT4_TURBO.clone(),
+      model: GPT4_O.clone(),
       retrieval_augmentation_message_count: Some(10),
       user: "sazid_user_1234".to_string(),
       function_result_max_tokens: 8192,

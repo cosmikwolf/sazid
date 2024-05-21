@@ -22,6 +22,7 @@ use super::{
   lsp_goto_symbol_definition::LspGotoSymbolDefinition,
   lsp_goto_type_definition::LspGotoTypeDefinition,
   lsp_query_symbols::LspQuerySymbol,
+  lsp_read_symbol_source::LspReadSymbolSource,
   lsp_replace_symbol_text::LspReplaceSymbolText,
   types::{FunctionProperty, ToolCall},
 };
@@ -105,6 +106,7 @@ impl ChatTools {
       // Arc::new(FileSearchFunction::init()),
       Arc::new(LspGetWorkspaceFiles::init()),
       Arc::new(LspQuerySymbol::init()),
+      Arc::new(LspReadSymbolSource::init()),
       Arc::new(LspReplaceSymbolText::init()),
       Arc::new(LspGotoSymbolDefinition::init()),
       Arc::new(LspGotoSymbolDeclaration::init()),

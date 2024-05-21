@@ -10,6 +10,11 @@ pub const INGESTED_DIR: &str = ".local/share/sazid/data/ingested";
 
 lazy_static! {
     // model constants
+    pub static ref GPT4_O: Model = Model {
+        name: "gpt-4o".to_string(),
+        endpoint: "https://api.openai.com/v1/completions".to_string(),
+        token_limit: 16384,
+    };
     pub static ref GPT4_TURBO: Model = Model {
         name: "gpt-4-turbo-preview".to_string(),
         endpoint: "https://api.openai.com/v1/completions".to_string(),

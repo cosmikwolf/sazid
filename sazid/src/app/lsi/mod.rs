@@ -20,26 +20,12 @@ fn position_gt(pos1: lsp::Position, pos2: lsp::Position) -> bool {
 }
 
 fn get_file_range_contents(file_path: &Path, range: lsp::Range) -> anyhow::Result<String> {
-  let source_code = std::fs::read_to_string(file_path)?;
-  if range.start == range.end {
-    return Ok(String::new());
-  }
-  let source_code = source_code
-    .lines()
-    .skip(range.start.line as usize)
-    .take((range.end.line - range.start.line) as usize + 1)
-    .enumerate()
-    .map(|(i, line)| {
-      if i == 0 {
-        line.chars().skip(range.start.character as usize).collect()
-      } else if i == (range.end.line - range.start.line) as usize {
-        line.chars().take(range.end.character as usize).collect()
-      } else {
-        line.to_string()
-      }
-    })
-    .collect::<Vec<_>>()
-    .join("\n");
+  let rope = Rope::from_reader(std::fs::File::open(file_path)?)?;
+
+  let start_char = rope.line_to_char(range.start.line as usize) + range.start.character as usize;
+  let end_char = rope.line_to_char(range.end.line as usize) + range.end.character as usize;
+
+  let source_code = rope.slice(start_char..end_char).to_string();
   Ok(source_code)
 }
 
@@ -50,12 +36,15 @@ pub fn replace_file_range_contents(
 ) -> anyhow::Result<String> {
   let mut rope = Rope::from_reader(std::fs::File::open(file_path)?)?;
 
+  println!("rope: {}-", rope);
   let start_char = rope.line_to_char(range.start.line as usize) + range.start.character as usize;
   let end_char = rope.line_to_char(range.end.line as usize) + range.end.character as usize;
 
-  rope.remove(start_char..end_char);
+  let end_rope = rope.split_off(end_char);
+  println!("end_rope: {}-", end_rope);
+  rope.remove(start_char..);
   rope.insert(start_char, &contents);
-
+  rope.append(end_rope);
   let new_contents = rope.to_string();
   std::fs::write(file_path, &new_contents)?;
 
@@ -65,17 +54,113 @@ pub fn replace_file_range_contents(
 #[cfg(test)]
 mod tests {
   use super::*;
+  use lsp::Range;
+  use std::fs::read_to_string;
   use std::fs::File;
   use std::io::Write;
   use tempfile::tempdir;
 
+  #[test]
+  fn test_get_file_range_contents_standard_case() -> anyhow::Result<()> {
+    let tmp_dir = tempdir().unwrap();
+    let file_path = tmp_dir.path().join("example.txt");
+
+    let mut file = File::create(&file_path)?;
+    write!(file, "line 1\nline 2\nline 3\nline 4")?;
+
+    let range = Range {
+      start: lsp_types::Position { line: 1, character: 3 },
+      end: lsp_types::Position { line: 2, character: 4 },
+    };
+
+    let content = get_file_range_contents(&file_path, range)?;
+    assert_eq!(content, "e 2\nline");
+
+    Ok(())
+  }
+
+  #[test]
+  fn test_get_file_range_contents_empty_range() -> anyhow::Result<()> {
+    let tmp_dir = tempdir().unwrap();
+    let file_path = tmp_dir.path().join("example.txt");
+
+    let mut file = File::create(&file_path)?;
+    write!(file, "line 1\nline 2\nline 3\nline 4")?;
+
+    let range = Range {
+      start: lsp_types::Position { line: 1, character: 3 },
+      end: lsp_types::Position { line: 1, character: 3 },
+    };
+
+    let content = get_file_range_contents(&file_path, range)?;
+    assert_eq!(content, "");
+
+    Ok(())
+  }
+
+  #[test]
+  fn test_get_file_range_contents_whole_file() -> anyhow::Result<()> {
+    let tmp_dir = tempdir().unwrap();
+    let file_path = tmp_dir.path().join("example.txt");
+
+    let mut file = File::create(&file_path)?;
+    write!(file, "line 1\nline 2\nline 3\nline 4")?;
+
+    let range = Range {
+      start: lsp_types::Position { line: 0, character: 0 },
+      end: lsp_types::Position { line: 3, character: 6 },
+    };
+
+    let content = get_file_range_contents(&file_path, range)?;
+    assert_eq!(content, "line 1\nline 2\nline 3\nline 4");
+
+    Ok(())
+  }
+
+  #[test]
+  fn test_get_file_range_contents_single_line() -> anyhow::Result<()> {
+    let tmp_dir = tempdir().unwrap();
+    let file_path = tmp_dir.path().join("example.txt");
+
+    let mut file = File::create(&file_path)?;
+    write!(file, "line 1\nline 2\nline 3\nline 4")?;
+
+    let range = Range {
+      start: lsp_types::Position { line: 1, character: 2 },
+      end: lsp_types::Position { line: 1, character: 5 },
+    };
+
+    let content = get_file_range_contents(&file_path, range)?;
+    assert_eq!(content, "ne 2");
+
+    Ok(())
+  }
+
+  #[test]
+  fn test_get_file_range_contents_with_special_characters() -> anyhow::Result<()> {
+    let tmp_dir = tempdir().unwrap();
+    let file_path = tmp_dir.path().join("example.txt");
+
+    let mut file = File::create(&file_path)?;
+    write!(file, "line 1\nlïne 2\nline 3\nlįne 4")?;
+
+    let range = Range {
+      start: lsp_types::Position { line: 1, character: 1 },
+      end: lsp_types::Position { line: 3, character: 3 },
+    };
+
+    let content = get_file_range_contents(&file_path, range)?;
+    assert_eq!(content, "ïne 2\nline 3\nlįn");
+
+    Ok(())
+  }
   #[test]
   fn test_replace_file_range_contents() {
     // Create a temporary directory and file for testing
     let temp_dir = tempdir().unwrap();
     let file_path = temp_dir.path().join("test.txt");
     let mut file = File::create(&file_path).unwrap();
-    writeln!(file, "line 1\nline 2\nline 3\nline 4\nline 5").unwrap();
+    write!(file, "line 1\nline 2\nline 3\nline 4\nline 5").unwrap();
 
     // Test replacing content within multiple lines
     let range = lsp::Range {
@@ -84,7 +169,7 @@ mod tests {
     };
     let contents = "new content".to_string();
     let result = replace_file_range_contents(&file_path, range, contents.clone()).unwrap();
-    let expected_result = "line 1\nlinew content\nline 5".to_string();
+    let expected_result = "line 1\nlinew content3\nline 4\nline 5".to_string();
     assert_eq!(result, expected_result);
 
     // Check the contents of the file
@@ -98,7 +183,7 @@ mod tests {
     };
     let contents = "new".to_string();
     let result = replace_file_range_contents(&file_path, range, contents).unwrap();
-    let expected_result = "linew 1\nline 2\nline 3\nline 4\nline 5".to_string();
+    let expected_result = "linew1\nlinew content3\nline 4\nline 5".to_string();
     assert_eq!(result, expected_result);
 
     // Test replacing content from the beginning of the file to the middle of a line
@@ -108,13 +193,13 @@ mod tests {
     };
     let contents = "start".to_string();
     let result = replace_file_range_contents(&file_path, range, contents).unwrap();
-    let expected_result = "starte 2\nline 3\nline 4\nline 5".to_string();
+    let expected_result = "startew content3\nline 4\nline 5".to_string();
     assert_eq!(result, expected_result);
 
     // Test replacing the entire content of the file
     let range = lsp::Range {
       start: lsp::Position { line: 0, character: 0 },
-      end: lsp::Position { line: 4, character: 6 },
+      end: lsp::Position { line: 2, character: 6 },
     };
     let contents = "new file content".to_string();
     let result = replace_file_range_contents(&file_path, range, contents).unwrap();

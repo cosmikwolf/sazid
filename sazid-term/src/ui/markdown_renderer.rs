@@ -285,7 +285,7 @@ impl MarkdownRenderer {
         },
         // TaskListMarker(bool) true if checked
         _ => {
-          log::warn!("unhandled markdown event {:?}", event);
+          //log::warn!("unhandled markdown event {:?}", event);
         },
       }
       // build up a vec of Paragraph tui widgets

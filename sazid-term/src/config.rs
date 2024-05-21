@@ -44,7 +44,6 @@ pub enum ConfigLoadError {
   BadConfig(TomlError),
   Error(IOError),
 }
-
 impl Default for ConfigLoadError {
   fn default() -> Self {
     ConfigLoadError::Error(IOError::new(std::io::ErrorKind::NotFound, "place holder"))

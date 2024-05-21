@@ -2,8 +2,8 @@ use super::query::LsiQuery;
 use super::symbol_types::SourceSymbol;
 use super::workspace_file::WorkspaceFile;
 use helix_core::syntax::{FileType, LanguageConfiguration};
-use lsp_types::{DocumentSymbol, TextDocumentIdentifier};
 use helix_lsp::Client;
+use lsp_types::{DocumentSymbol, TextDocumentIdentifier};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Weak};
 
@@ -98,12 +98,12 @@ impl Workspace {
     if let Some(regex) = &query.file_path_regex {
       let regex = regex::Regex::new(regex).unwrap();
 
-      if !self
-        .files
-        .iter()
-        .any(|f| regex.is_match(f.file_path.file_name().unwrap().to_str().unwrap()))
-      {
-        return Err(anyhow::anyhow!("no files match the provided regex"));
+      if !self.files.iter().any(|f| {
+        let file_path = f.file_path.to_str().unwrap();
+        log::warn!("\nfile_path: {:?}\nregex: {:?}", file_path, regex);
+        regex.is_match(file_path)
+      }) {
+        return Err(anyhow::anyhow!("no files match the provided regex\nregex: {:?}", regex));
       }
     }
 
@@ -115,8 +115,7 @@ impl Workspace {
         .filter(|s| {
           if let Some(file_name) = &query.file_path_regex {
             s.file_path.file_name().unwrap().to_str().unwrap() == file_name
-              || &s.file_path.strip_prefix(&self.workspace_path).unwrap().display().to_string()
-                == file_name
+              || &s.file_path.display().to_string() == file_name
           } else {
             true
           }
