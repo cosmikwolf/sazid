@@ -1,0 +1,2 @@
+Peripheral Name,Register Name,Address Offset,Size (bits),Access Type
+RNG,Random number generator,1342572544

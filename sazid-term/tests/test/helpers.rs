@@ -292,11 +292,11 @@ impl AppBuilder {
   }
 
   pub fn build(self) -> anyhow::Result<Application> {
-    if let Some(path) = &self.args.working_directory {
-      bail!(
-        "Changing the working directory to {path:?} is not yet supported for integration tests"
-      );
-    }
+    //if let Some(path) = &self.args.working_directory {
+    //  bail!(
+    //    "Changing the working directory to {path:?} is not yet supported for integration tests"
+    //  );
+    //}
 
     if let Some((path, _)) = self.args.files.first().filter(|p| p.0.is_dir()) {
       bail!(

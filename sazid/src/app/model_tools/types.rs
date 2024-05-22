@@ -325,6 +325,7 @@ pub fn get_validated_argument<T: serde::de::DeserializeOwned>(
 ) -> Option<T> {
   validated_arguments.get(key).and_then(|value| serde_json::from_value(value.clone()).ok())
 }
+
 fn is_valid_type(value: &Value, expected_type: &FunctionProperty) -> bool {
   matches!(
     (value, expected_type),

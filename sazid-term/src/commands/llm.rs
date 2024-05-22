@@ -212,8 +212,8 @@ impl ChatMessageItem {
     let content =
       if let ChatMessageType::Chat(ChatCompletionRequestMessage::Tool(_)) = &self.chat_message {
         if self.content().lines().count() > 1 {
-          //"tool call response content"
-          self.content()
+          "tool call response content"
+          //self.content()
         } else {
           self.content()
         }

@@ -1,4 +1,4 @@
-#[cfg(feature = "integration")]
+//#[cfg(feature = "integration")]
 mod test {
   mod helpers;
 
