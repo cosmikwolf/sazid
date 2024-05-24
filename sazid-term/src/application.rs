@@ -303,22 +303,31 @@ impl Application {
   }
 
   // test helper functions
+  #[cfg(feature = "integration")]
   pub fn send_chat_tool_event(&self, action: ChatToolAction) -> anyhow::Result<()> {
     let tx = self.chat_tools.tx.clone();
     Ok(tx.send(action)?)
   }
+  #[cfg(feature = "integration")]
   pub fn send_session_event(&self, action: SessionAction) -> anyhow::Result<()> {
     let tx = self.session.action_tx.clone().unwrap();
     Ok(tx.send(action)?)
   }
+  #[cfg(feature = "integration")]
   pub fn send_language_server_event(&self, action: LsiAction) -> anyhow::Result<()> {
     let tx = self.language_server_interface.tx.clone();
     Ok(tx.send(action)?)
   }
 
+  #[cfg(feature = "integration")]
+  pub fn get_session(&self) -> &Session {
+    &self.session
+  }
+
   pub fn get_session_id(&self) -> i64 {
     self.session.id
   }
+
   // end test helper functions
   async fn render(&mut self) {
     if self.compositor.full_redraw {

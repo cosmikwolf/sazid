@@ -24,4 +24,5 @@ pub struct LsiQuery {
   pub workspace_root: PathBuf,
   pub session_id: i64,
   pub tool_call_id: String,
+  pub test_query: bool,
 }

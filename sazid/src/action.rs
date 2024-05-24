@@ -28,7 +28,7 @@ pub enum SessionAction {
   LspSymbolQuery(LsiQuery),
   CreateSession(SessionConfig),
   LoadSession(i64),
-
+  SetTestToolResponse(ToolType, String),
   ToolCallComplete(ToolType, String),
   ToolCallError(ToolType, String),
 

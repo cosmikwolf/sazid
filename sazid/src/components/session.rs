@@ -21,6 +21,7 @@ use crate::app::database::data_manager::{
   get_all_embeddings_by_session, search_message_embeddings_by_session,
 };
 use crate::app::database::types::QueryableSession;
+use crate::app::lsi::query::LsiQuery;
 use crate::app::messages::{ChatMessage, MessageContainer, MessageState, ReceiveBuffer};
 use crate::app::request_validation::debug_request_validation;
 use crate::app::session_config::SessionConfig;
@@ -42,6 +43,8 @@ pub struct Session {
   pub openai_config: OpenAIConfig,
   #[serde(skip)]
   pub action_tx: Option<UnboundedSender<SessionAction>>,
+  #[serde(skip)]
+  pub test_tool_call_response: Option<(LsiQuery, String)>,
 }
 
 impl Default for Session {
@@ -54,6 +57,7 @@ impl Default for Session {
       openai_config: OpenAIConfig::default(),
       enabled_tools: vec![],
       action_tx: None,
+      test_tool_call_response: None,
     }
   }
 }
@@ -187,6 +191,11 @@ impl Session {
         }
         Ok(None)
       },
+      SessionAction::SetTestToolResponse(ToolType::LsiQuery(lsi_query), content) => {
+        self.test_tool_call_response = Some((lsi_query, content.clone()));
+        log::debug!("TestToolCallResponse: {:#?}", content);
+        Ok(None)
+      },
       SessionAction::ToolCallComplete(ToolType::LsiQuery(lsi_query), content) => {
         if lsi_query.session_id != self.id {
           log::warn!("session id did not match, returning ToolCallComplete action to queue");
@@ -194,16 +203,24 @@ impl Session {
         }
 
         log::info!(
-          "Tool Call Complete\nsession_id: {}, tool_call_id: {}\ncontent: {}",
+          "Tool Call Complete\nsession_id: {}, tool_call_id: {}",
           lsi_query.session_id,
           lsi_query.tool_call_id,
-          content
         );
+
+        if lsi_query.test_query {
+          return Ok(Some(SessionAction::SetTestToolResponse(
+            ToolType::LsiQuery(lsi_query),
+            content,
+          )));
+        }
+
         let tool_response = ChatMessage::Tool(ChatCompletionRequestToolMessage {
           role: Role::Tool,
           content,
           tool_call_id: lsi_query.tool_call_id.clone(),
         });
+
         self.add_message(tool_response);
         self.generate_new_message_embeddings();
 

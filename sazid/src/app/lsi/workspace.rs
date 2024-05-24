@@ -37,6 +37,7 @@ impl Workspace {
     doc_id: TextDocumentIdentifier,
     doc_symbols: Vec<DocumentSymbol>,
   ) -> anyhow::Result<()> {
+    log::info!("doc_symbols: {:?}", doc_id.uri.to_file_path());
     self
       .files
       .iter_mut()

@@ -109,6 +109,7 @@ impl WorkspaceFile {
       }
       .compute_hash(),
     );
+    log::info!("update_symbnols:{}", self.file_tree.name);
     for symbol in doc_symbols {
       SourceSymbol::from_document_symbol(
         &symbol,

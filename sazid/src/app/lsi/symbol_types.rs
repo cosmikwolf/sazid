@@ -29,7 +29,7 @@ pub struct SourceSymbol {
   pub symbol_id: [u8; 32],
 }
 
-#[derive(Serialize)]
+#[derive(Deserialize, Serialize, PartialEq, Debug)]
 pub struct SerializableSourceSymbol {
   pub name: String,
   pub detail: Option<String>,
@@ -92,6 +92,7 @@ impl SourceSymbol {
     all_symbols: &mut Vec<Weak<SourceSymbol>>,
     workspace_path: &Path,
   ) -> Arc<Self> {
+    log::info!("name: {}", doc_sym.name.clone());
     let converted = Arc::new(
       SourceSymbol {
         name: doc_sym.name.clone(),
@@ -101,7 +102,9 @@ impl SourceSymbol {
         range: Arc::new(Mutex::new(doc_sym.range)),
         selection_range: Arc::new(Mutex::new(doc_sym.selection_range)),
         file_path: file_path
-          .strip_prefix(workspace_path)
+          .canonicalize()
+          .unwrap()
+          .strip_prefix(workspace_path.canonicalize().unwrap())
           .expect("file is not in workspace directory")
           .to_path_buf(),
         parent: Arc::new(Mutex::new(Weak::new())),

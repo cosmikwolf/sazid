@@ -113,11 +113,11 @@ impl LanguageServerInterface {
         }
       },
       LsiAction::UpdateWorkspaceFileSymbols(workspace_path, doc_id, doc_symbols) => {
-        // log::info!(
-        //   "update {} workspace file symbols for doc id: {:#?}, ",
-        //   doc_symbols.len(),
-        //   doc_id.uri.path()
-        // );
+        log::info!(
+          "update {} workspace file symbols for doc id: {:#?}, ",
+          doc_symbols.len(),
+          doc_id.uri.path()
+        );
         match self
           .workspaces
           .iter_mut()
