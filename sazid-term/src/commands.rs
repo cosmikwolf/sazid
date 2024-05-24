@@ -724,7 +724,7 @@ fn save_session(cx: &mut Context) {
     ui::completers::none,
     move |cx, input: &str, event: PromptEvent| match event {
       PromptEvent::Validate => {
-        let save_path = data_folder.join(input).join(".szd");
+        let save_path = data_folder.join(input).with_extension("szd");
         log::info!("saving session to: {:#?}\nevent: {:#?}", save_path, event);
         match cx.session.save_session(save_path.clone()) {
           Ok(_) => cx.editor.set_status(format!("session saved to: {:?}", save_path)),
