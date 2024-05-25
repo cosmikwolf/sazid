@@ -262,8 +262,17 @@ pub fn validate_arguments(
         if workspace_root.is_none() {
           return Err(format!("Workspace root is required to validate path argument '{}'", name));
         }
+
         if let Some(path_str) = value.as_str() {
           let path = PathBuf::from(path_str);
+
+          // return an error if path is not within workspace
+          if let Some(workspace_dir) = workspace_root {
+            if !path.starts_with(workspace_dir) {
+              return Err("cannot read files outside of the current working directory".into());
+            }
+          }
+
           if !path.is_absolute() {
             let absolute_path = workspace_root.unwrap().join(path);
             if absolute_path.exists() {

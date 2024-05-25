@@ -44,6 +44,18 @@ impl LanguageServerInterface {
   }
 
   pub fn handle_action(&mut self, action: LsiAction) {
+    //match self.synchronize_workspace_file_changes() {
+    //  Ok(true) => {
+    //    log::debug!("synchonizing workspace file changes, reprocessing action: {:#?}", action);
+    //    self.tx.send(action).unwrap();
+    //    return;
+    //  },
+    //  Ok(false) => (),
+    //  Err(e) => {
+    //    log::error!("error lsi handling action: {:#?}", e);
+    //    self.tx.send(LsiAction::Error(e.to_string())).unwrap();
+    //  },
+    //}
     let action_result = match action {
       LsiAction::Error(error) => {
         log::error!("{}", error);
@@ -70,7 +82,7 @@ impl LanguageServerInterface {
           ws.doc_path.as_ref(),
         ) {
           Ok(()) => match self.synchronize_workspace_file_changes() {
-            Ok(()) => Ok(None),
+            Ok(_) => Ok(None),
             Err(e) => {
               Ok(Some(LsiAction::Error(format!("error updating workspace symbols: {}", e))))
             },
@@ -105,12 +117,6 @@ impl LanguageServerInterface {
         log::info!("get_diagnostics: {:#?}", lsi_query);
         let lsi_query_result = self.get_diagnostics(&lsi_query);
         Self::handle_lsi_query_result(lsi_query, lsi_query_result)
-      },
-      LsiAction::SynchronizeAllWorkspaceFileChanges() => {
-        match self.synchronize_workspace_file_changes() {
-          Ok(()) => Ok(None),
-          Err(e) => Ok(Some(LsiAction::Error(format!("error updating workspace symbols: {}", e)))),
-        }
       },
       LsiAction::UpdateWorkspaceFileSymbols(workspace_path, doc_id, doc_symbols) => {
         log::info!(
@@ -265,10 +271,10 @@ impl LanguageServerInterface {
     Ok(())
   }
 
-  pub fn scan_for_workspace_file_changes(
+  pub fn get_workspace_file_changes(
     &mut self,
-  ) -> Vec<(PathBuf, DocumentChange, TextDocumentIdentifier, i32, Arc<Client>, String)> {
-    self
+  ) -> Option<Vec<(PathBuf, DocumentChange, TextDocumentIdentifier, i32, Arc<Client>, String)>> {
+    let changes = self
       .workspaces
       .iter_mut()
       .flat_map(|workspace| {
@@ -282,7 +288,6 @@ impl LanguageServerInterface {
           .filter(|workspace_file| workspace_file.needs_update().unwrap_or_default())
           .map(move |workspace_file| {
             // log::info!("updating workspace file: {:#?}", workspace_file.file_path);
-
             (
               workspace_file.workspace_path.clone(),
               workspace_file.update_contents().unwrap(),
@@ -293,80 +298,90 @@ impl LanguageServerInterface {
             )
           })
       })
-      .collect()
+      .collect::<Vec<_>>();
+    if changes.is_empty() {
+      None
+    } else {
+      Some(changes)
+    }
   }
 
-  pub fn synchronize_workspace_file_changes(&mut self) -> anyhow::Result<()> {
+  pub fn synchronize_workspace_file_changes(&mut self) -> anyhow::Result<bool> {
+    log::debug!("synchronize_workspace_file_changes");
     self.workspaces.iter_mut().for_each(|workspace| workspace.scan_workspace_files().unwrap());
-    let changes = self.scan_for_workspace_file_changes();
-    for (workspace_path, doc_change, doc_id, version, language_server, language_id) in changes {
-      if let DocumentChange {
-        original_contents: Some(original_contents),
-        new_contents,
-        versioned_doc_id,
-      } = doc_change
-      {
-        log::info!("updating document with language server {:#?}", doc_id);
-        let changes = compare_ropes(&original_contents, &new_contents);
-        let tx = self.tx.clone();
-        tokio::spawn(async move {
-          language_server
-            .text_document_did_change(
-              versioned_doc_id,
-              &original_contents,
-              &new_contents,
-              changes.changes(),
-            )
-            .unwrap()
-            .then(|res| async move {
-              log::info!("updated document with language server");
-              match res {
-                Err(e) => {
-                  log::error!("failed to update document with language server: {}", e);
-                },
-                Ok(()) => {
-                  tx.send(LsiAction::RequestWorkspaceFileSymbols(
-                    workspace_path,
-                    doc_id,
-                    language_server.id(),
-                  ))
-                  .unwrap();
-                },
-              }
-            })
-            .await
-        });
-      } else {
-        let tx = self.tx.clone();
-        tokio::spawn(async move {
-          language_server
-            .text_document_did_open(
-              doc_change.versioned_doc_id.uri,
-              version,
-              &doc_change.new_contents,
-              language_id,
-            )
-            .then(|res| async move {
-              // log::info!("updated document with language server");
-              match res {
-                Err(e) => {
-                  log::error!("failed to open document with language server: {}", e);
-                },
-                Ok(()) => {
-                  tx.send(LsiAction::RequestWorkspaceFileSymbols(
-                    workspace_path,
-                    doc_id,
-                    language_server.id(),
-                  ))
-                  .unwrap();
-                },
-              }
-            })
-            .await
-        });
-      }
+    match self.get_workspace_file_changes() {
+      Some(changes) => {
+        for (workspace_path, doc_change, doc_id, version, language_server, language_id) in changes {
+          if let DocumentChange {
+            original_contents: Some(original_contents),
+            new_contents,
+            versioned_doc_id,
+          } = doc_change
+          {
+            log::info!("updating document with language server {:#?}", doc_id);
+            let changes = compare_ropes(&original_contents, &new_contents);
+            let tx = self.tx.clone();
+            tokio::spawn(async move {
+              language_server
+                .text_document_did_change(
+                  versioned_doc_id,
+                  &original_contents,
+                  &new_contents,
+                  changes.changes(),
+                )
+                .unwrap()
+                .then(|res| async move {
+                  log::info!("updated document with language server");
+                  match res {
+                    Err(e) => {
+                      log::error!("failed to update document with language server: {}", e);
+                    },
+                    Ok(()) => {
+                      tx.send(LsiAction::RequestWorkspaceFileSymbols(
+                        workspace_path,
+                        doc_id,
+                        language_server.id(),
+                      ))
+                      .unwrap();
+                    },
+                  }
+                })
+                .await
+            });
+          } else {
+            let tx = self.tx.clone();
+            tokio::spawn(async move {
+              language_server
+                .text_document_did_open(
+                  doc_change.versioned_doc_id.uri,
+                  version,
+                  &doc_change.new_contents,
+                  language_id,
+                )
+                .then(|res| async move {
+                  // log::info!("updated document with language server");
+                  match res {
+                    Err(e) => {
+                      log::error!("failed to open document with language server: {}", e);
+                    },
+                    Ok(()) => {
+                      tx.send(LsiAction::RequestWorkspaceFileSymbols(
+                        workspace_path,
+                        doc_id,
+                        language_server.id(),
+                      ))
+                      .unwrap();
+                    },
+                  }
+                })
+                .await
+            });
+          }
+        }
+        Ok(true)
+      },
+      None => Ok(false),
     }
-    Ok(())
   }
 
   pub fn get_workspace_file_symbols(

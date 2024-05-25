@@ -184,7 +184,7 @@ impl LanguageServerInterface {
   pub fn lsi_read_symbol_source(&mut self, lsi_query: &LsiQuery) -> anyhow::Result<String> {
     match self.get_workspace(lsi_query)?.query_symbols(lsi_query) {
       Ok(symbols) => match symbols.len() {
-        0 => Ok("no symbols found".to_string()),
+        0 => Ok("lsp_read_symbol_source: no symbols found".to_string()),
         _ => {
           let symbol = symbols.first().unwrap();
           symbol.get_source()
@@ -199,20 +199,24 @@ impl LanguageServerInterface {
     replacement_text: String,
     lsi_query: &LsiQuery,
   ) -> anyhow::Result<String> {
-    match self.get_workspace(lsi_query)?.query_symbols(lsi_query) {
-      Ok(symbols) => match symbols.len() {
-        0 => Ok("no symbols found".to_string()),
-        _ => {
-          let symbol = symbols.first().unwrap();
-          let _new_content = symbol.replace_text(&replacement_text);
-          Ok(format!(
-            "symbol text replaced on symbol id {:?} in file {:?}",
-            symbol.symbol_id,
-            symbol.file_path.display()
-          ))
-        },
+    log::info!("lsi_replace_symbol_text: {:?}", lsi_query);
+
+    match &lsi_query.symbol_id {
+      Some(symbol_id) => {
+        let symbol_id: [u8; 32] = TryInto::<[u8; 32]>::try_into(symbol_id.as_slice())?;
+        match self.get_workspace(lsi_query)?.query_symbol_by_id(&symbol_id) {
+          Some(symbol) => {
+            let _new_content = symbol.replace_text(&replacement_text)?;
+            Ok(format!(
+              "symbol text replaced on symbol id {:?} in file {:?}\naffected symbol_ids will be regenerated",
+              symbol.symbol_id,
+              symbol.file_path.display()
+            ))
+          },
+          None => Err(anyhow::anyhow!("no symbol found with id")),
+        }
       },
-      Err(e) => Err(anyhow::anyhow!("error querying workspace symbols: {}", e)),
+      None => Err(anyhow::anyhow!("symbol_id not set")),
     }
   }
 
@@ -221,7 +225,17 @@ impl LanguageServerInterface {
       Ok(symbols) => match symbols.len() {
         0 => Ok("no symbols found".to_string()),
         _ => match serde_json::to_string(
-          &symbols.into_iter().map(SerializableSourceSymbol::from).collect::<Vec<_>>(),
+          &symbols
+            .into_iter()
+            .map(|s| {
+              let mut ser = SerializableSourceSymbol::from(s.clone());
+              if !lsi_query.include_source {
+                ser.source_code = None;
+              }
+              ser
+              //serde_json::to_string(&ser).unwrap_or_default()
+            })
+            .collect::<Vec<_>>(),
         ) {
           Ok(content) => Ok(content),
           Err(e) => Err(anyhow::anyhow!("error serializing symbols: {}", e)),

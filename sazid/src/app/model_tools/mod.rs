@@ -14,6 +14,7 @@ pub mod lsp_goto_type_definition;
 pub mod lsp_query_symbols;
 pub mod lsp_read_symbol_source;
 pub mod lsp_replace_symbol_text;
+pub mod read_file_text;
 
 pub mod argument_validation;
 pub mod errors;

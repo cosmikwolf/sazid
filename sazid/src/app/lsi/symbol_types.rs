@@ -39,11 +39,13 @@ pub struct SerializableSourceSymbol {
   //pub selection_range: lsp::Range,
   pub workspace_path: PathBuf,
   pub file_path: PathBuf,
+  pub source_code: Option<String>,
   pub hash: [u8; 32],
 }
 
 impl From<Arc<SourceSymbol>> for SerializableSourceSymbol {
   fn from(symbol: Arc<SourceSymbol>) -> Self {
+    let source_code = symbol.get_source().ok();
     let symbol = symbol.as_ref();
     SerializableSourceSymbol {
       name: symbol.name.clone(),
@@ -54,6 +56,7 @@ impl From<Arc<SourceSymbol>> for SerializableSourceSymbol {
       //selection_range: *symbol.selection_range.lock().unwrap(),
       workspace_path: symbol.workspace_path.clone(),
       file_path: symbol.file_path.clone(),
+      source_code,
       hash: symbol.symbol_id,
     }
   }
@@ -150,7 +153,7 @@ impl SourceSymbol {
   pub fn get_source(&self) -> anyhow::Result<String> {
     let file_path = &self.file_path;
     let range = self.range.lock().unwrap();
-    get_file_range_contents(file_path, *range)
+    get_file_range_contents(file_path, Some(*range))
   }
 
   pub fn replace_text(&self, replacement_text: &str) -> anyhow::Result<String> {
@@ -162,7 +165,7 @@ impl SourceSymbol {
   pub fn get_selection(&self) -> anyhow::Result<String> {
     let file_path = &self.file_path;
     let range = self.selection_range.lock().unwrap();
-    get_file_range_contents(file_path, *range)
+    get_file_range_contents(file_path, Some(*range))
   }
 
   pub fn add_child(parent: &mut Arc<Self>, child: &Arc<SourceSymbol>) {

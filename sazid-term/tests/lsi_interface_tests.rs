@@ -3,20 +3,13 @@ mod test {
   use anyhow::Context;
   use helix_lsp::lsp::{self, SymbolKind};
   use helix_view::editor::LspConfig;
-  use std::{
-    path::{Path, PathBuf},
-    sync::Arc,
-  };
+  use std::path::{Path, PathBuf};
   use tempfile::tempdir;
 
   use self::helpers::*;
   use sazid::app::{
     errors::SazidError,
-    lsi::{
-      query::LsiQuery,
-      symbol_types::{SerializableSourceSymbol, SourceSymbol},
-    },
-    tools::utils::initialize_logging,
+    lsi::{query::LsiQuery, symbol_types::SerializableSourceSymbol},
   };
   use sazid_term::{application::Application, args::Args, config::Config};
 
@@ -133,6 +126,9 @@ mod test {
   #[tokio::test(flavor = "multi_thread")]
   async fn test_read_symbol_source() -> anyhow::Result<()> {
     let workspace_path = setup_test_rust_project("tests/test_assets/svd_to_csv")?.canonicalize()?;
+
+    //let workspace_path =
+    //  PathBuf::from("/Users/tenkai/Development/gpt/sazid/sazid-term/tests/test_assets/svd_to_csv");
     std::env::set_current_dir(&workspace_path).unwrap();
     let mut app = setup_app(Some(workspace_path.clone()))?;
 
@@ -154,11 +150,15 @@ mod test {
       Some((query.clone(), "[\"src/main.rs\"]".to_string()))
     );
 
+    /*
+    query for test function symbol, verify its contents
+    */
     let query = LsiQuery {
       session_id: app.get_session_id(),
       name_regex: Some("test_function".to_string()),
       //file_path_regex: Some("src/main.rs".to_string()),
       workspace_root: workspace_path.clone(),
+      include_source: true,
       test_query: true,
       ..Default::default()
     };
@@ -169,42 +169,20 @@ mod test {
     match &app.get_session().test_tool_call_response {
       Some((lsi_query, content)) => {
         let symbol = serde_json::from_str::<Vec<SerializableSourceSymbol>>(content)?;
-        let main_symbol = SerializableSourceSymbol {
-          name: "test_function".to_string(),
-          detail: Some("fn(text: String) -> bool".to_string()),
-          kind: SymbolKind::FUNCTION,
-          tags: Some(vec![]),
-          range: lsp::Range {
-            start: lsp::Position { line: 82, character: 0 },
-            end: lsp::Position { line: 85, character: 1 },
-          },
-          workspace_path: workspace_path.clone(),
-          file_path: PathBuf::from("src/main.rs"),
-          hash: [0; 32],
-        };
         assert_eq!(query, *lsi_query);
-        assert_eq!(symbol.first().unwrap().name, main_symbol.name);
-        assert_eq!(symbol.first().unwrap().detail, main_symbol.detail);
-        assert_eq!(symbol.first().unwrap().kind, main_symbol.kind);
-        assert_eq!(symbol.first().unwrap().tags, main_symbol.tags);
-        assert_eq!(symbol.first().unwrap().range, main_symbol.range);
-        assert_eq!(symbol.first().unwrap().workspace_path, main_symbol.workspace_path);
-        assert_eq!(symbol.first().unwrap().file_path, main_symbol.file_path);
-      },
-      _ => {
-        panic!("Expected a response from the language server interface");
-      },
-    }
-
-    app.send_language_server_event(sazid::action::LsiAction::ReadSymbolSource(query.clone()))?;
-    run_event_loop_until_idle(&mut app).await;
-
-    match &app.get_session().test_tool_call_response {
-      Some((lsi_query, content)) => {
-        assert_eq!(query, *lsi_query);
+        assert_eq!(symbol.first().unwrap().name, "test_function".to_string());
+        assert_eq!(symbol.first().unwrap().detail, Some("fn(text: String) -> bool".to_string()));
+        assert_eq!(symbol.first().unwrap().kind, SymbolKind::FUNCTION);
+        assert_eq!(symbol.first().unwrap().tags, Some(vec![]));
+        assert_eq!(symbol.first().unwrap().range.start, lsp::Position { line: 82, character: 0 });
+        assert_eq!(symbol.first().unwrap().range.end, lsp::Position { line: 85, character: 1 });
+        assert_eq!(symbol.first().unwrap().workspace_path, workspace_path.clone());
+        assert_eq!(symbol.first().unwrap().file_path, PathBuf::from("src/main.rs"));
         assert_eq!(
-          content.as_str(),
-          "fn test_function(text: String) -> bool {\n  println!(\"{}\", text);\n  true\n}"
+          symbol.first().unwrap().source_code,
+          Some(
+            "fn test_function(text: String) -> bool {\n  println!(\"{}\", text);\n  true\n}".into()
+          )
         );
       },
       _ => {
@@ -212,11 +190,55 @@ mod test {
       },
     }
 
+    /*
+    query for the main function symbol, verify its contents
+    */
     let query = LsiQuery {
       session_id: app.get_session_id(),
       name_regex: Some("main".to_string()),
       //file_path_regex: Some("src/main.rs".to_string()),
       workspace_root: workspace_path.clone(),
+      include_source: true,
+      test_query: true,
+      ..Default::default()
+    };
+    app
+      .send_language_server_event(sazid::action::LsiAction::QueryWorkspaceSymbols(query.clone()))?;
+    run_event_loop_until_idle(&mut app).await;
+
+    let symbol_id = match &app.get_session().test_tool_call_response {
+      Some((lsi_query, content)) => {
+        let symbol = serde_json::from_str::<Vec<SerializableSourceSymbol>>(content)?;
+        assert_eq!(query, *lsi_query);
+        assert_eq!(symbol.first().unwrap().name, "main".to_string());
+        assert_eq!(symbol.first().unwrap().detail, Some("fn()".to_string()));
+        assert_eq!(symbol.first().unwrap().kind, SymbolKind::FUNCTION);
+        assert_eq!(symbol.first().unwrap().tags, Some(vec![]));
+        assert_eq!(symbol.first().unwrap().range.start, lsp::Position { line: 18, character: 0 });
+        assert_eq!(symbol.first().unwrap().range.end, lsp::Position { line: 58, character: 1 });
+        assert_eq!(symbol.first().unwrap().workspace_path, workspace_path.clone());
+        assert_eq!(symbol.first().unwrap().file_path, PathBuf::from("src/main.rs"));
+        assert_eq!(
+                  symbol.first().unwrap().source_code,
+        Some("fn main() {\n  let cli = Args::parse();\n  let svd_path = cli.svd_path;\n  let out_path = match cli.output {\n    Some(path) => PathBuf::from(path),\n    None => {\n      let stem = svd_path.file_stem().unwrap().to_str().unwrap();\n      let new_name = format!(\"./{}.csv\", stem);\n      PathBuf::from(new_name)\n    },\n  };\n\n  // Load SVD file\n  let mut file = File::open(svd_path.clone()).expect(\"Could not open SVD file\");\n  let mut contents = String::new();\n  file.read_to_string(&mut contents).expect(\"Could not read SVD file\");\n\n  // Parse SVD file\n  let mut parser_config = svd_parser::Config::default();\n  parser_config.validate_level = ValidateLevel::Weak;\n  parser_config.ignore_enums(true);\n  parser_config.expand(true);\n  parser_config.expand_properties(true);\n\n  let mut device =\n    svd_parser::parse_with_config(&contents, &parser_config).expect(\"Error parsing SVD XML file\");\n\n  // Create a CSV writer\n  let mut wtr = Writer::from_path(out_path.clone()).expect(\"Could not create CSV file\");\n\n  // Iterate over peripherals\n  write_peripheral_to_csv(&mut wtr, device).expect(\"Could not write peripheral details to CSV\");\n\n  wtr.flush().expect(\"Failed to flush CSV writer\");\n\n  println!(\n    \"The SVD file '{}' has been successfully processed into '{}'\",\n    svd_path.display(),\n    out_path.display()\n  );\n}".into())
+                );
+        symbol.first().unwrap().hash
+      },
+      _ => {
+        panic!("Expected a response from the language server interface");
+      },
+    };
+
+    /*
+    Test to see if querying for the resulting symbol ID returns the same symbol as the previous function
+    */
+    let query = LsiQuery {
+      session_id: app.get_session_id(),
+      symbol_id: Some(symbol_id.into()),
+      //name_regex: Some("main".to_string()),
+      //file_path_regex: Some("src/main.rs".to_string()),
+      workspace_root: workspace_path.clone(),
+      include_source: true,
       test_query: true,
       ..Default::default()
     };
@@ -227,49 +249,86 @@ mod test {
     match &app.get_session().test_tool_call_response {
       Some((lsi_query, content)) => {
         let symbol = serde_json::from_str::<Vec<SerializableSourceSymbol>>(content)?;
-        let main_symbol = SerializableSourceSymbol {
-          name: "main".to_string(),
-          detail: Some("fn()".to_string()),
-          kind: SymbolKind::FUNCTION,
-          tags: Some(vec![]),
-          range: lsp::Range {
-            start: lsp::Position { line: 18, character: 0 },
-            end: lsp::Position { line: 58, character: 1 },
-          },
-          workspace_path: workspace_path.clone(),
-          file_path: PathBuf::from("src/main.rs"),
-          hash: [0; 32],
-        };
         assert_eq!(query, *lsi_query);
-        assert_eq!(symbol.first().unwrap().name, main_symbol.name);
-        assert_eq!(symbol.first().unwrap().detail, main_symbol.detail);
-        assert_eq!(symbol.first().unwrap().kind, main_symbol.kind);
-        assert_eq!(symbol.first().unwrap().tags, main_symbol.tags);
-        assert_eq!(symbol.first().unwrap().range, main_symbol.range);
-        assert_eq!(symbol.first().unwrap().workspace_path, main_symbol.workspace_path);
-        assert_eq!(symbol.first().unwrap().file_path, main_symbol.file_path);
+        assert_eq!(symbol.first().unwrap().name, "main".to_string());
+        assert_eq!(symbol.first().unwrap().detail, Some("fn()".to_string()));
+        assert_eq!(symbol.first().unwrap().kind, SymbolKind::FUNCTION);
+        assert_eq!(symbol.first().unwrap().tags, Some(vec![]));
+        assert_eq!(symbol.first().unwrap().range.start, lsp::Position { line: 18, character: 0 });
+        assert_eq!(symbol.first().unwrap().range.end, lsp::Position { line: 58, character: 1 });
+        assert_eq!(symbol.first().unwrap().workspace_path, workspace_path.clone());
+        assert_eq!(symbol.first().unwrap().file_path, PathBuf::from("src/main.rs"));
+        assert_eq!(
+                  symbol.first().unwrap().source_code,
+        Some("fn main() {\n  let cli = Args::parse();\n  let svd_path = cli.svd_path;\n  let out_path = match cli.output {\n    Some(path) => PathBuf::from(path),\n    None => {\n      let stem = svd_path.file_stem().unwrap().to_str().unwrap();\n      let new_name = format!(\"./{}.csv\", stem);\n      PathBuf::from(new_name)\n    },\n  };\n\n  // Load SVD file\n  let mut file = File::open(svd_path.clone()).expect(\"Could not open SVD file\");\n  let mut contents = String::new();\n  file.read_to_string(&mut contents).expect(\"Could not read SVD file\");\n\n  // Parse SVD file\n  let mut parser_config = svd_parser::Config::default();\n  parser_config.validate_level = ValidateLevel::Weak;\n  parser_config.ignore_enums(true);\n  parser_config.expand(true);\n  parser_config.expand_properties(true);\n\n  let mut device =\n    svd_parser::parse_with_config(&contents, &parser_config).expect(\"Error parsing SVD XML file\");\n\n  // Create a CSV writer\n  let mut wtr = Writer::from_path(out_path.clone()).expect(\"Could not create CSV file\");\n\n  // Iterate over peripherals\n  write_peripheral_to_csv(&mut wtr, device).expect(\"Could not write peripheral details to CSV\");\n\n  wtr.flush().expect(\"Failed to flush CSV writer\");\n\n  println!(\n    \"The SVD file '{}' has been successfully processed into '{}'\",\n    svd_path.display(),\n    out_path.display()\n  );\n}".into())
+                );
+        symbol.first().unwrap().hash
       },
       _ => {
         panic!("Expected a response from the language server interface");
       },
-    }
+    };
 
-    app.send_language_server_event(sazid::action::LsiAction::ReadSymbolSource(query.clone()))?;
+    let code_snippet = "fn main() {\n  println!(\"Hello, world!\");\n}".to_string();
+    app.send_language_server_event(sazid::action::LsiAction::ReplaceSymbolText(
+      code_snippet.clone(),
+      query.clone(),
+    ))?;
     run_event_loop_until_idle(&mut app).await;
 
+    //println!("DEBUG:::: ----\n\n{:#?}", app.get_session().test_tool_call_response);
+    app
+      .send_language_server_event(sazid::action::LsiAction::QueryWorkspaceSymbols(query.clone()))?;
+
+    run_event_loop_until_idle(&mut app).await;
+
+    // querying for the same symbol id should result in no symbols found
     match &app.get_session().test_tool_call_response {
       Some((lsi_query, content)) => {
-        println!("content: {:#?}", content);
+        assert_eq!(content, "no symbols found");
         assert_eq!(query, *lsi_query);
-        assert_eq!(
-          content.as_str(),
-          "fn test_function(text: String) -> bool {\n  println!(\"{}\", text);\n true\n }"
-        );
       },
       _ => {
         panic!("Expected a response from the language server interface");
       },
-    }
+    };
+
+    let query = LsiQuery {
+      session_id: app.get_session_id(),
+      name_regex: Some("main".to_string()),
+      workspace_root: workspace_path.clone(),
+      include_source: true,
+      test_query: true,
+      ..Default::default()
+    };
+    app
+      .send_language_server_event(sazid::action::LsiAction::QueryWorkspaceSymbols(query.clone()))?;
+
+    run_event_loop_until_idle(&mut app).await;
+    match &app.get_session().test_tool_call_response {
+      Some((lsi_query, content)) => {
+        // read the contents of the file at workspace_path joined with file_path
+        let file = std::fs::read_to_string(workspace_path.join("src/main.rs"))?;
+        let debugprnt = format!("DEBUG:::: ----\n\n{:#?}", file);
+        println!("{}", debugprnt);
+        let symbol = serde_json::from_str::<Vec<SerializableSourceSymbol>>(content)
+          .expect("failed to parse symbol");
+        assert_eq!(query, *lsi_query);
+        assert_eq!(symbol.first().unwrap().name, "main".to_string());
+        assert_eq!(symbol.first().unwrap().detail, Some("fn()".to_string()));
+        assert_eq!(symbol.first().unwrap().kind, SymbolKind::FUNCTION);
+        assert_eq!(symbol.first().unwrap().tags, Some(vec![]));
+        assert_eq!(symbol.first().unwrap().range.start, lsp::Position { line: 18, character: 0 });
+        assert_eq!(symbol.first().unwrap().range.end, lsp::Position { line: 20, character: 1 });
+        assert_eq!(symbol.first().unwrap().workspace_path, workspace_path.clone());
+        assert_eq!(symbol.first().unwrap().file_path, PathBuf::from("src/main.rs"));
+        assert_eq!(symbol.first().unwrap().source_code, Some(code_snippet));
+        symbol.first().unwrap().hash
+      },
+      _ => {
+        panic!("Expected a response from the language server interface");
+      },
+    };
     Ok(())
   }
 

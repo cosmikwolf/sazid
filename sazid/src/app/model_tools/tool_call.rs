@@ -106,7 +106,7 @@ impl ChatTools {
       // Arc::new(FileSearchFunction::init()),
       Arc::new(LspGetWorkspaceFiles::init()),
       Arc::new(LspQuerySymbol::init()),
-      Arc::new(LspReadSymbolSource::init()),
+      //Arc::new(LspReadSymbolSource::init()),
       Arc::new(LspReplaceSymbolText::init()),
       Arc::new(LspGotoSymbolDefinition::init()),
       Arc::new(LspGotoSymbolDeclaration::init()),

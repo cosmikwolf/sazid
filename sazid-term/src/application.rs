@@ -487,15 +487,27 @@ impl Application {
               if self.language_server_interface.language_servers.iter_clients().all(|client| {
                   client.is_initialized() && !self.lsp_progress.is_progressing(client.id())
               }) {
-                match action {
-                    LsiAction::SessionAction(action) => {
-                        session_tx.send(*action).unwrap();
+                match self.language_server_interface.synchronize_workspace_file_changes() {
+                    Ok(true) => {
+                        log::debug!("workspace file sync in progress");
+                    } // do nothing, since we have to wait for workspace files to synchronize },
+                    Ok(false) => {
+                        log::debug!("running workspace action: {:?}", action);
+                        match action {
+                            LsiAction::SessionAction(action) => {
+                                session_tx.send(*action).unwrap();
+                            },
+                            LsiAction::ChatToolResponse(action) => {
+                                chat_tool_tx.send(*action).unwrap();
+                            }
+                            _ => {
+                                self.language_server_interface.handle_action(action);
+                            }
+                        }
                     },
-                    LsiAction::ChatToolResponse(action) => {
-                        chat_tool_tx.send(*action).unwrap();
-                    }
-                    _ => {
-                        self.language_server_interface.handle_action(action);
+                    Err(e) => {
+                       log::error!("workspace file sync error: {:#?}", e);
+                       chat_tool_tx.send(ChatToolAction::Error(e.to_string())).unwrap();
                     }
                 }
               } else {
@@ -504,6 +516,7 @@ impl Application {
           }
 
           Some(action) = self.chat_tools_events.next() => {
+            log::debug!("chat tool action: {:#?}", action);
               match action  {
                 ChatToolAction::SessionAction(action) => {
                     session_tx.send(*action).unwrap();

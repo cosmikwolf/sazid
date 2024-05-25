@@ -48,6 +48,11 @@ impl ToolCallTrait for LspQuerySymbol {
                     required: false,
                 description: Some("filter results by file path. Omit to get symbols from all files".to_string()),
                 }),
+                    ("include_source_code".to_string(),
+              FunctionProperty::Bool {
+                    required: false,
+                    description: Some("include symbol source code in the response. this defaults to false".to_string()),
+                }),
             ]),
       }
   }
@@ -81,6 +86,9 @@ impl ToolCallTrait for LspQuerySymbol {
     let name_regex = get_validated_argument::<String>(&validated_arguments, "name_regex");
     let kind = get_validated_argument::<String>(&validated_arguments, "kind");
     let range = get_validated_argument::<Range>(&validated_arguments, "range");
+    let include_source =
+      get_validated_argument::<bool>(&validated_arguments, "include_source_code")
+        .unwrap_or_default();
 
     let file_path_regex = get_validated_argument::<String>(&validated_arguments, "file_path_regex");
 
@@ -101,6 +109,7 @@ impl ToolCallTrait for LspQuerySymbol {
         session_id: params.session_id,
         file_path_regex,
         diagnostic_severity: None,
+        include_source,
         ..Default::default()
       };
 

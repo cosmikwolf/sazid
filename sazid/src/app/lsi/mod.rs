@@ -19,14 +19,28 @@ fn position_gt(pos1: lsp::Position, pos2: lsp::Position) -> bool {
   }
 }
 
-fn get_file_range_contents(file_path: &Path, range: lsp::Range) -> anyhow::Result<String> {
+pub fn get_file_range_contents(
+  file_path: &Path,
+  range: Option<lsp::Range>,
+) -> anyhow::Result<String> {
   let rope = Rope::from_reader(std::fs::File::open(file_path)?)?;
 
-  let start_char = rope.line_to_char(range.start.line as usize) + range.start.character as usize;
-  let end_char = rope.line_to_char(range.end.line as usize) + range.end.character as usize;
+  match range {
+    Some(range) => {
+      let start_char =
+        rope.try_line_to_char(range.start.line as usize)? + range.start.character as usize;
+      let end_char = rope.try_line_to_char(range.end.line as usize)? + range.end.character as usize;
 
-  let source_code = rope.slice(start_char..end_char).to_string();
-  Ok(source_code)
+      if start_char > end_char {
+        return Err(anyhow::anyhow!("start character is greater than end character"));
+      }
+      if end_char > rope.len_chars() {
+        return Err(anyhow::anyhow!("end character is greater than the length of the file"));
+      }
+      Ok(rope.slice(start_char..end_char).to_string())
+    },
+    None => Ok(rope.to_string()),
+  }
 }
 
 pub fn replace_file_range_contents(
@@ -36,12 +50,10 @@ pub fn replace_file_range_contents(
 ) -> anyhow::Result<String> {
   let mut rope = Rope::from_reader(std::fs::File::open(file_path)?)?;
 
-  println!("rope: {}-", rope);
   let start_char = rope.line_to_char(range.start.line as usize) + range.start.character as usize;
   let end_char = rope.line_to_char(range.end.line as usize) + range.end.character as usize;
 
   let end_rope = rope.split_off(end_char);
-  println!("end_rope: {}-", end_rope);
   rope.remove(start_char..);
   rope.insert(start_char, &contents);
   rope.append(end_rope);
@@ -55,7 +67,6 @@ pub fn replace_file_range_contents(
 mod tests {
   use super::*;
   use lsp::Range;
-  use std::fs::read_to_string;
   use std::fs::File;
   use std::io::Write;
   use tempfile::tempdir;
@@ -73,7 +84,7 @@ mod tests {
       end: lsp_types::Position { line: 2, character: 4 },
     };
 
-    let content = get_file_range_contents(&file_path, range)?;
+    let content = get_file_range_contents(&file_path, Some(range))?;
     assert_eq!(content, "e 2\nline");
 
     Ok(())
@@ -92,7 +103,7 @@ mod tests {
       end: lsp_types::Position { line: 1, character: 3 },
     };
 
-    let content = get_file_range_contents(&file_path, range)?;
+    let content = get_file_range_contents(&file_path, Some(range))?;
     assert_eq!(content, "");
 
     Ok(())
@@ -111,7 +122,7 @@ mod tests {
       end: lsp_types::Position { line: 3, character: 6 },
     };
 
-    let content = get_file_range_contents(&file_path, range)?;
+    let content = get_file_range_contents(&file_path, Some(range))?;
     assert_eq!(content, "line 1\nline 2\nline 3\nline 4");
 
     Ok(())
@@ -130,7 +141,7 @@ mod tests {
       end: lsp_types::Position { line: 1, character: 5 },
     };
 
-    let content = get_file_range_contents(&file_path, range)?;
+    let content = get_file_range_contents(&file_path, Some(range))?;
     assert_eq!(content, "ne 2");
 
     Ok(())
@@ -149,7 +160,7 @@ mod tests {
       end: lsp_types::Position { line: 3, character: 3 },
     };
 
-    let content = get_file_range_contents(&file_path, range)?;
+    let content = get_file_range_contents(&file_path, Some(range))?;
     assert_eq!(content, "ïne 2\nline 3\nlįn");
 
     Ok(())

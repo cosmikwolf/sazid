@@ -1,6 +1,7 @@
 use crate::{
   commands::ChatMessageItem,
-  compositor::{self, Component, Compositor, Context, ContextFocus, Event, EventResult}, filter_picker_entry,
+  compositor::{self, Component, Compositor, Context, ContextFocus, Event, EventResult},
+  filter_picker_entry,
   job::Callback,
   movement::min_width_1,
   ui::{
@@ -786,7 +787,6 @@ impl<T: MarkdownItem + 'static> SessionView<T> {
     };
 
     let text = self.get_messages_plaintext();
-    
 
     (Box::new(helix_core::syntax::merge(
       Self::empty_highlight_iter(text, 7, area.height),

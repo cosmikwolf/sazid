@@ -69,7 +69,6 @@ pub enum LsiAction {
   GoToSymbolDeclaration(LsiQuery),
   GoToTypeDefinition(LsiQuery),
   GetDiagnostics(LsiQuery),
-  SynchronizeAllWorkspaceFileChanges(),
   UpdateWorkspaceFileSymbols(PathBuf, TextDocumentIdentifier, Vec<DocumentSymbol>),
   RequestWorkspaceFileSymbols(PathBuf, TextDocumentIdentifier, usize),
   Error(String),

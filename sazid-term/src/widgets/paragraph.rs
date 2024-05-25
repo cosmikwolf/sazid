@@ -1,14 +1,10 @@
 use super::reflow::{LineComposer, LineTruncator, WordWrapper};
-use helix_core::{
-  unicode::width::UnicodeWidthStr,
-};
+use helix_core::unicode::width::UnicodeWidthStr;
 
-use helix_view::{
-  graphics::{Rect, Style},
-};
+use helix_view::graphics::{Rect, Style};
 use std::iter;
 use tui::{
-  buffer::{Buffer},
+  buffer::Buffer,
   layout::Alignment,
   text::{StyledGrapheme, Text},
   widgets::{Block, Widget},

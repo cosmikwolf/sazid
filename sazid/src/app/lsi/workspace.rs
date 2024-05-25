@@ -90,7 +90,7 @@ impl Workspace {
 
   pub fn query_symbols(&self, query: &LsiQuery) -> anyhow::Result<Vec<Arc<SourceSymbol>>> {
     log::info!(
-      "query: {:#?}\nsymbolcount: {}\nupgradeable symbols: {}",
+      "query_symbols: {:?}\nsymbolcount: {}\nupgradeable symbols: {}",
       query,
       self.all_symbols_weak().len(),
       self.all_symbols_weak().iter().flat_map(|s| s.upgrade()).count()
@@ -113,6 +113,13 @@ impl Workspace {
         .all_symbols_weak()
         .iter()
         .flat_map(|s| s.upgrade())
+        .filter(|s| {
+          if let Some(symbol_id) = &query.symbol_id {
+            s.symbol_id == symbol_id.as_slice()
+          } else {
+            true
+          }
+        })
         .filter(|s| {
           if let Some(file_name) = &query.file_path_regex {
             s.file_path.file_name().unwrap().to_str().unwrap() == file_name

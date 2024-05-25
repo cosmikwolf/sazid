@@ -24,7 +24,7 @@ use crate::{
   widgets::reflow::{LineComposer, LineTruncator, WordWrapper},
 };
 
-use super::paragraph::{Wrap};
+use super::paragraph::Wrap;
 
 /// A [`Cell`] contains the [`Text`] to be displayed in a [`Row`] of a [`Table`].
 ///
