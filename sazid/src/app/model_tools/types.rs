@@ -241,7 +241,7 @@ pub fn validate_arguments(
       (Some(value), FunctionProperty::Pattern { required: _, .. }) => {
         if let Some(pattern_str) = value.as_str() {
           match regex::Regex::new(pattern_str) {
-            Ok(regex) => {
+            Ok(_regex) => {
               validated_args.insert(name.clone(), Value::String(pattern_str.to_string()));
             },
             Err(err) => {
@@ -267,10 +267,13 @@ pub fn validate_arguments(
           let path = PathBuf::from(path_str);
 
           // return an error if path is not within workspace
-          if let Some(workspace_dir) = workspace_root {
-            if !path.starts_with(workspace_dir) {
-              return Err("cannot read files outside of the current working directory".into());
-            }
+          match workspace_root {
+            Some(workspace_dir) => {
+              if !path.starts_with(workspace_dir) {
+                return Err("cannot read files outside of the current working directory".into());
+              }
+            },
+            None => return Err("cannot create files without a workspace set".into()),
           }
 
           if !path.is_absolute() {

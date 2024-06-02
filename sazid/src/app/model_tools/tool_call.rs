@@ -6,6 +6,7 @@ use async_openai::types::{
   ChatCompletionMessageToolCall, ChatCompletionRequestToolMessage, ChatCompletionTool,
   ChatCompletionToolType, FunctionObject, Role,
 };
+use lsp_types::CreateFile;
 use serde_json::Value;
 use std::{any::Any, collections::HashMap, pin::Pin, sync::Arc};
 use tokio::sync::mpsc::UnboundedSender;
@@ -15,6 +16,7 @@ use futures_util::Future;
 use crate::app::session_config::SessionConfig;
 
 use super::{
+  create_file_function::CreateFileFunction,
   errors::ToolCallError,
   lsp_get_diagnostics::LspGetDiagnostics,
   lsp_get_workspace_files::LspGetWorkspaceFiles,
@@ -106,7 +108,7 @@ impl ChatTools {
       // Arc::new(FileSearchFunction::init()),
       Arc::new(LspGetWorkspaceFiles::init()),
       Arc::new(LspQuerySymbol::init()),
-      //Arc::new(LspReadSymbolSource::init()),
+      Arc::new(CreateFileFunction::init()),
       Arc::new(LspReplaceSymbolText::init()),
       Arc::new(LspGotoSymbolDefinition::init()),
       Arc::new(LspGotoSymbolDeclaration::init()),

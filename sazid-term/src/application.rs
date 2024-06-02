@@ -424,6 +424,23 @@ impl Application {
 
           Some(action) = self.session_events.next() => {
                   match action.clone() {
+                      SessionAction::SaveSession => {
+                        let data_folder = helix_loader::data_dir().join("session_history");
+                        if !data_folder.exists() {
+                            if let Err(e) = std::fs::create_dir_all(&data_folder) {
+                                self.editor.set_error(format!("error creating data directory: {}", e));
+                            }
+                        }
+                        let save_path = data_folder.join(self.session.config.title.clone()).with_extension("szd");
+                        log::info!("saving session history to: {:#?}", save_path );
+                        match self.session.save_session(save_path.clone()) {
+                        Ok(_) => self.editor.set_status(format!("session saved to: {:?}", save_path)),
+                        Err(e) => {
+                            log::error!("error saving session: {}", e);
+                            self.editor.set_error(format!("error saving session: {}", e));
+                        },
+                        };
+                      },
                       SessionAction::ChatToolAction(event) => {
                           chat_tool_tx.send(event).unwrap();
                       },

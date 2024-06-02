@@ -1427,7 +1427,7 @@ pub fn session_picker(root: PathBuf, config: &helix_view::editor::Config) -> Pic
     .git_ignore(config.file_picker.git_ignore)
     .git_global(config.file_picker.git_global)
     .git_exclude(config.file_picker.git_exclude)
-    .sort_by_file_name(|name1, name2| name1.cmp(name2))
+    .sort_by_file_name(|name1, name2| name2.cmp(name1))
     .max_depth(config.file_picker.max_depth)
     .filter_entry(move |entry| filter_picker_entry(entry, &absolute_root, dedup_symlinks));
 

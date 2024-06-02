@@ -1,7 +1,8 @@
 use std::{
+  collections::HashMap,
   fs::{self, File},
   io::Write,
-  path::Path,
+  path::{Path, PathBuf},
   pin::Pin,
 };
 
@@ -11,53 +12,52 @@ use serde::{Deserialize, Serialize};
 use super::{
   errors::ToolCallError,
   tool_call::{ToolCallParams, ToolCallTrait},
-  types::{FunctionProperty, PropertyType},
+  types::{get_validated_argument, validate_arguments, FunctionProperty},
 };
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
 pub struct CreateFileFunction {
   name: String,
   description: String,
-  properties: Vec<FunctionProperty>,
+  parameters: FunctionProperty,
 }
 
 impl ToolCallTrait for CreateFileFunction {
-  fn name(&self) -> &str {
-    &self.name
-  }
-  fn init() -> Self {
+  fn init() -> Self
+  where
+    Self: Sized,
+  {
     CreateFileFunction {
       name: "create_file".to_string(),
       description: "create a file at path with text. this command cannot overwrite files"
         .to_string(),
-      properties: vec![
-        FunctionProperty {
-          name: "path".to_string(),
-          required: true,
-          property_type: PropertyType::String,
-          description: Some("path to file".to_string()),
-          enum_values: None,
-        },
-        FunctionProperty {
-          name: "text".to_string(),
-          required: true,
-          property_type: PropertyType::String,
-          description: Some("text to write to file.".to_string()),
-          enum_values: None,
-        },
-        FunctionProperty {
-          name: "overwrite".to_string(),
-          required: true,
-          property_type: PropertyType::Boolean,
-          description: Some("overwrite an existing file. default false".to_string()),
-          enum_values: None,
-        },
-      ],
+      parameters: FunctionProperty::Parameters {
+        properties: HashMap::from([
+          (
+            "path".to_string(),
+            FunctionProperty::String {
+              required: false,
+              description: Some("path to new file".to_string()),
+            },
+          ),
+          (
+            "content".to_string(),
+            FunctionProperty::String {
+              required: false,
+              description: Some("content of the newly created file".to_string()),
+            },
+          ),
+        ]),
+      },
     }
   }
 
-  fn parameters(&self) -> Vec<FunctionProperty> {
-    self.properties.clone()
+  fn name(&self) -> &str {
+    &self.name
+  }
+
+  fn parameters(&self) -> FunctionProperty {
+    self.parameters.clone()
   }
 
   fn description(&self) -> String {
@@ -68,15 +68,15 @@ impl ToolCallTrait for CreateFileFunction {
     &self,
     params: ToolCallParams,
   ) -> Pin<Box<dyn Future<Output = Result<Option<String>, ToolCallError>> + Send + 'static>> {
-    Box::pin(async move {
-      let path: Option<&str> = params.function_args.get("path").and_then(|s| s.as_str());
-      let text: Option<&str> = params.function_args.get("text").and_then(|s| s.as_str());
-      let overwrite =
-        params.function_args.get("overwrite").and_then(|b| b.as_bool()).unwrap_or(false);
+    let validated_arguments = validate_arguments(params.function_args, &self.parameters, None)
+      .expect("error validating arguments");
 
+    let path = get_validated_argument::<PathBuf>(&validated_arguments, "path");
+    let text = get_validated_argument::<String>(&validated_arguments, "content");
+    Box::pin(async move {
       if let Some(path) = path {
         if let Some(text) = text {
-          create_file(path, text, overwrite)
+          create_file(&path, text.as_str(), false)
         } else {
           Err(ToolCallError::new("text argument is required"))
         }
@@ -88,13 +88,10 @@ impl ToolCallTrait for CreateFileFunction {
 }
 
 pub fn create_file(
-  path: &str,
+  path: &PathBuf,
   text: &str,
   overwrite: bool,
 ) -> Result<Option<String>, ToolCallError> {
-  // Convert the string path to a `Path` object to manipulate file paths.
-  let path = Path::new(path);
-
   // Attempt to get the parent directory of the path.
   if let Some(parent_dir) = path.parent() {
     // Try to create the parent directory (and all necessary parent directories).
@@ -141,7 +138,7 @@ mod tests {
     let file_path = tmp_dir.path().join("test_file.txt");
     let file_contents = "Test file contents.";
 
-    let result = create_file(file_path.to_str().unwrap(), file_contents, false);
+    let result = create_file(&file_path, file_contents, false);
     assert!(result.is_ok());
     check_file_contents(&file_path, file_contents);
   }
@@ -154,7 +151,7 @@ mod tests {
     let file_path = non_existent_subfolder.join("test_file.txt");
     let file_contents = "Test file contents.";
 
-    let result = create_file(file_path.to_str().unwrap(), file_contents, false);
+    let result = create_file(&file_path, file_contents, false);
     assert!(result.is_ok());
     check_file_contents(&file_path, file_contents);
   }
@@ -166,7 +163,7 @@ mod tests {
     let file_path = tmp_dir.path().join("\0"); // Null byte is not allowed in file names.
     let file_contents = "Test file contents.";
 
-    let result = create_file(file_path.to_str().unwrap(), file_contents, false);
+    let result = create_file(&file_path, file_contents, false);
     assert!(result.is_ok());
     assert!(result.unwrap().unwrap().contains("error"));
   }
@@ -180,7 +177,7 @@ mod tests {
     let file_path = Path::new(permissions_dir).join("test_file.txt");
     let file_contents = "Test file contents.";
 
-    let result = create_file(file_path.to_str().unwrap(), file_contents, false);
+    let result = create_file(&file_path, file_contents, false);
     assert!(result.is_ok());
     assert!(result.unwrap().unwrap().contains("error"));
   }
@@ -194,7 +191,7 @@ mod tests {
     let file_path = Path::new(read_only_dir).join("test_file.txt");
     let file_contents = "Test file contents.";
 
-    let result = create_file(file_path.to_str().unwrap(), file_contents, false);
+    let result = create_file(&file_path, file_contents, false);
     assert!(result.is_ok());
     assert!(result.unwrap().unwrap().contains("error"));
   }
@@ -214,7 +211,7 @@ mod tests {
     }
 
     // Perform the operation to create the file again with different contents.
-    let result = create_file(file_path.to_str().unwrap(), new_contents, false);
+    let result = create_file(&file_path, new_contents, false);
     assert!(result.is_ok());
     check_file_contents(&file_path, new_contents);
   }
@@ -226,7 +223,7 @@ mod tests {
     let file_path = tmp_dir.path().join("large_test_file.txt");
     let file_contents = "a".repeat(10_000_000); // 10 MB of 'a'.
 
-    let result = create_file(file_path.to_str().unwrap(), &file_contents, false);
+    let result = create_file(&file_path, &file_contents, false);
     assert!(result.is_ok());
     check_file_contents(&file_path, &file_contents);
   }

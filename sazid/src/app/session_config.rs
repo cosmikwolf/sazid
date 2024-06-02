@@ -19,6 +19,7 @@ pub struct WorkspaceParams {
 pub struct SessionConfig {
   pub prompt: String,
   pub id: String,
+  pub title: String,
   pub session_dir: PathBuf,
   pub disabled_tools: Vec<String>,
   pub tools_enabled: bool,
@@ -39,6 +40,7 @@ impl Default for SessionConfig {
     SessionConfig {
       prompt: String::new(),
       id: Self::generate_session_id(),
+      title: chrono::Utc::now().to_rfc3339(),
       session_dir: PathBuf::new(),
       disabled_tools: vec![],
       workspace: None,

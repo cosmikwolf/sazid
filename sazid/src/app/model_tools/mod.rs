@@ -6,6 +6,7 @@
 // pub mod read_file_lines_function;
 // pub mod treesitter_function;
 
+pub mod create_file_function;
 pub mod lsp_get_diagnostics;
 pub mod lsp_get_workspace_files;
 pub mod lsp_goto_symbol_declaration;

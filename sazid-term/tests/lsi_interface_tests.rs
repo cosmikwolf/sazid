@@ -308,9 +308,9 @@ mod test {
     match &app.get_session().test_tool_call_response {
       Some((lsi_query, content)) => {
         // read the contents of the file at workspace_path joined with file_path
-        let file = std::fs::read_to_string(workspace_path.join("src/main.rs"))?;
-        let debugprnt = format!("DEBUG:::: ----\n\n{:#?}", file);
-        println!("{}", debugprnt);
+        //let file = std::fs::read_to_string(workspace_path.join("src/main.rs"))?;
+        //let debugprnt = format!("DEBUG:::: ----\n\n{:#?}", file);
+        //println!("{}", debugprnt);
         let symbol = serde_json::from_str::<Vec<SerializableSourceSymbol>>(content)
           .expect("failed to parse symbol");
         assert_eq!(query, *lsi_query);

@@ -741,7 +741,7 @@ fn save_session(cx: &mut Context) {
 }
 
 fn load_session_picker(cx: &mut Context) {
-  let root = helix_loader::data_dir().join("sessions");
+  let root = helix_loader::data_dir().join("session_history");
   if !root.exists() {
     cx.editor.set_error("data directory does not exist");
     return;
